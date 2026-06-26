@@ -1,10 +1,13 @@
 # Revit Plugins Lab
 
-Workspace for Revit add-in experiments and future product work.
+Workspace for Revit add-in experiments, Dynamo automation, and future product work.
 
-## Current structure
+## Repository structure
 
-- `Product01_TZ_pending/` - first product folder, waiting for the technical specification.
+- `docs/` - environment notes, Revit API notes, and development decisions.
+- `plugins/` - standalone Revit add-in products.
+- `templates/` - reusable project templates and scaffolding notes.
+- `dynamo/` - Dynamo graphs, Python scripts, and Dynamo-specific notes.
 
 ## Local environment snapshot
 
@@ -19,3 +22,8 @@ Workspace for Revit add-in experiments and future product work.
 
 For Revit 2025 development, install the .NET 8 SDK and build add-ins as `net8.0-windows`.
 For Revit 2024 and older, prepare a separate target/build path for .NET Framework 4.8.
+
+## First product
+
+The first product workspace is located at `plugins/product-01/`.
+Its technical specification is pending.

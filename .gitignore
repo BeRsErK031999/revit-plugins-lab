@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+obj/
+.vs/
+.vscode/
+
+# Revit local artifacts
+*.addin.user
+*.journal
+*.rvt
+*.rfa
+*.rte
+*.slog
+
+# Dynamo local artifacts
+*.backup
+*.dyn_backup
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
+*.user
+*.suo
