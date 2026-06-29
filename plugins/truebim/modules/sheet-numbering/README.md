@@ -25,3 +25,13 @@ Renumber Revit sheets with preview, duplicate protection, and configurable numbe
 - Detect duplicates before transaction commit.
 - Skip placeholder or filtered sheets only when the user chooses that behavior.
 - Keep the operation reversible through one Revit transaction.
+
+## Core workflow status
+
+- Collector: done.
+- Rules: done.
+- Preview: done.
+- Duplicate detection: done.
+- Read-only workflow: done.
+- Revit write operation: not started.
+- UI: not started.

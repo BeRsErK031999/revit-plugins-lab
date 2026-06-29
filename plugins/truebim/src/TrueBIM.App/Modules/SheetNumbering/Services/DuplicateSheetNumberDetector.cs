@@ -2,7 +2,7 @@ using TrueBIM.App.Modules.SheetNumbering.Models;
 
 namespace TrueBIM.App.Modules.SheetNumbering.Services;
 
-public sealed class DuplicateSheetNumberDetector
+public sealed class DuplicateSheetNumberDetector : IDuplicateSheetNumberDetector
 {
     private static readonly StringComparer SheetNumberComparer = StringComparer.OrdinalIgnoreCase;
 
