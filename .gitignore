@@ -5,6 +5,8 @@ obj/
 .vscode/
 
 # Revit local artifacts
+plugins/truebim/artifacts/
+plugins/truebim/installer/Output/
 *.addin.user
 *.journal
 *.rvt
