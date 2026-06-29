@@ -7,6 +7,8 @@
     <AssemblyName>TrueBIM.App</AssemblyName>
     <RootNamespace>TrueBIM.App</RootNamespace>
     <LangVersion>latest</LangVersion>
+    <!-- Revit 2025 API assemblies reference Microsoft.VisualBasic 10.1, while .NET 8 ref assemblies expose 10.0; Revit hosts these dependencies at runtime. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
