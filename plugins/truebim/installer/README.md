@@ -13,3 +13,9 @@ Initial installer target:
 Recommended first implementation: Inno Setup.
 
 The first installer draft is `TrueBIM.iss`.
+
+Local compiler path:
+
+```text
+C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe
+```

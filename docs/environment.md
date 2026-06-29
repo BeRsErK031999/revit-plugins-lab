@@ -16,12 +16,13 @@
 - Visual Studio Build Tools 2022
 - MSBuild
 - .NET runtimes 8 and 9
+- .NET SDK 8.0.422
+- Inno Setup 6.7.3
 
 ## Missing or recommended
 
-- .NET 8 SDK for Revit 2025 add-in development.
 - Revit SDK samples for reference implementations and API examples.
-- RevitLookup for inspecting live Revit elements and parameters.
+- RevitLookup for inspecting live Revit elements and parameters. The Revit 2025 installer is downloaded locally under `tools/downloads/`.
 
 ## Version strategy
 

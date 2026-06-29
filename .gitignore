@@ -21,3 +21,6 @@ Thumbs.db
 Desktop.ini
 *.user
 *.suo
+
+# Local tool downloads
+tools/downloads/
