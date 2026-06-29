@@ -8,15 +8,18 @@ using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Rules;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Services.Logging;
+using RevitDocument = Autodesk.Revit.DB.Document;
 
 namespace TrueBIM.App.Modules.SheetNumbering.UI;
 
 public sealed class SheetNumberingWindow : Window
 {
     private readonly ObservableCollection<PreviewRow> previewRows = new();
-    private readonly IReadOnlyList<SheetInfo> sheets;
+    private readonly RevitDocument document;
     private readonly SheetNumberingPreviewWorkflow workflow;
+    private readonly SheetNumberApplyService applyService;
     private readonly ITrueBimLogger logger;
+    private readonly Button applyButton = CreateActionButton("Apply", isEnabled: false);
     private readonly TextBlock statusText = new();
     private readonly ComboBox orderInput = new();
     private readonly DispatcherTimer selectionLogTimer;
@@ -26,16 +29,22 @@ public sealed class SheetNumberingWindow : Window
     private readonly TextBox incrementInput = new() { Text = "1" };
     private readonly TextBox paddingInput = new() { Text = "2" };
     private bool suppressSelectionLogging;
+    private bool isPreviewCurrent;
+    private IReadOnlyList<SheetInfo> sheets;
     private int previewRowCount;
     private int duplicateIssueCount;
 
     public SheetNumberingWindow(
+        RevitDocument document,
         IReadOnlyList<SheetInfo> sheets,
         SheetNumberingPreviewWorkflow workflow,
+        SheetNumberApplyService applyService,
         ITrueBimLogger logger)
     {
+        this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheets = sheets ?? throw new ArgumentNullException(nameof(sheets));
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        this.applyService = applyService ?? throw new ArgumentNullException(nameof(applyService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = "Sheet Numbering";
         Width = 820;
@@ -192,8 +201,8 @@ public sealed class SheetNumberingWindow : Window
         previewButton.Click += (_, _) => GeneratePreview();
         actions.Children.Add(previewButton);
 
-        Button applyButton = CreateActionButton("Apply", isEnabled: false);
         applyButton.ToolTip = "Apply is disabled until the Revit transaction write step is implemented.";
+        applyButton.Click += (_, _) => ApplyPreview();
         actions.Children.Add(applyButton);
 
         Button closeButton = CreateActionButton("Close", isEnabled: true);
@@ -231,6 +240,7 @@ public sealed class SheetNumberingWindow : Window
         }
 
         suppressSelectionLogging = false;
+        isPreviewCurrent = false;
         previewRowCount = 0;
         duplicateIssueCount = 0;
         ApplyCurrentOrder();
@@ -279,6 +289,7 @@ public sealed class SheetNumberingWindow : Window
                 preview => preview.Sheet.ElementId);
             previewRowCount = result.Previews.Count;
             duplicateIssueCount = result.DuplicateIssues.Count;
+            isPreviewCurrent = true;
             logger.Info(
                 $"Sheet Numbering preview generated {previewRowCount} rows for {selectedRows.Count} selected sheets with {duplicateIssueCount} duplicate issues.");
 
@@ -310,6 +321,7 @@ public sealed class SheetNumberingWindow : Window
 
     private void ResetPreviewState()
     {
+        isPreviewCurrent = false;
         previewRowCount = 0;
         duplicateIssueCount = 0;
 
@@ -320,6 +332,81 @@ public sealed class SheetNumberingWindow : Window
         }
 
         UpdateStatusSummary();
+    }
+
+    private void ApplyPreview()
+    {
+        IReadOnlyList<SheetNumberChange> changes = CreateApplyChanges();
+
+        if (!CanApply(changes))
+        {
+            UpdateStatusSummary("Apply is unavailable until a changed preview without duplicate issues is generated.");
+            logger.Warning("Sheet Numbering Apply requested while validation state was not ready.");
+            return;
+        }
+
+        try
+        {
+            int changedPreviewCount = changes.Count(change => change.IsChanged);
+            logger.Info(
+                $"Starting Sheet Numbering Apply for {changes.Count} preview rows with {changedPreviewCount} changed rows.");
+
+            SheetNumberApplyResult result = applyService.Apply(document, changes);
+            logger.Info(
+                $"Sheet Numbering Apply transaction succeeded. Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
+
+            ReloadSheetsFromDocument();
+            UpdateStatusSummary(
+                $"Apply complete. Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
+        }
+        catch (Exception exception) when (
+            exception is Autodesk.Revit.Exceptions.ArgumentException
+            or InvalidOperationException
+            or Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            logger.Error("Sheet Numbering Apply failed.", exception);
+            UpdateStatusSummary("Apply failed. Review Logs for diagnostics.");
+        }
+    }
+
+    private IReadOnlyList<SheetNumberChange> CreateApplyChanges()
+    {
+        return previewRows
+            .Where(row => row.IsSelected && !string.IsNullOrWhiteSpace(row.PreviewNumber) && IsRowApplyEligible(row))
+            .Select(row => new SheetNumberChange(row.Sheet.ElementId, row.CurrentNumber, row.PreviewNumber))
+            .ToList();
+    }
+
+    private bool CanApply(IReadOnlyList<SheetNumberChange>? changes = null)
+    {
+        IReadOnlyList<SheetNumberChange> applyChanges = changes ?? CreateApplyChanges();
+
+        return GetSelectedCount() > 0
+            && isPreviewCurrent
+            && duplicateIssueCount == 0
+            && applyChanges.Any(change => change.IsChanged);
+    }
+
+    private void InvalidatePreview(string message)
+    {
+        isPreviewCurrent = false;
+        previewRowCount = 0;
+        duplicateIssueCount = 0;
+
+        foreach (PreviewRow row in previewRows)
+        {
+            row.PreviewNumber = string.Empty;
+            row.Status = GetBaseStatus(row);
+        }
+
+        UpdateStatusSummary(message);
+    }
+
+    private void ReloadSheetsFromDocument()
+    {
+        sheets = new SheetCollectorService().Collect(document);
+        LoadCurrentSheets();
+        logger.Info($"Sheet Numbering reloaded {sheets.Count} sheets after Apply.");
     }
 
     private static IReadOnlyDictionary<long, string> CreateIssueLookup(
@@ -371,6 +458,7 @@ public sealed class SheetNumberingWindow : Window
         }
 
         suppressSelectionLogging = false;
+        isPreviewCurrent = false;
         previewRowCount = 0;
         duplicateIssueCount = 0;
         UpdateStatusSummary(isSelected ? "All sheets selected." : "Selection cleared.");
@@ -386,6 +474,7 @@ public sealed class SheetNumberingWindow : Window
 
         previewRowCount = 0;
         duplicateIssueCount = 0;
+        isPreviewCurrent = false;
 
         foreach (PreviewRow row in previewRows)
         {
@@ -431,7 +520,7 @@ public sealed class SheetNumberingWindow : Window
         }
 
         suppressSelectionLogging = false;
-        UpdateStatusSummary("Preview order changed.");
+        InvalidatePreview("Preview order changed. Run Preview to refresh preview numbers.");
     }
 
     private IReadOnlyList<PreviewRow> GetSelectedRowsInPreviewOrder()
@@ -468,6 +557,16 @@ public sealed class SheetNumberingWindow : Window
         statusText.Text = string.IsNullOrWhiteSpace(message)
             ? summary
             : $"{summary} {message}";
+        UpdateApplyState();
+    }
+
+    private void UpdateApplyState()
+    {
+        bool canApply = CanApply();
+        applyButton.IsEnabled = canApply;
+        applyButton.ToolTip = canApply
+            ? "Apply the current preview in one Revit transaction."
+            : "Apply is available after a changed preview is generated without duplicate issues.";
     }
 
     private int GetSelectedCount()
@@ -483,6 +582,12 @@ public sealed class SheetNumberingWindow : Window
         }
 
         return row.Sheet.IsPlaceholder ? "Placeholder" : "Ready";
+    }
+
+    private static bool IsRowApplyEligible(PreviewRow row)
+    {
+        return !row.Status.StartsWith("Duplicate preview number", StringComparison.OrdinalIgnoreCase)
+            && !row.Status.StartsWith("Conflicts with existing sheet number", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryCreateRules(out NumberingRules? rules, out string? error)
