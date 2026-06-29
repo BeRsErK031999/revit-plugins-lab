@@ -38,11 +38,13 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                     }
 
                     IReadOnlyList<SheetInfo> sheets = new SheetCollectorService().Collect(activeDocument);
+                    logger.Info($"Sheet Numbering collected {sheets.Count} sheets from the active document.");
                     SheetNumberingWindow sheetNumberingWindow = new(
                         sheets,
                         new SheetNumberingPreviewWorkflow(
                             new SheetNumberPreviewService(),
-                            new DuplicateSheetNumberDetector()))
+                            new DuplicateSheetNumberDetector()),
+                        logger)
                     {
                         Owner = owner
                     };

@@ -5,6 +5,7 @@ using System.Windows.Data;
 using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Rules;
 using TrueBIM.App.Modules.SheetNumbering.Services;
+using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.SheetNumbering.UI;
 
@@ -13,6 +14,7 @@ public sealed class SheetNumberingWindow : Window
     private readonly ObservableCollection<PreviewRow> previewRows = new();
     private readonly IReadOnlyList<SheetInfo> sheets;
     private readonly SheetNumberingPreviewWorkflow workflow;
+    private readonly ITrueBimLogger logger;
     private readonly TextBlock statusText = new();
     private readonly TextBox prefixInput = new() { Text = "A-" };
     private readonly TextBox suffixInput = new();
@@ -22,10 +24,12 @@ public sealed class SheetNumberingWindow : Window
 
     public SheetNumberingWindow(
         IReadOnlyList<SheetInfo> sheets,
-        SheetNumberingPreviewWorkflow workflow)
+        SheetNumberingPreviewWorkflow workflow,
+        ITrueBimLogger logger)
     {
         this.sheets = sheets ?? throw new ArgumentNullException(nameof(sheets));
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = "Sheet Numbering";
         Width = 820;
         Height = 520;
@@ -34,6 +38,7 @@ public sealed class SheetNumberingWindow : Window
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
+        logger.Info($"Sheet Numbering window opened with {sheets.Count} sheets.");
         LoadCurrentSheets();
     }
 
@@ -155,12 +160,14 @@ public sealed class SheetNumberingWindow : Window
         if (sheets.Count == 0)
         {
             statusText.Text = "No sheets found in the active document.";
+            logger.Warning("Sheet Numbering preview requested with no sheets.");
             return;
         }
 
         if (!TryCreateRules(out NumberingRules? rules, out string? error))
         {
             statusText.Text = error ?? "Invalid numbering rules.";
+            logger.Warning("Sheet Numbering preview validation failed: " + statusText.Text);
             previewRows.Add(new PreviewRow(string.Empty, string.Empty, "Rule validation", error ?? "Invalid numbering rules."));
             return;
         }
@@ -169,9 +176,11 @@ public sealed class SheetNumberingWindow : Window
 
         try
         {
+            logger.Info($"Running Sheet Numbering preview for {sheets.Count} sheets.");
             SheetNumberingPreviewResult result = workflow.GeneratePreview(
                 new SheetNumberingPreviewRequest(sheets, sheets, validRules));
             IReadOnlyDictionary<long, string> issuesBySheetId = CreateIssueLookup(result.DuplicateIssues);
+            logger.Info($"Sheet Numbering preview generated {result.Previews.Count} rows with {result.DuplicateIssues.Count} duplicate issues.");
 
             foreach (SheetNumberPreview preview in result.Previews)
             {
@@ -189,6 +198,7 @@ public sealed class SheetNumberingWindow : Window
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
             statusText.Text = exception.Message;
+            logger.Error("Sheet Numbering preview failed.", exception);
             previewRows.Add(new PreviewRow(string.Empty, string.Empty, "Preview error", exception.Message));
         }
     }
