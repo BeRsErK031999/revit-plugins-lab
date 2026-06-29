@@ -2,6 +2,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -11,13 +12,14 @@ public sealed class OpenTrueBimCommand : IExternalCommand
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         ModuleRegistry registry = ModuleRegistry.CreateDefault();
-        string moduleList = string.Join(Environment.NewLine, registry.Modules.Select(module => "- " + module.DisplayName));
+        ModuleLauncherWindow window = new(registry.Modules);
 
-        TaskDialog.Show(
-            "TrueBIM",
-            "TrueBIM shell is ready." + Environment.NewLine + Environment.NewLine +
-            "Installed modules:" + Environment.NewLine +
-            moduleList);
+        System.Windows.Interop.WindowInteropHelper helper = new(window)
+        {
+            Owner = commandData.Application.MainWindowHandle
+        };
+
+        window.ShowDialog();
 
         return Result.Succeeded;
     }
