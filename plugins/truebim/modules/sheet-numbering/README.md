@@ -25,6 +25,7 @@ Renumber Revit sheets with preview, duplicate protection, and configurable numbe
 - Detect duplicates before transaction commit.
 - Skip placeholder or filtered sheets only when the user chooses that behavior.
 - Keep the operation reversible through one Revit transaction.
+- Apply is all-or-nothing; failures roll back the whole transaction.
 
 ## Core workflow status
 
@@ -40,7 +41,7 @@ Renumber Revit sheets with preview, duplicate protection, and configurable numbe
 - Preview sorting/order controls: done for original order, current number, and sheet name.
 - Duplicate issues shown in UI: done.
 - Apply button: enabled after a changed duplicate-free preview.
-- Apply transaction: done.
+- Apply transaction: done with all-or-nothing rollback on failure.
 - Undo behavior: one Revit transaction should roll back Apply in one Undo step.
 - Full read-only UI workflow before Apply: done.
 - Installer: not finalized.

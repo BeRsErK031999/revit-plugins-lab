@@ -352,8 +352,17 @@ public sealed class SheetNumberingWindow : Window
                 $"Starting Sheet Numbering Apply for {changes.Count} preview rows with {changedPreviewCount} changed rows.");
 
             SheetNumberApplyResult result = applyService.Apply(document, changes);
+            if (!result.Succeeded)
+            {
+                logger.Warning(
+                    $"Sheet Numbering Apply rolled back or did not start. {result.Message} Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
+                UpdateStatusSummary(
+                    $"Apply failed, no sheet numbers were changed. {result.Message}");
+                return;
+            }
+
             logger.Info(
-                $"Sheet Numbering Apply transaction succeeded. Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
+                $"Sheet Numbering Apply transaction committed. Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
 
             ReloadSheetsFromDocument();
             UpdateStatusSummary(
@@ -365,7 +374,7 @@ public sealed class SheetNumberingWindow : Window
             or Autodesk.Revit.Exceptions.ApplicationException)
         {
             logger.Error("Sheet Numbering Apply failed.", exception);
-            UpdateStatusSummary("Apply failed. Review Logs for diagnostics.");
+            UpdateStatusSummary("Apply failed, no sheet numbers were changed. Review Logs for diagnostics.");
         }
     }
 
