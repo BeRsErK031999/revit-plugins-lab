@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -20,6 +22,8 @@ public sealed class SheetNumberingWindow : Window
     private readonly SheetNumberApplyService applyService;
     private readonly ITrueBimLogger logger;
     private readonly Button applyButton = CreateActionButton("Apply", isEnabled: false);
+    private readonly Button exportPreviewButton = CreateActionButton("Export Preview", isEnabled: false);
+    private readonly CheckBox includePlaceholdersInput = new() { Content = "Include placeholders", IsChecked = false };
     private readonly TextBlock statusText = new();
     private readonly ComboBox orderInput = new();
     private readonly DispatcherTimer selectionLogTimer;
@@ -33,6 +37,7 @@ public sealed class SheetNumberingWindow : Window
     private IReadOnlyList<SheetInfo> sheets;
     private int previewRowCount;
     private int duplicateIssueCount;
+    private string? lastApplyDisabledReason;
 
     public SheetNumberingWindow(
         RevitDocument document,
@@ -130,6 +135,12 @@ public sealed class SheetNumberingWindow : Window
         clearSelectionButton.Click += (_, _) => SetAllSelected(isSelected: false);
         selectionActions.Children.Add(clearSelectionButton);
 
+        includePlaceholdersInput.VerticalAlignment = VerticalAlignment.Center;
+        includePlaceholdersInput.Margin = new Thickness(8, 0, 0, 0);
+        includePlaceholdersInput.Checked += (_, _) => OnIncludePlaceholdersChanged();
+        includePlaceholdersInput.Unchecked += (_, _) => OnIncludePlaceholdersChanged();
+        selectionActions.Children.Add(includePlaceholdersInput);
+
         DockPanel.SetDock(selectionActions, Dock.Left);
         controls.Children.Add(selectionActions);
 
@@ -201,6 +212,10 @@ public sealed class SheetNumberingWindow : Window
         previewButton.Click += (_, _) => GeneratePreview();
         actions.Children.Add(previewButton);
 
+        exportPreviewButton.ToolTip = "Export is available after Preview.";
+        exportPreviewButton.Click += (_, _) => ExportPreview();
+        actions.Children.Add(exportPreviewButton);
+
         applyButton.ToolTip = "Apply is disabled until the Revit transaction write step is implemented.";
         applyButton.Click += (_, _) => ApplyPreview();
         actions.Children.Add(applyButton);
@@ -235,7 +250,7 @@ public sealed class SheetNumberingWindow : Window
                 sheet.CurrentNumber,
                 string.Empty,
                 sheet.Name,
-                sheet.IsPlaceholder ? "Placeholder" : "Ready",
+                GetBaseStatus(sheet),
                 OnRowSelectionChanged));
         }
 
@@ -266,6 +281,17 @@ public sealed class SheetNumberingWindow : Window
             return;
         }
 
+        IReadOnlyList<SheetInfo> previewSheets = SheetNumberingPreviewSelection.FilterSheetsForPreview(
+            selectedRows.Select(row => row.Sheet).ToList(),
+            IncludePlaceholders);
+
+        if (previewSheets.Count == 0)
+        {
+            UpdateStatusSummary("Selected sheets are placeholders. Enable Include placeholders to preview them.");
+            logger.Warning("Sheet Numbering preview validation failed: selected sheets were excluded placeholders.");
+            return;
+        }
+
         if (!TryCreateRules(out NumberingRules? rules, out string? error))
         {
             string message = error ?? "Invalid numbering rules.";
@@ -278,10 +304,10 @@ public sealed class SheetNumberingWindow : Window
 
         try
         {
-            logger.Info($"Running Sheet Numbering preview for {selectedRows.Count} selected sheets.");
+            logger.Info($"Running Sheet Numbering preview for {previewSheets.Count} sheets. Include placeholders: {IncludePlaceholders}.");
             SheetNumberingPreviewResult result = workflow.GeneratePreview(
                 new SheetNumberingPreviewRequest(
-                    selectedRows.Select(row => row.Sheet).ToList(),
+                    previewSheets,
                     sheets,
                     validRules));
             IReadOnlyDictionary<long, string> issuesBySheetId = CreateIssueLookup(result.DuplicateIssues);
@@ -309,7 +335,7 @@ public sealed class SheetNumberingWindow : Window
 
             string message = result.HasBlockingIssues
                 ? "Preview generated with duplicate sheet number issues. Apply is disabled."
-                : "Preview generated. Apply is disabled until the write operation is implemented.";
+                : "Preview generated. Apply is enabled only when at least one preview row changes.";
             UpdateStatusSummary(message);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
@@ -348,6 +374,17 @@ public sealed class SheetNumberingWindow : Window
         try
         {
             int changedPreviewCount = changes.Count(change => change.IsChanged);
+            IReadOnlyList<SheetNumberChange> changedChanges = changes
+                .Where(change => change.IsChanged)
+                .ToList();
+            if (!ConfirmApply(changedChanges))
+            {
+                logger.Info("Sheet Numbering Apply confirmation cancelled.");
+                UpdateStatusSummary("Apply cancelled. No sheet numbers were changed.");
+                return;
+            }
+
+            logger.Info("Sheet Numbering Apply confirmation accepted.");
             logger.Info(
                 $"Starting Sheet Numbering Apply for {changes.Count} preview rows with {changedPreviewCount} changed rows.");
 
@@ -367,6 +404,12 @@ public sealed class SheetNumberingWindow : Window
             ReloadSheetsFromDocument();
             UpdateStatusSummary(
                 $"Apply complete. Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
+            MessageBox.Show(
+                this,
+                $"Apply complete. Changed {result.ChangedCount} sheet numbers.",
+                "Sheet Numbering",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
         catch (Exception exception) when (
             exception is Autodesk.Revit.Exceptions.ArgumentException
@@ -378,6 +421,60 @@ public sealed class SheetNumberingWindow : Window
         }
     }
 
+    private bool ConfirmApply(IReadOnlyList<SheetNumberChange> changedChanges)
+    {
+        string examples = string.Join(
+            Environment.NewLine,
+            changedChanges.Take(5).Select(change => $"{change.CurrentNumber} -> {change.NewNumber}"));
+        string more = changedChanges.Count > 5
+            ? Environment.NewLine + $"...and {changedChanges.Count - 5} more."
+            : string.Empty;
+        string message =
+            $"Apply {changedChanges.Count} sheet number changes?" + Environment.NewLine + Environment.NewLine +
+            examples + more + Environment.NewLine + Environment.NewLine +
+            "This operation is one Revit transaction and can be reverted with Revit Undo.";
+
+        return MessageBox.Show(
+            this,
+            message,
+            "Confirm Sheet Numbering Apply",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning) == MessageBoxResult.OK;
+    }
+
+    private void ExportPreview()
+    {
+        if (!isPreviewCurrent || previewRowCount == 0)
+        {
+            UpdateStatusSummary("Run Preview before exporting.");
+            return;
+        }
+
+        try
+        {
+            string exportDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "TrueBIM",
+                "Exports",
+                "SheetNumbering");
+            Directory.CreateDirectory(exportDirectory);
+            string exportPath = Path.Combine(
+                exportDirectory,
+                "SheetNumberingPreview-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv");
+
+            SheetNumberPreviewExportFormatter formatter = new();
+            File.WriteAllText(exportPath, formatter.FormatCsv(CreateExportRows()));
+            logger.Info($"Sheet Numbering preview exported to '{exportPath}'.");
+            UpdateStatusSummary($"Preview exported to {exportPath}");
+            Process.Start(new ProcessStartInfo(exportPath) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            logger.Error("Failed to export Sheet Numbering preview.", exception);
+            UpdateStatusSummary("Preview export failed. Review Logs for diagnostics.");
+        }
+    }
+
     private IReadOnlyList<SheetNumberChange> CreateApplyChanges()
     {
         return previewRows
@@ -386,14 +483,33 @@ public sealed class SheetNumberingWindow : Window
             .ToList();
     }
 
+    private IReadOnlyList<SheetNumberPreviewExportRow> CreateExportRows()
+    {
+        return previewRows
+            .Select(row => new SheetNumberPreviewExportRow(
+                row.Sheet.ElementId,
+                row.CurrentNumber,
+                row.PreviewNumber,
+                row.Name,
+                row.Sheet.IsPlaceholder,
+                row.Status))
+            .ToList();
+    }
+
     private bool CanApply(IReadOnlyList<SheetNumberChange>? changes = null)
+    {
+        return GetApplyValidation(changes).CanApply;
+    }
+
+    private SheetNumberingApplyValidationResult GetApplyValidation(IReadOnlyList<SheetNumberChange>? changes = null)
     {
         IReadOnlyList<SheetNumberChange> applyChanges = changes ?? CreateApplyChanges();
 
-        return GetSelectedCount() > 0
-            && isPreviewCurrent
-            && duplicateIssueCount == 0
-            && applyChanges.Any(change => change.IsChanged);
+        return SheetNumberingApplyValidator.Validate(
+            GetSelectedPreviewEligibleCount(),
+            isPreviewCurrent,
+            duplicateIssueCount,
+            applyChanges.Count(change => change.IsChanged));
     }
 
     private void InvalidatePreview(string message)
@@ -571,11 +687,21 @@ public sealed class SheetNumberingWindow : Window
 
     private void UpdateApplyState()
     {
-        bool canApply = CanApply();
-        applyButton.IsEnabled = canApply;
-        applyButton.ToolTip = canApply
+        SheetNumberingApplyValidationResult validation = GetApplyValidation();
+        applyButton.IsEnabled = validation.CanApply;
+        applyButton.ToolTip = validation.CanApply
             ? "Apply the current preview in one Revit transaction."
-            : "Apply is available after a changed preview is generated without duplicate issues.";
+            : validation.Reason;
+        exportPreviewButton.IsEnabled = isPreviewCurrent && previewRowCount > 0;
+        exportPreviewButton.ToolTip = exportPreviewButton.IsEnabled
+            ? "Export the current preview to CSV."
+            : "Run Preview before exporting.";
+
+        if (!validation.CanApply && validation.Reason != lastApplyDisabledReason)
+        {
+            lastApplyDisabledReason = validation.Reason;
+            logger.Info("Sheet Numbering Apply disabled: " + validation.Reason);
+        }
     }
 
     private int GetSelectedCount()
@@ -583,14 +709,31 @@ public sealed class SheetNumberingWindow : Window
         return previewRows.Count(row => row.IsSelected);
     }
 
-    private static string GetBaseStatus(PreviewRow row)
+    private int GetSelectedPreviewEligibleCount()
+    {
+        return previewRows.Count(row => row.IsSelected && (IncludePlaceholders || !row.Sheet.IsPlaceholder));
+    }
+
+    private bool IncludePlaceholders => includePlaceholdersInput.IsChecked == true;
+
+    private string GetBaseStatus(PreviewRow row)
     {
         if (!row.IsSelected)
         {
             return "Not selected";
         }
 
-        return row.Sheet.IsPlaceholder ? "Placeholder" : "Ready";
+        return GetBaseStatus(row.Sheet);
+    }
+
+    private string GetBaseStatus(SheetInfo sheet)
+    {
+        if (!sheet.IsPlaceholder)
+        {
+            return "Ready";
+        }
+
+        return IncludePlaceholders ? "Placeholder" : "Placeholder excluded";
     }
 
     private static bool IsRowApplyEligible(PreviewRow row)
@@ -635,6 +778,12 @@ public sealed class SheetNumberingWindow : Window
 
         error = null;
         return true;
+    }
+
+    private void OnIncludePlaceholdersChanged()
+    {
+        InvalidatePreview("Placeholder inclusion changed. Run Preview to refresh preview numbers.");
+        logger.Info($"Sheet Numbering Include placeholders changed: {IncludePlaceholders}.");
     }
 
     private static void AddRuleField(Grid grid, string label, TextBox input, int column)
