@@ -20,6 +20,17 @@ Pending manual check:
 
 ## Local Deploy
 
+Close Revit before deploying. From the repository root, run the full preflight:
+
+```powershell
+.\plugins\truebim\scripts\qa-preflight-2025.ps1
+```
+
+The preflight script builds Release, runs tests, builds artifacts, compiles the installer when `ISCC.exe` is available, deploys locally, and verifies the installed add-in manifest and module manifest.
+It fails before deploy if Revit is still running, because Revit can lock `TrueBIM.App.dll`.
+
+If you only need to redeploy after the full preflight already passed, run:
+
 From the repository root, run:
 
 ```powershell
@@ -106,6 +117,63 @@ Expected logs:
 - export preview path;
 - Apply confirmation accepted/cancelled;
 - final Apply result.
+
+## Full Manual QA Scenario
+
+1. Close Revit before deploy.
+2. Run:
+
+   ```powershell
+   .\plugins\truebim\scripts\qa-preflight-2025.ps1
+   ```
+
+3. Confirm the preflight summary is all `PASS`.
+4. Open Revit 2025.
+5. Open a sample project with sheets.
+6. Confirm the `TrueBIM` ribbon tab and button are visible.
+7. Click the `TrueBIM` button.
+8. Click `Logs` and confirm the log file opens.
+9. Confirm `Sheet Numbering` is listed.
+10. Toggle `Enabled` off and confirm `Open` becomes disabled.
+11. Toggle `Enabled` on and confirm `Open` becomes enabled.
+12. Open `Sheet Numbering`.
+13. Confirm real document sheets are listed.
+14. Click `Clear Selection`; expected: Apply disabled with a clear reason.
+15. Click `Select All`; expected: rows selected and preview still required.
+16. Run `Preview` with `Include placeholders` disabled.
+17. Confirm placeholder rows stay visible but are marked as excluded unless selected explicitly with the checkbox enabled.
+18. Enable `Include placeholders` and run `Preview` again.
+19. Click `Export Preview`; expected: CSV opens from `%APPDATA%\TrueBIM\Exports\SheetNumbering`.
+20. Select only 1-2 safe test sheets.
+21. Run `Preview` with non-conflicting numbering.
+22. Click `Apply`; expected: confirmation dialog lists changed count and examples.
+23. Accept confirmation.
+24. Confirm selected sheet numbers changed.
+25. Run one Revit Undo.
+26. Confirm all changes from Apply are reverted in one undo step.
+27. Run a duplicate/conflict scenario and confirm Apply is disabled.
+28. Review `%APPDATA%\TrueBIM\Logs\truebim.log`.
+
+If cleanup is needed, close Revit and run:
+
+```powershell
+.\plugins\truebim\scripts\clean-local-2025.ps1
+```
+
+This preserves logs, exports, and `module-settings.json`. To remove user data too:
+
+```powershell
+.\plugins\truebim\scripts\clean-local-2025.ps1 -IncludeUserData
+```
+
+## Failure Report
+
+When reporting a QA failure, include:
+
+- screenshot of the Revit/TrueBIM state;
+- `%APPDATA%\TrueBIM\Logs\truebim.log`;
+- exported preview CSV from `%APPDATA%\TrueBIM\Exports\SheetNumbering`, if preview/export was involved;
+- exact preflight summary output if `qa-preflight-2025.ps1` failed.
 
 ## Known Limitations
 

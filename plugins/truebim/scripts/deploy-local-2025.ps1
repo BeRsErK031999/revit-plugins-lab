@@ -22,6 +22,11 @@ if (-not (Test-Path $dotnetPath)) {
     throw "Required .NET SDK host was not found at '$dotnetPath'."
 }
 
+$runningRevit = Get-Process -Name "Revit" -ErrorAction SilentlyContinue
+if ($runningRevit) {
+    throw "Revit is running. Close Revit before local deploy so TrueBIM.App.dll is not locked."
+}
+
 if (-not $SkipBuild) {
     & $dotnetPath build $solutionPath --configuration $Configuration --nologo --verbosity:minimal
 }

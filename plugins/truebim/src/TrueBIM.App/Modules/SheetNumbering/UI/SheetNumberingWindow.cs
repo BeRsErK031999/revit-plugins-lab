@@ -216,7 +216,7 @@ public sealed class SheetNumberingWindow : Window
         exportPreviewButton.Click += (_, _) => ExportPreview();
         actions.Children.Add(exportPreviewButton);
 
-        applyButton.ToolTip = "Apply is disabled until the Revit transaction write step is implemented.";
+        applyButton.ToolTip = "Run Preview before Apply.";
         applyButton.Click += (_, _) => ApplyPreview();
         actions.Children.Add(applyButton);
 

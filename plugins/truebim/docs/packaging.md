@@ -48,6 +48,19 @@ Compile it with Inno Setup after building artifacts:
 
 Do not run the produced installer during automated packaging checks. The compile step is safe; installation changes `%APPDATA%` and should be handled as manual QA.
 
+## Local QA Preflight
+
+Before manual Revit QA, run:
+
+```powershell
+.\plugins\truebim\scripts\qa-preflight-2025.ps1
+```
+
+This is the primary local smoke check before opening Revit. It builds Release, runs Release tests, builds artifacts, compiles the installer when `ISCC.exe` is present, performs local deploy, and verifies the installed `.addin` and Sheet Numbering module manifest.
+Revit must be closed before running this script because local deploy overwrites the installed add-in DLL.
+
+Installer compile is not installer install QA. The preflight does not run the installer and does not launch Revit.
+
 ## Expected Installer Inputs
 
 The installer consumes:
