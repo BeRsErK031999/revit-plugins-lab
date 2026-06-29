@@ -8,12 +8,15 @@ namespace TrueBIM.App.UI;
 public sealed class ModuleLauncherWindow : Window
 {
     private readonly IReadOnlyDictionary<string, Action<Window>> moduleActions;
+    private readonly Action<Window> openLogs;
 
     public ModuleLauncherWindow(
         IEnumerable<ITrueBimModule> modules,
-        IReadOnlyDictionary<string, Action<Window>> moduleActions)
+        IReadOnlyDictionary<string, Action<Window>> moduleActions,
+        Action<Window> openLogs)
     {
         this.moduleActions = moduleActions;
+        this.openLogs = openLogs;
         Title = "TrueBIM";
         Width = 520;
         Height = 360;
@@ -53,18 +56,35 @@ public sealed class ModuleLauncherWindow : Window
         Grid.SetRow(moduleList, 1);
         root.Children.Add(moduleList);
 
+        StackPanel footer = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+
+        Button logsButton = new()
+        {
+            Content = "Logs",
+            MinWidth = 96,
+            Height = 32
+        };
+        logsButton.Click += (_, _) => openLogs(this);
+        footer.Children.Add(logsButton);
+
         Button closeButton = new()
         {
             Content = "Close",
             MinWidth = 96,
             Height = 32,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 16, 0, 0),
+            Margin = new Thickness(8, 0, 0, 0),
             IsCancel = true
         };
         closeButton.Click += (_, _) => Close();
-        Grid.SetRow(closeButton, 2);
-        root.Children.Add(closeButton);
+        footer.Children.Add(closeButton);
+
+        Grid.SetRow(footer, 2);
+        root.Children.Add(footer);
 
         return root;
     }

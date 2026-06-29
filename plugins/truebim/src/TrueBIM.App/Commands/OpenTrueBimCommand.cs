@@ -5,6 +5,7 @@ using TrueBIM.App.Modules;
 using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Modules.SheetNumbering.UI;
+using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
@@ -14,32 +15,62 @@ public sealed class OpenTrueBimCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
+        FileTrueBimLogger logger = new(new TrueBimLogPaths());
+        TrueBimLogFileOpener logFileOpener = new(logger);
         ModuleRegistry registry = ModuleRegistry.CreateDefault();
+        logger.Info("Opening TrueBIM launcher.");
+        logger.Info("Modules found: " + string.Join(", ", registry.Modules.Select(module => module.Id)));
+
         Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
         Dictionary<string, Action<System.Windows.Window>> moduleActions = new()
         {
             ["truebim.sheet-numbering"] = owner =>
             {
-                if (activeDocument is null)
+                try
                 {
-                    TaskDialog.Show("Sheet Numbering", "Open a Revit document before starting Sheet Numbering.");
-                    return;
-                }
+                    logger.Info("Opening Sheet Numbering window.");
 
-                IReadOnlyList<SheetInfo> sheets = new SheetCollectorService().Collect(activeDocument);
-                SheetNumberingWindow sheetNumberingWindow = new(
-                    sheets,
-                    new SheetNumberingPreviewWorkflow(
-                        new SheetNumberPreviewService(),
-                        new DuplicateSheetNumberDetector()))
+                    if (activeDocument is null)
+                    {
+                        logger.Warning("Sheet Numbering requested without an active document.");
+                        TaskDialog.Show("Sheet Numbering", "Open a Revit document before starting Sheet Numbering.");
+                        return;
+                    }
+
+                    IReadOnlyList<SheetInfo> sheets = new SheetCollectorService().Collect(activeDocument);
+                    SheetNumberingWindow sheetNumberingWindow = new(
+                        sheets,
+                        new SheetNumberingPreviewWorkflow(
+                            new SheetNumberPreviewService(),
+                            new DuplicateSheetNumberDetector()))
+                    {
+                        Owner = owner
+                    };
+                    sheetNumberingWindow.ShowDialog();
+                }
+                catch (Exception exception)
                 {
-                    Owner = owner
-                };
-                sheetNumberingWindow.ShowDialog();
+                    logger.Error("Failed to open Sheet Numbering window.", exception);
+                    TaskDialog.Show("Sheet Numbering", "Failed to open Sheet Numbering. Use Logs to share diagnostics.");
+                }
             }
         };
 
-        ModuleLauncherWindow window = new(registry.Modules, moduleActions);
+        ModuleLauncherWindow window = new(
+            registry.Modules,
+            moduleActions,
+            _ =>
+            {
+                try
+                {
+                    logFileOpener.OpenLogFile();
+                }
+                catch (Exception exception)
+                {
+                    logger.Error("Failed to open local log file.", exception);
+                    TaskDialog.Show("TrueBIM Logs", "Failed to open the local log file.");
+                }
+            });
 
         System.Windows.Interop.WindowInteropHelper helper = new(window)
         {
