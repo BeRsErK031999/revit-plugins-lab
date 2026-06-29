@@ -11,14 +11,21 @@ namespace TrueBIM.App.Modules.SheetNumbering.UI;
 public sealed class SheetNumberingWindow : Window
 {
     private readonly ObservableCollection<PreviewRow> previewRows = new();
+    private readonly IReadOnlyList<SheetInfo> sheets;
+    private readonly SheetNumberingPreviewWorkflow workflow;
+    private readonly TextBlock statusText = new();
     private readonly TextBox prefixInput = new() { Text = "A-" };
     private readonly TextBox suffixInput = new();
     private readonly TextBox startNumberInput = new() { Text = "1" };
     private readonly TextBox incrementInput = new() { Text = "1" };
     private readonly TextBox paddingInput = new() { Text = "2" };
 
-    public SheetNumberingWindow()
+    public SheetNumberingWindow(
+        IReadOnlyList<SheetInfo> sheets,
+        SheetNumberingPreviewWorkflow workflow)
     {
+        this.sheets = sheets ?? throw new ArgumentNullException(nameof(sheets));
+        this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         Title = "Sheet Numbering";
         Width = 820;
         Height = 520;
@@ -27,6 +34,7 @@ public sealed class SheetNumberingWindow : Window
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
+        LoadCurrentSheets();
     }
 
     private UIElement CreateContent()
@@ -39,6 +47,10 @@ public sealed class SheetNumberingWindow : Window
         UIElement ruleInputs = CreateRuleInputs();
         DockPanel.SetDock(ruleInputs, Dock.Top);
         root.Children.Add(ruleInputs);
+
+        UIElement status = CreateStatus();
+        DockPanel.SetDock(status, Dock.Top);
+        root.Children.Add(status);
 
         UIElement actions = CreateActions();
         DockPanel.SetDock(actions, Dock.Bottom);
@@ -98,7 +110,7 @@ public sealed class SheetNumberingWindow : Window
         };
 
         Button previewButton = CreateActionButton("Preview", isEnabled: true);
-        previewButton.Click += (_, _) => GenerateDemoPreview();
+        previewButton.Click += (_, _) => GeneratePreview();
         actions.Children.Add(previewButton);
 
         actions.Children.Add(CreateActionButton("Apply", isEnabled: false));
@@ -111,38 +123,111 @@ public sealed class SheetNumberingWindow : Window
         return actions;
     }
 
-    private void GenerateDemoPreview()
+    private UIElement CreateStatus()
+    {
+        statusText.Margin = new Thickness(0, 0, 0, 12);
+        statusText.TextWrapping = TextWrapping.Wrap;
+        statusText.Text = sheets.Count == 0
+            ? "No sheets found in the active document."
+            : $"Loaded {sheets.Count} sheets from the active document.";
+
+        return statusText;
+    }
+
+    private void LoadCurrentSheets()
     {
         previewRows.Clear();
 
+        foreach (SheetInfo sheet in sheets)
+        {
+            previewRows.Add(new PreviewRow(
+                sheet.CurrentNumber,
+                string.Empty,
+                sheet.Name,
+                sheet.IsPlaceholder ? "Placeholder" : "Ready"));
+        }
+    }
+
+    private void GeneratePreview()
+    {
+        previewRows.Clear();
+
+        if (sheets.Count == 0)
+        {
+            statusText.Text = "No sheets found in the active document.";
+            return;
+        }
+
         if (!TryCreateRules(out NumberingRules? rules, out string? error))
         {
+            statusText.Text = error ?? "Invalid numbering rules.";
             previewRows.Add(new PreviewRow(string.Empty, string.Empty, "Rule validation", error ?? "Invalid numbering rules."));
             return;
         }
 
-        SheetInfo[] selectedSheets =
-        [
-            new(1001, "G000", "Cover", false),
-            new(1002, "A101", "Level 1 Plan", false),
-            new(1003, "A102", "Level 2 Plan", false)
-        ];
         NumberingRules validRules = rules ?? throw new InvalidOperationException("Numbering rules were not created.");
 
-        SheetNumberingPreviewWorkflow workflow = new(
-            new SheetNumberPreviewService(),
-            new DuplicateSheetNumberDetector());
-        SheetNumberingPreviewResult result = workflow.GeneratePreview(
-            new SheetNumberingPreviewRequest(selectedSheets, selectedSheets, validRules));
-
-        foreach (SheetNumberPreview preview in result.Previews)
+        try
         {
-            previewRows.Add(new PreviewRow(
-                preview.Sheet.CurrentNumber,
-                preview.PreviewNumber,
-                preview.Sheet.Name,
-                preview.IsChanged ? "Preview" : "Unchanged"));
+            SheetNumberingPreviewResult result = workflow.GeneratePreview(
+                new SheetNumberingPreviewRequest(sheets, sheets, validRules));
+            IReadOnlyDictionary<long, string> issuesBySheetId = CreateIssueLookup(result.DuplicateIssues);
+
+            foreach (SheetNumberPreview preview in result.Previews)
+            {
+                previewRows.Add(new PreviewRow(
+                    preview.Sheet.CurrentNumber,
+                    preview.PreviewNumber,
+                    preview.Sheet.Name,
+                    GetStatus(preview, issuesBySheetId)));
+            }
+
+            statusText.Text = result.HasBlockingIssues
+                ? "Preview generated with duplicate sheet number issues. Apply is disabled."
+                : "Preview generated. Apply is disabled until the write operation is implemented.";
         }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            statusText.Text = exception.Message;
+            previewRows.Add(new PreviewRow(string.Empty, string.Empty, "Preview error", exception.Message));
+        }
+    }
+
+    private static IReadOnlyDictionary<long, string> CreateIssueLookup(
+        IReadOnlyList<DuplicateSheetNumberIssue> duplicateIssues)
+    {
+        Dictionary<long, string> issuesBySheetId = new();
+
+        foreach (DuplicateSheetNumberIssue issue in duplicateIssues)
+        {
+            string message = issue.Kind == DuplicateSheetNumberIssueKind.Preview
+                ? $"Duplicate preview number {issue.SheetNumber}"
+                : $"Conflicts with existing sheet number {issue.SheetNumber}";
+
+            foreach (SheetInfo sheet in issue.Sheets)
+            {
+                issuesBySheetId[sheet.ElementId] = message;
+            }
+        }
+
+        return issuesBySheetId;
+    }
+
+    private static string GetStatus(
+        SheetNumberPreview preview,
+        IReadOnlyDictionary<long, string> issuesBySheetId)
+    {
+        if (issuesBySheetId.TryGetValue(preview.Sheet.ElementId, out string? issue))
+        {
+            return issue;
+        }
+
+        if (preview.Sheet.IsPlaceholder)
+        {
+            return preview.IsChanged ? "Placeholder preview" : "Placeholder unchanged";
+        }
+
+        return preview.IsChanged ? "Preview" : "Unchanged";
     }
 
     private bool TryCreateRules(out NumberingRules? rules, out string? error)
