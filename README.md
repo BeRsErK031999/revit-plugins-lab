@@ -25,5 +25,6 @@ For Revit 2024 and older, prepare a separate target/build path for .NET Framewor
 
 ## First product
 
-The first product workspace is located at `plugins/product-01/`.
-Its technical specification is pending.
+The first real product workspace is located at `plugins/truebim/`.
+
+TrueBIM is a modular Revit add-in platform. The first module is sheet numbering.

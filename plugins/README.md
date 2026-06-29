@@ -14,3 +14,7 @@ plugin-name/
 ```
 
 Start products here while they are experimental. Move mature products to separate repositories only when release, access, or support boundaries require it.
+
+## Active products
+
+- `truebim/` - modular Revit add-in platform. First module: sheet numbering.
