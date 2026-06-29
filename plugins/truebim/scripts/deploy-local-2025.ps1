@@ -13,6 +13,7 @@ $projectOutput = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\bin\$Confi
 $manifestSource = Join-Path $repoRoot "plugins\truebim\manifests\2025\TrueBIM.addin"
 $coreTargetDir = Join-Path $env:APPDATA "TrueBIM\2025\Core"
 $addinTargetDir = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2025"
+$addinTargetPath = Join-Path $addinTargetDir "TrueBIM.addin"
 $dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
 
 if (-not (Test-Path $dotnetPath)) {
@@ -30,8 +31,15 @@ if (-not (Test-Path $projectOutput)) {
 New-Item -ItemType Directory -Path $coreTargetDir -Force | Out-Null
 New-Item -ItemType Directory -Path $addinTargetDir -Force | Out-Null
 
-Copy-Item -Path $projectOutput -Destination $coreTargetDir -Force
-Copy-Item -Path $manifestSource -Destination $addinTargetDir -Force
+$deployedAssemblyPath = [string] (Join-Path $coreTargetDir "TrueBIM.App.dll")
+
+Copy-Item -Path $projectOutput -Destination $deployedAssemblyPath -Force
+
+# Revit does not expand Windows environment variables in AddIn Assembly paths reliably.
+# Generate the local manifest with an absolute path while keeping the source manifest reusable for packaging.
+[xml] $manifest = Get-Content $manifestSource
+$manifest.RevitAddIns.AddIn.Assembly = $deployedAssemblyPath
+$manifest.Save($addinTargetPath)
 
 Write-Host "Deployed TrueBIM.App.dll to $coreTargetDir"
-Write-Host "Deployed TrueBIM.addin to $addinTargetDir"
+Write-Host "Deployed TrueBIM.addin to $addinTargetPath"
