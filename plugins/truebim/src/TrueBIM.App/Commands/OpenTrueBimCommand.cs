@@ -2,6 +2,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules;
+using TrueBIM.App.Modules.SheetNumbering.UI;
 using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
@@ -12,7 +13,19 @@ public sealed class OpenTrueBimCommand : IExternalCommand
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         ModuleRegistry registry = ModuleRegistry.CreateDefault();
-        ModuleLauncherWindow window = new(registry.Modules);
+        Dictionary<string, Action<System.Windows.Window>> moduleActions = new()
+        {
+            ["truebim.sheet-numbering"] = owner =>
+            {
+                SheetNumberingWindow sheetNumberingWindow = new()
+                {
+                    Owner = owner
+                };
+                sheetNumberingWindow.ShowDialog();
+            }
+        };
+
+        ModuleLauncherWindow window = new(registry.Modules, moduleActions);
 
         System.Windows.Interop.WindowInteropHelper helper = new(window)
         {

@@ -7,8 +7,13 @@ namespace TrueBIM.App.UI;
 
 public sealed class ModuleLauncherWindow : Window
 {
-    public ModuleLauncherWindow(IEnumerable<ITrueBimModule> modules)
+    private readonly IReadOnlyDictionary<string, Action<Window>> moduleActions;
+
+    public ModuleLauncherWindow(
+        IEnumerable<ITrueBimModule> modules,
+        IReadOnlyDictionary<string, Action<Window>> moduleActions)
     {
+        this.moduleActions = moduleActions;
         Title = "TrueBIM";
         Width = 520;
         Height = 360;
@@ -64,12 +69,16 @@ public sealed class ModuleLauncherWindow : Window
         return root;
     }
 
-    private static ListBoxItem CreateModuleItem(ITrueBimModule module)
+    private ListBoxItem CreateModuleItem(ITrueBimModule module)
     {
-        StackPanel panel = new()
+        Grid panel = new()
         {
             Margin = new Thickness(8)
         };
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        StackPanel moduleDetails = new();
 
         TextBlock name = new()
         {
@@ -77,7 +86,7 @@ public sealed class ModuleLauncherWindow : Window
             FontSize = 15,
             FontWeight = FontWeights.SemiBold
         };
-        panel.Children.Add(name);
+        moduleDetails.Children.Add(name);
 
         TextBlock description = new()
         {
@@ -86,7 +95,7 @@ public sealed class ModuleLauncherWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brushes.DimGray
         };
-        panel.Children.Add(description);
+        moduleDetails.Children.Add(description);
 
         TextBlock status = new()
         {
@@ -94,7 +103,23 @@ public sealed class ModuleLauncherWindow : Window
             Margin = new Thickness(0, 8, 0, 0),
             Foreground = module.IsEnabledByDefault ? Brushes.DarkGreen : Brushes.DarkRed
         };
-        panel.Children.Add(status);
+        moduleDetails.Children.Add(status);
+
+        Grid.SetColumn(moduleDetails, 0);
+        panel.Children.Add(moduleDetails);
+
+        Button openButton = new()
+        {
+            Content = "Open",
+            MinWidth = 80,
+            Height = 30,
+            Margin = new Thickness(16, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            IsEnabled = module.IsEnabledByDefault && moduleActions.ContainsKey(module.Id)
+        };
+        openButton.Click += (_, _) => moduleActions[module.Id](this);
+        Grid.SetColumn(openButton, 1);
+        panel.Children.Add(openButton);
 
         return new ListBoxItem
         {

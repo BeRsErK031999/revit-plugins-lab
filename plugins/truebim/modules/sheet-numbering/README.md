@@ -34,4 +34,5 @@ Renumber Revit sheets with preview, duplicate protection, and configurable numbe
 - Duplicate detection: done.
 - Read-only workflow: done.
 - Revit write operation: not started.
-- UI: not started.
+- UI skeleton: started.
+- Full UI workflow: not started.
