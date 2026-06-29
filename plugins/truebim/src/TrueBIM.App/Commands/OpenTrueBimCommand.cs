@@ -1,6 +1,7 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using System.IO;
 using TrueBIM.App.Modules;
 using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Services;
@@ -17,7 +18,14 @@ public sealed class OpenTrueBimCommand : IExternalCommand
     {
         FileTrueBimLogger logger = new(new TrueBimLogPaths());
         TrueBimLogFileOpener logFileOpener = new(logger);
-        ModuleRegistry registry = ModuleRegistry.CreateDefault();
+        ModuleSettingsService moduleSettings = new(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "TrueBIM",
+                "2025",
+                "module-settings.json"),
+            logger);
+        ModuleRegistry registry = ModuleRegistry.CreateForRevit2025(logger);
         logger.Info("Opening TrueBIM launcher.");
         logger.Info("Modules found: " + string.Join(", ", registry.Modules.Select(module => module.Id)));
 
@@ -63,6 +71,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
         ModuleLauncherWindow window = new(
             registry.Modules,
             moduleActions,
+            (moduleId, isEnabled) => moduleSettings.SetEnabled(moduleId, isEnabled),
             _ =>
             {
                 try

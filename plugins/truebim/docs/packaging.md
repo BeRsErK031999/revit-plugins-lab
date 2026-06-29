@@ -30,6 +30,7 @@ plugins/truebim/artifacts/Docs/*.md
 ```
 
 `plugins/truebim/artifacts/` is generated output and is ignored by Git.
+The module manifest is part of the runtime contract: installer component selection controls which module manifests are copied to the installed `Modules` folder, and the launcher only shows modules with installed manifests.
 
 ## Build Installer
 
@@ -57,6 +58,15 @@ plugins/truebim/artifacts/Modules/SheetNumbering/*
 plugins/truebim/artifacts/Docs/*
 ```
 
+When the Sheet Numbering component is selected, the installer copies:
+
+```text
+%APPDATA%\TrueBIM\2025\Modules\SheetNumbering\module.json
+%APPDATA%\TrueBIM\2025\Modules\SheetNumbering\README.md
+```
+
+If the component is not selected, the manifest is not installed and the module is not available in the launcher.
+
 ## Revit Add-In Manifest Strategy
 
 Revit does not reliably expand `%APPDATA%` inside `.addin` `Assembly` paths. The source manifest in `plugins/truebim/manifests/2025/TrueBIM.addin` remains reusable for local deploy, where `deploy-local-2025.ps1` writes an absolute path.
@@ -79,4 +89,4 @@ The generated `Assembly` points to:
 - Installer install/uninstall behavior has not been manually validated.
 - The installer targets current-user installation only.
 - No support is included for older Revit versions.
-- Module selection is installer-level only; runtime module enable/disable settings are not implemented.
+- Runtime module enable/disable settings are stored in `%APPDATA%\TrueBIM\2025\module-settings.json`.

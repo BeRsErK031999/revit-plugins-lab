@@ -8,14 +8,17 @@ namespace TrueBIM.App.UI;
 public sealed class ModuleLauncherWindow : Window
 {
     private readonly IReadOnlyDictionary<string, Action<Window>> moduleActions;
+    private readonly Action<string, bool> setModuleEnabled;
     private readonly Action<Window> openLogs;
 
     public ModuleLauncherWindow(
-        IEnumerable<ITrueBimModule> modules,
+        IEnumerable<ModuleRegistryEntry> modules,
         IReadOnlyDictionary<string, Action<Window>> moduleActions,
+        Action<string, bool> setModuleEnabled,
         Action<Window> openLogs)
     {
         this.moduleActions = moduleActions;
+        this.setModuleEnabled = setModuleEnabled;
         this.openLogs = openLogs;
         Title = "TrueBIM";
         Width = 520;
@@ -27,7 +30,7 @@ public sealed class ModuleLauncherWindow : Window
         Content = CreateContent(modules.ToList());
     }
 
-    private UIElement CreateContent(IReadOnlyCollection<ITrueBimModule> modules)
+    private UIElement CreateContent(IReadOnlyCollection<ModuleRegistryEntry> modules)
     {
         Grid root = new()
         {
@@ -89,7 +92,7 @@ public sealed class ModuleLauncherWindow : Window
         return root;
     }
 
-    private ListBoxItem CreateModuleItem(ITrueBimModule module)
+    private ListBoxItem CreateModuleItem(ModuleRegistryEntry module)
     {
         Grid panel = new()
         {
@@ -117,13 +120,14 @@ public sealed class ModuleLauncherWindow : Window
         };
         moduleDetails.Children.Add(description);
 
-        TextBlock status = new()
+        CheckBox enabledToggle = new()
         {
-            Text = module.IsEnabledByDefault ? "Enabled" : "Disabled",
+            Content = "Enabled",
+            IsChecked = module.IsEnabled,
             Margin = new Thickness(0, 8, 0, 0),
-            Foreground = module.IsEnabledByDefault ? Brushes.DarkGreen : Brushes.DarkRed
+            Foreground = module.IsEnabled ? Brushes.DarkGreen : Brushes.DarkRed
         };
-        moduleDetails.Children.Add(status);
+        moduleDetails.Children.Add(enabledToggle);
 
         Grid.SetColumn(moduleDetails, 0);
         panel.Children.Add(moduleDetails);
@@ -135,16 +139,29 @@ public sealed class ModuleLauncherWindow : Window
             Height = 30,
             Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            IsEnabled = module.IsEnabledByDefault && moduleActions.ContainsKey(module.Id)
+            IsEnabled = module.IsEnabled && moduleActions.ContainsKey(module.Id)
         };
         openButton.Click += (_, _) => moduleActions[module.Id](this);
+        enabledToggle.Checked += (_, _) => UpdateModuleEnabled(module, enabledToggle, openButton, isEnabled: true);
+        enabledToggle.Unchecked += (_, _) => UpdateModuleEnabled(module, enabledToggle, openButton, isEnabled: false);
         Grid.SetColumn(openButton, 1);
         panel.Children.Add(openButton);
 
         return new ListBoxItem
         {
             Content = panel,
-            IsEnabled = module.IsEnabledByDefault
+            IsEnabled = true
         };
+    }
+
+    private void UpdateModuleEnabled(
+        ModuleRegistryEntry module,
+        CheckBox enabledToggle,
+        Button openButton,
+        bool isEnabled)
+    {
+        setModuleEnabled(module.Id, isEnabled);
+        enabledToggle.Foreground = isEnabled ? Brushes.DarkGreen : Brushes.DarkRed;
+        openButton.IsEnabled = isEnabled && moduleActions.ContainsKey(module.Id);
     }
 }
