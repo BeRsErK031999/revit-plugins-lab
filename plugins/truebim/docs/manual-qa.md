@@ -2,9 +2,21 @@
 
 ## Revit 2025 UI Verification
 
-Status: manual UI verification pending.
+Status: partial UI verification complete; launcher click verification pending.
 
-Last non-UI verification date: 2026-06-29.
+Last verification date: 2026-06-29.
+
+Verified on 2026-06-29:
+
+- Revit 2025 launched with a sample project.
+- The `TrueBIM` ribbon tab was visible.
+- The `Tools` panel was visible on the `TrueBIM` tab.
+
+Pending manual check:
+
+- click the `TrueBIM` button;
+- confirm the launcher window opens;
+- confirm `Sheet Numbering` is listed and enabled.
 
 ## Local Deploy
 
@@ -54,6 +66,6 @@ Expected result:
 
 ## Known Limitations
 
-- Automated UI verification was attempted on 2026-06-29, but the Windows capture API failed to screenshot the Revit window with `SetIsBorderRequired failed: 0x80004002`.
-- Revit accessibility automation exposed only the top-level window, not ribbon contents, so the `TrueBIM` tab and launcher still require manual visual confirmation.
+- Automated UI screenshot through the Windows capture API failed with `SetIsBorderRequired failed: 0x80004002`; a passive desktop screenshot was used to confirm the loaded ribbon tab.
+- Revit accessibility automation did not expose ribbon contents, and coordinate input was unavailable without a successful automation screenshot, so the launcher click still requires manual visual confirmation.
 - No functional sheet-numbering workflow exists yet; the launcher only verifies shell/module discovery.
