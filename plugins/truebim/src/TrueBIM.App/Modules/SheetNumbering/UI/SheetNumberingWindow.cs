@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Threading;
 using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Rules;
 using TrueBIM.App.Modules.SheetNumbering.Services;
@@ -16,11 +18,16 @@ public sealed class SheetNumberingWindow : Window
     private readonly SheetNumberingPreviewWorkflow workflow;
     private readonly ITrueBimLogger logger;
     private readonly TextBlock statusText = new();
+    private readonly ComboBox orderInput = new();
+    private readonly DispatcherTimer selectionLogTimer;
     private readonly TextBox prefixInput = new() { Text = "A-" };
     private readonly TextBox suffixInput = new();
     private readonly TextBox startNumberInput = new() { Text = "1" };
     private readonly TextBox incrementInput = new() { Text = "1" };
     private readonly TextBox paddingInput = new() { Text = "2" };
+    private bool suppressSelectionLogging;
+    private int previewRowCount;
+    private int duplicateIssueCount;
 
     public SheetNumberingWindow(
         IReadOnlyList<SheetInfo> sheets,
@@ -37,6 +44,7 @@ public sealed class SheetNumberingWindow : Window
         MinHeight = 420;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        selectionLogTimer = CreateSelectionLogTimer();
         Content = CreateContent();
         logger.Info($"Sheet Numbering window opened with {sheets.Count} sheets.");
         LoadCurrentSheets();
@@ -52,6 +60,10 @@ public sealed class SheetNumberingWindow : Window
         UIElement ruleInputs = CreateRuleInputs();
         DockPanel.SetDock(ruleInputs, Dock.Top);
         root.Children.Add(ruleInputs);
+
+        UIElement selectionControls = CreateSelectionControls();
+        DockPanel.SetDock(selectionControls, Dock.Top);
+        root.Children.Add(selectionControls);
 
         UIElement status = CreateStatus();
         DockPanel.SetDock(status, Dock.Top);
@@ -86,17 +98,79 @@ public sealed class SheetNumberingWindow : Window
         return rules;
     }
 
+    private UIElement CreateSelectionControls()
+    {
+        DockPanel controls = new()
+        {
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+
+        StackPanel selectionActions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+
+        Button selectAllButton = CreateActionButton("Select All", isEnabled: true);
+        selectAllButton.Margin = new Thickness(0, 0, 8, 0);
+        selectAllButton.Click += (_, _) => SetAllSelected(isSelected: true);
+        selectionActions.Children.Add(selectAllButton);
+
+        Button clearSelectionButton = CreateActionButton("Clear Selection", isEnabled: true);
+        clearSelectionButton.Margin = new Thickness(0, 0, 8, 0);
+        clearSelectionButton.Click += (_, _) => SetAllSelected(isSelected: false);
+        selectionActions.Children.Add(clearSelectionButton);
+
+        DockPanel.SetDock(selectionActions, Dock.Left);
+        controls.Children.Add(selectionActions);
+
+        StackPanel orderControls = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        orderControls.Children.Add(new TextBlock
+        {
+            Text = "Preview order",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+
+        orderInput.Width = 180;
+        orderInput.Height = 32;
+        orderInput.Items.Add(new ComboBoxItem { Content = "Original order", Tag = PreviewOrder.Original });
+        orderInput.Items.Add(new ComboBoxItem { Content = "Current number", Tag = PreviewOrder.CurrentNumber });
+        orderInput.Items.Add(new ComboBoxItem { Content = "Name", Tag = PreviewOrder.Name });
+        orderInput.SelectedIndex = 0;
+        orderInput.SelectionChanged += (_, _) => ApplyCurrentOrder();
+        orderControls.Children.Add(orderInput);
+
+        controls.Children.Add(orderControls);
+        return controls;
+    }
+
     private UIElement CreatePreviewGrid()
     {
         DataGrid grid = new()
         {
             AutoGenerateColumns = false,
             CanUserAddRows = false,
-            IsReadOnly = true,
+            IsReadOnly = false,
             ItemsSource = previewRows,
             HeadersVisibility = DataGridHeadersVisibility.Column
         };
 
+        grid.Columns.Add(new DataGridCheckBoxColumn
+        {
+            Header = "Selected",
+            Binding = new Binding(nameof(PreviewRow.IsSelected))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            },
+            Width = 80
+        });
         grid.Columns.Add(CreateTextColumn("Current Number", nameof(PreviewRow.CurrentNumber), 130));
         grid.Columns.Add(CreateTextColumn("Preview Number", nameof(PreviewRow.PreviewNumber), 130));
         grid.Columns.Add(CreateTextColumn("Name", nameof(PreviewRow.Name), 220));
@@ -118,7 +192,9 @@ public sealed class SheetNumberingWindow : Window
         previewButton.Click += (_, _) => GeneratePreview();
         actions.Children.Add(previewButton);
 
-        actions.Children.Add(CreateActionButton("Apply", isEnabled: false));
+        Button applyButton = CreateActionButton("Apply", isEnabled: false);
+        applyButton.ToolTip = "Apply is disabled until the Revit transaction write step is implemented.";
+        actions.Children.Add(applyButton);
 
         Button closeButton = CreateActionButton("Close", isEnabled: true);
         closeButton.IsCancel = true;
@@ -132,43 +208,59 @@ public sealed class SheetNumberingWindow : Window
     {
         statusText.Margin = new Thickness(0, 0, 0, 12);
         statusText.TextWrapping = TextWrapping.Wrap;
-        statusText.Text = sheets.Count == 0
-            ? "No sheets found in the active document."
-            : $"Loaded {sheets.Count} sheets from the active document.";
-
+        UpdateStatusSummary();
         return statusText;
     }
 
     private void LoadCurrentSheets()
     {
+        suppressSelectionLogging = true;
         previewRows.Clear();
 
-        foreach (SheetInfo sheet in sheets)
+        foreach ((SheetInfo sheet, int index) in sheets.Select((sheet, index) => (sheet, index)))
         {
             previewRows.Add(new PreviewRow(
+                sheet,
+                index,
+                isSelected: true,
                 sheet.CurrentNumber,
                 string.Empty,
                 sheet.Name,
-                sheet.IsPlaceholder ? "Placeholder" : "Ready"));
+                sheet.IsPlaceholder ? "Placeholder" : "Ready",
+                OnRowSelectionChanged));
         }
+
+        suppressSelectionLogging = false;
+        previewRowCount = 0;
+        duplicateIssueCount = 0;
+        ApplyCurrentOrder();
+        UpdateStatusSummary();
     }
 
     private void GeneratePreview()
     {
-        previewRows.Clear();
+        ResetPreviewState();
 
         if (sheets.Count == 0)
         {
-            statusText.Text = "No sheets found in the active document.";
+            UpdateStatusSummary("No sheets found in the active document.");
             logger.Warning("Sheet Numbering preview requested with no sheets.");
+            return;
+        }
+
+        IReadOnlyList<PreviewRow> selectedRows = GetSelectedRowsInPreviewOrder();
+        if (selectedRows.Count == 0)
+        {
+            UpdateStatusSummary("Select at least one sheet before running preview.");
+            logger.Warning("Sheet Numbering preview validation failed: no selected sheets.");
             return;
         }
 
         if (!TryCreateRules(out NumberingRules? rules, out string? error))
         {
-            statusText.Text = error ?? "Invalid numbering rules.";
-            logger.Warning("Sheet Numbering preview validation failed: " + statusText.Text);
-            previewRows.Add(new PreviewRow(string.Empty, string.Empty, "Rule validation", error ?? "Invalid numbering rules."));
+            string message = error ?? "Invalid numbering rules.";
+            UpdateStatusSummary(message);
+            logger.Warning("Sheet Numbering preview validation failed: " + message);
             return;
         }
 
@@ -176,31 +268,58 @@ public sealed class SheetNumberingWindow : Window
 
         try
         {
-            logger.Info($"Running Sheet Numbering preview for {sheets.Count} sheets.");
+            logger.Info($"Running Sheet Numbering preview for {selectedRows.Count} selected sheets.");
             SheetNumberingPreviewResult result = workflow.GeneratePreview(
-                new SheetNumberingPreviewRequest(sheets, sheets, validRules));
+                new SheetNumberingPreviewRequest(
+                    selectedRows.Select(row => row.Sheet).ToList(),
+                    sheets,
+                    validRules));
             IReadOnlyDictionary<long, string> issuesBySheetId = CreateIssueLookup(result.DuplicateIssues);
-            logger.Info($"Sheet Numbering preview generated {result.Previews.Count} rows with {result.DuplicateIssues.Count} duplicate issues.");
+            IReadOnlyDictionary<long, SheetNumberPreview> previewsBySheetId = result.Previews.ToDictionary(
+                preview => preview.Sheet.ElementId);
+            previewRowCount = result.Previews.Count;
+            duplicateIssueCount = result.DuplicateIssues.Count;
+            logger.Info(
+                $"Sheet Numbering preview generated {previewRowCount} rows for {selectedRows.Count} selected sheets with {duplicateIssueCount} duplicate issues.");
 
-            foreach (SheetNumberPreview preview in result.Previews)
+            foreach (PreviewRow row in previewRows)
             {
-                previewRows.Add(new PreviewRow(
-                    preview.Sheet.CurrentNumber,
-                    preview.PreviewNumber,
-                    preview.Sheet.Name,
-                    GetStatus(preview, issuesBySheetId)));
+                if (previewsBySheetId.TryGetValue(row.Sheet.ElementId, out SheetNumberPreview? preview))
+                {
+                    row.PreviewNumber = preview.PreviewNumber;
+                    row.Status = GetStatus(preview, issuesBySheetId);
+                }
+                else if (issuesBySheetId.TryGetValue(row.Sheet.ElementId, out string? issue))
+                {
+                    row.PreviewNumber = string.Empty;
+                    row.Status = issue;
+                }
             }
 
-            statusText.Text = result.HasBlockingIssues
+            string message = result.HasBlockingIssues
                 ? "Preview generated with duplicate sheet number issues. Apply is disabled."
                 : "Preview generated. Apply is disabled until the write operation is implemented.";
+            UpdateStatusSummary(message);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
-            statusText.Text = exception.Message;
+            UpdateStatusSummary(exception.Message);
             logger.Error("Sheet Numbering preview failed.", exception);
-            previewRows.Add(new PreviewRow(string.Empty, string.Empty, "Preview error", exception.Message));
         }
+    }
+
+    private void ResetPreviewState()
+    {
+        previewRowCount = 0;
+        duplicateIssueCount = 0;
+
+        foreach (PreviewRow row in previewRows)
+        {
+            row.PreviewNumber = string.Empty;
+            row.Status = GetBaseStatus(row);
+        }
+
+        UpdateStatusSummary();
     }
 
     private static IReadOnlyDictionary<long, string> CreateIssueLookup(
@@ -234,10 +353,136 @@ public sealed class SheetNumberingWindow : Window
 
         if (preview.Sheet.IsPlaceholder)
         {
-            return preview.IsChanged ? "Placeholder preview" : "Placeholder unchanged";
+            return "Placeholder";
         }
 
         return preview.IsChanged ? "Preview" : "Unchanged";
+    }
+
+    private void SetAllSelected(bool isSelected)
+    {
+        suppressSelectionLogging = true;
+
+        foreach (PreviewRow row in previewRows)
+        {
+            row.IsSelected = isSelected;
+            row.PreviewNumber = string.Empty;
+            row.Status = GetBaseStatus(row);
+        }
+
+        suppressSelectionLogging = false;
+        previewRowCount = 0;
+        duplicateIssueCount = 0;
+        UpdateStatusSummary(isSelected ? "All sheets selected." : "Selection cleared.");
+        logger.Info($"Sheet Numbering selection changed: {GetSelectedCount()} of {sheets.Count} sheets selected.");
+    }
+
+    private void OnRowSelectionChanged()
+    {
+        if (suppressSelectionLogging)
+        {
+            return;
+        }
+
+        previewRowCount = 0;
+        duplicateIssueCount = 0;
+
+        foreach (PreviewRow row in previewRows)
+        {
+            row.PreviewNumber = string.Empty;
+            row.Status = GetBaseStatus(row);
+        }
+
+        UpdateStatusSummary("Selection changed. Run Preview to refresh preview numbers.");
+        selectionLogTimer.Stop();
+        selectionLogTimer.Start();
+    }
+
+    private DispatcherTimer CreateSelectionLogTimer()
+    {
+        DispatcherTimer timer = new()
+        {
+            Interval = TimeSpan.FromMilliseconds(600)
+        };
+
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            logger.Info($"Sheet Numbering selection changed: {GetSelectedCount()} of {sheets.Count} sheets selected.");
+        };
+
+        return timer;
+    }
+
+    private void ApplyCurrentOrder()
+    {
+        if (previewRows.Count == 0)
+        {
+            return;
+        }
+
+        List<PreviewRow> orderedRows = GetRowsInPreviewOrder().ToList();
+        suppressSelectionLogging = true;
+        previewRows.Clear();
+
+        foreach (PreviewRow row in orderedRows)
+        {
+            previewRows.Add(row);
+        }
+
+        suppressSelectionLogging = false;
+        UpdateStatusSummary("Preview order changed.");
+    }
+
+    private IReadOnlyList<PreviewRow> GetSelectedRowsInPreviewOrder()
+    {
+        return GetRowsInPreviewOrder()
+            .Where(row => row.IsSelected)
+            .ToList();
+    }
+
+    private IEnumerable<PreviewRow> GetRowsInPreviewOrder()
+    {
+        return GetSelectedPreviewOrder() switch
+        {
+            PreviewOrder.CurrentNumber => previewRows
+                .OrderBy(row => row.CurrentNumber, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.OriginalOrder),
+            PreviewOrder.Name => previewRows
+                .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.OriginalOrder),
+            _ => previewRows.OrderBy(row => row.OriginalOrder)
+        };
+    }
+
+    private PreviewOrder GetSelectedPreviewOrder()
+    {
+        return orderInput.SelectedItem is ComboBoxItem { Tag: PreviewOrder order }
+            ? order
+            : PreviewOrder.Original;
+    }
+
+    private void UpdateStatusSummary(string? message = null)
+    {
+        string summary = $"Loaded {sheets.Count} sheets. Selected {GetSelectedCount()}. Preview rows {previewRowCount}. Duplicate issues {duplicateIssueCount}.";
+        statusText.Text = string.IsNullOrWhiteSpace(message)
+            ? summary
+            : $"{summary} {message}";
+    }
+
+    private int GetSelectedCount()
+    {
+        return previewRows.Count(row => row.IsSelected);
+    }
+
+    private static string GetBaseStatus(PreviewRow row)
+    {
+        if (!row.IsSelected)
+        {
+            return "Not selected";
+        }
+
+        return row.Sheet.IsPlaceholder ? "Placeholder" : "Ready";
     }
 
     private bool TryCreateRules(out NumberingRules? rules, out string? error)
@@ -305,6 +550,7 @@ public sealed class SheetNumberingWindow : Window
         {
             Header = header,
             Binding = new Binding(bindingPath),
+            IsReadOnly = true,
             Width = width
         };
     }
@@ -321,9 +567,99 @@ public sealed class SheetNumberingWindow : Window
         };
     }
 
-    private sealed record PreviewRow(
-        string CurrentNumber,
-        string PreviewNumber,
-        string Name,
-        string Status);
+    private enum PreviewOrder
+    {
+        Original,
+        CurrentNumber,
+        Name
+    }
+
+    private sealed class PreviewRow : INotifyPropertyChanged
+    {
+        private readonly Action selectionChanged;
+        private bool isSelected;
+        private string previewNumber;
+        private string status;
+
+        public PreviewRow(
+            SheetInfo sheet,
+            int originalOrder,
+            bool isSelected,
+            string currentNumber,
+            string previewNumber,
+            string name,
+            string status,
+            Action selectionChanged)
+        {
+            Sheet = sheet;
+            OriginalOrder = originalOrder;
+            this.isSelected = isSelected;
+            CurrentNumber = currentNumber;
+            this.previewNumber = previewNumber;
+            Name = name;
+            this.status = status;
+            this.selectionChanged = selectionChanged;
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public SheetInfo Sheet { get; }
+
+        public int OriginalOrder { get; }
+
+        public bool IsSelected
+        {
+            get => isSelected;
+            set
+            {
+                if (isSelected == value)
+                {
+                    return;
+                }
+
+                isSelected = value;
+                OnPropertyChanged(nameof(IsSelected));
+                selectionChanged();
+            }
+        }
+
+        public string CurrentNumber { get; }
+
+        public string PreviewNumber
+        {
+            get => previewNumber;
+            set
+            {
+                if (previewNumber == value)
+                {
+                    return;
+                }
+
+                previewNumber = value;
+                OnPropertyChanged(nameof(PreviewNumber));
+            }
+        }
+
+        public string Name { get; }
+
+        public string Status
+        {
+            get => status;
+            set
+            {
+                if (status == value)
+                {
+                    return;
+                }
+
+                status = value;
+                OnPropertyChanged(nameof(Status));
+            }
+        }
+
+        private void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
 }

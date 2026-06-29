@@ -36,5 +36,8 @@ Renumber Revit sheets with preview, duplicate protection, and configurable numbe
 - Revit write operation: not started.
 - UI skeleton: done.
 - Real document read-only preview: done.
+- Selection UI: done.
+- Preview sorting/order controls: done for original order, current number, and sheet name.
+- Duplicate issues shown in UI: done.
 - Apply button: disabled until transaction write step.
-- Full UI workflow: not started.
+- Full read-only UI workflow before Apply: done.

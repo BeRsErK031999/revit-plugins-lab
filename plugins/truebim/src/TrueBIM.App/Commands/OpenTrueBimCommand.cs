@@ -21,7 +21,6 @@ public sealed class OpenTrueBimCommand : IExternalCommand
         logger.Info("Opening TrueBIM launcher.");
         logger.Info("Modules found: " + string.Join(", ", registry.Modules.Select(module => module.Id)));
 
-        Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
         Dictionary<string, Action<System.Windows.Window>> moduleActions = new()
         {
             ["truebim.sheet-numbering"] = owner =>
@@ -30,6 +29,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                 {
                     logger.Info("Opening Sheet Numbering window.");
 
+                    Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
                     if (activeDocument is null)
                     {
                         logger.Warning("Sheet Numbering requested without an active document.");
