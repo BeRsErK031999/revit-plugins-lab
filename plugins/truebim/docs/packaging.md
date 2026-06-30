@@ -52,16 +52,23 @@ The module manifest is part of the runtime contract: installer component selecti
 
 ## Build Installer
 
-The installer draft is:
+The Revit 2025 installer draft is:
 
 ```text
 plugins/truebim/installer/TrueBIM.iss
+```
+
+The Revit 2022 installer draft is:
+
+```text
+plugins/truebim/installer/TrueBIM-2022.iss
 ```
 
 Compile it with Inno Setup after building artifacts:
 
 ```powershell
 & 'C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe' .\plugins\truebim\installer\TrueBIM.iss
+& 'C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe' .\plugins\truebim\installer\TrueBIM-2022.iss
 ```
 
 Do not run the produced installer during automated packaging checks. The compile step is safe; installation changes `%APPDATA%` and should be handled as manual QA.
