@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
+using TrueBIM.App.Modules.ScheduleColumnCollapse.UI;
 using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
@@ -18,12 +19,12 @@ public sealed class ScheduleColumnCollapseService
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public ScheduleColumnCollapseResult Collapse(UIDocument uiDocument)
+    public ScheduleColumnCollapseResult Collapse(UIDocument uiDocument, IntPtr ownerWindowHandle = default)
     {
         Guard.NotNull(uiDocument, nameof(uiDocument));
 
         Document document = uiDocument.Document;
-        ViewSchedule? sourceSchedule = ResolveTargetSchedule(uiDocument, out string? resolveError);
+        ViewSchedule? sourceSchedule = ResolveTargetSchedule(uiDocument, ownerWindowHandle, out string? resolveError);
         if (sourceSchedule is null)
         {
             return ScheduleColumnCollapseResult.Failure(resolveError ?? "Не удалось определить спецификацию для сворачивания.");
@@ -113,7 +114,7 @@ public sealed class ScheduleColumnCollapseService
         }
     }
 
-    private static ViewSchedule? ResolveTargetSchedule(UIDocument uiDocument, out string? error)
+    private static ViewSchedule? ResolveTargetSchedule(UIDocument uiDocument, IntPtr ownerWindowHandle, out string? error)
     {
         Document document = uiDocument.Document;
         IReadOnlyList<ViewSchedule> selectedSchedules = uiDocument.Selection
@@ -134,8 +135,13 @@ public sealed class ScheduleColumnCollapseService
 
         if (selectedSchedules.Count > 1)
         {
-            error = "Выберите на листе только одну спецификацию и запустите инструмент ещё раз.";
-            return null;
+            return SelectSchedule(
+                document,
+                selectedSchedules,
+                context: "Выбрано несколько спецификаций. Укажите, какую нужно свернуть.",
+                itemContext: "Выбрано на листе",
+                ownerWindowHandle,
+                out error);
         }
 
         if (document.ActiveView is ViewSchedule activeSchedule)
@@ -161,14 +167,74 @@ public sealed class ScheduleColumnCollapseService
                 return sheetSchedules[0];
             }
 
-            error = sheetSchedules.Count == 0
-                ? "На активном листе не найдено размещённых спецификаций. Откройте спецификацию или выберите её на листе."
-                : "На активном листе найдено несколько спецификаций. Выберите нужную спецификацию на листе и запустите инструмент ещё раз.";
+            if (sheetSchedules.Count > 1)
+            {
+                string sheetContext = $"Лист {activeSheet.SheetNumber}: {activeSheet.Name}";
+                return SelectSchedule(
+                    document,
+                    sheetSchedules,
+                    context: "На активном листе найдено несколько спецификаций. Выберите нужную.",
+                    itemContext: sheetContext,
+                    ownerWindowHandle,
+                    out error);
+            }
+        }
+
+        IReadOnlyList<ViewSchedule> documentSchedules = CollectDocumentSchedules(document);
+        if (documentSchedules.Count == 1)
+        {
+            error = null;
+            return documentSchedules[0];
+        }
+
+        if (documentSchedules.Count > 1)
+        {
+            return SelectSchedule(
+                document,
+                documentSchedules,
+                context: "Выберите спецификацию, которую нужно свернуть.",
+                itemContext: "Спецификация в документе",
+                ownerWindowHandle,
+                out error);
+        }
+
+        error = "В документе не найдено спецификаций для сворачивания.";
+        return null;
+    }
+
+    private static ViewSchedule? SelectSchedule(
+        Document document,
+        IReadOnlyList<ViewSchedule> schedules,
+        string context,
+        string itemContext,
+        IntPtr ownerWindowHandle,
+        out string? error)
+    {
+        IReadOnlyList<ScheduleSelectionItem> items = schedules
+            .Select(schedule => new ScheduleSelectionItem(schedule.Id, schedule.Name, itemContext))
+            .ToList();
+
+        ScheduleSelectionWindow selectionWindow = new(items, context, ownerWindowHandle);
+        bool? dialogResult = selectionWindow.ShowDialog();
+        if (dialogResult != true || selectionWindow.SelectedSchedule is null)
+        {
+            error = "Выбор спецификации отменён.";
             return null;
         }
 
-        error = "Откройте спецификацию или лист со спецификацией, затем запустите инструмент.";
-        return null;
+        error = null;
+        return document.GetElement(selectionWindow.SelectedSchedule.ScheduleId) as ViewSchedule;
+    }
+
+    private static IReadOnlyList<ViewSchedule> CollectDocumentSchedules(Document document)
+    {
+        return DistinctSchedulesById(new FilteredElementCollector(document)
+            .OfClass(typeof(ViewSchedule))
+            .Cast<ViewSchedule>()
+            .Where(schedule => !schedule.IsTemplate)
+            .ToList())
+            .OrderBy(schedule => schedule.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 
     private static IReadOnlyList<FieldSnapshot> CreateFieldSnapshots(ViewSchedule schedule, IReadOnlyList<ScheduleFieldId> fieldIds)

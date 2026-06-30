@@ -63,7 +63,7 @@ internal static class TrueBimCommandActions
 
             ScheduleColumnCollapseResult result = new ScheduleColumnCollapseService(
                 new ScheduleColumnVisibilityAnalyzer(),
-                logger).Collapse(activeUiDocument);
+                logger).Collapse(activeUiDocument, commandData.Application.MainWindowHandle);
 
             TaskDialog.Show(
                 "Свернуть ВРС",
