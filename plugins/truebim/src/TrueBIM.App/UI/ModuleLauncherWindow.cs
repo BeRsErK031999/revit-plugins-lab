@@ -22,9 +22,9 @@ public sealed class ModuleLauncherWindow : Window
         this.openLogs = openLogs;
         Title = "TrueBIM";
         Icon = IconFactory.CreateImage(TrueBimIcon.App, 32);
-        Width = 520;
+        Width = 560;
         Height = 360;
-        MinWidth = 420;
+        MinWidth = 500;
         MinHeight = 280;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -70,7 +70,7 @@ public sealed class ModuleLauncherWindow : Window
         Button logsButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Logs, "Логи"),
-            MinWidth = 96,
+            MinWidth = 110,
             Height = 32,
             ToolTip = "Открыть файл логов TrueBIM."
         };
@@ -80,7 +80,7 @@ public sealed class ModuleLauncherWindow : Window
         Button closeButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
-            MinWidth = 96,
+            MinWidth = 110,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
             IsCancel = true,
@@ -139,7 +139,7 @@ public sealed class ModuleLauncherWindow : Window
         Button openButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Открыть"),
-            MinWidth = 80,
+            MinWidth = 110,
             Height = 30,
             Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,

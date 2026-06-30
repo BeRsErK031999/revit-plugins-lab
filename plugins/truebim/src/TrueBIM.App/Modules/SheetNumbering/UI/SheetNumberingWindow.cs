@@ -27,7 +27,7 @@ public sealed class SheetNumberingWindow : Window
     private readonly Button exportPreviewButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
     private readonly Button moveUpButton = CreateActionButton("Вверх", TrueBimIcon.Up, isEnabled: false);
     private readonly Button moveDownButton = CreateActionButton("Вниз", TrueBimIcon.Down, isEnabled: false);
-    private readonly Button moveToPositionButton = CreateActionButton("Переместить", TrueBimIcon.Move, isEnabled: false);
+    private readonly Button moveToPositionButton = CreateActionButton("К позиции", TrueBimIcon.Move, isEnabled: false, minWidth: 128);
     private readonly CheckBox includePlaceholdersInput = new()
     {
         Content = "Включать листы-заглушки",
@@ -65,10 +65,10 @@ public sealed class SheetNumberingWindow : Window
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = "Нумерация листов";
         Icon = IconFactory.CreateImage(TrueBimIcon.App, 32);
-        Width = 820;
-        Height = 520;
-        MinWidth = 680;
-        MinHeight = 420;
+        Width = 1060;
+        Height = 720;
+        MinWidth = 1000;
+        MinHeight = 650;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         selectionLogTimer = CreateSelectionLogTimer();
@@ -194,6 +194,8 @@ public sealed class SheetNumberingWindow : Window
         previewGrid.IsReadOnly = false;
         previewGrid.ItemsSource = previewRows;
         previewGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
+        previewGrid.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+        previewGrid.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         previewGrid.SelectionMode = DataGridSelectionMode.Single;
         previewGrid.ToolTip = "Список листов. Отметьте листы и задайте порядок перед предпросмотром.";
         previewGrid.SelectionChanged += (_, _) => UpdateManualOrderButtons();
@@ -206,34 +208,39 @@ public sealed class SheetNumberingWindow : Window
                 Mode = BindingMode.TwoWay,
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
             },
-            Width = 80
+            Width = 72
         });
-        previewGrid.Columns.Add(CreateTextColumn("Позиция", nameof(PreviewRow.Position), 80));
+        previewGrid.Columns.Add(CreateTextColumn("Позиция", nameof(PreviewRow.Position), 70));
         previewGrid.Columns.Add(CreateTextColumn("Текущий номер", nameof(PreviewRow.CurrentNumber), 130));
         previewGrid.Columns.Add(CreateTextColumn("Предпросмотр", nameof(PreviewRow.PreviewNumber), 130));
-        previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), 220));
-        previewGrid.Columns.Add(CreateTextColumn("Статус / проблема", nameof(PreviewRow.Status), 220));
+        previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        previewGrid.Columns.Add(CreateTextColumn("Статус / проблема", nameof(PreviewRow.Status), 200));
 
         return previewGrid;
     }
 
     private UIElement CreateActions()
     {
-        DockPanel actionRoot = new()
+        Grid actionRoot = new()
         {
             Margin = new Thickness(0, 16, 0, 0)
         };
+        actionRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        actionRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         StackPanel orderActions = new()
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
+        moveUpButton.Margin = new Thickness(0, 0, 8, 0);
         moveUpButton.ToolTip = "Переместить выбранную строку на одну позицию вверх.";
         moveUpButton.Click += (_, _) => MoveSelectedRowUp();
         orderActions.Children.Add(moveUpButton);
 
+        moveDownButton.Margin = new Thickness(0, 0, 16, 0);
         moveDownButton.ToolTip = "Переместить выбранную строку на одну позицию вниз.";
         moveDownButton.Click += (_, _) => MoveSelectedRowDown();
         orderActions.Children.Add(moveDownButton);
@@ -242,24 +249,26 @@ public sealed class SheetNumberingWindow : Window
         {
             Text = "Позиция",
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(12, 0, 6, 0)
+            Margin = new Thickness(0, 0, 8, 0)
         });
-        positionInput.Width = 52;
+        positionInput.Width = 72;
         positionInput.Height = 32;
         positionInput.ToolTip = "Номер позиции, куда нужно переместить выбранный лист.";
         orderActions.Children.Add(positionInput);
 
-        moveToPositionButton.ToolTip = "Переместить выбранную строку на указанную позицию.";
+        moveToPositionButton.Margin = new Thickness(8, 0, 0, 0);
+        moveToPositionButton.ToolTip = "Перемещает выбранный лист на указанную позицию в списке предпросмотра.";
         moveToPositionButton.Click += (_, _) => MoveSelectedRowToPosition();
         orderActions.Children.Add(moveToPositionButton);
 
-        DockPanel.SetDock(orderActions, Dock.Left);
+        Grid.SetColumn(orderActions, 0);
         actionRoot.Children.Add(orderActions);
 
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         Button previewButton = CreateActionButton("Предпросмотр", TrueBimIcon.Preview, isEnabled: true);
@@ -281,6 +290,7 @@ public sealed class SheetNumberingWindow : Window
         closeButton.Click += (_, _) => Close();
         actions.Children.Add(closeButton);
 
+        Grid.SetColumn(actions, 1);
         actionRoot.Children.Add(actions);
         return actionRoot;
     }
@@ -868,7 +878,7 @@ public sealed class SheetNumberingWindow : Window
             Margin = new Thickness(0, 0, 0, 4)
         });
 
-        input.MinWidth = 90;
+        input.MinWidth = 120;
         input.Height = 28;
         field.Children.Add(input);
 
@@ -877,6 +887,11 @@ public sealed class SheetNumberingWindow : Window
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)
+    {
+        return CreateTextColumn(header, bindingPath, new DataGridLength(width));
+    }
+
+    private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, DataGridLength width)
     {
         return new DataGridTextColumn
         {
@@ -887,12 +902,12 @@ public sealed class SheetNumberingWindow : Window
         };
     }
 
-    private static Button CreateActionButton(string text, TrueBimIcon icon, bool isEnabled)
+    private static Button CreateActionButton(string text, TrueBimIcon icon, bool isEnabled, double minWidth = 104)
     {
         return new Button
         {
             Content = IconFactory.CreateButtonContent(icon, text),
-            MinWidth = 96,
+            MinWidth = minWidth,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
             IsEnabled = isEnabled

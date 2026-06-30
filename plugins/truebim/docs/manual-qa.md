@@ -102,13 +102,16 @@ Expected result:
 
 1. Open the `TrueBIM` launcher.
 2. Confirm the launcher title area uses Russian labels for `Модули`, `Логи`, `Закрыть`, `Включено`, and `Открыть`.
-3. Hover `Включено`, `Логи`, and `Открыть`.
-4. Confirm each tooltip appears and uses short Russian text.
-5. Confirm action buttons show icons next to their labels.
-6. Open `Нумерация листов`.
-7. Confirm labels are Russian: `Префикс`, `Суффикс`, `Стартовый номер`, `Шаг`, `Разрядность`, `Порядок предпросмотра`, `Позиция`, `Предпросмотр`, `Экспорт`, `Применить`, and `Закрыть`.
-8. Hover each numbering input, the placeholder checkbox, the order combo, the sheet table, and action buttons.
-9. Confirm short Russian tooltips appear.
+3. Resize the launcher to its minimum width and confirm `Логи`, `Открыть`, and `Закрыть` are not clipped.
+4. Hover `Включено`, `Логи`, and `Открыть`.
+5. Confirm each tooltip appears and uses short Russian text.
+6. Confirm action buttons show icons next to their labels.
+7. Open `Нумерация листов`.
+8. Resize the window to its minimum size and confirm the table remains visible and the bottom action panel is not clipped.
+9. Confirm labels are Russian: `Префикс`, `Суффикс`, `Стартовый номер`, `Шаг`, `Разрядность`, `Порядок предпросмотра`, `Позиция`, `Предпросмотр`, `Экспорт`, `Применить`, and `Закрыть`.
+10. Confirm the bottom panel has separate order controls on the left and preview/apply actions on the right.
+11. Hover each numbering input, the placeholder checkbox, the order combo, the sheet table, and action buttons.
+12. Confirm short Russian tooltips appear.
 
 ## Sheet Numbering Functional QA
 
@@ -141,7 +144,7 @@ Expected result:
 4. Confirm the selected row moves up one row, `Позиция` values update, and the status says to run preview again.
 5. Click `Вниз`.
 6. Confirm the selected row moves down one row and positions update.
-7. Enter `1` in `Позиция` and click `Переместить`.
+7. Enter `1` in `Позиция` and click `К позиции`.
 8. Confirm the selected row moves to the first position.
 9. Confirm `Порядок предпросмотра` shows `Ручной порядок`.
 10. Click `Предпросмотр`.
