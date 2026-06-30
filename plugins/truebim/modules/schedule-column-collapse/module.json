@@ -1,0 +1,8 @@
+{
+  "id": "truebim.schedule-column-collapse",
+  "displayName": "Свернуть ВРС",
+  "description": "Создаёт копию спецификации и скрывает столбцы, где все значения равны нулю.",
+  "version": "0.1.0",
+  "enabledByDefault": true,
+  "revitVersions": ["2025"]
+}

@@ -1,4 +1,5 @@
 using System.IO;
+using TrueBIM.App.Modules.ScheduleColumnCollapse;
 using TrueBIM.App.Modules.SheetNumbering;
 using TrueBIM.App.Services.Logging;
 
@@ -84,7 +85,8 @@ public sealed class ModuleRegistry
     {
         ITrueBimModule[] implementations =
         [
-            new SheetNumberingModule()
+            new SheetNumberingModule(),
+            new ScheduleColumnCollapseModule()
         ];
 
         return implementations.ToDictionary(module => module.Id, StringComparer.OrdinalIgnoreCase);

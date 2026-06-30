@@ -1,11 +1,11 @@
-# Нумерация листов
+# Нумератор листов
 
 First TrueBIM module.
 
 ## Purpose
 
 Renumber Revit sheets with preview, duplicate protection, and configurable numbering rules.
-The UI is localized for Russian-speaking users as `Нумерация листов`.
+The UI is localized for Russian-speaking users as `Нумератор листов`.
 
 ## Planned first workflow
 
@@ -31,7 +31,7 @@ The UI is localized for Russian-speaking users as `Нумерация листо
 ## Current workflow
 
 1. Open TrueBIM from the Revit ribbon.
-2. Open `Нумерация листов`.
+2. Open `Нумератор листов`.
 3. Select target sheets.
 4. Optionally enable `Включать листы-заглушки`.
 5. Choose preview order: `Исходный порядок`, `Текущий номер`, `Название`, or `Ручной порядок`.

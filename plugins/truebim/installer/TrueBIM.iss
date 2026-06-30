@@ -23,7 +23,8 @@ Name: "custom"; Description: "Custom installation"; Flags: iscustom
 [Components]
 Name: "core"; Description: "TrueBIM Core"; Types: full custom; Flags: fixed
 Name: "modules"; Description: "Modules"; Types: full custom
-Name: "modules\sheetnumbering"; Description: "Sheet Numbering"; Types: full custom
+Name: "modules\sheetnumbering"; Description: "Нумератор листов"; Types: full custom
+Name: "modules\schedulecolumncollapse"; Description: "Свернуть ВРС"; Types: full custom
 Name: "assets"; Description: "Assets"; Types: full custom
 Name: "docs"; Description: "Documentation"; Types: full custom
 
@@ -31,12 +32,14 @@ Name: "docs"; Description: "Documentation"; Types: full custom
 Name: "{userappdata}\Autodesk\Revit\Addins\2025"
 Name: "{app}\Core"; Components: core
 Name: "{app}\Modules\SheetNumbering"; Components: modules\sheetnumbering
+Name: "{app}\Modules\ScheduleColumnCollapse"; Components: modules\schedulecolumncollapse
 Name: "{app}\Assets"; Components: assets
 Name: "{app}\Docs"; Components: docs
 
 [Files]
 Source: "..\artifacts\Core\*"; DestDir: "{app}\Core"; Components: core; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\artifacts\Modules\SheetNumbering\*"; DestDir: "{app}\Modules\SheetNumbering"; Components: modules\sheetnumbering; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\artifacts\Modules\ScheduleColumnCollapse\*"; DestDir: "{app}\Modules\ScheduleColumnCollapse"; Components: modules\schedulecolumncollapse; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\artifacts\Assets\*"; DestDir: "{app}\Assets"; Components: assets; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\artifacts\Docs\*"; DestDir: "{app}\Docs"; Components: docs; Flags: ignoreversion recursesubdirs createallsubdirs
 

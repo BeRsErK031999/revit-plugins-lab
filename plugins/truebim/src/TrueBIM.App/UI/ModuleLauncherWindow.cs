@@ -101,8 +101,21 @@ public sealed class ModuleLauncherWindow : Window
         {
             Margin = new Thickness(8)
         };
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        Image moduleIcon = new()
+        {
+            Source = IconFactory.CreateImage(module.Icon, 26),
+            Width = 26,
+            Height = 26,
+            Stretch = Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 2, 12, 0)
+        };
+        Grid.SetColumn(moduleIcon, 0);
+        panel.Children.Add(moduleIcon);
 
         StackPanel moduleDetails = new();
 
@@ -133,7 +146,7 @@ public sealed class ModuleLauncherWindow : Window
         };
         moduleDetails.Children.Add(enabledToggle);
 
-        Grid.SetColumn(moduleDetails, 0);
+        Grid.SetColumn(moduleDetails, 1);
         panel.Children.Add(moduleDetails);
 
         Button openButton = new()
@@ -149,7 +162,7 @@ public sealed class ModuleLauncherWindow : Window
         openButton.Click += (_, _) => moduleActions[module.Id](this);
         enabledToggle.Checked += (_, _) => UpdateModuleEnabled(module, enabledToggle, openButton, isEnabled: true);
         enabledToggle.Unchecked += (_, _) => UpdateModuleEnabled(module, enabledToggle, openButton, isEnabled: false);
-        Grid.SetColumn(openButton, 1);
+        Grid.SetColumn(openButton, 2);
         panel.Children.Add(openButton);
 
         return new ListBoxItem
@@ -174,7 +187,8 @@ public sealed class ModuleLauncherWindow : Window
     {
         return text switch
         {
-            "Sheet Numbering" => "Нумерация листов",
+            "Sheet Numbering" => "Нумератор листов",
+            "Нумерация листов" => "Нумератор листов",
             "Renumber Revit sheets with preview and duplicate protection." => "Перенумерация листов Revit с предпросмотром и защитой от дублей.",
             _ => text
         };

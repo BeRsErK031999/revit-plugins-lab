@@ -49,7 +49,8 @@ $deployScript = Join-Path $repoRoot "plugins\truebim\scripts\deploy-local-2025.p
 $isccPath = "C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
 $installerScript = Join-Path $repoRoot "plugins\truebim\installer\TrueBIM.iss"
 $addinPath = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2025\TrueBIM.addin"
-$moduleManifestPath = Join-Path $env:APPDATA "TrueBIM\2025\Modules\SheetNumbering\module.json"
+$sheetNumberingManifestPath = Join-Path $env:APPDATA "TrueBIM\2025\Modules\SheetNumbering\module.json"
+$scheduleColumnCollapseManifestPath = Join-Path $env:APPDATA "TrueBIM\2025\Modules\ScheduleColumnCollapse\module.json"
 $moduleSettingsPath = Join-Path $env:APPDATA "TrueBIM\2025\module-settings.json"
 
 try {
@@ -111,11 +112,17 @@ try {
 
     Add-Check -Name "Add-in Assembly path" -Passed $true -Message $assemblyPath
 
-    if (-not (Test-Path $moduleManifestPath)) {
-        throw "Installed Sheet Numbering module manifest was not found at '$moduleManifestPath'."
+    if (-not (Test-Path $sheetNumberingManifestPath)) {
+        throw "Installed Sheet Numbering module manifest was not found at '$sheetNumberingManifestPath'."
     }
 
-    Add-Check -Name "Installed module manifest" -Passed $true -Message $moduleManifestPath
+    Add-Check -Name "Installed Sheet Numbering manifest" -Passed $true -Message $sheetNumberingManifestPath
+
+    if (-not (Test-Path $scheduleColumnCollapseManifestPath)) {
+        throw "Installed Schedule Column Collapse module manifest was not found at '$scheduleColumnCollapseManifestPath'."
+    }
+
+    Add-Check -Name "Installed Schedule Column Collapse manifest" -Passed $true -Message $scheduleColumnCollapseManifestPath
 
     if (Test-Path $moduleSettingsPath) {
         Add-Check -Name "Module settings" -Passed $true -Message "Optional settings file exists: '$moduleSettingsPath'."

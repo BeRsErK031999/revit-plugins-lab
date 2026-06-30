@@ -46,8 +46,10 @@ public sealed class ModuleRegistryTests
             new ModuleSettingsService(settingsPath, logger),
             logger);
 
-        ModuleRegistryEntry module = Assert.Single(registry.Modules);
-        Assert.Equal("truebim.sheet-numbering", module.Id);
+        Assert.Collection(
+            registry.Modules.OrderBy(module => module.Id, StringComparer.Ordinal),
+            module => Assert.Equal("truebim.schedule-column-collapse", module.Id),
+            module => Assert.Equal("truebim.sheet-numbering", module.Id));
         Assert.Contains(logger.Warnings, warning => warning.Contains("Falling back", StringComparison.Ordinal));
     }
 

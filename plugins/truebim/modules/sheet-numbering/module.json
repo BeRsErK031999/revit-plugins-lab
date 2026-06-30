@@ -1,6 +1,6 @@
 {
   "id": "truebim.sheet-numbering",
-  "displayName": "Нумерация листов",
+  "displayName": "Нумератор листов",
   "description": "Перенумерация листов Revit с предпросмотром и защитой от дублей.",
   "version": "0.1.0",
   "enabledByDefault": true,

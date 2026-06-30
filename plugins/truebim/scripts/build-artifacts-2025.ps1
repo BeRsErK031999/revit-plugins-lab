@@ -13,6 +13,7 @@ $projectOutputDir = Join-Path $trueBimRoot "src\TrueBIM.App\bin\$Configuration\n
 $artifactsDir = Join-Path $trueBimRoot "artifacts"
 $coreArtifactsDir = Join-Path $artifactsDir "Core"
 $sheetNumberingArtifactsDir = Join-Path $artifactsDir "Modules\SheetNumbering"
+$scheduleColumnCollapseArtifactsDir = Join-Path $artifactsDir "Modules\ScheduleColumnCollapse"
 $docsArtifactsDir = Join-Path $artifactsDir "Docs"
 $assetsArtifactsDir = Join-Path $artifactsDir "Assets"
 
@@ -33,6 +34,7 @@ if (Test-Path $artifactsDir) {
 
 New-Item -ItemType Directory -Path $coreArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $sheetNumberingArtifactsDir -Force | Out-Null
+New-Item -ItemType Directory -Path $scheduleColumnCollapseArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $docsArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $assetsArtifactsDir -Force | Out-Null
 
@@ -42,6 +44,8 @@ Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.deps.json") -Destinati
 
 Copy-Item -Path (Join-Path $trueBimRoot "modules\sheet-numbering\module.json") -Destination $sheetNumberingArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "modules\sheet-numbering\README.md") -Destination $sheetNumberingArtifactsDir -Force
+Copy-Item -Path (Join-Path $trueBimRoot "modules\schedule-column-collapse\module.json") -Destination $scheduleColumnCollapseArtifactsDir -Force
+Copy-Item -Path (Join-Path $trueBimRoot "modules\schedule-column-collapse\README.md") -Destination $scheduleColumnCollapseArtifactsDir -Force
 
 Copy-Item -Path (Join-Path $trueBimRoot "README.md") -Destination $docsArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "docs\*.md") -Destination $docsArtifactsDir -Force
@@ -52,5 +56,6 @@ Copy-Item -Path (Join-Path $trueBimRoot "assets\icons") -Destination $assetsArti
 Write-Host "Built TrueBIM artifacts for Revit 2025."
 Write-Host "Core: $coreArtifactsDir"
 Write-Host "Sheet Numbering: $sheetNumberingArtifactsDir"
+Write-Host "Schedule Column Collapse: $scheduleColumnCollapseArtifactsDir"
 Write-Host "Docs: $docsArtifactsDir"
 Write-Host "Assets: $assetsArtifactsDir"

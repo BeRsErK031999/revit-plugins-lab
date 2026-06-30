@@ -3,6 +3,8 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using System.IO;
 using TrueBIM.App.Modules;
+using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
+using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Modules.SheetNumbering.UI;
@@ -41,7 +43,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                     if (activeDocument is null)
                     {
                         logger.Warning("Sheet Numbering requested without an active document.");
-                        TaskDialog.Show("Нумерация листов", "Откройте документ Revit перед запуском нумерации листов.");
+                        TaskDialog.Show("Нумератор листов", "Откройте документ Revit перед запуском нумератора листов.");
                         return;
                     }
 
@@ -63,7 +65,37 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                 catch (Exception exception)
                 {
                     logger.Error("Failed to open Sheet Numbering window.", exception);
-                    TaskDialog.Show("Нумерация листов", "Не удалось открыть нумерацию листов. Используйте логи для диагностики.");
+                    TaskDialog.Show("Нумератор листов", "Не удалось открыть нумератор листов. Используйте логи для диагностики.");
+                }
+            },
+            ["truebim.schedule-column-collapse"] = _ =>
+            {
+                try
+                {
+                    logger.Info("Running Schedule Column Collapse.");
+
+                    UIDocument? activeUiDocument = commandData.Application.ActiveUIDocument;
+                    if (activeUiDocument is null)
+                    {
+                        logger.Warning("Schedule Column Collapse requested without an active document.");
+                        TaskDialog.Show("Свернуть ВРС", "Откройте документ Revit перед запуском сворачивания спецификации.");
+                        return;
+                    }
+
+                    ScheduleColumnCollapseResult result = new ScheduleColumnCollapseService(
+                        new ScheduleColumnVisibilityAnalyzer(),
+                        logger).Collapse(activeUiDocument);
+
+                    TaskDialog.Show(
+                        "Свернуть ВРС",
+                        result.Succeeded
+                            ? $"Создана копия: {result.CollapsedScheduleName}\nСкрыто столбцов: {result.HiddenColumnCount}\nОставлено видимыми: {result.VisibleColumnCount}"
+                            : result.Message);
+                }
+                catch (Exception exception)
+                {
+                    logger.Error("Failed to collapse schedule columns.", exception);
+                    TaskDialog.Show("Свернуть ВРС", "Не удалось свернуть спецификацию. Используйте логи для диагностики.");
                 }
             }
         };

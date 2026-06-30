@@ -26,6 +26,8 @@ plugins/truebim/artifacts/Core/TrueBIM.App.pdb
 plugins/truebim/artifacts/Core/TrueBIM.App.deps.json
 plugins/truebim/artifacts/Modules/SheetNumbering/module.json
 plugins/truebim/artifacts/Modules/SheetNumbering/README.md
+plugins/truebim/artifacts/Modules/ScheduleColumnCollapse/module.json
+plugins/truebim/artifacts/Modules/ScheduleColumnCollapse/README.md
 plugins/truebim/artifacts/Docs/*.md
 ```
 
@@ -56,7 +58,7 @@ Before manual Revit QA, run:
 .\plugins\truebim\scripts\qa-preflight-2025.ps1
 ```
 
-This is the primary local smoke check before opening Revit. It builds Release, runs Release tests, builds artifacts, compiles the installer when `ISCC.exe` is present, performs local deploy, and verifies the installed `.addin` and Sheet Numbering module manifest.
+This is the primary local smoke check before opening Revit. It builds Release, runs Release tests, builds artifacts, compiles the installer when `ISCC.exe` is present, performs local deploy, and verifies the installed `.addin`, Sheet Numbering module manifest, and Schedule Column Collapse module manifest.
 Revit must be closed before running this script because local deploy overwrites the installed add-in DLL.
 
 Installer compile is not installer install QA. The preflight does not run the installer and does not launch Revit.
@@ -68,6 +70,7 @@ The installer consumes:
 ```text
 plugins/truebim/artifacts/Core/*
 plugins/truebim/artifacts/Modules/SheetNumbering/*
+plugins/truebim/artifacts/Modules/ScheduleColumnCollapse/*
 plugins/truebim/artifacts/Docs/*
 ```
 
@@ -79,6 +82,13 @@ When the Sheet Numbering component is selected, the installer copies:
 ```
 
 If the component is not selected, the manifest is not installed and the module is not available in the launcher.
+
+When the Schedule Column Collapse component is selected, the installer copies:
+
+```text
+%APPDATA%\TrueBIM\2025\Modules\ScheduleColumnCollapse\module.json
+%APPDATA%\TrueBIM\2025\Modules\ScheduleColumnCollapse\README.md
+```
 
 ## Revit Add-In Manifest Strategy
 

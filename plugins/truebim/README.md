@@ -14,7 +14,8 @@ The first module is `sheet-numbering`.
 
 ## Initial modules
 
-- `sheet-numbering` - sheet numbering and renumbering tools.
+- `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
+- `schedule-column-collapse` - copies a schedule and hides zero-only numeric columns (`Свернуть ВРС`).
 
 ## Target Revit version
 

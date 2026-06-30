@@ -4,7 +4,7 @@
 
 Create a modular Revit add-in platform where the user installs TrueBIM once and chooses which tools to install or enable.
 
-The first practical module is sheet numbering.
+The platform starts with sheet numbering and schedule column collapse modules.
 
 ## Product principles
 
@@ -35,6 +35,23 @@ The first practical module is sheet numbering.
 
 These can be added after the first stable Revit 2025 version.
 
+## Module: schedule-column-collapse
+
+### Initial scope
+
+- Work from an active schedule, a selected schedule on a sheet, or a sheet with exactly one placed schedule.
+- Duplicate the source schedule before changing field visibility.
+- Analyze displayed schedule body values without relying on company-specific field names.
+- Hide numeric fields when all numeric values in the column are zero.
+- Keep text, service, and total columns visible.
+- Write changes only to the duplicated schedule inside one Revit transaction.
+
+### Out of initial scope
+
+- Batch processing multiple schedules from one sheet.
+- Replacing a schedule instance on a sheet with the collapsed copy.
+- Revit 2022 support; the current technical target remains Revit 2025.
+
 ## Installer scope
 
 The installer should install the TrueBIM shell and selected modules.
@@ -43,6 +60,7 @@ Planned sections:
 
 - TrueBIM Core
 - Sheet Numbering
+- Schedule Column Collapse
 - Future modules
 - Desktop shortcuts and documentation
 

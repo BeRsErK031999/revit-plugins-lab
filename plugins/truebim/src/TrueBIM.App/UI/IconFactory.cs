@@ -4,10 +4,12 @@ using System.Windows.Media;
 
 namespace TrueBIM.App.UI;
 
-internal enum TrueBimIcon
+public enum TrueBimIcon
 {
     App,
     Logs,
+    SheetNumbering,
+    ScheduleCollapse,
     Open,
     Preview,
     Export,
@@ -66,6 +68,8 @@ internal static class IconFactory
         {
             TrueBimIcon.App => "M2,2 L14,2 L14,14 L2,14 Z M4,4 L12,4 L12,12 L4,12 Z M6,6 L10,6 L10,8 L6,8 Z M6,9 L11,9 L11,10.5 L6,10.5 Z",
             TrueBimIcon.Logs => "M3,2 L12,2 L12,14 L3,14 Z M5,5 L10,5 L10,6 L5,6 Z M5,8 L10,8 L10,9 L5,9 Z M5,11 L9,11 L9,12 L5,12 Z",
+            TrueBimIcon.SheetNumbering => "M3,1.5 L12,1.5 L12,14.5 L3,14.5 Z M5,4 L10,4 L10,5 L5,5 Z M5,7 L7,7 L7,8 L5,8 Z M8,7 L10,7 L10,8 L8,8 Z M5,10 L7,10 L7,11 L5,11 Z M8,10 L10,10 L10,11 L8,11 Z M12.5,5.5 L15,8 L12.5,10.5 L12.5,8.75 L10.5,8.75 L10.5,7.25 L12.5,7.25 Z",
+            TrueBimIcon.ScheduleCollapse => "M1.5,2 L14.5,2 L14.5,13 L1.5,13 Z M2.5,4 L13.5,4 L13.5,5 L2.5,5 Z M2.5,6 L4,6 L4,12 L2.5,12 Z M5,6 L6.5,6 L6.5,12 L5,12 Z M7.5,6 L9,6 L9,12 L7.5,12 Z M10,6 L11.5,6 L11.5,12 L10,12 Z M12.5,6 L13.5,6 L13.5,12 L12.5,12 Z M4.4,8.3 L6.8,8.3 L6.8,7 L9.4,9.5 L6.8,12 L6.8,10.7 L4.4,10.7 Z",
             TrueBimIcon.Open => "M2,4 L7,4 L8,6 L14,6 L14,13 L2,13 Z M3,7 L13,7 L12,12 L3,12 Z",
             TrueBimIcon.Preview => "M1,8 C3,4 6,3 8,3 C10,3 13,4 15,8 C13,12 10,13 8,13 C6,13 3,12 1,8 Z M8,5 A3,3 0 1 0 8,11 A3,3 0 1 0 8,5 Z M8,6.5 A1.5,1.5 0 1 1 8,9.5 A1.5,1.5 0 1 1 8,6.5 Z",
             TrueBimIcon.Export => "M3,2 L10,2 L13,5 L13,14 L3,14 Z M10,2 L10,5 L13,5 Z M7.5,6 L7.5,10 L5.5,8 L4.5,9 L8,12 L11.5,9 L10.5,8 L8.5,10 L8.5,6 Z",
