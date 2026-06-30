@@ -43,7 +43,6 @@ function Test-AbsolutePath {
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $projectPath = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\TrueBIM.App.csproj"
-$dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
 $buildArtifactsScript = Join-Path $repoRoot "plugins\truebim\scripts\build-artifacts-2022.ps1"
 $deployScript = Join-Path $repoRoot "plugins\truebim\scripts\deploy-local-2022.ps1"
 $addinPath = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2022\TrueBIM.addin"
@@ -54,9 +53,8 @@ $moduleSettingsPath = Join-Path $env:APPDATA "TrueBIM\2022\module-settings.json"
 $jsonDependencyPath = Join-Path $corePath "System.Text.Json.dll"
 
 try {
-    if (-not (Test-Path $dotnetPath)) {
-        throw "Required .NET SDK host was not found at '$dotnetPath'."
-    }
+    . (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
+    $dotnetPath = Resolve-DotNetSdk
 
     Add-Check -Name ".NET SDK path" -Passed $true -Message $dotnetPath
 

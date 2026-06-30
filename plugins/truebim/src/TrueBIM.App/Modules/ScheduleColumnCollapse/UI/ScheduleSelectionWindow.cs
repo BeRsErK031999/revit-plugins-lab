@@ -19,10 +19,7 @@ public sealed class ScheduleSelectionWindow : Window
         string contextMessage,
         IntPtr ownerWindowHandle)
     {
-        allSchedules = schedules
-            .OrderBy(schedule => schedule.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(schedule => schedule.Context, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        allSchedules = schedules.ToList();
 
         Title = "Выбор спецификации";
         Icon = IconFactory.CreateImage(TrueBimIcon.ScheduleCollapse, 32);

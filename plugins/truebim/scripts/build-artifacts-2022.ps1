@@ -8,7 +8,6 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $trueBimRoot = Join-Path $repoRoot "plugins\truebim"
 $projectPath = Join-Path $trueBimRoot "src\TrueBIM.App\TrueBIM.App.csproj"
-$dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
 $projectOutputDir = Join-Path $trueBimRoot "src\TrueBIM.App\bin\$Configuration\net48"
 $artifactsDir = Join-Path $trueBimRoot "artifacts-2022"
 $coreArtifactsDir = Join-Path $artifactsDir "Core"
@@ -17,9 +16,8 @@ $scheduleColumnCollapseArtifactsDir = Join-Path $artifactsDir "Modules\ScheduleC
 $docsArtifactsDir = Join-Path $artifactsDir "Docs"
 $assetsArtifactsDir = Join-Path $artifactsDir "Assets"
 
-if (-not (Test-Path $dotnetPath)) {
-    throw "Required .NET SDK host was not found at '$dotnetPath'."
-}
+. (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
+$dotnetPath = Resolve-DotNetSdk
 
 & $dotnetPath build $projectPath --configuration $Configuration --framework net48 --nologo --verbosity:minimal
 

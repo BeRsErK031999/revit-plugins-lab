@@ -20,11 +20,9 @@ $scheduleColumnCollapseTargetDir = Join-Path $env:APPDATA "TrueBIM\2022\Modules\
 $assetsTargetDir = Join-Path $env:APPDATA "TrueBIM\2022\Assets"
 $addinTargetDir = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2022"
 $addinTargetPath = Join-Path $addinTargetDir "TrueBIM.addin"
-$dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
 
-if (-not (Test-Path $dotnetPath)) {
-    throw "Required .NET SDK host was not found at '$dotnetPath'."
-}
+. (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
+$dotnetPath = Resolve-DotNetSdk
 
 $runningRevit = Get-Process -Name "Revit" -ErrorAction SilentlyContinue
 if ($runningRevit) {

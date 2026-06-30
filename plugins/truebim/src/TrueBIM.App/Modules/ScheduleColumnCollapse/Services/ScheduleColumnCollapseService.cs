@@ -117,104 +117,18 @@ public sealed class ScheduleColumnCollapseService
     private static ViewSchedule? ResolveTargetSchedule(UIDocument uiDocument, IntPtr ownerWindowHandle, out string? error)
     {
         Document document = uiDocument.Document;
-        IReadOnlyList<ViewSchedule> selectedSchedules = uiDocument.Selection
-            .GetElementIds()
-            .Select(document.GetElement)
-            .OfType<ScheduleSheetInstance>()
-            .Select(instance => document.GetElement(instance.ScheduleId) as ViewSchedule)
-            .Where(schedule => schedule is not null)
-            .Cast<ViewSchedule>()
-            .ToList();
-        selectedSchedules = DistinctSchedulesById(selectedSchedules);
-
-        if (selectedSchedules.Count == 1)
+        IReadOnlyList<ScheduleSelectionItem> schedules = CollectScheduleSelectionItems(uiDocument);
+        if (schedules.Count == 0)
         {
-            error = null;
-            return selectedSchedules[0];
+            error = "В документе не найдено спецификаций для сворачивания.";
+            return null;
         }
 
-        if (selectedSchedules.Count > 1)
-        {
-            return SelectSchedule(
-                document,
-                selectedSchedules,
-                context: "Выбрано несколько спецификаций. Укажите, какую нужно свернуть.",
-                itemContext: "Выбрано на листе",
-                ownerWindowHandle,
-                out error);
-        }
+        ScheduleSelectionWindow selectionWindow = new(
+            schedules,
+            "Выберите спецификацию, которую нужно свернуть.",
+            ownerWindowHandle);
 
-        if (document.ActiveView is ViewSchedule activeSchedule)
-        {
-            error = null;
-            return activeSchedule;
-        }
-
-        if (document.ActiveView is ViewSheet activeSheet)
-        {
-            IReadOnlyList<ViewSchedule> sheetSchedules = new FilteredElementCollector(document, activeSheet.Id)
-                .OfClass(typeof(ScheduleSheetInstance))
-                .Cast<ScheduleSheetInstance>()
-                .Select(instance => document.GetElement(instance.ScheduleId) as ViewSchedule)
-                .Where(schedule => schedule is not null)
-                .Cast<ViewSchedule>()
-                .ToList();
-            sheetSchedules = DistinctSchedulesById(sheetSchedules);
-
-            if (sheetSchedules.Count == 1)
-            {
-                error = null;
-                return sheetSchedules[0];
-            }
-
-            if (sheetSchedules.Count > 1)
-            {
-                string sheetContext = $"Лист {activeSheet.SheetNumber}: {activeSheet.Name}";
-                return SelectSchedule(
-                    document,
-                    sheetSchedules,
-                    context: "На активном листе найдено несколько спецификаций. Выберите нужную.",
-                    itemContext: sheetContext,
-                    ownerWindowHandle,
-                    out error);
-            }
-        }
-
-        IReadOnlyList<ViewSchedule> documentSchedules = CollectDocumentSchedules(document);
-        if (documentSchedules.Count == 1)
-        {
-            error = null;
-            return documentSchedules[0];
-        }
-
-        if (documentSchedules.Count > 1)
-        {
-            return SelectSchedule(
-                document,
-                documentSchedules,
-                context: "Выберите спецификацию, которую нужно свернуть.",
-                itemContext: "Спецификация в документе",
-                ownerWindowHandle,
-                out error);
-        }
-
-        error = "В документе не найдено спецификаций для сворачивания.";
-        return null;
-    }
-
-    private static ViewSchedule? SelectSchedule(
-        Document document,
-        IReadOnlyList<ViewSchedule> schedules,
-        string context,
-        string itemContext,
-        IntPtr ownerWindowHandle,
-        out string? error)
-    {
-        IReadOnlyList<ScheduleSelectionItem> items = schedules
-            .Select(schedule => new ScheduleSelectionItem(schedule.Id, schedule.Name, itemContext))
-            .ToList();
-
-        ScheduleSelectionWindow selectionWindow = new(items, context, ownerWindowHandle);
         bool? dialogResult = selectionWindow.ShowDialog();
         if (dialogResult != true || selectionWindow.SelectedSchedule is null)
         {
@@ -224,6 +138,79 @@ public sealed class ScheduleColumnCollapseService
 
         error = null;
         return document.GetElement(selectionWindow.SelectedSchedule.ScheduleId) as ViewSchedule;
+    }
+
+    private static IReadOnlyList<ScheduleSelectionItem> CollectScheduleSelectionItems(UIDocument uiDocument)
+    {
+        Document document = uiDocument.Document;
+        List<ScheduleSelectionItem> items = new();
+        HashSet<long> seenIds = new();
+
+        void AddSchedule(ViewSchedule? schedule, string context)
+        {
+            if (schedule is null || schedule.IsTemplate)
+            {
+                return;
+            }
+
+            long scheduleId = RevitElementIds.GetValue(schedule.Id);
+            if (!seenIds.Add(scheduleId))
+            {
+                return;
+            }
+
+            items.Add(new ScheduleSelectionItem(schedule.Id, schedule.Name, context));
+        }
+
+        foreach (ViewSchedule schedule in CollectSelectedSchedules(uiDocument))
+        {
+            AddSchedule(schedule, "Выбрано на листе");
+        }
+
+        if (document.ActiveView is ViewSchedule activeSchedule)
+        {
+            AddSchedule(activeSchedule, "Активная спецификация");
+        }
+
+        if (document.ActiveView is ViewSheet activeSheet)
+        {
+            string sheetContext = $"Активный лист {activeSheet.SheetNumber}: {activeSheet.Name}";
+            foreach (ViewSchedule schedule in CollectSheetSchedules(document, activeSheet))
+            {
+                AddSchedule(schedule, sheetContext);
+            }
+        }
+
+        foreach (ViewSchedule schedule in CollectDocumentSchedules(document))
+        {
+            AddSchedule(schedule, "Спецификация в документе");
+        }
+
+        return items;
+    }
+
+    private static IReadOnlyList<ViewSchedule> CollectSelectedSchedules(UIDocument uiDocument)
+    {
+        Document document = uiDocument.Document;
+        return DistinctSchedulesById(uiDocument.Selection
+            .GetElementIds()
+            .Select(document.GetElement)
+            .OfType<ScheduleSheetInstance>()
+            .Select(instance => document.GetElement(instance.ScheduleId) as ViewSchedule)
+            .Where(schedule => schedule is not null && !schedule.IsTemplate)
+            .Cast<ViewSchedule>()
+            .ToList());
+    }
+
+    private static IReadOnlyList<ViewSchedule> CollectSheetSchedules(Document document, ViewSheet sheet)
+    {
+        return DistinctSchedulesById(new FilteredElementCollector(document, sheet.Id)
+            .OfClass(typeof(ScheduleSheetInstance))
+            .Cast<ScheduleSheetInstance>()
+            .Select(instance => document.GetElement(instance.ScheduleId) as ViewSchedule)
+            .Where(schedule => schedule is not null && !schedule.IsTemplate)
+            .Cast<ViewSchedule>()
+            .ToList());
     }
 
     private static IReadOnlyList<ViewSchedule> CollectDocumentSchedules(Document document)
