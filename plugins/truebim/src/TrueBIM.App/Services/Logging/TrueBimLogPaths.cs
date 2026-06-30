@@ -15,7 +15,7 @@ public sealed class TrueBimLogPaths
 
     public TrueBimLogPaths(string appDataDirectory)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
+        Guard.NotNullOrWhiteSpace(appDataDirectory, nameof(appDataDirectory));
 
         LogDirectory = Path.Combine(appDataDirectory, "TrueBIM", "Logs");
         CurrentLogFile = Path.Combine(LogDirectory, "truebim.log");

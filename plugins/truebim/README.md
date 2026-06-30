@@ -17,14 +17,14 @@ The first module is `sheet-numbering`.
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
 - `schedule-column-collapse` - copies a schedule and hides zero-only numeric columns (`Свернуть ВРС`).
 
-## Target Revit version
+## Target Revit versions
 
-Initial development target: Revit 2025.
+Supported local development targets: Revit 2022 and Revit 2025.
 
-Technical target:
+Technical targets:
 
-- `net8.0-windows`
-- `RevitAPI.dll` and `RevitAPIUI.dll` from Revit 2025
+- Revit 2022: `net48`, `RevitAPI.dll`, and `RevitAPIUI.dll` from Revit 2022.
+- Revit 2025: `net8.0-windows`, `RevitAPI.dll`, and `RevitAPIUI.dll` from Revit 2025.
 
 ## Build And Package
 
@@ -37,10 +37,11 @@ Build Release:
 Build installer-ready artifacts:
 
 ```powershell
+.\plugins\truebim\scripts\build-artifacts-2022.ps1
 .\plugins\truebim\scripts\build-artifacts-2025.ps1
 ```
 
-Artifacts are generated under `plugins/truebim/artifacts/` and are not committed.
+Artifacts are generated under `plugins/truebim/artifacts-2022/` or `plugins/truebim/artifacts/` and are not committed.
 
 Compile the installer draft with Inno Setup after artifacts are built:
 

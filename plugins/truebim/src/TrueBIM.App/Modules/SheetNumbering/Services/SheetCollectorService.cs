@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.SheetNumbering.Models;
+using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.SheetNumbering.Services;
 
@@ -7,13 +8,13 @@ public sealed class SheetCollectorService
 {
     public IReadOnlyList<SheetInfo> Collect(Document document)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        Guard.NotNull(document, nameof(document));
 
         return new FilteredElementCollector(document)
             .OfClass(typeof(ViewSheet))
             .Cast<ViewSheet>()
             .Select(sheet => new SheetInfo(
-                sheet.Id.Value,
+                RevitElementIds.GetValue(sheet.Id),
                 sheet.SheetNumber,
                 sheet.Name,
                 sheet.IsPlaceholder))

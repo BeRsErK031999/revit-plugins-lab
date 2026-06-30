@@ -23,8 +23,8 @@ public sealed class ModuleManifestLoader
 
     public ModuleManifestLoadResult Load(string modulesRoot, string revitVersion)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(modulesRoot);
-        ArgumentException.ThrowIfNullOrWhiteSpace(revitVersion);
+        Guard.NotNullOrWhiteSpace(modulesRoot, nameof(modulesRoot));
+        Guard.NotNullOrWhiteSpace(revitVersion, nameof(revitVersion));
 
         logger.Info($"Loading TrueBIM module manifests from '{modulesRoot}' for Revit {revitVersion}.");
 
@@ -66,7 +66,7 @@ public sealed class ModuleManifestLoader
 
     public static ModuleManifest ParseManifest(string json)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        Guard.NotNullOrWhiteSpace(json, nameof(json));
 
         ModuleManifestDto dto = JsonSerializer.Deserialize<ModuleManifestDto>(json, SerializerOptions)
             ?? throw new InvalidOperationException("Module manifest is empty.");
@@ -97,8 +97,8 @@ public sealed class ModuleManifestLoader
 
     public static bool SupportsRevitVersion(ModuleManifest manifest, string revitVersion)
     {
-        ArgumentNullException.ThrowIfNull(manifest);
-        ArgumentException.ThrowIfNullOrWhiteSpace(revitVersion);
+        Guard.NotNull(manifest, nameof(manifest));
+        Guard.NotNullOrWhiteSpace(revitVersion, nameof(revitVersion));
 
         return manifest.RevitVersions.Contains(revitVersion, StringComparer.OrdinalIgnoreCase);
     }

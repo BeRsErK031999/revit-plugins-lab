@@ -19,7 +19,7 @@ public sealed class ModuleSettingsService
 
     public ModuleSettingsService(string settingsPath, ITrueBimLogger logger)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
+        Guard.NotNullOrWhiteSpace(settingsPath, nameof(settingsPath));
         this.settingsPath = settingsPath;
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         settings = LoadSettings(settingsPath, logger);
@@ -27,7 +27,7 @@ public sealed class ModuleSettingsService
 
     public bool IsEnabled(ModuleManifest manifest)
     {
-        ArgumentNullException.ThrowIfNull(manifest);
+        Guard.NotNull(manifest, nameof(manifest));
 
         return settings.Modules.TryGetValue(manifest.Id, out bool enabled)
             ? enabled
@@ -36,7 +36,7 @@ public sealed class ModuleSettingsService
 
     public void SetEnabled(string moduleId, bool isEnabled)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(moduleId);
+        Guard.NotNullOrWhiteSpace(moduleId, nameof(moduleId));
 
         settings.Modules[moduleId] = isEnabled;
         Save();

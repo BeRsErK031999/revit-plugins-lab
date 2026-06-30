@@ -17,10 +17,10 @@ public sealed class SheetNumberingPreviewWorkflow
 
     public SheetNumberingPreviewResult GeneratePreview(SheetNumberingPreviewRequest request)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(request.SelectedSheets);
-        ArgumentNullException.ThrowIfNull(request.ExistingSheets);
-        ArgumentNullException.ThrowIfNull(request.Rules);
+        Guard.NotNull(request, nameof(request));
+        Guard.NotNull(request.SelectedSheets, nameof(request.SelectedSheets));
+        Guard.NotNull(request.ExistingSheets, nameof(request.ExistingSheets));
+        Guard.NotNull(request.Rules, nameof(request.Rules));
 
         IReadOnlyList<SheetNumberPreview> previews = previewService.GeneratePreviews(
             request.SelectedSheets,

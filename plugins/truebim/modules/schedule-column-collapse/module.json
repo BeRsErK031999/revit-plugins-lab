@@ -4,5 +4,5 @@
   "description": "Создаёт копию спецификации и скрывает столбцы, где все значения равны нулю.",
   "version": "0.1.0",
   "enabledByDefault": true,
-  "revitVersions": ["2025"]
+  "revitVersions": ["2022", "2025"]
 }

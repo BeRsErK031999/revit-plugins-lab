@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.SheetNumbering.Models;
+using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.SheetNumbering.Services;
 
@@ -7,8 +8,8 @@ public sealed class SheetNumberApplyService
 {
     public SheetNumberApplyResult Apply(Document document, IReadOnlyList<SheetNumberChange> changes)
     {
-        ArgumentNullException.ThrowIfNull(document);
-        ArgumentNullException.ThrowIfNull(changes);
+        Guard.NotNull(document, nameof(document));
+        Guard.NotNull(changes, nameof(changes));
 
         int unchangedCount = changes.Count(change => !change.IsChanged);
         List<SheetNumberChange> changedChanges = changes
@@ -35,7 +36,7 @@ public sealed class SheetNumberApplyService
         Dictionary<long, ViewSheet> sheetsById = changedChanges
             .ToDictionary(
                 change => change.ElementId,
-                change => (ViewSheet)document.GetElement(new ElementId(change.ElementId)));
+                change => (ViewSheet)document.GetElement(RevitElementIds.Create(change.ElementId)));
         using Transaction transaction = new(document, "TrueBIM Sheet Numbering");
         transaction.Start();
 
@@ -91,7 +92,7 @@ public sealed class SheetNumberApplyService
                     message: "Apply validation failed: new sheet number is empty.");
             }
 
-            Element? element = document.GetElement(new ElementId(change.ElementId));
+            Element? element = document.GetElement(RevitElementIds.Create(change.ElementId));
             if (element is null)
             {
                 return Failure(

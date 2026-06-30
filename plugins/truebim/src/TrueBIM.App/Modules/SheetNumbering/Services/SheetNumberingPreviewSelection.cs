@@ -8,7 +8,7 @@ public static class SheetNumberingPreviewSelection
         IReadOnlyList<SheetInfo> selectedSheets,
         bool includePlaceholders)
     {
-        ArgumentNullException.ThrowIfNull(selectedSheets);
+        Guard.NotNull(selectedSheets, nameof(selectedSheets));
 
         return selectedSheets
             .Where(sheet => includePlaceholders || !sheet.IsPlaceholder)

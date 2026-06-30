@@ -4,8 +4,8 @@ public static class TrueBimLogFormatter
 {
     public static string Format(DateTimeOffset timestamp, string level, string message, Exception? exception = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(level);
-        ArgumentNullException.ThrowIfNull(message);
+        Guard.NotNullOrWhiteSpace(level, nameof(level));
+        Guard.NotNull(message, nameof(message));
 
         string line = $"{timestamp:O} [{level}] {message}";
         return exception is null

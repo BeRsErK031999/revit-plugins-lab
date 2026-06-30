@@ -6,6 +6,7 @@ obj/
 
 # Revit local artifacts
 plugins/truebim/artifacts/
+plugins/truebim/artifacts-2022/
 plugins/truebim/installer/Output/
 *.addin.user
 *.journal

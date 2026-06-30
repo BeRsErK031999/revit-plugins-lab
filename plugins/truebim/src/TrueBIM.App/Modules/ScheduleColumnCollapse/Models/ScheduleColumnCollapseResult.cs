@@ -14,7 +14,7 @@ public sealed record ScheduleColumnCollapseResult(
 {
     public static ScheduleColumnCollapseResult Failure(string message)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        Guard.NotNullOrWhiteSpace(message, nameof(message));
 
         return new ScheduleColumnCollapseResult(
             Succeeded: false,

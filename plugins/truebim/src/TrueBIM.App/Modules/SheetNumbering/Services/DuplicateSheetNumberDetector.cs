@@ -10,8 +10,8 @@ public sealed class DuplicateSheetNumberDetector : IDuplicateSheetNumberDetector
         IReadOnlyList<SheetNumberPreview> previews,
         IReadOnlyList<SheetInfo> existingSheets)
     {
-        ArgumentNullException.ThrowIfNull(previews);
-        ArgumentNullException.ThrowIfNull(existingSheets);
+        Guard.NotNull(previews, nameof(previews));
+        Guard.NotNull(existingSheets, nameof(existingSheets));
 
         List<DuplicateSheetNumberIssue> issues = new();
         issues.AddRange(DetectPreviewDuplicates(previews));
@@ -51,9 +51,7 @@ public sealed class DuplicateSheetNumberDetector : IDuplicateSheetNumberDetector
                 continue;
             }
 
-            HashSet<long> previewSheetIds = previewGroup
-                .Select(preview => preview.Sheet.ElementId)
-                .ToHashSet();
+            HashSet<long> previewSheetIds = new(previewGroup.Select(preview => preview.Sheet.ElementId));
 
             List<SheetInfo> existingConflicts = matches
                 .Where(sheet => !previewSheetIds.Contains(sheet.ElementId))

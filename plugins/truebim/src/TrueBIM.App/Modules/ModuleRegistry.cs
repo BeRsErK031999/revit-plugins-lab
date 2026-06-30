@@ -7,24 +7,29 @@ namespace TrueBIM.App.Modules;
 
 public sealed class ModuleRegistry
 {
-    private const string RevitVersion = "2025";
     private readonly List<ModuleRegistryEntry> modules = new();
 
     public IReadOnlyCollection<ModuleRegistryEntry> Modules => modules;
 
     public static ModuleRegistry CreateForRevit2025(ITrueBimLogger logger)
     {
-        ArgumentNullException.ThrowIfNull(logger);
+        return CreateForRevitVersion("2025", logger);
+    }
+
+    public static ModuleRegistry CreateForRevitVersion(string revitVersion, ITrueBimLogger logger)
+    {
+        Guard.NotNullOrWhiteSpace(revitVersion, nameof(revitVersion));
+        Guard.NotNull(logger, nameof(logger));
 
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        string trueBimRoot = Path.Combine(appData, "TrueBIM", RevitVersion);
+        string trueBimRoot = Path.Combine(appData, "TrueBIM", revitVersion);
         string modulesRoot = Path.Combine(trueBimRoot, "Modules");
         string settingsPath = Path.Combine(trueBimRoot, "module-settings.json");
 
         return Create(
             modulesRoot,
             settingsPath,
-            RevitVersion,
+            revitVersion,
             new ModuleManifestLoader(logger),
             new ModuleSettingsService(settingsPath, logger),
             logger);
@@ -38,12 +43,12 @@ public sealed class ModuleRegistry
         ModuleSettingsService settingsService,
         ITrueBimLogger logger)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(modulesRoot);
-        ArgumentException.ThrowIfNullOrWhiteSpace(settingsPath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(revitVersion);
-        ArgumentNullException.ThrowIfNull(manifestLoader);
-        ArgumentNullException.ThrowIfNull(settingsService);
-        ArgumentNullException.ThrowIfNull(logger);
+        Guard.NotNullOrWhiteSpace(modulesRoot, nameof(modulesRoot));
+        Guard.NotNullOrWhiteSpace(settingsPath, nameof(settingsPath));
+        Guard.NotNullOrWhiteSpace(revitVersion, nameof(revitVersion));
+        Guard.NotNull(manifestLoader, nameof(manifestLoader));
+        Guard.NotNull(settingsService, nameof(settingsService));
+        Guard.NotNull(logger, nameof(logger));
 
         Dictionary<string, ITrueBimModule> implementations = CreateAvailableImplementations();
         ModuleRegistry registry = new();

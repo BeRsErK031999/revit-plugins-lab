@@ -31,9 +31,9 @@ The platform starts with sheet numbering and schedule column collapse modules.
 - Online marketplace.
 - Auto-update.
 - Complex company standard rule engine.
-- Revit 2024 and older multi-target builds.
+- Installer-finalized multi-target release beyond local Revit 2022 and Revit 2025 deploy scripts.
 
-These can be added after the first stable Revit 2025 version.
+These can be added after the first stable local Revit 2022 and Revit 2025 workflows.
 
 ## Module: schedule-column-collapse
 
@@ -50,7 +50,7 @@ These can be added after the first stable Revit 2025 version.
 
 - Batch processing multiple schedules from one sheet.
 - Replacing a schedule instance on a sheet with the collapsed copy.
-- Revit 2022 support; the current technical target remains Revit 2025.
+- Replacing the current Revit 2022 and Revit 2025 local deploy scripts with a finalized multi-version installer.
 
 ## Installer scope
 

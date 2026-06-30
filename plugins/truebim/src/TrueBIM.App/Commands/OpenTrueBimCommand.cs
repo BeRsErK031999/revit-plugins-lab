@@ -20,15 +20,17 @@ public sealed class OpenTrueBimCommand : IExternalCommand
     {
         FileTrueBimLogger logger = new(new TrueBimLogPaths());
         TrueBimLogFileOpener logFileOpener = new(logger);
+        string revitVersion = commandData.Application.Application.VersionNumber;
         ModuleSettingsService moduleSettings = new(
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "TrueBIM",
-                "2025",
+                revitVersion,
                 "module-settings.json"),
             logger);
-        ModuleRegistry registry = ModuleRegistry.CreateForRevit2025(logger);
+        ModuleRegistry registry = ModuleRegistry.CreateForRevitVersion(revitVersion, logger);
         logger.Info("Opening TrueBIM launcher.");
+        logger.Info("Revit version: " + revitVersion);
         logger.Info("Modules found: " + string.Join(", ", registry.Modules.Select(module => module.Id)));
 
         Dictionary<string, Action<System.Windows.Window>> moduleActions = new()

@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
@@ -19,7 +20,7 @@ public sealed class ScheduleColumnCollapseService
 
     public ScheduleColumnCollapseResult Collapse(UIDocument uiDocument)
     {
-        ArgumentNullException.ThrowIfNull(uiDocument);
+        Guard.NotNull(uiDocument, nameof(uiDocument));
 
         Document document = uiDocument.Document;
         ViewSchedule? sourceSchedule = ResolveTargetSchedule(uiDocument, out string? resolveError);
@@ -123,8 +124,8 @@ public sealed class ScheduleColumnCollapseService
             .Select(instance => document.GetElement(instance.ScheduleId) as ViewSchedule)
             .Where(schedule => schedule is not null)
             .Cast<ViewSchedule>()
-            .DistinctBy(schedule => schedule.Id)
             .ToList();
+        selectedSchedules = DistinctSchedulesById(selectedSchedules);
 
         if (selectedSchedules.Count == 1)
         {
@@ -152,8 +153,8 @@ public sealed class ScheduleColumnCollapseService
                 .Select(instance => document.GetElement(instance.ScheduleId) as ViewSchedule)
                 .Where(schedule => schedule is not null)
                 .Cast<ViewSchedule>()
-                .DistinctBy(schedule => schedule.Id)
                 .ToList();
+            sheetSchedules = DistinctSchedulesById(sheetSchedules);
 
             if (sheetSchedules.Count == 1)
             {
@@ -232,11 +233,12 @@ public sealed class ScheduleColumnCollapseService
 
     private static string CreateUniqueScheduleName(Document document, string baseName)
     {
-        HashSet<string> existingNames = new FilteredElementCollector(document)
+        HashSet<string> existingNames = new(
+            new FilteredElementCollector(document)
             .OfClass(typeof(ViewSchedule))
             .Cast<ViewSchedule>()
-            .Select(schedule => schedule.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Select(schedule => schedule.Name),
+            StringComparer.OrdinalIgnoreCase);
 
         if (!existingNames.Contains(baseName))
         {
@@ -253,6 +255,21 @@ public sealed class ScheduleColumnCollapseService
         }
 
         return $"{baseName} {Guid.NewGuid():N}";
+    }
+
+    private static IReadOnlyList<ViewSchedule> DistinctSchedulesById(IEnumerable<ViewSchedule> schedules)
+    {
+        HashSet<long> seenIds = new();
+        List<ViewSchedule> distinctSchedules = new();
+        foreach (ViewSchedule schedule in schedules)
+        {
+            if (seenIds.Add(RevitElementIds.GetValue(schedule.Id)))
+            {
+                distinctSchedules.Add(schedule);
+            }
+        }
+
+        return distinctSchedules;
     }
 
     private sealed record FieldSnapshot(ScheduleFieldId FieldId, ScheduleColumnState Column);

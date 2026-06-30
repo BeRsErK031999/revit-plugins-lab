@@ -9,8 +9,8 @@ public sealed class SheetNumberPreviewService
         IReadOnlyList<SheetInfo> sheets,
         NumberingRules rules)
     {
-        ArgumentNullException.ThrowIfNull(sheets);
-        ArgumentNullException.ThrowIfNull(rules);
+        Guard.NotNull(sheets, nameof(sheets));
+        Guard.NotNull(rules, nameof(rules));
 
         return sheets
             .Select((sheet, index) => new SheetNumberPreview(

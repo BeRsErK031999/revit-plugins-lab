@@ -7,7 +7,7 @@ public sealed class SheetNumberPreviewExportFormatter
 {
     public string FormatCsv(IReadOnlyList<SheetNumberPreviewExportRow> rows)
     {
-        ArgumentNullException.ThrowIfNull(rows);
+        Guard.NotNull(rows, nameof(rows));
 
         StringBuilder builder = new();
         builder.AppendLine("ElementId,CurrentNumber,NewNumber,SheetName,IsPlaceholder,Status");

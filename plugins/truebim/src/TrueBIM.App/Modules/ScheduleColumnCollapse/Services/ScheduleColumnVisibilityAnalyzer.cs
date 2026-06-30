@@ -13,14 +13,14 @@ public sealed class ScheduleColumnVisibilityAnalyzer
 
     public IReadOnlyList<ScheduleColumnVisibilityDecision> Analyze(IEnumerable<ScheduleColumnState> columns)
     {
-        ArgumentNullException.ThrowIfNull(columns);
+        Guard.NotNull(columns, nameof(columns));
 
         return columns.Select(AnalyzeColumn).ToList();
     }
 
     public ScheduleColumnVisibilityDecision AnalyzeColumn(ScheduleColumnState column)
     {
-        ArgumentNullException.ThrowIfNull(column);
+        Guard.NotNull(column, nameof(column));
 
         if (!column.CanHide)
         {
@@ -68,7 +68,7 @@ public sealed class ScheduleColumnVisibilityAnalyzer
 
     private static bool ContainsAlwaysVisibleToken(string text)
     {
-        return AlwaysVisibleTokens.Any(token => text.Contains(token, StringComparison.OrdinalIgnoreCase));
+        return AlwaysVisibleTokens.Any(token => text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     private static NumericColumnSummary SummarizeNumericValues(IEnumerable<string> cellTexts)
@@ -102,10 +102,10 @@ public sealed class ScheduleColumnVisibilityAnalyzer
             return false;
         }
 
-        string normalized = text
+        string normalized = text!
             .Trim()
             .Replace('\u00a0', ' ')
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace(" ", string.Empty)
             .Replace(',', '.')
             .Replace('−', '-');
 
