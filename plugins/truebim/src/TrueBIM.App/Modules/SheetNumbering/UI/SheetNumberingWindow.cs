@@ -10,6 +10,7 @@ using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Rules;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 using RevitDocument = Autodesk.Revit.DB.Document;
 
 namespace TrueBIM.App.Modules.SheetNumbering.UI;
@@ -21,17 +22,28 @@ public sealed class SheetNumberingWindow : Window
     private readonly SheetNumberingPreviewWorkflow workflow;
     private readonly SheetNumberApplyService applyService;
     private readonly ITrueBimLogger logger;
-    private readonly Button applyButton = CreateActionButton("Apply", isEnabled: false);
-    private readonly Button exportPreviewButton = CreateActionButton("Export Preview", isEnabled: false);
-    private readonly CheckBox includePlaceholdersInput = new() { Content = "Include placeholders", IsChecked = false };
+    private readonly SheetPreviewOrderService orderService = new();
+    private readonly Button applyButton = CreateActionButton("Применить", TrueBimIcon.Apply, isEnabled: false);
+    private readonly Button exportPreviewButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
+    private readonly Button moveUpButton = CreateActionButton("Вверх", TrueBimIcon.Up, isEnabled: false);
+    private readonly Button moveDownButton = CreateActionButton("Вниз", TrueBimIcon.Down, isEnabled: false);
+    private readonly Button moveToPositionButton = CreateActionButton("Переместить", TrueBimIcon.Move, isEnabled: false);
+    private readonly CheckBox includePlaceholdersInput = new()
+    {
+        Content = "Включать листы-заглушки",
+        IsChecked = false,
+        ToolTip = "Включает листы-заглушки в предпросмотр и применение."
+    };
     private readonly TextBlock statusText = new();
     private readonly ComboBox orderInput = new();
+    private readonly TextBox positionInput = new() { Text = "1" };
+    private readonly DataGrid previewGrid = new();
     private readonly DispatcherTimer selectionLogTimer;
-    private readonly TextBox prefixInput = new() { Text = "A-" };
-    private readonly TextBox suffixInput = new();
-    private readonly TextBox startNumberInput = new() { Text = "1" };
-    private readonly TextBox incrementInput = new() { Text = "1" };
-    private readonly TextBox paddingInput = new() { Text = "2" };
+    private readonly TextBox prefixInput = new() { Text = "A-", ToolTip = "Текст перед номером листа." };
+    private readonly TextBox suffixInput = new() { ToolTip = "Текст после номера листа." };
+    private readonly TextBox startNumberInput = new() { Text = "1", ToolTip = "Первое число в новой нумерации." };
+    private readonly TextBox incrementInput = new() { Text = "1", ToolTip = "На сколько увеличивать номер для следующего листа." };
+    private readonly TextBox paddingInput = new() { Text = "2", ToolTip = "Минимальное количество цифр, например 01 или 001." };
     private bool suppressSelectionLogging;
     private bool isPreviewCurrent;
     private IReadOnlyList<SheetInfo> sheets;
@@ -51,7 +63,8 @@ public sealed class SheetNumberingWindow : Window
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         this.applyService = applyService ?? throw new ArgumentNullException(nameof(applyService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        Title = "Sheet Numbering";
+        Title = "Нумерация листов";
+        Icon = IconFactory.CreateImage(TrueBimIcon.App, 32);
         Width = 820;
         Height = 520;
         MinWidth = 680;
@@ -103,11 +116,11 @@ public sealed class SheetNumberingWindow : Window
             rules.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         }
 
-        AddRuleField(rules, "Prefix", prefixInput, 0);
-        AddRuleField(rules, "Suffix", suffixInput, 1);
-        AddRuleField(rules, "Start Number", startNumberInput, 2);
-        AddRuleField(rules, "Increment", incrementInput, 3);
-        AddRuleField(rules, "Padding", paddingInput, 4);
+        AddRuleField(rules, "Префикс", prefixInput, 0);
+        AddRuleField(rules, "Суффикс", suffixInput, 1);
+        AddRuleField(rules, "Стартовый номер", startNumberInput, 2);
+        AddRuleField(rules, "Шаг", incrementInput, 3);
+        AddRuleField(rules, "Разрядность", paddingInput, 4);
 
         return rules;
     }
@@ -125,13 +138,15 @@ public sealed class SheetNumberingWindow : Window
             HorizontalAlignment = HorizontalAlignment.Left
         };
 
-        Button selectAllButton = CreateActionButton("Select All", isEnabled: true);
+        Button selectAllButton = CreateActionButton("Выбрать все", TrueBimIcon.Apply, isEnabled: true);
         selectAllButton.Margin = new Thickness(0, 0, 8, 0);
+        selectAllButton.ToolTip = "Отметить все листы в таблице.";
         selectAllButton.Click += (_, _) => SetAllSelected(isSelected: true);
         selectionActions.Children.Add(selectAllButton);
 
-        Button clearSelectionButton = CreateActionButton("Clear Selection", isEnabled: true);
+        Button clearSelectionButton = CreateActionButton("Снять выбор", TrueBimIcon.Close, isEnabled: true);
         clearSelectionButton.Margin = new Thickness(0, 0, 8, 0);
+        clearSelectionButton.ToolTip = "Снять отметки со всех листов.";
         clearSelectionButton.Click += (_, _) => SetAllSelected(isSelected: false);
         selectionActions.Children.Add(clearSelectionButton);
 
@@ -152,16 +167,18 @@ public sealed class SheetNumberingWindow : Window
 
         orderControls.Children.Add(new TextBlock
         {
-            Text = "Preview order",
+            Text = "Порядок предпросмотра",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0)
         });
 
         orderInput.Width = 180;
         orderInput.Height = 32;
-        orderInput.Items.Add(new ComboBoxItem { Content = "Original order", Tag = PreviewOrder.Original });
-        orderInput.Items.Add(new ComboBoxItem { Content = "Current number", Tag = PreviewOrder.CurrentNumber });
-        orderInput.Items.Add(new ComboBoxItem { Content = "Name", Tag = PreviewOrder.Name });
+        orderInput.ToolTip = "Выберите сортировку для предпросмотра. Ручные перемещения включают ручной порядок.";
+        orderInput.Items.Add(new ComboBoxItem { Content = "Исходный порядок", Tag = PreviewOrder.Original });
+        orderInput.Items.Add(new ComboBoxItem { Content = "Текущий номер", Tag = PreviewOrder.CurrentNumber });
+        orderInput.Items.Add(new ComboBoxItem { Content = "Название", Tag = PreviewOrder.Name });
+        orderInput.Items.Add(new ComboBoxItem { Content = "Ручной порядок", Tag = PreviewOrder.Manual });
         orderInput.SelectedIndex = 0;
         orderInput.SelectionChanged += (_, _) => ApplyCurrentOrder();
         orderControls.Children.Add(orderInput);
@@ -172,18 +189,18 @@ public sealed class SheetNumberingWindow : Window
 
     private UIElement CreatePreviewGrid()
     {
-        DataGrid grid = new()
-        {
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            IsReadOnly = false,
-            ItemsSource = previewRows,
-            HeadersVisibility = DataGridHeadersVisibility.Column
-        };
+        previewGrid.AutoGenerateColumns = false;
+        previewGrid.CanUserAddRows = false;
+        previewGrid.IsReadOnly = false;
+        previewGrid.ItemsSource = previewRows;
+        previewGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
+        previewGrid.SelectionMode = DataGridSelectionMode.Single;
+        previewGrid.ToolTip = "Список листов. Отметьте листы и задайте порядок перед предпросмотром.";
+        previewGrid.SelectionChanged += (_, _) => UpdateManualOrderButtons();
 
-        grid.Columns.Add(new DataGridCheckBoxColumn
+        previewGrid.Columns.Add(new DataGridCheckBoxColumn
         {
-            Header = "Selected",
+            Header = "Выбрано",
             Binding = new Binding(nameof(PreviewRow.IsSelected))
             {
                 Mode = BindingMode.TwoWay,
@@ -191,41 +208,81 @@ public sealed class SheetNumberingWindow : Window
             },
             Width = 80
         });
-        grid.Columns.Add(CreateTextColumn("Current Number", nameof(PreviewRow.CurrentNumber), 130));
-        grid.Columns.Add(CreateTextColumn("Preview Number", nameof(PreviewRow.PreviewNumber), 130));
-        grid.Columns.Add(CreateTextColumn("Name", nameof(PreviewRow.Name), 220));
-        grid.Columns.Add(CreateTextColumn("Status / Issue", nameof(PreviewRow.Status), 220));
+        previewGrid.Columns.Add(CreateTextColumn("Позиция", nameof(PreviewRow.Position), 80));
+        previewGrid.Columns.Add(CreateTextColumn("Текущий номер", nameof(PreviewRow.CurrentNumber), 130));
+        previewGrid.Columns.Add(CreateTextColumn("Предпросмотр", nameof(PreviewRow.PreviewNumber), 130));
+        previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), 220));
+        previewGrid.Columns.Add(CreateTextColumn("Статус / проблема", nameof(PreviewRow.Status), 220));
 
-        return grid;
+        return previewGrid;
     }
 
     private UIElement CreateActions()
     {
+        DockPanel actionRoot = new()
+        {
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+
+        StackPanel orderActions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+
+        moveUpButton.ToolTip = "Переместить выбранную строку на одну позицию вверх.";
+        moveUpButton.Click += (_, _) => MoveSelectedRowUp();
+        orderActions.Children.Add(moveUpButton);
+
+        moveDownButton.ToolTip = "Переместить выбранную строку на одну позицию вниз.";
+        moveDownButton.Click += (_, _) => MoveSelectedRowDown();
+        orderActions.Children.Add(moveDownButton);
+
+        orderActions.Children.Add(new TextBlock
+        {
+            Text = "Позиция",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(12, 0, 6, 0)
+        });
+        positionInput.Width = 52;
+        positionInput.Height = 32;
+        positionInput.ToolTip = "Номер позиции, куда нужно переместить выбранный лист.";
+        orderActions.Children.Add(positionInput);
+
+        moveToPositionButton.ToolTip = "Переместить выбранную строку на указанную позицию.";
+        moveToPositionButton.Click += (_, _) => MoveSelectedRowToPosition();
+        orderActions.Children.Add(moveToPositionButton);
+
+        DockPanel.SetDock(orderActions, Dock.Left);
+        actionRoot.Children.Add(orderActions);
+
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 16, 0, 0)
         };
 
-        Button previewButton = CreateActionButton("Preview", isEnabled: true);
+        Button previewButton = CreateActionButton("Предпросмотр", TrueBimIcon.Preview, isEnabled: true);
+        previewButton.ToolTip = "Сформировать новые номера для выбранных листов.";
         previewButton.Click += (_, _) => GeneratePreview();
         actions.Children.Add(previewButton);
 
-        exportPreviewButton.ToolTip = "Export is available after Preview.";
+        exportPreviewButton.ToolTip = "Экспорт доступен после предпросмотра.";
         exportPreviewButton.Click += (_, _) => ExportPreview();
         actions.Children.Add(exportPreviewButton);
 
-        applyButton.ToolTip = "Run Preview before Apply.";
+        applyButton.ToolTip = "Сначала выполните предпросмотр.";
         applyButton.Click += (_, _) => ApplyPreview();
         actions.Children.Add(applyButton);
 
-        Button closeButton = CreateActionButton("Close", isEnabled: true);
+        Button closeButton = CreateActionButton("Закрыть", TrueBimIcon.Close, isEnabled: true);
         closeButton.IsCancel = true;
+        closeButton.ToolTip = "Закрыть окно без изменений.";
         closeButton.Click += (_, _) => Close();
         actions.Children.Add(closeButton);
 
-        return actions;
+        actionRoot.Children.Add(actions);
+        return actionRoot;
     }
 
     private UIElement CreateStatus()
@@ -259,6 +316,7 @@ public sealed class SheetNumberingWindow : Window
         previewRowCount = 0;
         duplicateIssueCount = 0;
         ApplyCurrentOrder();
+        UpdatePositions();
         UpdateStatusSummary();
     }
 
@@ -268,7 +326,7 @@ public sealed class SheetNumberingWindow : Window
 
         if (sheets.Count == 0)
         {
-            UpdateStatusSummary("No sheets found in the active document.");
+            UpdateStatusSummary("В активном документе не найдены листы.");
             logger.Warning("Sheet Numbering preview requested with no sheets.");
             return;
         }
@@ -276,7 +334,7 @@ public sealed class SheetNumberingWindow : Window
         IReadOnlyList<PreviewRow> selectedRows = GetSelectedRowsInPreviewOrder();
         if (selectedRows.Count == 0)
         {
-            UpdateStatusSummary("Select at least one sheet before running preview.");
+            UpdateStatusSummary("Выберите хотя бы один лист перед предпросмотром.");
             logger.Warning("Sheet Numbering preview validation failed: no selected sheets.");
             return;
         }
@@ -287,7 +345,7 @@ public sealed class SheetNumberingWindow : Window
 
         if (previewSheets.Count == 0)
         {
-            UpdateStatusSummary("Selected sheets are placeholders. Enable Include placeholders to preview them.");
+            UpdateStatusSummary("Выбранные листы являются заглушками. Включите листы-заглушки для предпросмотра.");
             logger.Warning("Sheet Numbering preview validation failed: selected sheets were excluded placeholders.");
             return;
         }
@@ -334,8 +392,8 @@ public sealed class SheetNumberingWindow : Window
             }
 
             string message = result.HasBlockingIssues
-                ? "Preview generated with duplicate sheet number issues. Apply is disabled."
-                : "Preview generated. Apply is enabled only when at least one preview row changes.";
+                ? "Предпросмотр создан, но есть дубли номеров. Применение отключено."
+                : "Предпросмотр создан. Применение доступно, если есть измененные строки.";
             UpdateStatusSummary(message);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
@@ -366,7 +424,7 @@ public sealed class SheetNumberingWindow : Window
 
         if (!CanApply(changes))
         {
-            UpdateStatusSummary("Apply is unavailable until a changed preview without duplicate issues is generated.");
+            UpdateStatusSummary("Применение недоступно, пока нет актуального предпросмотра без дублей.");
             logger.Warning("Sheet Numbering Apply requested while validation state was not ready.");
             return;
         }
@@ -380,7 +438,7 @@ public sealed class SheetNumberingWindow : Window
             if (!ConfirmApply(changedChanges))
             {
                 logger.Info("Sheet Numbering Apply confirmation cancelled.");
-                UpdateStatusSummary("Apply cancelled. No sheet numbers were changed.");
+                UpdateStatusSummary("Применение отменено. Номера листов не изменены.");
                 return;
             }
 
@@ -394,7 +452,7 @@ public sealed class SheetNumberingWindow : Window
                 logger.Warning(
                     $"Sheet Numbering Apply rolled back or did not start. {result.Message} Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
                 UpdateStatusSummary(
-                    $"Apply failed, no sheet numbers were changed. {result.Message}");
+                    $"Применение не выполнено, номера листов не изменены. {result.Message}");
                 return;
             }
 
@@ -403,11 +461,11 @@ public sealed class SheetNumberingWindow : Window
 
             ReloadSheetsFromDocument();
             UpdateStatusSummary(
-                $"Apply complete. Changed {result.ChangedCount}, unchanged {result.UnchangedCount}, skipped {result.SkippedCount}, failed {result.FailedCount}.");
+                $"Готово. Изменено: {result.ChangedCount}, без изменений: {result.UnchangedCount}, пропущено: {result.SkippedCount}, ошибок: {result.FailedCount}.");
             MessageBox.Show(
                 this,
-                $"Apply complete. Changed {result.ChangedCount} sheet numbers.",
-                "Sheet Numbering",
+                $"Готово. Изменено номеров листов: {result.ChangedCount}.",
+                "Нумерация листов",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -417,7 +475,7 @@ public sealed class SheetNumberingWindow : Window
             or Autodesk.Revit.Exceptions.ApplicationException)
         {
             logger.Error("Sheet Numbering Apply failed.", exception);
-            UpdateStatusSummary("Apply failed, no sheet numbers were changed. Review Logs for diagnostics.");
+            UpdateStatusSummary("Применение не выполнено, номера листов не изменены. Проверьте логи.");
         }
     }
 
@@ -427,17 +485,17 @@ public sealed class SheetNumberingWindow : Window
             Environment.NewLine,
             changedChanges.Take(5).Select(change => $"{change.CurrentNumber} -> {change.NewNumber}"));
         string more = changedChanges.Count > 5
-            ? Environment.NewLine + $"...and {changedChanges.Count - 5} more."
+            ? Environment.NewLine + $"...и еще {changedChanges.Count - 5}."
             : string.Empty;
         string message =
-            $"Apply {changedChanges.Count} sheet number changes?" + Environment.NewLine + Environment.NewLine +
+            $"Применить изменений номеров листов: {changedChanges.Count}?" + Environment.NewLine + Environment.NewLine +
             examples + more + Environment.NewLine + Environment.NewLine +
-            "This operation is one Revit transaction and can be reverted with Revit Undo.";
+            "Операция выполняется одной транзакцией Revit и откатывается через Revit Undo.";
 
         return MessageBox.Show(
             this,
             message,
-            "Confirm Sheet Numbering Apply",
+            "Подтверждение нумерации листов",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning) == MessageBoxResult.OK;
     }
@@ -446,7 +504,7 @@ public sealed class SheetNumberingWindow : Window
     {
         if (!isPreviewCurrent || previewRowCount == 0)
         {
-            UpdateStatusSummary("Run Preview before exporting.");
+            UpdateStatusSummary("Перед экспортом выполните предпросмотр.");
             return;
         }
 
@@ -465,13 +523,13 @@ public sealed class SheetNumberingWindow : Window
             SheetNumberPreviewExportFormatter formatter = new();
             File.WriteAllText(exportPath, formatter.FormatCsv(CreateExportRows()));
             logger.Info($"Sheet Numbering preview exported to '{exportPath}'.");
-            UpdateStatusSummary($"Preview exported to {exportPath}");
+            UpdateStatusSummary($"Предпросмотр экспортирован: {exportPath}");
             Process.Start(new ProcessStartInfo(exportPath) { UseShellExecute = true });
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             logger.Error("Failed to export Sheet Numbering preview.", exception);
-            UpdateStatusSummary("Preview export failed. Review Logs for diagnostics.");
+            UpdateStatusSummary("Экспорт предпросмотра не выполнен. Проверьте логи.");
         }
     }
 
@@ -542,8 +600,8 @@ public sealed class SheetNumberingWindow : Window
         foreach (DuplicateSheetNumberIssue issue in duplicateIssues)
         {
             string message = issue.Kind == DuplicateSheetNumberIssueKind.Preview
-                ? $"Duplicate preview number {issue.SheetNumber}"
-                : $"Conflicts with existing sheet number {issue.SheetNumber}";
+                ? $"Дубль в предпросмотре: {issue.SheetNumber}"
+                : $"Конфликт с существующим номером: {issue.SheetNumber}";
 
             foreach (SheetInfo sheet in issue.Sheets)
             {
@@ -565,10 +623,10 @@ public sealed class SheetNumberingWindow : Window
 
         if (preview.Sheet.IsPlaceholder)
         {
-            return "Placeholder";
+            return "Лист-заглушка";
         }
 
-        return preview.IsChanged ? "Preview" : "Unchanged";
+        return preview.IsChanged ? "Будет изменено" : "Без изменений";
     }
 
     private void SetAllSelected(bool isSelected)
@@ -586,7 +644,7 @@ public sealed class SheetNumberingWindow : Window
         isPreviewCurrent = false;
         previewRowCount = 0;
         duplicateIssueCount = 0;
-        UpdateStatusSummary(isSelected ? "All sheets selected." : "Selection cleared.");
+        UpdateStatusSummary(isSelected ? "Выбраны все листы." : "Выбор снят.");
         logger.Info($"Sheet Numbering selection changed: {GetSelectedCount()} of {sheets.Count} sheets selected.");
     }
 
@@ -607,7 +665,7 @@ public sealed class SheetNumberingWindow : Window
             row.Status = GetBaseStatus(row);
         }
 
-        UpdateStatusSummary("Selection changed. Run Preview to refresh preview numbers.");
+        UpdateStatusSummary("Выбор изменен. Выполните предпросмотр заново.");
         selectionLogTimer.Stop();
         selectionLogTimer.Start();
     }
@@ -635,6 +693,13 @@ public sealed class SheetNumberingWindow : Window
             return;
         }
 
+        PreviewOrder selectedOrder = GetSelectedPreviewOrder();
+        if (selectedOrder == PreviewOrder.Manual)
+        {
+            UpdateManualOrderButtons();
+            return;
+        }
+
         List<PreviewRow> orderedRows = GetRowsInPreviewOrder().ToList();
         suppressSelectionLogging = true;
         previewRows.Clear();
@@ -645,7 +710,9 @@ public sealed class SheetNumberingWindow : Window
         }
 
         suppressSelectionLogging = false;
-        InvalidatePreview("Preview order changed. Run Preview to refresh preview numbers.");
+        UpdatePositions();
+        InvalidatePreview("Порядок предпросмотра изменен. Выполните предпросмотр заново.");
+        UpdateManualOrderButtons();
     }
 
     private IReadOnlyList<PreviewRow> GetSelectedRowsInPreviewOrder()
@@ -665,6 +732,7 @@ public sealed class SheetNumberingWindow : Window
             PreviewOrder.Name => previewRows
                 .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(row => row.OriginalOrder),
+            PreviewOrder.Manual => previewRows,
             _ => previewRows.OrderBy(row => row.OriginalOrder)
         };
     }
@@ -678,7 +746,7 @@ public sealed class SheetNumberingWindow : Window
 
     private void UpdateStatusSummary(string? message = null)
     {
-        string summary = $"Loaded {sheets.Count} sheets. Selected {GetSelectedCount()}. Preview rows {previewRowCount}. Duplicate issues {duplicateIssueCount}.";
+        string summary = $"Загружено листов: {sheets.Count}. Выбрано: {GetSelectedCount()}. Строк предпросмотра: {previewRowCount}. Дублей: {duplicateIssueCount}.";
         statusText.Text = string.IsNullOrWhiteSpace(message)
             ? summary
             : $"{summary} {message}";
@@ -690,18 +758,19 @@ public sealed class SheetNumberingWindow : Window
         SheetNumberingApplyValidationResult validation = GetApplyValidation();
         applyButton.IsEnabled = validation.CanApply;
         applyButton.ToolTip = validation.CanApply
-            ? "Apply the current preview in one Revit transaction."
-            : validation.Reason;
+            ? "Применить текущий предпросмотр одной транзакцией Revit."
+            : LocalizeApplyDisabledReason(validation.Reason);
         exportPreviewButton.IsEnabled = isPreviewCurrent && previewRowCount > 0;
         exportPreviewButton.ToolTip = exportPreviewButton.IsEnabled
-            ? "Export the current preview to CSV."
-            : "Run Preview before exporting.";
+            ? "Экспортировать текущий предпросмотр в CSV."
+            : "Перед экспортом выполните предпросмотр.";
 
         if (!validation.CanApply && validation.Reason != lastApplyDisabledReason)
         {
             lastApplyDisabledReason = validation.Reason;
             logger.Info("Sheet Numbering Apply disabled: " + validation.Reason);
         }
+        UpdateManualOrderButtons();
     }
 
     private int GetSelectedCount()
@@ -720,7 +789,7 @@ public sealed class SheetNumberingWindow : Window
     {
         if (!row.IsSelected)
         {
-            return "Not selected";
+            return "Не выбрано";
         }
 
         return GetBaseStatus(row.Sheet);
@@ -730,16 +799,16 @@ public sealed class SheetNumberingWindow : Window
     {
         if (!sheet.IsPlaceholder)
         {
-            return "Ready";
+            return "Готово";
         }
 
-        return IncludePlaceholders ? "Placeholder" : "Placeholder excluded";
+        return IncludePlaceholders ? "Лист-заглушка" : "Заглушка исключена";
     }
 
     private static bool IsRowApplyEligible(PreviewRow row)
     {
-        return !row.Status.StartsWith("Duplicate preview number", StringComparison.OrdinalIgnoreCase)
-            && !row.Status.StartsWith("Conflicts with existing sheet number", StringComparison.OrdinalIgnoreCase);
+        return !row.Status.StartsWith("Дубль в предпросмотре:", StringComparison.OrdinalIgnoreCase)
+            && !row.Status.StartsWith("Конфликт с существующим номером:", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryCreateRules(out NumberingRules? rules, out string? error)
@@ -748,19 +817,19 @@ public sealed class SheetNumberingWindow : Window
 
         if (!int.TryParse(startNumberInput.Text, out int startNumber))
         {
-            error = "Start Number must be an integer.";
+            error = "Стартовый номер должен быть целым числом.";
             return false;
         }
 
         if (!int.TryParse(incrementInput.Text, out int increment))
         {
-            error = "Increment must be an integer.";
+            error = "Шаг должен быть целым числом.";
             return false;
         }
 
         if (!int.TryParse(paddingInput.Text, out int padding))
         {
-            error = "Padding must be an integer.";
+            error = "Разрядность должна быть целым числом.";
             return false;
         }
 
@@ -772,7 +841,7 @@ public sealed class SheetNumberingWindow : Window
         catch (InvalidOperationException exception)
         {
             rules = null;
-            error = exception.Message;
+            error = LocalizeRuleError(exception.Message);
             return false;
         }
 
@@ -782,7 +851,7 @@ public sealed class SheetNumberingWindow : Window
 
     private void OnIncludePlaceholdersChanged()
     {
-        InvalidatePreview("Placeholder inclusion changed. Run Preview to refresh preview numbers.");
+        InvalidatePreview("Настройка листов-заглушек изменена. Выполните предпросмотр заново.");
         logger.Info($"Sheet Numbering Include placeholders changed: {IncludePlaceholders}.");
     }
 
@@ -818,11 +887,11 @@ public sealed class SheetNumberingWindow : Window
         };
     }
 
-    private static Button CreateActionButton(string text, bool isEnabled)
+    private static Button CreateActionButton(string text, TrueBimIcon icon, bool isEnabled)
     {
         return new Button
         {
-            Content = text,
+            Content = IconFactory.CreateButtonContent(icon, text),
             MinWidth = 96,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
@@ -830,11 +899,113 @@ public sealed class SheetNumberingWindow : Window
         };
     }
 
+    private void MoveSelectedRowUp()
+    {
+        ApplyManualOrderChange(orderService.MoveUp(previewRows.ToList(), previewGrid.SelectedIndex));
+    }
+
+    private void MoveSelectedRowDown()
+    {
+        ApplyManualOrderChange(orderService.MoveDown(previewRows.ToList(), previewGrid.SelectedIndex));
+    }
+
+    private void MoveSelectedRowToPosition()
+    {
+        if (!int.TryParse(positionInput.Text, out int targetPosition))
+        {
+            UpdateStatusSummary("Позиция должна быть целым числом.");
+            return;
+        }
+
+        ApplyManualOrderChange(orderService.MoveToPosition(previewRows.ToList(), previewGrid.SelectedIndex, targetPosition));
+    }
+
+    private void ApplyManualOrderChange(SheetPreviewOrderChange<PreviewRow> change)
+    {
+        if (!change.Changed)
+        {
+            UpdateManualOrderButtons();
+            return;
+        }
+
+        SelectPreviewOrder(PreviewOrder.Manual);
+        suppressSelectionLogging = true;
+        previewRows.Clear();
+
+        foreach (PreviewRow row in change.Items)
+        {
+            previewRows.Add(row);
+        }
+
+        suppressSelectionLogging = false;
+        UpdatePositions();
+        previewGrid.SelectedIndex = change.SelectedIndex;
+        InvalidatePreview("Порядок листов изменен вручную. Выполните предпросмотр заново.");
+        UpdateManualOrderButtons();
+    }
+
+    private void UpdatePositions()
+    {
+        for (int index = 0; index < previewRows.Count; index++)
+        {
+            previewRows[index].Position = index + 1;
+        }
+    }
+
+    private void UpdateManualOrderButtons()
+    {
+        int index = previewGrid.SelectedIndex;
+        bool hasSelection = index >= 0 && index < previewRows.Count;
+        moveUpButton.IsEnabled = hasSelection && index > 0;
+        moveDownButton.IsEnabled = hasSelection && index < previewRows.Count - 1;
+        moveToPositionButton.IsEnabled = hasSelection && previewRows.Count > 1;
+        if (hasSelection)
+        {
+            positionInput.Text = (index + 1).ToString();
+        }
+    }
+
+    private void SelectPreviewOrder(PreviewOrder order)
+    {
+        foreach (ComboBoxItem item in orderInput.Items)
+        {
+            if (item.Tag is PreviewOrder itemOrder && itemOrder == order)
+            {
+                orderInput.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    private static string LocalizeApplyDisabledReason(string reason)
+    {
+        return reason switch
+        {
+            "Select at least one sheet." => "Выберите хотя бы один лист.",
+            "Run Preview before Apply." => "Сначала выполните предпросмотр.",
+            "Resolve duplicate conflicts before Apply." => "Устраните дубли номеров перед применением.",
+            "No sheet numbers will change." => "Предпросмотр не меняет выбранные номера листов.",
+            "Ready to apply." => "Готово к применению.",
+            _ => reason
+        };
+    }
+
+    private static string LocalizeRuleError(string message)
+    {
+        return message switch
+        {
+            "Increment must not be zero." => "Шаг не должен быть равен нулю.",
+            "Padding must be zero or greater." => "Разрядность должна быть нулем или больше.",
+            _ => message
+        };
+    }
+
     private enum PreviewOrder
     {
         Original,
         CurrentNumber,
-        Name
+        Name,
+        Manual
     }
 
     private sealed class PreviewRow : INotifyPropertyChanged
@@ -843,6 +1014,7 @@ public sealed class SheetNumberingWindow : Window
         private bool isSelected;
         private string previewNumber;
         private string status;
+        private int position;
 
         public PreviewRow(
             SheetInfo sheet,
@@ -869,6 +1041,21 @@ public sealed class SheetNumberingWindow : Window
         public SheetInfo Sheet { get; }
 
         public int OriginalOrder { get; }
+
+        public int Position
+        {
+            get => position;
+            set
+            {
+                if (position == value)
+                {
+                    return;
+                }
+
+                position = value;
+                OnPropertyChanged(nameof(Position));
+            }
+        }
 
         public bool IsSelected
         {

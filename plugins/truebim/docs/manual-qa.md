@@ -16,7 +16,7 @@ Pending manual check:
 
 - click the `TrueBIM` button;
 - confirm the launcher window opens;
-- confirm `Sheet Numbering` is listed and enabled.
+- confirm `Нумерация листов` is listed and enabled.
 
 ## Local Deploy
 
@@ -42,6 +42,7 @@ The script should:
 - build `TrueBIM.sln` with `C:\Program Files\dotnet\dotnet.exe`;
 - copy `TrueBIM.App.dll` to `%APPDATA%\TrueBIM\2025\Core`;
 - copy `module.json` to `%APPDATA%\TrueBIM\2025\Modules\SheetNumbering`;
+- copy icons to `%APPDATA%\TrueBIM\2025\Assets\icons`;
 - generate `%APPDATA%\Autodesk\Revit\Addins\2025\TrueBIM.addin`;
 - write an absolute `Assembly` path in the installed `.addin` file.
 
@@ -70,6 +71,16 @@ Expected:
 - `id` is `truebim.sheet-numbering`;
 - `revitVersions` contains `2025`.
 
+Open:
+
+```text
+%APPDATA%\TrueBIM\2025\Assets\icons\truebim-logotype.svg
+```
+
+Expected:
+
+- the copied TrueBIM logotype asset exists after deploy.
+
 ## Revit UI Check
 
 1. Open Revit 2025.
@@ -83,32 +94,62 @@ Expected result:
 
 - a `TrueBIM` launcher window opens;
 - the launcher lists installed modules;
-- `Sheet Numbering` is visible;
-- `Sheet Numbering` shows as enabled;
+- `Нумерация листов` is visible;
+- `Нумерация листов` shows as enabled;
 - closing the launcher returns to Revit without errors.
+
+## Localization, Tooltips, and Icons
+
+1. Open the `TrueBIM` launcher.
+2. Confirm the launcher title area uses Russian labels for `Модули`, `Логи`, `Закрыть`, `Включено`, and `Открыть`.
+3. Hover `Включено`, `Логи`, and `Открыть`.
+4. Confirm each tooltip appears and uses short Russian text.
+5. Confirm action buttons show icons next to their labels.
+6. Open `Нумерация листов`.
+7. Confirm labels are Russian: `Префикс`, `Суффикс`, `Стартовый номер`, `Шаг`, `Разрядность`, `Порядок предпросмотра`, `Позиция`, `Предпросмотр`, `Экспорт`, `Применить`, and `Закрыть`.
+8. Hover each numbering input, the placeholder checkbox, the order combo, the sheet table, and action buttons.
+9. Confirm short Russian tooltips appear.
 
 ## Sheet Numbering Functional QA
 
 1. Open a Revit 2025 sample project with several sheets.
 2. Open `TrueBIM`.
-3. Confirm `Sheet Numbering` is listed from the installed module manifest.
-4. Confirm the `Enabled` checkbox controls whether `Open` is available.
-5. Open `Sheet Numbering`.
+3. Confirm `Нумерация листов` is listed from the installed module manifest.
+4. Confirm the `Включено` checkbox controls whether `Открыть` is available.
+5. Open `Нумерация листов`.
 6. Confirm real document sheets are listed.
 7. Select 1-2 test sheets.
-8. Keep `Include placeholders` disabled unless specifically testing placeholders.
+8. Keep `Включать листы-заглушки` disabled unless specifically testing placeholders.
 9. Set numbering rules that should not create duplicates.
-10. Click `Preview`.
+10. Click `Предпросмотр`.
 11. Confirm preview rows show expected old/new numbers.
-12. Click `Export Preview`.
+12. Click `Экспорт`.
 13. Confirm a CSV opens from `%APPDATA%\TrueBIM\Exports\SheetNumbering`.
-14. Click `Apply`.
+14. Click `Применить`.
 15. Confirm the dialog lists the changed count and first changes.
 16. Accept confirmation.
 17. Confirm the selected sheet numbers changed.
 18. Run Revit Undo once.
 19. Confirm all applied number changes revert in one undo step.
 20. Repeat with duplicate numbering rules and confirm Apply stays disabled.
+
+## Manual Sheet Order QA
+
+1. Open `Нумерация листов` with at least four sheets.
+2. Select a middle row in the table.
+3. Click `Вверх`.
+4. Confirm the selected row moves up one row, `Позиция` values update, and the status says to run preview again.
+5. Click `Вниз`.
+6. Confirm the selected row moves down one row and positions update.
+7. Enter `1` in `Позиция` and click `Переместить`.
+8. Confirm the selected row moves to the first position.
+9. Confirm `Порядок предпросмотра` shows `Ручной порядок`.
+10. Click `Предпросмотр`.
+11. Confirm generated preview numbers follow the visible manual order.
+12. Toggle one or more row checkboxes.
+13. Confirm the manual row order is preserved.
+14. Change `Порядок предпросмотра` to `Текущий номер`.
+15. Confirm the table is sorted by current number and preview is invalidated.
 
 Expected logs:
 
@@ -133,20 +174,20 @@ Expected logs:
 6. Confirm the `TrueBIM` ribbon tab and button are visible.
 7. Click the `TrueBIM` button.
 8. Click `Logs` and confirm the log file opens.
-9. Confirm `Sheet Numbering` is listed.
-10. Toggle `Enabled` off and confirm `Open` becomes disabled.
-11. Toggle `Enabled` on and confirm `Open` becomes enabled.
-12. Open `Sheet Numbering`.
+9. Confirm `Нумерация листов` is listed.
+10. Toggle `Включено` off and confirm `Открыть` becomes disabled.
+11. Toggle `Включено` on and confirm `Открыть` becomes enabled.
+12. Open `Нумерация листов`.
 13. Confirm real document sheets are listed.
-14. Click `Clear Selection`; expected: Apply disabled with a clear reason.
-15. Click `Select All`; expected: rows selected and preview still required.
-16. Run `Preview` with `Include placeholders` disabled.
+14. Click `Снять выбор`; expected: Apply disabled with a clear reason.
+15. Click `Выбрать все`; expected: rows selected and preview still required.
+16. Run `Предпросмотр` with `Включать листы-заглушки` disabled.
 17. Confirm placeholder rows stay visible but are marked as excluded unless selected explicitly with the checkbox enabled.
-18. Enable `Include placeholders` and run `Preview` again.
-19. Click `Export Preview`; expected: CSV opens from `%APPDATA%\TrueBIM\Exports\SheetNumbering`.
+18. Enable `Включать листы-заглушки` and run `Предпросмотр` again.
+19. Click `Экспорт`; expected: CSV opens from `%APPDATA%\TrueBIM\Exports\SheetNumbering`.
 20. Select only 1-2 safe test sheets.
-21. Run `Preview` with non-conflicting numbering.
-22. Click `Apply`; expected: confirmation dialog lists changed count and examples.
+21. Run `Предпросмотр` with non-conflicting numbering.
+22. Click `Применить`; expected: confirmation dialog lists changed count and examples.
 23. Accept confirmation.
 24. Confirm selected sheet numbers changed.
 25. Run one Revit Undo.

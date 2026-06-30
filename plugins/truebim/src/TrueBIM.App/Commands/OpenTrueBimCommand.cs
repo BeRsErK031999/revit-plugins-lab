@@ -41,7 +41,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                     if (activeDocument is null)
                     {
                         logger.Warning("Sheet Numbering requested without an active document.");
-                        TaskDialog.Show("Sheet Numbering", "Open a Revit document before starting Sheet Numbering.");
+                        TaskDialog.Show("Нумерация листов", "Откройте документ Revit перед запуском нумерации листов.");
                         return;
                     }
 
@@ -63,7 +63,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                 catch (Exception exception)
                 {
                     logger.Error("Failed to open Sheet Numbering window.", exception);
-                    TaskDialog.Show("Sheet Numbering", "Failed to open Sheet Numbering. Use Logs to share diagnostics.");
+                    TaskDialog.Show("Нумерация листов", "Не удалось открыть нумерацию листов. Используйте логи для диагностики.");
                 }
             }
         };
@@ -81,7 +81,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                 catch (Exception exception)
                 {
                     logger.Error("Failed to open local log file.", exception);
-                    TaskDialog.Show("TrueBIM Logs", "Failed to open the local log file.");
+                    TaskDialog.Show("Логи TrueBIM", "Не удалось открыть локальный файл логов.");
                 }
             });
 

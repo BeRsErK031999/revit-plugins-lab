@@ -21,6 +21,7 @@ public sealed class ModuleLauncherWindow : Window
         this.setModuleEnabled = setModuleEnabled;
         this.openLogs = openLogs;
         Title = "TrueBIM";
+        Icon = IconFactory.CreateImage(TrueBimIcon.App, 32);
         Width = 520;
         Height = 360;
         MinWidth = 420;
@@ -43,7 +44,7 @@ public sealed class ModuleLauncherWindow : Window
 
         TextBlock title = new()
         {
-            Text = "Modules",
+            Text = "Модули",
             FontSize = 20,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 16)
@@ -68,20 +69,22 @@ public sealed class ModuleLauncherWindow : Window
 
         Button logsButton = new()
         {
-            Content = "Logs",
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Logs, "Логи"),
             MinWidth = 96,
-            Height = 32
+            Height = 32,
+            ToolTip = "Открыть файл логов TrueBIM."
         };
         logsButton.Click += (_, _) => openLogs(this);
         footer.Children.Add(logsButton);
 
         Button closeButton = new()
         {
-            Content = "Close",
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
             MinWidth = 96,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
-            IsCancel = true
+            IsCancel = true,
+            ToolTip = "Закрыть окно TrueBIM."
         };
         closeButton.Click += (_, _) => Close();
         footer.Children.Add(closeButton);
@@ -105,7 +108,7 @@ public sealed class ModuleLauncherWindow : Window
 
         TextBlock name = new()
         {
-            Text = module.DisplayName,
+            Text = LocalizeModuleText(module.DisplayName),
             FontSize = 15,
             FontWeight = FontWeights.SemiBold
         };
@@ -113,7 +116,7 @@ public sealed class ModuleLauncherWindow : Window
 
         TextBlock description = new()
         {
-            Text = module.Description,
+            Text = LocalizeModuleText(module.Description),
             Margin = new Thickness(0, 4, 0, 0),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Brushes.DimGray
@@ -122,10 +125,11 @@ public sealed class ModuleLauncherWindow : Window
 
         CheckBox enabledToggle = new()
         {
-            Content = "Enabled",
+            Content = "Включено",
             IsChecked = module.IsEnabled,
             Margin = new Thickness(0, 8, 0, 0),
-            Foreground = module.IsEnabled ? Brushes.DarkGreen : Brushes.DarkRed
+            Foreground = module.IsEnabled ? Brushes.DarkGreen : Brushes.DarkRed,
+            ToolTip = "Включает или отключает модуль в launcher."
         };
         moduleDetails.Children.Add(enabledToggle);
 
@@ -134,12 +138,13 @@ public sealed class ModuleLauncherWindow : Window
 
         Button openButton = new()
         {
-            Content = "Open",
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Открыть"),
             MinWidth = 80,
             Height = 30,
             Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            IsEnabled = module.IsEnabled && moduleActions.ContainsKey(module.Id)
+            IsEnabled = module.IsEnabled && moduleActions.ContainsKey(module.Id),
+            ToolTip = "Открыть выбранный модуль."
         };
         openButton.Click += (_, _) => moduleActions[module.Id](this);
         enabledToggle.Checked += (_, _) => UpdateModuleEnabled(module, enabledToggle, openButton, isEnabled: true);
@@ -163,5 +168,15 @@ public sealed class ModuleLauncherWindow : Window
         setModuleEnabled(module.Id, isEnabled);
         enabledToggle.Foreground = isEnabled ? Brushes.DarkGreen : Brushes.DarkRed;
         openButton.IsEnabled = isEnabled && moduleActions.ContainsKey(module.Id);
+    }
+
+    private static string LocalizeModuleText(string text)
+    {
+        return text switch
+        {
+            "Sheet Numbering" => "Нумерация листов",
+            "Renumber Revit sheets with preview and duplicate protection." => "Перенумерация листов Revit с предпросмотром и защитой от дублей.",
+            _ => text
+        };
     }
 }

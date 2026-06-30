@@ -1,7 +1,7 @@
 {
   "id": "truebim.sheet-numbering",
-  "displayName": "Sheet Numbering",
-  "description": "Renumber Revit sheets with preview and duplicate protection.",
+  "displayName": "Нумерация листов",
+  "description": "Перенумерация листов Revit с предпросмотром и защитой от дублей.",
   "version": "0.1.0",
   "enabledByDefault": true,
   "revitVersions": ["2025"]

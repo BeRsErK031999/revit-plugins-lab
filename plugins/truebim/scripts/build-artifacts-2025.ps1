@@ -14,6 +14,7 @@ $artifactsDir = Join-Path $trueBimRoot "artifacts"
 $coreArtifactsDir = Join-Path $artifactsDir "Core"
 $sheetNumberingArtifactsDir = Join-Path $artifactsDir "Modules\SheetNumbering"
 $docsArtifactsDir = Join-Path $artifactsDir "Docs"
+$assetsArtifactsDir = Join-Path $artifactsDir "Assets"
 
 if (-not (Test-Path $dotnetPath)) {
     throw "Required .NET SDK host was not found at '$dotnetPath'."
@@ -33,6 +34,7 @@ if (Test-Path $artifactsDir) {
 New-Item -ItemType Directory -Path $coreArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $sheetNumberingArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $docsArtifactsDir -Force | Out-Null
+New-Item -ItemType Directory -Path $assetsArtifactsDir -Force | Out-Null
 
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.dll") -Destination $coreArtifactsDir -Force
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.pdb") -Destination $coreArtifactsDir -Force -ErrorAction SilentlyContinue
@@ -45,7 +47,10 @@ Copy-Item -Path (Join-Path $trueBimRoot "README.md") -Destination $docsArtifacts
 Copy-Item -Path (Join-Path $trueBimRoot "docs\*.md") -Destination $docsArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "installer\README.md") -Destination (Join-Path $docsArtifactsDir "installer-README.md") -Force
 
+Copy-Item -Path (Join-Path $trueBimRoot "assets\icons") -Destination $assetsArtifactsDir -Recurse -Force
+
 Write-Host "Built TrueBIM artifacts for Revit 2025."
 Write-Host "Core: $coreArtifactsDir"
 Write-Host "Sheet Numbering: $sheetNumberingArtifactsDir"
 Write-Host "Docs: $docsArtifactsDir"
+Write-Host "Assets: $assetsArtifactsDir"
