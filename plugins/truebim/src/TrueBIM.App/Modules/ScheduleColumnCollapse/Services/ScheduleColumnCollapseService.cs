@@ -40,19 +40,18 @@ public sealed class ScheduleColumnCollapseService
 
             ScheduleDefinition definition = collapsedSchedule.Definition;
             IReadOnlyList<ScheduleFieldId> fieldIds = definition.GetFieldOrder().ToList();
-            foreach (ScheduleFieldId fieldId in fieldIds)
-            {
-                TrySetHidden(definition.GetField(fieldId), isHidden: false);
-            }
+            IReadOnlyList<ScheduleFieldId> visibleFieldIds = fieldIds
+                .Where(fieldId => !definition.GetField(fieldId).IsHidden)
+                .ToList();
 
             document.Regenerate();
 
-            IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(collapsedSchedule, fieldIds);
+            IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(collapsedSchedule, visibleFieldIds);
             IReadOnlyList<ScheduleColumnVisibilityDecision> decisions = analyzer.Analyze(snapshots.Select(snapshot => snapshot.Column));
 
             int hiddenColumnCount = 0;
             int visibleColumnCount = 0;
-            int unchangedColumnCount = 0;
+            int unchangedColumnCount = fieldIds.Count - visibleFieldIds.Count;
 
             for (int index = 0; index < snapshots.Count; index++)
             {
