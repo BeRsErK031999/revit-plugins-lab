@@ -9,7 +9,6 @@ namespace TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 
 public sealed class ScheduleColumnCollapseService
 {
-    private const string CollapsedNameSuffix = " - свернутая";
     private readonly ScheduleColumnVisibilityAnalyzer analyzer;
     private readonly ITrueBimLogger logger;
 
@@ -24,8 +23,8 @@ public sealed class ScheduleColumnCollapseService
         Guard.NotNull(uiDocument, nameof(uiDocument));
 
         Document document = uiDocument.Document;
-        ViewSchedule? sourceSchedule = ResolveTargetSchedule(uiDocument, ownerWindowHandle, out string? resolveError);
-        if (sourceSchedule is null)
+        ViewSchedule? targetSchedule = ResolveTargetSchedule(uiDocument, ownerWindowHandle, out string? resolveError);
+        if (targetSchedule is null)
         {
             return ScheduleColumnCollapseResult.Failure(resolveError ?? "Не удалось определить спецификацию для сворачивания.");
         }
@@ -35,11 +34,7 @@ public sealed class ScheduleColumnCollapseService
 
         try
         {
-            ElementId collapsedScheduleId = sourceSchedule.Duplicate(ViewDuplicateOption.Duplicate);
-            ViewSchedule collapsedSchedule = (ViewSchedule)document.GetElement(collapsedScheduleId);
-            collapsedSchedule.Name = CreateUniqueScheduleName(document, sourceSchedule.Name + CollapsedNameSuffix);
-
-            ScheduleDefinition definition = collapsedSchedule.Definition;
+            ScheduleDefinition definition = targetSchedule.Definition;
             IReadOnlyList<ScheduleFieldId> fieldIds = definition.GetFieldOrder().ToList();
             IReadOnlyList<ScheduleFieldId> visibleFieldIds = fieldIds
                 .Where(fieldId => !definition.GetField(fieldId).IsHidden)
@@ -47,7 +42,7 @@ public sealed class ScheduleColumnCollapseService
 
             document.Regenerate();
 
-            IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(collapsedSchedule, visibleFieldIds);
+            IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(targetSchedule, visibleFieldIds);
             IReadOnlyList<ScheduleColumnVisibilityDecision> decisions = analyzer.Analyze(snapshots.Select(snapshot => snapshot.Column));
 
             int hiddenColumnCount = 0;
@@ -94,14 +89,13 @@ public sealed class ScheduleColumnCollapseService
 
             transaction.Commit();
             logger.Info(
-                $"Collapsed schedule '{sourceSchedule.Name}' into '{collapsedSchedule.Name}'. Hidden fields: {hiddenColumnCount}; visible fields: {visibleColumnCount}; unchanged fields: {unchangedColumnCount}.");
+                $"Collapsed schedule '{targetSchedule.Name}' in place. Hidden fields: {hiddenColumnCount}; visible fields: {visibleColumnCount}; unchanged fields: {unchangedColumnCount}.");
 
             return new ScheduleColumnCollapseResult(
                 Succeeded: true,
-                Message: "Копия спецификации создана, пустые числовые столбцы скрыты.",
-                CollapsedScheduleId: collapsedSchedule.Id,
-                SourceScheduleName: sourceSchedule.Name,
-                CollapsedScheduleName: collapsedSchedule.Name,
+                Message: "Спецификация обновлена, пустые числовые столбцы скрыты.",
+                ScheduleId: targetSchedule.Id,
+                ScheduleName: targetSchedule.Name,
                 HiddenColumnCount: hiddenColumnCount,
                 VisibleColumnCount: visibleColumnCount,
                 UnchangedColumnCount: unchangedColumnCount);
@@ -281,32 +275,6 @@ public sealed class ScheduleColumnCollapseService
         {
             return false;
         }
-    }
-
-    private static string CreateUniqueScheduleName(Document document, string baseName)
-    {
-        HashSet<string> existingNames = new(
-            new FilteredElementCollector(document)
-            .OfClass(typeof(ViewSchedule))
-            .Cast<ViewSchedule>()
-            .Select(schedule => schedule.Name),
-            StringComparer.OrdinalIgnoreCase);
-
-        if (!existingNames.Contains(baseName))
-        {
-            return baseName;
-        }
-
-        for (int index = 1; index < 1000; index++)
-        {
-            string candidate = $"{baseName} {index}";
-            if (!existingNames.Contains(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return $"{baseName} {Guid.NewGuid():N}";
     }
 
     private static IReadOnlyList<ViewSchedule> DistinctSchedulesById(IEnumerable<ViewSchedule> schedules)

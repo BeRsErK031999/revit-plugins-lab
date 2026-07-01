@@ -39,17 +39,18 @@ These can be added after the first stable local Revit 2022 and Revit 2025 workfl
 
 ### Initial scope
 
-- Work from an active schedule, a selected schedule on a sheet, or a sheet with exactly one placed schedule.
-- Duplicate the source schedule before changing field visibility.
+- Let the user choose the target schedule from a picker.
+- Change the selected schedule directly; users duplicate the schedule themselves if they need to preserve the original.
 - Analyze displayed schedule body values without relying on company-specific field names.
 - Hide numeric fields when all numeric values in the column are zero.
-- Keep text, service, and total columns visible.
-- Write changes only to the duplicated schedule inside one Revit transaction.
+- Ignore numeric-looking column headings such as `-10` and `-12` while analyzing body values.
+- Keep text and service columns visible.
+- Hide zero total columns; keep total columns visible when they contain non-zero values.
+- Write changes only to the selected schedule inside one Revit transaction.
 
 ### Out of initial scope
 
 - Batch processing multiple schedules from one sheet.
-- Replacing a schedule instance on a sheet with the collapsed copy.
 - Replacing the current Revit 2022 and Revit 2025 local deploy scripts with a finalized multi-version installer.
 
 ## Installer scope

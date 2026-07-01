@@ -5,9 +5,8 @@ namespace TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
 public sealed record ScheduleColumnCollapseResult(
     bool Succeeded,
     string Message,
-    ElementId? CollapsedScheduleId,
-    string? SourceScheduleName,
-    string? CollapsedScheduleName,
+    ElementId? ScheduleId,
+    string? ScheduleName,
     int HiddenColumnCount,
     int VisibleColumnCount,
     int UnchangedColumnCount)
@@ -19,9 +18,8 @@ public sealed record ScheduleColumnCollapseResult(
         return new ScheduleColumnCollapseResult(
             Succeeded: false,
             message,
-            CollapsedScheduleId: null,
-            SourceScheduleName: null,
-            CollapsedScheduleName: null,
+            ScheduleId: null,
+            ScheduleName: null,
             HiddenColumnCount: 0,
             VisibleColumnCount: 0,
             UnchangedColumnCount: 0);

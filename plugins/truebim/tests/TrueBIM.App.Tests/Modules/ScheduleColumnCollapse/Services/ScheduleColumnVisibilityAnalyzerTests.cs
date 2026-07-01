@@ -35,16 +35,29 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     }
 
     [Fact]
-    public void AnalyzeColumn_KeepsTotalsVisibleEvenWhenValuesAreZero()
+    public void AnalyzeColumn_HidesTotalColumnWhenAllValuesAreZero()
     {
         ScheduleColumnVisibilityDecision decision = analyzer.AnalyzeColumn(new ScheduleColumnState(
-            FieldName: "Итого A240",
+            FieldName: "Итого A400",
             ColumnHeading: "Итого",
             IsHidden: false,
             CanHide: true,
             CellTexts: ["Итого", "0.0", "0.0"]));
 
-        Assert.Equal(ScheduleColumnVisibilityAction.Show, decision.Action);
+        Assert.Equal(ScheduleColumnVisibilityAction.Hide, decision.Action);
+    }
+
+    [Fact]
+    public void AnalyzeColumn_HidesZeroColumnWhenNumericHeadingAppearsInCells()
+    {
+        ScheduleColumnVisibilityDecision decision = analyzer.AnalyzeColumn(new ScheduleColumnState(
+            FieldName: "Прокат марки C255 -10",
+            ColumnHeading: "-10",
+            IsHidden: false,
+            CanHide: true,
+            CellTexts: ["-10", "0.0", "0.0"]));
+
+        Assert.Equal(ScheduleColumnVisibilityAction.Hide, decision.Action);
     }
 
     [Fact]

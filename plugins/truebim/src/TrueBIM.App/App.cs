@@ -36,7 +36,7 @@ public sealed class App : IExternalApplication
             "Свернуть\nВРС",
             typeof(CollapseScheduleColumnsCommand).FullName,
             TrueBimIcon.ScheduleCollapse,
-            "Создаёт копию спецификации и скрывает нулевые столбцы.");
+            "Скрывает нулевые столбцы в выбранной спецификации.");
 
         return Result.Succeeded;
     }

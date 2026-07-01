@@ -5,12 +5,6 @@ namespace TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 
 public sealed class ScheduleColumnVisibilityAnalyzer
 {
-    private static readonly string[] AlwaysVisibleTokens =
-    [
-        "итого",
-        "total"
-    ];
-
     public IReadOnlyList<ScheduleColumnVisibilityDecision> Analyze(IEnumerable<ScheduleColumnState> columns)
     {
         Guard.NotNull(columns, nameof(columns));
@@ -30,15 +24,7 @@ public sealed class ScheduleColumnVisibilityAnalyzer
                 "Поле нельзя скрывать через API Revit.");
         }
 
-        if (IsAlwaysVisibleColumn(column))
-        {
-            return new ScheduleColumnVisibilityDecision(
-                column.FieldName,
-                ScheduleColumnVisibilityAction.Show,
-                "Итоговая колонка должна оставаться видимой.");
-        }
-
-        NumericColumnSummary summary = SummarizeNumericValues(column.CellTexts);
+        NumericColumnSummary summary = SummarizeNumericValues(column);
         if (!summary.HasNumericValues)
         {
             return new ScheduleColumnVisibilityDecision(
@@ -61,23 +47,18 @@ public sealed class ScheduleColumnVisibilityAnalyzer
             "Все числовые значения в колонке равны нулю.");
     }
 
-    private static bool IsAlwaysVisibleColumn(ScheduleColumnState column)
-    {
-        return ContainsAlwaysVisibleToken(column.FieldName) || ContainsAlwaysVisibleToken(column.ColumnHeading);
-    }
-
-    private static bool ContainsAlwaysVisibleToken(string text)
-    {
-        return AlwaysVisibleTokens.Any(token => text.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0);
-    }
-
-    private static NumericColumnSummary SummarizeNumericValues(IEnumerable<string> cellTexts)
+    private static NumericColumnSummary SummarizeNumericValues(ScheduleColumnState column)
     {
         bool hasNumericValues = false;
         bool hasNonZeroValues = false;
 
-        foreach (string cellText in cellTexts)
+        foreach (string cellText in column.CellTexts)
         {
+            if (IsColumnLabel(cellText, column))
+            {
+                continue;
+            }
+
             if (!TryParseDisplayedNumber(cellText, out decimal value))
             {
                 continue;
@@ -91,6 +72,32 @@ public sealed class ScheduleColumnVisibilityAnalyzer
         }
 
         return new NumericColumnSummary(hasNumericValues, hasNonZeroValues);
+    }
+
+    private static bool IsColumnLabel(string? text, ScheduleColumnState column)
+    {
+        return TextEquals(text, column.ColumnHeading) || TextEquals(text, column.FieldName);
+    }
+
+    private static bool TextEquals(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            NormalizeTextForComparison(left!),
+            NormalizeTextForComparison(right!),
+            StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    private static string NormalizeTextForComparison(string text)
+    {
+        return text
+            .Trim()
+            .Replace('\u00a0', ' ')
+            .Replace('\u2212', '-');
     }
 
     private static bool TryParseDisplayedNumber(string? text, out decimal value)
@@ -107,7 +114,7 @@ public sealed class ScheduleColumnVisibilityAnalyzer
             .Replace('\u00a0', ' ')
             .Replace(" ", string.Empty)
             .Replace(',', '.')
-            .Replace('−', '-');
+            .Replace('\u2212', '-');
 
         return decimal.TryParse(
             normalized,

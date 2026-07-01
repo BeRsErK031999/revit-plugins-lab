@@ -68,7 +68,7 @@ internal static class TrueBimCommandActions
             TaskDialog.Show(
                 "Свернуть ВРС",
                 result.Succeeded
-                    ? $"Создана копия: {result.CollapsedScheduleName}\nСкрыто столбцов: {result.HiddenColumnCount}\nОставлено видимыми: {result.VisibleColumnCount}"
+                    ? $"Обновлена спецификация: {result.ScheduleName}\nСкрыто столбцов: {result.HiddenColumnCount}\nОставлено видимыми: {result.VisibleColumnCount}"
                     : result.Message);
         }
         catch (Exception exception)

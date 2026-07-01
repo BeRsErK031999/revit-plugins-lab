@@ -8,7 +8,7 @@ public sealed class ScheduleColumnCollapseModule : ITrueBimModule
 
     public string DisplayName => "Свернуть ВРС";
 
-    public string Description => "Создаёт копию спецификации и скрывает столбцы, где все значения равны нулю.";
+    public string Description => "Скрывает столбцы выбранной спецификации, где все значения равны нулю.";
 
     public TrueBimIcon Icon => TrueBimIcon.ScheduleCollapse;
 
