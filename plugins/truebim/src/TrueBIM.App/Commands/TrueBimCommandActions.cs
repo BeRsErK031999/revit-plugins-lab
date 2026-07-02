@@ -1,5 +1,8 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using TrueBIM.App.Modules.Print.Models;
+using TrueBIM.App.Modules.Print.Services;
+using TrueBIM.App.Modules.Print.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 using TrueBIM.App.Modules.SheetNumbering.Models;
@@ -25,9 +28,13 @@ internal static class TrueBimCommandActions
                 return;
             }
 
-            TaskDialog.Show(
-                "Печать",
-                "Модуль печати подключен. Выбор листов, конструктор имени и экспорт PDF/DWG/DXF будут добавлены следующими задачами.");
+            IReadOnlyList<PrintSheetInfo> sheets = new PrintSheetCollectorService().Collect(activeDocument);
+            logger.Info($"Print module collected {sheets.Count} sheets from the active document.");
+            PrintWindow printWindow = new(activeDocument, sheets, logger)
+            {
+                Owner = owner
+            };
+            printWindow.ShowDialog();
         }
         catch (Exception exception)
         {
