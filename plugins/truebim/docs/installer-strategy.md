@@ -45,15 +45,16 @@ For current user:
 %APPDATA%\Autodesk\Revit\Addins\2025\TrueBIM.addin
 ```
 
-Initial recommendation: current-user install while developing, all-users install later when packaging is stable.
+Release installer target: all-users install through `C:\Program Files\TrueBIM` and `C:\ProgramData\Autodesk\Revit\Addins\<year>`.
+Current-user scripts remain available only for local development deploy.
 
 ## Module selection model
 
 Installer choices should map to folders:
 
 ```text
-%APPDATA%\TrueBIM\2025\Core\
-%APPDATA%\TrueBIM\2025\Modules\SheetNumbering\
+C:\Program Files\TrueBIM\2025\
+C:\Program Files\TrueBIM\2025\Modules\SheetNumbering\
 ```
 
 The `.addin` file should point to the core shell assembly.

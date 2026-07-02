@@ -23,9 +23,11 @@ public sealed class ModuleRegistry
         Guard.NotNull(logger, nameof(logger));
 
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        string trueBimRoot = Path.Combine(appData, "TrueBIM", revitVersion);
-        string modulesRoot = Path.Combine(trueBimRoot, "Modules");
-        string settingsPath = Path.Combine(trueBimRoot, "module-settings.json");
+        string modulesRoot = ResolveModulesRoot(
+            revitVersion,
+            typeof(ModuleRegistry).Assembly.Location,
+            appData);
+        string settingsPath = Path.Combine(appData, "TrueBIM", revitVersion, "module-settings.json");
 
         return Create(
             modulesRoot,
@@ -34,6 +36,31 @@ public sealed class ModuleRegistry
             new ModuleManifestLoader(logger),
             new ModuleSettingsService(settingsPath, logger),
             logger);
+    }
+
+    public static string ResolveModulesRoot(string revitVersion, string assemblyLocation, string appDataDirectory)
+    {
+        Guard.NotNullOrWhiteSpace(revitVersion, nameof(revitVersion));
+        Guard.NotNullOrWhiteSpace(appDataDirectory, nameof(appDataDirectory));
+
+        string appDataModulesRoot = Path.Combine(appDataDirectory, "TrueBIM", revitVersion, "Modules");
+        string? assemblyDirectory = Path.GetDirectoryName(assemblyLocation);
+        if (string.IsNullOrWhiteSpace(assemblyDirectory))
+        {
+            return appDataModulesRoot;
+        }
+
+        string installRoot = string.Equals(Path.GetFileName(assemblyDirectory), "Core", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetDirectoryName(assemblyDirectory) ?? assemblyDirectory
+            : assemblyDirectory;
+        string installedModulesRoot = Path.Combine(installRoot, "Modules");
+
+        if (Directory.Exists(installedModulesRoot) || !Directory.Exists(appDataModulesRoot))
+        {
+            return installedModulesRoot;
+        }
+
+        return appDataModulesRoot;
     }
 
     public static ModuleRegistry Create(

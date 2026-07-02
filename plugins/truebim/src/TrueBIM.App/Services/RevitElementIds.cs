@@ -6,19 +6,19 @@ internal static class RevitElementIds
 {
     public static long GetValue(ElementId elementId)
     {
-#if NET48
-        return elementId.IntegerValue;
-#else
+#if REVIT2024_OR_GREATER
         return elementId.Value;
+#else
+        return elementId.IntegerValue;
 #endif
     }
 
     public static ElementId Create(long value)
     {
-#if NET48
-        return new ElementId(checked((int)value));
-#else
+#if REVIT2024_OR_GREATER
         return new ElementId(value);
+#else
+        return new ElementId(checked((int)value));
 #endif
     }
 }

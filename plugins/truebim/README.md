@@ -19,11 +19,11 @@ The first module is `sheet-numbering`.
 
 ## Target Revit versions
 
-Supported local development targets: Revit 2022 and Revit 2025.
+Release installer targets: Revit 2019, 2020, 2021, 2022, 2023, 2024, and 2025.
 
 Technical targets:
 
-- Revit 2022: `net48`, `RevitAPI.dll`, and `RevitAPIUI.dll` from Revit 2022.
+- Revit 2019-2024: `net48`, `RevitAPI.dll`, and `RevitAPIUI.dll` from the matching Revit version.
 - Revit 2025: `net8.0-windows`, `RevitAPI.dll`, and `RevitAPIUI.dll` from Revit 2025.
 
 ## Build And Package
@@ -37,16 +37,13 @@ Build Release:
 Build installer-ready artifacts:
 
 ```powershell
-.\plugins\truebim\scripts\build-artifacts-2022.ps1
-.\plugins\truebim\scripts\build-artifacts-2025.ps1
+.\plugins\truebim\scripts\build-installer.ps1
 ```
 
-Artifacts are generated under `plugins/truebim/artifacts-2022/` or `plugins/truebim/artifacts/` and are not committed.
+Artifacts are generated under `dist/revit/<year>/` and are not committed. The setup is generated at:
 
-Compile the installer draft with Inno Setup after artifacts are built:
-
-```powershell
-& 'C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe' .\plugins\truebim\installer\TrueBIM.iss
+```text
+dist/installer/TrueBIM-Setup.exe
 ```
 
 Packaging details are documented in `docs/packaging.md`.

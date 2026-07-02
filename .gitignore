@@ -8,6 +8,7 @@ obj/
 plugins/truebim/artifacts/
 plugins/truebim/artifacts-2022/
 plugins/truebim/installer/Output/
+dist/
 *.addin.user
 *.journal
 *.rvt

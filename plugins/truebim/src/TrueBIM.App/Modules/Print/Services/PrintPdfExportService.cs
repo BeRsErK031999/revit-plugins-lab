@@ -19,6 +19,13 @@ public sealed class PrintPdfExportService
         Guard.NotNull(items, nameof(items));
         Guard.NotNull(logger, nameof(logger));
 
+#if !REVIT2022_OR_GREATER
+        const string unsupportedMessage = "PDF export requires Revit 2022 or newer.";
+        logger.Warning(unsupportedMessage);
+        return new PrintPdfExportResult(
+            new List<string>(),
+            items.Select(item => new PrintPdfExportFailure(item, unsupportedMessage)).ToList());
+#else
         List<string> exportedFiles = new();
         List<PrintPdfExportFailure> failures = new();
 
@@ -74,6 +81,7 @@ public sealed class PrintPdfExportService
         }
 
         return new PrintPdfExportResult(exportedFiles, failures);
+#endif
     }
 
     public static string NormalizePdfFileName(string fileName)

@@ -4,5 +4,5 @@
   "description": "Пакетная печать и экспорт листов Revit в PDF, DWG и DXF.",
   "version": "0.1.0",
   "enabledByDefault": true,
-  "revitVersions": ["2022", "2025"]
+  "revitVersions": ["2019", "2020", "2021", "2022", "2023", "2024", "2025"]
 }

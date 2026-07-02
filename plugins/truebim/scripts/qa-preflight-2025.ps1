@@ -44,10 +44,9 @@ function Test-AbsolutePath {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $solutionPath = Join-Path $repoRoot "TrueBIM.sln"
 $dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
-$buildArtifactsScript = Join-Path $repoRoot "plugins\truebim\scripts\build-artifacts-2025.ps1"
+$buildInstallerScript = Join-Path $repoRoot "plugins\truebim\scripts\build-installer.ps1"
 $deployScript = Join-Path $repoRoot "plugins\truebim\scripts\deploy-local-2025.ps1"
 $isccPath = "C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
-$installerScript = Join-Path $repoRoot "plugins\truebim\installer\TrueBIM.iss"
 $addinPath = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2025\TrueBIM.addin"
 $sheetNumberingManifestPath = Join-Path $env:APPDATA "TrueBIM\2025\Modules\SheetNumbering\module.json"
 $scheduleColumnCollapseManifestPath = Join-Path $env:APPDATA "TrueBIM\2025\Modules\ScheduleColumnCollapse\module.json"
@@ -68,17 +67,13 @@ try {
         & $dotnetPath test $solutionPath --configuration Release --nologo --verbosity:minimal
     }
 
-    Invoke-Checked -Name "Build artifacts" -Command {
-        & $buildArtifactsScript
-    }
-
     if (Test-Path $isccPath) {
-        Invoke-Checked -Name "Inno Setup compile" -Command {
-            & $isccPath $installerScript
+        Invoke-Checked -Name "Build multi-version installer" -Command {
+            & $buildInstallerScript -InnoCompilerPath $isccPath
         }
     }
     else {
-        Add-Check -Name "Inno Setup compile" -Passed $true -Message "Skipped because ISCC.exe was not found at '$isccPath'."
+        Add-Check -Name "Build multi-version installer" -Passed $true -Message "Skipped because ISCC.exe was not found at '$isccPath'."
     }
 
     $runningRevit = Get-Process -Name "Revit" -ErrorAction SilentlyContinue

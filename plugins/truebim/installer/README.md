@@ -1,21 +1,36 @@
 # Installer
 
-Installer work starts after the first buildable TrueBIM shell.
+TrueBIM uses Inno Setup for the release installer.
 
-Initial installer target:
+The active installer script is:
 
-- Current-user installation.
-- Revit 2022 and Revit 2025 add-in manifests.
-- Selectable module components.
-- TrueBIM Core is required.
-- Sheet Numbering and Schedule Column Collapse are optional but selected by default.
-- Upgrade cleanup removes install-owned `Core`, `Modules`, `Assets`, and `Docs` folders before copying the new package.
+```text
+plugins/truebim/installer/TrueBIM.iss
+```
 
-Recommended first implementation: Inno Setup.
+Build all Revit-version payloads and compile the installer from the repository root:
 
-The installer drafts are `TrueBIM.iss` for Revit 2025 and `TrueBIM-2022.iss` for Revit 2022.
+```powershell
+.\plugins\truebim\scripts\build-installer.ps1
+```
 
-Local compiler path:
+The script emits:
+
+```text
+dist/revit/2019 ... dist/revit/2025
+dist/installer/TrueBIM-Setup.exe
+```
+
+The release installer is machine-wide:
+
+```text
+C:\Program Files\TrueBIM\<year>\
+C:\ProgramData\Autodesk\Revit\Addins\<year>\TrueBIM.addin
+```
+
+The installer defaults to Revit versions detected on the PC. A user can select an undetected version only after explicit confirmation.
+
+Local compiler path used on the development workstation:
 
 ```text
 C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe

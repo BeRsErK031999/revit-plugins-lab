@@ -1,166 +1,100 @@
 # TrueBIM Packaging
 
-TrueBIM currently builds for Revit 2022 and Revit 2025.
+TrueBIM release packaging builds one installer with separate Revit-version payloads.
 
-- Revit 2022: `net48`, Revit 2022 API assemblies.
-- Revit 2025: `net8.0-windows`, Revit 2025 API assemblies.
+## Version Matrix
 
-## Build Release
+- Revit 2019-2024: `net48`, compiled against the matching `RevitAPI.dll` and `RevitAPIUI.dll`.
+- Revit 2025: `net8.0-windows`, compiled against Revit 2025 API assemblies.
+
+The project validates these pairings in `TrueBIM.App.csproj`, so a Revit 2025 `net48` build or a Revit 2019-2024 `net8.0-windows` build fails before references are resolved.
+
+## Build Installer
 
 From the repository root:
 
 ```powershell
-& 'C:\Program Files\dotnet\dotnet.exe' build TrueBIM.sln --configuration Release --nologo --verbosity:minimal
+.\plugins\truebim\scripts\build-installer.ps1
 ```
 
-## Build Artifacts
+The script:
 
-Create installer-ready artifacts:
+- clears `dist`;
+- builds Revit 2019-2024 payloads with `net48`;
+- builds the Revit 2025 payload with `net8.0-windows`;
+- writes versioned outputs to `dist/revit/<year>`;
+- generates one `TrueBIM.addin` per year;
+- validates manifest XML and per-year `Assembly` paths;
+- fails if `RevitAPI.dll` or `RevitAPIUI.dll` are copied into the installer payload;
+- compiles `plugins/truebim/installer/TrueBIM.iss` with Inno Setup.
+
+Installer output:
+
+```text
+dist/installer/TrueBIM-Setup.exe
+```
+
+Example payload layout:
+
+```text
+dist/
+  installer/
+    TrueBIM-Setup.exe
+  revit/
+    2019/
+      TrueBIM.App.dll
+      TrueBIM.addin
+      Modules/
+      Assets/
+      Docs/
+    2025/
+      TrueBIM.App.dll
+      TrueBIM.App.deps.json
+      TrueBIM.addin
+      Modules/
+      Assets/
+      Docs/
+```
+
+## Installer Layout
+
+The release installer is machine-wide and requires admin privileges.
+
+Installed payload:
+
+```text
+C:\Program Files\TrueBIM\<year>\TrueBIM.App.dll
+C:\Program Files\TrueBIM\<year>\Modules\...
+```
+
+Installed Revit manifests:
+
+```text
+C:\ProgramData\Autodesk\Revit\Addins\<year>\TrueBIM.addin
+```
+
+The installer defaults to detected Revit versions only. Selecting a version that is not detected requires explicit confirmation. Upgrade cleanup removes install-owned payload folders and `.addin` files for the selected years before copying the new package.
+
+## Installed File Validation
+
+After installing the setup manually or silently, run:
 
 ```powershell
-.\plugins\truebim\scripts\build-artifacts-2022.ps1
-.\plugins\truebim\scripts\build-artifacts-2025.ps1
+.\plugins\truebim\scripts\test-installation.ps1
 ```
 
-The Revit 2022 script builds `TrueBIM.App` for `net48`, clears `plugins/truebim/artifacts-2022`, and creates:
+The script reports, per Revit year:
 
-```text
-plugins/truebim/artifacts-2022/Core/TrueBIM.App.dll
-plugins/truebim/artifacts-2022/Core/System.Text.Json.dll
-plugins/truebim/artifacts-2022/Modules/SheetNumbering/module.json
-plugins/truebim/artifacts-2022/Modules/SheetNumbering/README.md
-plugins/truebim/artifacts-2022/Modules/ScheduleColumnCollapse/module.json
-plugins/truebim/artifacts-2022/Modules/ScheduleColumnCollapse/README.md
-plugins/truebim/artifacts-2022/Docs/*.md
-```
+- whether Revit is detected on the PC;
+- whether the installed payload DLL exists;
+- whether the `.addin` manifest exists;
+- whether the manifest XML is valid;
+- whether the manifest `Assembly` path exists;
+- whether the Revit 2025 `.deps.json` file exists;
+- whether a runtime smoke-test was explicitly marked.
 
-The Revit 2025 script rebuilds `TrueBIM.sln` in Release by default, clears `plugins/truebim/artifacts`, and creates:
+Runtime smoke-tests are not automated by this script. Pass `-SmokeTestedYears 2022,2025` only after those Revit versions were actually launched and the add-in loaded successfully.
 
-```text
-plugins/truebim/artifacts/Core/TrueBIM.App.dll
-plugins/truebim/artifacts/Core/TrueBIM.App.pdb
-plugins/truebim/artifacts/Core/TrueBIM.App.deps.json
-plugins/truebim/artifacts/Modules/SheetNumbering/module.json
-plugins/truebim/artifacts/Modules/SheetNumbering/README.md
-plugins/truebim/artifacts/Modules/ScheduleColumnCollapse/module.json
-plugins/truebim/artifacts/Modules/ScheduleColumnCollapse/README.md
-plugins/truebim/artifacts/Docs/*.md
-```
+## Local Development Deploy
 
-`plugins/truebim/artifacts-2022/` and `plugins/truebim/artifacts/` are generated output and are ignored by Git.
-The module manifest is part of the runtime contract: installer component selection controls which module manifests are copied to the installed `Modules` folder, and the launcher only shows modules with installed manifests.
-
-## Build Installer
-
-The Revit 2025 installer draft is:
-
-```text
-plugins/truebim/installer/TrueBIM.iss
-```
-
-The Revit 2022 installer draft is:
-
-```text
-plugins/truebim/installer/TrueBIM-2022.iss
-```
-
-Compile it with Inno Setup after building artifacts:
-
-```powershell
-& 'C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe' .\plugins\truebim\installer\TrueBIM.iss
-& 'C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe' .\plugins\truebim\installer\TrueBIM-2022.iss
-```
-
-Do not run the produced installer during automated packaging checks. The compile step is safe; installation changes `%APPDATA%` and should be handled as manual QA.
-
-## Upgrade Cleanup
-
-The installer removes install-owned folders before copying the new package:
-
-```text
-%APPDATA%\TrueBIM\<RevitVersion>\Core
-%APPDATA%\TrueBIM\<RevitVersion>\Modules
-%APPDATA%\TrueBIM\<RevitVersion>\Assets
-%APPDATA%\TrueBIM\<RevitVersion>\Docs
-%APPDATA%\Autodesk\Revit\Addins\<RevitVersion>\TrueBIM.addin
-```
-
-This prevents stale DLLs, module manifests, icons, and docs from older packages from accumulating across installs. User data is preserved: logs, exports, and `%APPDATA%\TrueBIM\<RevitVersion>\module-settings.json` are not removed by installer upgrade cleanup.
-
-## Local QA Preflight
-
-Before manual Revit QA, run:
-
-```powershell
-.\plugins\truebim\scripts\qa-preflight-2022.ps1
-.\plugins\truebim\scripts\qa-preflight-2025.ps1
-```
-
-The Revit 2022 preflight builds Release `net48`, builds 2022 artifacts, performs local deploy, and verifies the installed `.addin`, required .NET Framework dependencies, Sheet Numbering module manifest, and Schedule Column Collapse module manifest.
-
-The Revit 2025 preflight builds Release, runs Release tests, builds artifacts, compiles the installer when `ISCC.exe` is present, performs local deploy, and verifies the installed `.addin`, Sheet Numbering module manifest, and Schedule Column Collapse module manifest.
-Revit must be closed before running this script because local deploy overwrites the installed add-in DLL.
-
-Installer compile is not installer install QA. The preflight does not run the installer and does not launch Revit.
-
-## Expected Installer Inputs
-
-The installer consumes:
-
-```text
-plugins/truebim/artifacts/Core/*
-plugins/truebim/artifacts/Modules/SheetNumbering/*
-plugins/truebim/artifacts/Modules/ScheduleColumnCollapse/*
-plugins/truebim/artifacts/Docs/*
-```
-
-The Revit 2022 local deploy consumes:
-
-```text
-plugins/truebim/src/TrueBIM.App/bin/<Configuration>/net48/*
-plugins/truebim/modules/sheet-numbering/*
-plugins/truebim/modules/schedule-column-collapse/*
-plugins/truebim/manifests/2022/TrueBIM.addin
-```
-
-When the Sheet Numbering component is selected, the installer copies:
-
-```text
-%APPDATA%\TrueBIM\2025\Modules\SheetNumbering\module.json
-%APPDATA%\TrueBIM\2025\Modules\SheetNumbering\README.md
-```
-
-If the component is not selected, the manifest is not installed and the module is not available in the launcher.
-
-When the Schedule Column Collapse component is selected, the installer copies:
-
-```text
-%APPDATA%\TrueBIM\2025\Modules\ScheduleColumnCollapse\module.json
-%APPDATA%\TrueBIM\2025\Modules\ScheduleColumnCollapse\README.md
-```
-
-## Revit Add-In Manifest Strategy
-
-Revit does not reliably expand `%APPDATA%` inside `.addin` `Assembly` paths. The source manifests in `plugins/truebim/manifests/2022/TrueBIM.addin` and `plugins/truebim/manifests/2025/TrueBIM.addin` remain reusable for local deploy, where deploy scripts write an absolute path.
-
-For installer flow, `TrueBIM.iss` generates the installed manifest at install time and writes an expanded absolute path to:
-
-```text
-%APPDATA%\Autodesk\Revit\Addins\2022\TrueBIM.addin
-%APPDATA%\Autodesk\Revit\Addins\2025\TrueBIM.addin
-```
-
-The generated `Assembly` points to:
-
-```text
-%APPDATA%\TrueBIM\2022\Core\TrueBIM.App.dll
-%APPDATA%\TrueBIM\2025\Core\TrueBIM.App.dll
-```
-
-## Known Limitations
-
-- Revit 2022 and Revit 2025 manual QA is still required before release.
-- Installer install/uninstall behavior has not been manually validated.
-- The installer targets current-user installation only.
-- No support is included for Revit 2021 or older.
-- Runtime module enable/disable settings are stored in `%APPDATA%\TrueBIM\<RevitVersion>\module-settings.json`.
+The existing `deploy-local-2022.ps1` and `deploy-local-2025.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the machine-wide release installer.

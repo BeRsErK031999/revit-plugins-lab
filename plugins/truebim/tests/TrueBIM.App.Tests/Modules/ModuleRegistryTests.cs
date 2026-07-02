@@ -54,6 +54,38 @@ public sealed class ModuleRegistryTests
         Assert.Contains(logger.Warnings, warning => warning.Contains("Falling back", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void ResolveModulesRoot_UsesModulesNextToVersionDll()
+    {
+        using TempDirectory temp = new();
+        string installRoot = Path.Combine(temp.Path, "ProgramFiles", "TrueBIM", "2025");
+        string modulesRoot = Path.Combine(installRoot, "Modules");
+        Directory.CreateDirectory(modulesRoot);
+
+        string result = ModuleRegistry.ResolveModulesRoot(
+            "2025",
+            Path.Combine(installRoot, "TrueBIM.App.dll"),
+            Path.Combine(temp.Path, "AppData"));
+
+        Assert.Equal(modulesRoot, result);
+    }
+
+    [Fact]
+    public void ResolveModulesRoot_UsesCoreSiblingModulesWhenDllIsInsideCore()
+    {
+        using TempDirectory temp = new();
+        string installRoot = Path.Combine(temp.Path, "AppData", "TrueBIM", "2022");
+        string modulesRoot = Path.Combine(installRoot, "Modules");
+        Directory.CreateDirectory(modulesRoot);
+
+        string result = ModuleRegistry.ResolveModulesRoot(
+            "2022",
+            Path.Combine(installRoot, "Core", "TrueBIM.App.dll"),
+            Path.Combine(temp.Path, "AppData"));
+
+        Assert.Equal(modulesRoot, result);
+    }
+
     private static string Manifest(string id)
     {
         return $$"""

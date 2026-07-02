@@ -31,9 +31,8 @@ The platform starts with sheet numbering and schedule column collapse modules.
 - Online marketplace.
 - Auto-update.
 - Complex company standard rule engine.
-- Installer-finalized multi-target release beyond local Revit 2022 and Revit 2025 deploy scripts.
 
-These can be added after the first stable local Revit 2022 and Revit 2025 workflows.
+These can be added after the first stable multi-version installer workflow.
 
 ## Module: schedule-column-collapse
 
@@ -51,11 +50,10 @@ These can be added after the first stable local Revit 2022 and Revit 2025 workfl
 ### Out of initial scope
 
 - Batch processing multiple schedules from one sheet.
-- Replacing the current Revit 2022 and Revit 2025 local deploy scripts with a finalized multi-version installer.
 
 ## Installer scope
 
-The installer should install the TrueBIM shell and selected modules.
+The release installer should install the TrueBIM shell and selected modules for one or more Revit versions from 2019 through 2025.
 
 Planned sections:
 

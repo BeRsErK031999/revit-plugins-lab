@@ -11,24 +11,59 @@
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48' and '$(RevitVersion)' == ''">
+    <RevitVersion>2022</RevitVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows' and '$(RevitVersion)' == ''">
+    <RevitVersion>2025</RevitVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RevitApiRoot>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiRoot>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
+    <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
+    <DefineConstants>$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="ValidateRevitApiTarget" BeforeTargets="ResolveReferences">
+    <Error
+      Condition="'$(TargetFramework)' == 'net48' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(RevitVersion)', '^(2019|2020|2021|2022|2023|2024)$'))"
+      Text="TargetFramework net48 supports RevitVersion 2019-2024 only. Current RevitVersion='$(RevitVersion)'." />
+    <Error
+      Condition="'$(TargetFramework)' == 'net8.0-windows' and '$(RevitVersion)' != '2025'"
+      Text="TargetFramework net8.0-windows is reserved for RevitVersion 2025. Current RevitVersion='$(RevitVersion)'." />
+    <Error
+      Condition="!Exists('$(RevitApiRoot)\RevitAPI.dll')"
+      Text="RevitAPI.dll was not found for Revit $(RevitVersion) at '$(RevitApiRoot)\RevitAPI.dll'." />
+    <Error
+      Condition="!Exists('$(RevitApiRoot)\RevitAPIUI.dll')"
+      Text="RevitAPIUI.dll was not found for Revit $(RevitVersion) at '$(RevitApiRoot)\RevitAPIUI.dll'." />
+  </Target>
+
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <Reference Include="RevitAPI">
-      <HintPath>C:\Program Files\Autodesk\Revit 2022\RevitAPI.dll</HintPath>
+      <HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="RevitAPIUI">
-      <HintPath>C:\Program Files\Autodesk\Revit 2022\RevitAPIUI.dll</HintPath>
+      <HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
     <Reference Include="RevitAPI">
-      <HintPath>C:\Program Files\Autodesk\Revit 2025\RevitAPI.dll</HintPath>
+      <HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="RevitAPIUI">
-      <HintPath>C:\Program Files\Autodesk\Revit 2025\RevitAPIUI.dll</HintPath>
+      <HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
