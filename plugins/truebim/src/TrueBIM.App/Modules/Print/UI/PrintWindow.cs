@@ -20,6 +20,7 @@ public sealed class PrintWindow : Window
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
     private readonly PrintFileNameTemplateService fileNameTemplateService = new();
+    private readonly PrintPdfExportService pdfExportService = new();
     private readonly PrintFileNameContext fileNameContext;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
@@ -211,7 +212,11 @@ public sealed class PrintWindow : Window
         exportFolderInput.Text = GetInitialExportFolder();
         exportFolderInput.Height = 32;
         exportFolderInput.ToolTip = "Папка назначения для будущего экспорта.";
-        exportFolderInput.TextChanged += (_, _) => UpdateExportState();
+        exportFolderInput.TextChanged += (_, _) =>
+        {
+            ResetExportStatuses();
+            UpdateExportState();
+        };
         Grid.SetColumn(exportFolderInput, 1);
         folderRow.Children.Add(exportFolderInput);
 
@@ -332,6 +337,7 @@ public sealed class PrintWindow : Window
                 fileNameContext,
                 counter);
             row.UpdateFileNamePreview(preview);
+            row.ExportStatus = string.Empty;
             counter++;
         }
 
@@ -392,11 +398,58 @@ public sealed class PrintWindow : Window
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
         string formats = GetSelectedFormatsText();
+        bool exportPdf = pdfInput.IsChecked == true;
+        bool hasUnsupportedFormats = dwgInput.IsChecked == true || dxfInput.IsChecked == true;
 
         logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
+        if (!exportPdf)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show(
+                "Печать",
+                "Экспорт DWG/DXF будет добавлен следующим шагом. Сейчас доступен прямой экспорт в PDF.");
+            return;
+        }
+
+        foreach (PrintSheetRow row in selectedRows)
+        {
+            row.ExportStatus = "PDF: в очереди";
+        }
+
+        PrintPdfExportResult result = pdfExportService.Export(
+            document,
+            exportFolderInput.Text,
+            selectedRows
+                .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                .ToList(),
+            logger);
+
+        IReadOnlyDictionary<long, PrintPdfExportFailure> failuresByElementId = result.Failures.ToDictionary(
+            failure => failure.Item.ElementId);
+        foreach (PrintSheetRow row in selectedRows)
+        {
+            row.ExportStatus = failuresByElementId.ContainsKey(row.Sheet.ElementId)
+                ? "PDF: ошибка"
+                : "PDF: готов";
+        }
+
+        string unsupportedMessage = hasUnsupportedFormats
+            ? "\nDWG/DXF будут добавлены следующим шагом."
+            : string.Empty;
+        string failureMessage = result.Failures.Count > 0
+            ? "\n\nОшибки:\n" + string.Join("\n", result.Failures.Take(3).Select(failure => $"{failure.Item.FileName}: {failure.Message}"))
+            : string.Empty;
         Autodesk.Revit.UI.TaskDialog.Show(
             "Печать",
-            $"Подготовлено листов: {selectedRows.Count}\nФорматы: {formats}\nМаска: {fileNameMaskInput.Text}\n\nЭкспорт будет добавлен следующим шагом.");
+            $"PDF экспортировано: {result.ExportedFiles.Count}\nОшибок: {result.Failures.Count}{unsupportedMessage}{failureMessage}");
+        UpdateExportState();
+    }
+
+    private void ResetExportStatuses()
+    {
+        foreach (PrintSheetRow row in sheetRows)
+        {
+            row.ExportStatus = string.Empty;
+        }
     }
 
     private void UpdateExportState()
@@ -527,6 +580,7 @@ public sealed class PrintWindow : Window
     {
         private bool isSelected;
         private string fileNamePreview = string.Empty;
+        private string exportStatus = string.Empty;
         private bool isFileNameDuplicate;
         private bool isFileNameTruncated;
         private bool hasUnknownFileNameTokens;
@@ -634,6 +688,22 @@ public sealed class PrintWindow : Window
             }
         }
 
+        public string ExportStatus
+        {
+            get => exportStatus;
+            set
+            {
+                if (exportStatus == value)
+                {
+                    return;
+                }
+
+                exportStatus = value;
+                NotifyChanged(nameof(ExportStatus));
+                NotifyChanged(nameof(Status));
+            }
+        }
+
         public string Status
         {
             get
@@ -656,6 +726,11 @@ public sealed class PrintWindow : Window
                 if (IsFileNameTruncated)
                 {
                     return "Имя обрезано";
+                }
+
+                if (!string.IsNullOrWhiteSpace(ExportStatus))
+                {
+                    return ExportStatus;
                 }
 
                 return Sheet.CanBePrinted
