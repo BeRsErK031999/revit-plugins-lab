@@ -22,6 +22,8 @@ public sealed class PrintWindow : Window
     private readonly PrintFileNameTemplateService fileNameTemplateService = new();
     private readonly PrintPdfExportService pdfExportService = new();
     private readonly PrintCadExportService cadExportService = new();
+    private readonly PrintCadExportSetupService cadExportSetupService = new();
+    private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
     private readonly PrintFileNameContext fileNameContext;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
@@ -52,6 +54,8 @@ public sealed class PrintWindow : Window
         Content = "DXF",
         ToolTip = "Добавить DXF в очередь экспорта."
     };
+    private readonly ComboBox dwgSetupInput = CreateCadSetupInput("Настройка экспорта DWG из сохраненных настроек Revit.");
+    private readonly ComboBox dxfSetupInput = CreateCadSetupInput("Настройка экспорта DXF из сохраненных настроек Revit.");
     private readonly Button exportButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetInfo> sheets, ITrueBimLogger logger)
@@ -60,6 +64,7 @@ public sealed class PrintWindow : Window
         this.sheets = sheets ?? throw new ArgumentNullException(nameof(sheets));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         fileNameContext = CreateFileNameContext(document);
+        LoadCadExportSetupOptions();
 
         Title = "Печать";
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
@@ -197,6 +202,7 @@ public sealed class PrintWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         Grid folderRow = new();
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -252,6 +258,42 @@ public sealed class PrintWindow : Window
         Grid.SetRow(maskRow, 1);
         root.Children.Add(maskRow);
 
+        Grid cadSetupRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        cadSetupRow.Children.Add(new TextBlock
+        {
+            Text = "DWG настройка",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+
+        BindCadSetupInput(dwgSetupInput);
+        Grid.SetColumn(dwgSetupInput, 1);
+        cadSetupRow.Children.Add(dwgSetupInput);
+
+        TextBlock dxfSetupLabel = new()
+        {
+            Text = "DXF настройка",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 8, 0)
+        };
+        Grid.SetColumn(dxfSetupLabel, 2);
+        cadSetupRow.Children.Add(dxfSetupLabel);
+
+        BindCadSetupInput(dxfSetupInput);
+        Grid.SetColumn(dxfSetupInput, 3);
+        cadSetupRow.Children.Add(dxfSetupInput);
+
+        Grid.SetRow(cadSetupRow, 2);
+        root.Children.Add(cadSetupRow);
+
         DockPanel actionRow = new()
         {
             Margin = new Thickness(0, 12, 0, 0)
@@ -297,10 +339,31 @@ public sealed class PrintWindow : Window
         actions.Children.Add(closeButton);
 
         actionRow.Children.Add(actions);
-        Grid.SetRow(actionRow, 2);
+        Grid.SetRow(actionRow, 3);
         root.Children.Add(actionRow);
 
         return root;
+    }
+
+    private void BindCadSetupInput(ComboBox setupInput)
+    {
+        setupInput.ItemsSource = cadExportSetupOptions;
+        setupInput.SelectionChanged += (_, _) =>
+        {
+            ResetExportStatuses();
+            UpdateExportState();
+        };
+        setupInput.SelectedIndex = cadExportSetupOptions.Count > 0 ? 0 : -1;
+        setupInput.IsEnabled = cadExportSetupOptions.Count > 1;
+    }
+
+    private void LoadCadExportSetupOptions()
+    {
+        cadExportSetupOptions.Clear();
+        foreach (PrintCadExportSetupOption option in cadExportSetupService.GetAvailableOptions(document, logger))
+        {
+            cadExportSetupOptions.Add(option);
+        }
     }
 
     private void LoadSheets()
@@ -402,8 +465,10 @@ public sealed class PrintWindow : Window
         bool exportPdf = pdfInput.IsChecked == true;
         bool exportDwg = dwgInput.IsChecked == true;
         bool exportDxf = dxfInput.IsChecked == true;
+        string? dwgSetupName = GetSelectedSetupName(dwgSetupInput);
+        string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
 
-        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
+        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Dictionary<long, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row.Sheet.ElementId,
             _ => new List<string>());
@@ -439,6 +504,7 @@ public sealed class PrintWindow : Window
                     .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
                     .ToList(),
                 PrintCadExportFormat.Dwg,
+                dwgSetupName,
                 logger);
             exportedCount += result.ExportedFiles.Count;
             failureCount += result.Failures.Count;
@@ -455,6 +521,7 @@ public sealed class PrintWindow : Window
                     .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
                     .ToList(),
                 PrintCadExportFormat.Dxf,
+                dxfSetupName,
                 logger);
             exportedCount += result.ExportedFiles.Count;
             failureCount += result.Failures.Count;
@@ -539,7 +606,8 @@ public sealed class PrintWindow : Window
         string unknownTokenText = unknownTokenCount > 0
             ? $" Неизвестные токены в маске: {unknownTokenCount}."
             : string.Empty;
-        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
+        string cadSetupText = GetSelectedCadSetupsText();
+        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -563,6 +631,35 @@ public sealed class PrintWindow : Window
         return formats.Count == 0
             ? "не выбраны"
             : string.Join(", ", formats);
+    }
+
+    private string GetSelectedCadSetupsText()
+    {
+        List<string> setupDisplays = new();
+        if (dwgInput.IsChecked == true)
+        {
+            setupDisplays.Add(PrintCadExportSetupService.GetSelectionDisplayName(
+                PrintCadExportFormat.Dwg,
+                dwgSetupInput.SelectedItem as PrintCadExportSetupOption));
+        }
+
+        if (dxfInput.IsChecked == true)
+        {
+            setupDisplays.Add(PrintCadExportSetupService.GetSelectionDisplayName(
+                PrintCadExportFormat.Dxf,
+                dxfSetupInput.SelectedItem as PrintCadExportSetupOption));
+        }
+
+        return setupDisplays.Count == 0
+            ? string.Empty
+            : $" CAD настройки: {string.Join("; ", setupDisplays)}.";
+    }
+
+    private static string? GetSelectedSetupName(ComboBox setupInput)
+    {
+        return setupInput.SelectedItem is PrintCadExportSetupOption option
+            ? option.SetupName
+            : null;
     }
 
     private string GetInitialExportFolder()
@@ -598,6 +695,17 @@ public sealed class PrintWindow : Window
             Binding = new Binding(bindingPath),
             Width = width,
             IsReadOnly = true
+        };
+    }
+
+    private static ComboBox CreateCadSetupInput(string tooltip)
+    {
+        return new ComboBox
+        {
+            DisplayMemberPath = nameof(PrintCadExportSetupOption.DisplayName),
+            Height = 32,
+            MinWidth = 220,
+            ToolTip = tooltip
         };
     }
 

@@ -8,11 +8,24 @@ namespace TrueBIM.App.Modules.Print.Services;
 
 public sealed class PrintCadExportService
 {
+    private readonly PrintCadExportSetupService setupService;
+
+    public PrintCadExportService()
+        : this(new PrintCadExportSetupService())
+    {
+    }
+
+    internal PrintCadExportService(PrintCadExportSetupService setupService)
+    {
+        this.setupService = setupService ?? throw new ArgumentNullException(nameof(setupService));
+    }
+
     public PrintCadExportResult Export(
         Document document,
         string exportFolder,
         IReadOnlyList<PrintCadExportItem> items,
         PrintCadExportFormat format,
+        string? setupName,
         ITrueBimLogger logger)
     {
         Guard.NotNull(document, nameof(document));
@@ -36,6 +49,7 @@ public sealed class PrintCadExportService
                 items.Select(item => new PrintCadExportFailure(format, item, exception.Message)).ToList());
         }
 
+        BaseExportOptions options = setupService.CreateOptions(document, format, setupName, logger);
         foreach (PrintCadExportItem item in items)
         {
             try
@@ -52,9 +66,7 @@ public sealed class PrintCadExportService
                 {
                     RevitElementIds.Create(item.ElementId)
                 };
-                bool exported = format == PrintCadExportFormat.Dwg
-                    ? document.Export(exportFolder, exportName, viewIds, new DWGExportOptions())
-                    : document.Export(exportFolder, exportName, viewIds, new DXFExportOptions());
+                bool exported = ExportWithOptions(document, exportFolder, exportName, viewIds, format, options);
                 if (!exported)
                 {
                     failures.Add(new PrintCadExportFailure(format, item, "Revit не подтвердил экспорт CAD."));
@@ -101,6 +113,22 @@ public sealed class PrintCadExportService
         {
             PrintCadExportFormat.Dwg => ".dwg",
             PrintCadExportFormat.Dxf => ".dxf",
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported CAD export format.")
+        };
+    }
+
+    private static bool ExportWithOptions(
+        Document document,
+        string exportFolder,
+        string exportName,
+        ICollection<ElementId> viewIds,
+        PrintCadExportFormat format,
+        BaseExportOptions options)
+    {
+        return format switch
+        {
+            PrintCadExportFormat.Dwg => document.Export(exportFolder, exportName, viewIds, (DWGExportOptions)options),
+            PrintCadExportFormat.Dxf => document.Export(exportFolder, exportName, viewIds, (DXFExportOptions)options),
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported CAD export format.")
         };
     }
