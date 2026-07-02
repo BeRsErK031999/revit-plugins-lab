@@ -111,6 +111,61 @@ public sealed class ScheduleColumnCollapseService
     private static ViewSchedule? ResolveTargetSchedule(UIDocument uiDocument, IntPtr ownerWindowHandle, out string? error)
     {
         Document document = uiDocument.Document;
+        ViewSchedule? activeSchedule = GetActiveSchedule(document);
+        IReadOnlyList<ViewSchedule> selectedProjectBrowserSchedules = CollectSelectedProjectBrowserSchedules(uiDocument);
+
+        ScheduleSourceSelectionWindow sourceSelectionWindow = new(
+            activeSchedule?.Name,
+            selectedProjectBrowserSchedules.Select(schedule => schedule.Name).ToList(),
+            ownerWindowHandle);
+
+        bool? sourceDialogResult = sourceSelectionWindow.ShowDialog();
+        if (sourceDialogResult != true)
+        {
+            error = "Выбор спецификации отменён.";
+            return null;
+        }
+
+        switch (sourceSelectionWindow.SelectedSource)
+        {
+            case ScheduleSourceSelection.ActiveView:
+                if (activeSchedule is null)
+                {
+                    error = "Активное окно сейчас не является спецификацией.";
+                    return null;
+                }
+
+                error = null;
+                return activeSchedule;
+            case ScheduleSourceSelection.ProjectBrowserSelection:
+                if (selectedProjectBrowserSchedules.Count == 0)
+                {
+                    error = "В диспетчере проекта не выбрана спецификация.";
+                    return null;
+                }
+
+                if (selectedProjectBrowserSchedules.Count > 1)
+                {
+                    error = "В диспетчере проекта выбрано несколько спецификаций. Оставьте выбранной одну спецификацию.";
+                    return null;
+                }
+
+                error = null;
+                return selectedProjectBrowserSchedules[0];
+            case ScheduleSourceSelection.ListSelection:
+                return ResolveTargetScheduleFromList(uiDocument, ownerWindowHandle, out error);
+            default:
+                error = "Не удалось определить способ выбора спецификации.";
+                return null;
+        }
+    }
+
+    private static ViewSchedule? ResolveTargetScheduleFromList(
+        UIDocument uiDocument,
+        IntPtr ownerWindowHandle,
+        out string? error)
+    {
+        Document document = uiDocument.Document;
         IReadOnlyList<ScheduleSelectionItem> schedules = CollectScheduleSelectionItems(uiDocument);
         if (schedules.Count == 0)
         {
@@ -132,6 +187,13 @@ public sealed class ScheduleColumnCollapseService
 
         error = null;
         return document.GetElement(selectionWindow.SelectedSchedule.ScheduleId) as ViewSchedule;
+    }
+
+    private static ViewSchedule? GetActiveSchedule(Document document)
+    {
+        return document.ActiveView is ViewSchedule activeSchedule && !activeSchedule.IsTemplate
+            ? activeSchedule
+            : null;
     }
 
     private static IReadOnlyList<ScheduleSelectionItem> CollectScheduleSelectionItems(UIDocument uiDocument)
@@ -161,7 +223,7 @@ public sealed class ScheduleColumnCollapseService
             AddSchedule(schedule, "Выбрано на листе");
         }
 
-        if (document.ActiveView is ViewSchedule activeSchedule)
+        if (GetActiveSchedule(document) is ViewSchedule activeSchedule)
         {
             AddSchedule(activeSchedule, "Активная спецификация");
         }
@@ -181,6 +243,17 @@ public sealed class ScheduleColumnCollapseService
         }
 
         return items;
+    }
+
+    private static IReadOnlyList<ViewSchedule> CollectSelectedProjectBrowserSchedules(UIDocument uiDocument)
+    {
+        Document document = uiDocument.Document;
+        return DistinctSchedulesById(uiDocument.Selection
+            .GetElementIds()
+            .Select(document.GetElement)
+            .OfType<ViewSchedule>()
+            .Where(schedule => !schedule.IsTemplate)
+            .ToList());
     }
 
     private static IReadOnlyList<ViewSchedule> CollectSelectedSchedules(UIDocument uiDocument)
