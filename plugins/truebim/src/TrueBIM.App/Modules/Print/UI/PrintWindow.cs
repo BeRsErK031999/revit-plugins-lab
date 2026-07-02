@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using Microsoft.Win32;
+using TrueBIM.App.Modules.Print.Services;
 using TrueBIM.App.Modules.Print.Models;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
@@ -18,9 +19,16 @@ public sealed class PrintWindow : Window
     private readonly IReadOnlyList<PrintSheetInfo> sheets;
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
+    private readonly PrintFileNameTemplateService fileNameTemplateService = new();
+    private readonly PrintFileNameContext fileNameContext;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
     private readonly TextBox exportFolderInput = new();
+    private readonly TextBox fileNameMaskInput = new()
+    {
+        Text = PrintFileNameTemplateService.DefaultTemplate,
+        ToolTip = "Маска имени файла. Доступны токены: {SheetNumber}, {SheetName}, {ProjectNumber}, {ProjectName}, {DocumentName}, {Date:yyyy-MM-dd}, {Counter}, {Counter:000}."
+    };
     private readonly CheckBox includePlaceholdersInput = new()
     {
         Content = "Листы-заглушки",
@@ -49,6 +57,7 @@ public sealed class PrintWindow : Window
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheets = sheets ?? throw new ArgumentNullException(nameof(sheets));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        fileNameContext = CreateFileNameContext(document);
 
         Title = "Печать";
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
@@ -185,6 +194,7 @@ public sealed class PrintWindow : Window
         };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         Grid folderRow = new();
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -214,6 +224,27 @@ public sealed class PrintWindow : Window
 
         Grid.SetRow(folderRow, 0);
         root.Children.Add(folderRow);
+
+        Grid maskRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        maskRow.Children.Add(new TextBlock
+        {
+            Text = "Маска имени",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+
+        fileNameMaskInput.Height = 32;
+        fileNameMaskInput.TextChanged += (_, _) => UpdateFileNamePreviews();
+        Grid.SetColumn(fileNameMaskInput, 1);
+        maskRow.Children.Add(fileNameMaskInput);
+
+        Grid.SetRow(maskRow, 1);
+        root.Children.Add(maskRow);
 
         DockPanel actionRow = new()
         {
@@ -260,7 +291,7 @@ public sealed class PrintWindow : Window
         actions.Children.Add(closeButton);
 
         actionRow.Children.Add(actions);
-        Grid.SetRow(actionRow, 1);
+        Grid.SetRow(actionRow, 2);
         root.Children.Add(actionRow);
 
         return root;
@@ -276,7 +307,7 @@ public sealed class PrintWindow : Window
 
         foreach (PrintSheetInfo sheet in visibleSheets)
         {
-            PrintSheetRow row = new(sheet, CreateDefaultFileNamePreview(sheet));
+            PrintSheetRow row = new(sheet);
             row.PropertyChanged += (_, args) =>
             {
                 if (args.PropertyName == nameof(PrintSheetRow.IsSelected))
@@ -285,6 +316,35 @@ public sealed class PrintWindow : Window
                 }
             };
             sheetRows.Add(row);
+        }
+
+        UpdateFileNamePreviews();
+    }
+
+    private void UpdateFileNamePreviews()
+    {
+        int counter = 1;
+        foreach (PrintSheetRow row in sheetRows)
+        {
+            PrintFileNamePreview preview = fileNameTemplateService.Build(
+                fileNameMaskInput.Text,
+                row.Sheet,
+                fileNameContext,
+                counter);
+            row.UpdateFileNamePreview(preview);
+            counter++;
+        }
+
+        HashSet<string> duplicatedNames = sheetRows
+            .Where(row => row.CanBePrinted)
+            .GroupBy(row => row.FileNamePreview, StringComparer.CurrentCultureIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+
+        foreach (PrintSheetRow row in sheetRows)
+        {
+            row.IsFileNameDuplicate = row.CanBePrinted && duplicatedNames.Contains(row.FileNamePreview);
         }
 
         UpdateExportState();
@@ -333,10 +393,10 @@ public sealed class PrintWindow : Window
             .ToList();
         string formats = GetSelectedFormatsText();
 
-        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. Folder: {exportFolderInput.Text}.");
+        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Autodesk.Revit.UI.TaskDialog.Show(
             "Печать",
-            $"Подготовлено листов: {selectedRows.Count}\nФорматы: {formats}\n\nЭкспорт будет добавлен следующим шагом.");
+            $"Подготовлено листов: {selectedRows.Count}\nФорматы: {formats}\nМаска: {fileNameMaskInput.Text}\n\nЭкспорт будет добавлен следующим шагом.");
     }
 
     private void UpdateExportState()
@@ -346,18 +406,30 @@ public sealed class PrintWindow : Window
         int hiddenPlaceholderCount = includePlaceholdersInput.IsChecked == true
             ? 0
             : sheets.Count(sheet => sheet.IsPlaceholder);
+        int duplicateSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameDuplicate);
+        int truncatedSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameTruncated);
+        int unknownTokenCount = sheetRows.Count(row => row.HasUnknownFileNameTokens);
         bool hasFormat = pdfInput.IsChecked == true || dwgInput.IsChecked == true || dxfInput.IsChecked == true;
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
 
-        exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder;
+        exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder && duplicateSelectedCount == 0;
         exportButton.ToolTip = exportButton.IsEnabled
             ? "Подготовить выбранные листы к экспорту."
-            : "Выберите листы, формат и папку назначения.";
+            : "Выберите листы, формат, папку назначения и устраните дубли имен.";
 
         string hiddenText = hiddenPlaceholderCount > 0
             ? $" Скрыто листов-заглушек: {hiddenPlaceholderCount}."
             : string.Empty;
-        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{hiddenText}";
+        string duplicateText = duplicateSelectedCount > 0
+            ? $" Дубли имен: {duplicateSelectedCount}."
+            : string.Empty;
+        string truncatedText = truncatedSelectedCount > 0
+            ? $" Обрезанных имен: {truncatedSelectedCount}."
+            : string.Empty;
+        string unknownTokenText = unknownTokenCount > 0
+            ? $" Неизвестные токены в маске: {unknownTokenCount}."
+            : string.Empty;
+        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -403,19 +475,6 @@ public sealed class PrintWindow : Window
         return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
     }
 
-    private static string CreateDefaultFileNamePreview(PrintSheetInfo sheet)
-    {
-        string fileName = $"{sheet.SheetNumber}_{sheet.SheetName}".Trim('_', ' ');
-        foreach (char invalidChar in Path.GetInvalidFileNameChars())
-        {
-            fileName = fileName.Replace(invalidChar, '_');
-        }
-
-        return string.IsNullOrWhiteSpace(fileName)
-            ? "Лист"
-            : fileName;
-    }
-
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)
     {
         return CreateTextColumn(header, bindingPath, new DataGridLength(width));
@@ -444,14 +503,37 @@ public sealed class PrintWindow : Window
         };
     }
 
+    private static PrintFileNameContext CreateFileNameContext(RevitDocument document)
+    {
+        string documentName = string.IsNullOrWhiteSpace(document.Title)
+            ? "Активный документ"
+            : document.Title;
+
+        try
+        {
+            return new PrintFileNameContext(
+                documentName,
+                document.ProjectInformation?.Name ?? string.Empty,
+                document.ProjectInformation?.Number ?? string.Empty,
+                DateTime.Now);
+        }
+        catch (Exception)
+        {
+            return new PrintFileNameContext(documentName, string.Empty, string.Empty, DateTime.Now);
+        }
+    }
+
     private sealed class PrintSheetRow : INotifyPropertyChanged
     {
         private bool isSelected;
+        private string fileNamePreview = string.Empty;
+        private bool isFileNameDuplicate;
+        private bool isFileNameTruncated;
+        private bool hasUnknownFileNameTokens;
 
-        public PrintSheetRow(PrintSheetInfo sheet, string fileNamePreview)
+        public PrintSheetRow(PrintSheetInfo sheet)
         {
             Sheet = sheet;
-            FileNamePreview = fileNamePreview;
             isSelected = sheet.CanBePrinted;
         }
 
@@ -489,7 +571,68 @@ public sealed class PrintWindow : Window
 
         public bool CanBePrinted => Sheet.CanBePrinted;
 
-        public string FileNamePreview { get; }
+        public string FileNamePreview
+        {
+            get => fileNamePreview;
+            private set
+            {
+                if (fileNamePreview == value)
+                {
+                    return;
+                }
+
+                fileNamePreview = value;
+                NotifyChanged(nameof(FileNamePreview));
+            }
+        }
+
+        public bool IsFileNameDuplicate
+        {
+            get => isFileNameDuplicate;
+            set
+            {
+                if (isFileNameDuplicate == value)
+                {
+                    return;
+                }
+
+                isFileNameDuplicate = value;
+                NotifyChanged(nameof(IsFileNameDuplicate));
+                NotifyChanged(nameof(Status));
+            }
+        }
+
+        public bool IsFileNameTruncated
+        {
+            get => isFileNameTruncated;
+            private set
+            {
+                if (isFileNameTruncated == value)
+                {
+                    return;
+                }
+
+                isFileNameTruncated = value;
+                NotifyChanged(nameof(IsFileNameTruncated));
+                NotifyChanged(nameof(Status));
+            }
+        }
+
+        public bool HasUnknownFileNameTokens
+        {
+            get => hasUnknownFileNameTokens;
+            private set
+            {
+                if (hasUnknownFileNameTokens == value)
+                {
+                    return;
+                }
+
+                hasUnknownFileNameTokens = value;
+                NotifyChanged(nameof(HasUnknownFileNameTokens));
+                NotifyChanged(nameof(Status));
+            }
+        }
 
         public string Status
         {
@@ -500,10 +643,37 @@ public sealed class PrintWindow : Window
                     return "Лист-заглушка";
                 }
 
+                if (IsFileNameDuplicate)
+                {
+                    return "Дубликат имени";
+                }
+
+                if (HasUnknownFileNameTokens)
+                {
+                    return "Неизвестный токен";
+                }
+
+                if (IsFileNameTruncated)
+                {
+                    return "Имя обрезано";
+                }
+
                 return Sheet.CanBePrinted
                     ? "Готов"
                     : "Не печатается";
             }
+        }
+
+        public void UpdateFileNamePreview(PrintFileNamePreview preview)
+        {
+            FileNamePreview = preview.FileName;
+            IsFileNameTruncated = preview.WasTruncated;
+            HasUnknownFileNameTokens = preview.HasUnknownTokens;
+        }
+
+        private void NotifyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }
