@@ -1,0 +1,46 @@
+using TrueBIM.App.Modules.Print.Models;
+using TrueBIM.App.Modules.Print.Services;
+using Xunit;
+
+namespace TrueBIM.App.Tests.Modules.Print.Services;
+
+public sealed class PrintCadExportServiceTests
+{
+    [Fact]
+    public void NormalizeCadFileName_AddsDwgExtension()
+    {
+        string fileName = PrintCadExportService.NormalizeCadFileName("A-101_План", PrintCadExportFormat.Dwg);
+
+        Assert.Equal("A-101_План.dwg", fileName);
+    }
+
+    [Fact]
+    public void NormalizeCadFileName_AddsDxfExtension()
+    {
+        string fileName = PrintCadExportService.NormalizeCadFileName("A-101_План", PrintCadExportFormat.Dxf);
+
+        Assert.Equal("A-101_План.dxf", fileName);
+    }
+
+    [Fact]
+    public void NormalizeCadFileName_KeepsExistingFormatExtension()
+    {
+        string fileName = PrintCadExportService.NormalizeCadFileName("A-101.DWG", PrintCadExportFormat.Dwg);
+
+        Assert.Equal("A-101.DWG", fileName);
+    }
+
+    [Fact]
+    public void NormalizeCadFileName_RemovesUnexpectedFolderSegments()
+    {
+        string fileName = PrintCadExportService.NormalizeCadFileName(@"C:\Temp\A-101.dxf", PrintCadExportFormat.Dxf);
+
+        Assert.Equal("A-101.dxf", fileName);
+    }
+
+    [Fact]
+    public void NormalizeCadFileName_RejectsEmptyFileName()
+    {
+        Assert.Throws<ArgumentException>(() => PrintCadExportService.NormalizeCadFileName(" ", PrintCadExportFormat.Dwg));
+    }
+}

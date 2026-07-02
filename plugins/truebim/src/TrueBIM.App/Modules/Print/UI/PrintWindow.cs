@@ -21,6 +21,7 @@ public sealed class PrintWindow : Window
     private readonly ITrueBimLogger logger;
     private readonly PrintFileNameTemplateService fileNameTemplateService = new();
     private readonly PrintPdfExportService pdfExportService = new();
+    private readonly PrintCadExportService cadExportService = new();
     private readonly PrintFileNameContext fileNameContext;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
@@ -399,49 +400,105 @@ public sealed class PrintWindow : Window
             .ToList();
         string formats = GetSelectedFormatsText();
         bool exportPdf = pdfInput.IsChecked == true;
-        bool hasUnsupportedFormats = dwgInput.IsChecked == true || dxfInput.IsChecked == true;
+        bool exportDwg = dwgInput.IsChecked == true;
+        bool exportDxf = dxfInput.IsChecked == true;
 
         logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
-        if (!exportPdf)
+        Dictionary<long, List<string>> rowStatuses = selectedRows.ToDictionary(
+            row => row.Sheet.ElementId,
+            _ => new List<string>());
+        int exportedCount = 0;
+        int failureCount = 0;
+        List<string> failureMessages = new();
+        foreach (PrintSheetRow row in selectedRows)
         {
-            Autodesk.Revit.UI.TaskDialog.Show(
-                "Печать",
-                "Экспорт DWG/DXF будет добавлен следующим шагом. Сейчас доступен прямой экспорт в PDF.");
-            return;
+            row.ExportStatus = "Экспорт: в очереди";
+        }
+
+        if (exportPdf)
+        {
+            PrintPdfExportResult result = pdfExportService.Export(
+                document,
+                exportFolderInput.Text,
+                selectedRows
+                    .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                    .ToList(),
+                logger);
+            exportedCount += result.ExportedFiles.Count;
+            failureCount += result.Failures.Count;
+            ApplyPdfStatus(rowStatuses, result);
+            failureMessages.AddRange(result.Failures.Select(failure => $"PDF {failure.Item.FileName}: {failure.Message}"));
+        }
+
+        if (exportDwg)
+        {
+            PrintCadExportResult result = cadExportService.Export(
+                document,
+                exportFolderInput.Text,
+                selectedRows
+                    .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                    .ToList(),
+                PrintCadExportFormat.Dwg,
+                logger);
+            exportedCount += result.ExportedFiles.Count;
+            failureCount += result.Failures.Count;
+            ApplyCadStatus(rowStatuses, result);
+            failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {failure.Item.FileName}: {failure.Message}"));
+        }
+
+        if (exportDxf)
+        {
+            PrintCadExportResult result = cadExportService.Export(
+                document,
+                exportFolderInput.Text,
+                selectedRows
+                    .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                    .ToList(),
+                PrintCadExportFormat.Dxf,
+                logger);
+            exportedCount += result.ExportedFiles.Count;
+            failureCount += result.Failures.Count;
+            ApplyCadStatus(rowStatuses, result);
+            failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {failure.Item.FileName}: {failure.Message}"));
         }
 
         foreach (PrintSheetRow row in selectedRows)
         {
-            row.ExportStatus = "PDF: в очереди";
+            row.ExportStatus = rowStatuses.TryGetValue(row.Sheet.ElementId, out List<string>? statuses)
+                ? string.Join(", ", statuses)
+                : string.Empty;
         }
 
-        PrintPdfExportResult result = pdfExportService.Export(
-            document,
-            exportFolderInput.Text,
-            selectedRows
-                .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
-                .ToList(),
-            logger);
-
-        IReadOnlyDictionary<long, PrintPdfExportFailure> failuresByElementId = result.Failures.ToDictionary(
-            failure => failure.Item.ElementId);
-        foreach (PrintSheetRow row in selectedRows)
-        {
-            row.ExportStatus = failuresByElementId.ContainsKey(row.Sheet.ElementId)
-                ? "PDF: ошибка"
-                : "PDF: готов";
-        }
-
-        string unsupportedMessage = hasUnsupportedFormats
-            ? "\nDWG/DXF будут добавлены следующим шагом."
-            : string.Empty;
-        string failureMessage = result.Failures.Count > 0
-            ? "\n\nОшибки:\n" + string.Join("\n", result.Failures.Take(3).Select(failure => $"{failure.Item.FileName}: {failure.Message}"))
+        string failureMessage = failureMessages.Count > 0
+            ? "\n\nОшибки:\n" + string.Join("\n", failureMessages.Take(3))
             : string.Empty;
         Autodesk.Revit.UI.TaskDialog.Show(
             "Печать",
-            $"PDF экспортировано: {result.ExportedFiles.Count}\nОшибок: {result.Failures.Count}{unsupportedMessage}{failureMessage}");
+            $"Экспортировано файлов: {exportedCount}\nОшибок: {failureCount}{failureMessage}");
         UpdateExportState();
+    }
+
+    private static void ApplyPdfStatus(Dictionary<long, List<string>> rowStatuses, PrintPdfExportResult result)
+    {
+        HashSet<long> failedIds = result.Failures
+            .Select(failure => failure.Item.ElementId)
+            .ToHashSet();
+        foreach (long elementId in rowStatuses.Keys.ToList())
+        {
+            rowStatuses[elementId].Add(failedIds.Contains(elementId) ? "PDF ошибка" : "PDF готов");
+        }
+    }
+
+    private static void ApplyCadStatus(Dictionary<long, List<string>> rowStatuses, PrintCadExportResult result)
+    {
+        string formatName = PrintCadExportService.GetDisplayName(result.Format);
+        HashSet<long> failedIds = result.Failures
+            .Select(failure => failure.Item.ElementId)
+            .ToHashSet();
+        foreach (long elementId in rowStatuses.Keys.ToList())
+        {
+            rowStatuses[elementId].Add(failedIds.Contains(elementId) ? $"{formatName} ошибка" : $"{formatName} готов");
+        }
     }
 
     private void ResetExportStatuses()
