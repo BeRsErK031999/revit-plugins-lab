@@ -5,14 +5,15 @@ Installer work starts after the first buildable TrueBIM shell.
 Initial installer target:
 
 - Current-user installation.
-- Revit 2025 add-in manifest.
+- Revit 2022 and Revit 2025 add-in manifests.
 - Selectable module components.
 - TrueBIM Core is required.
-- Sheet Numbering is optional but selected by default.
+- Sheet Numbering and Schedule Column Collapse are optional but selected by default.
+- Upgrade cleanup removes install-owned `Core`, `Modules`, `Assets`, and `Docs` folders before copying the new package.
 
 Recommended first implementation: Inno Setup.
 
-The first installer draft is `TrueBIM.iss`.
+The installer drafts are `TrueBIM.iss` for Revit 2025 and `TrueBIM-2022.iss` for Revit 2022.
 
 Local compiler path:
 

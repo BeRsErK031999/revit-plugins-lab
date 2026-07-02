@@ -73,6 +73,20 @@ Compile it with Inno Setup after building artifacts:
 
 Do not run the produced installer during automated packaging checks. The compile step is safe; installation changes `%APPDATA%` and should be handled as manual QA.
 
+## Upgrade Cleanup
+
+The installer removes install-owned folders before copying the new package:
+
+```text
+%APPDATA%\TrueBIM\<RevitVersion>\Core
+%APPDATA%\TrueBIM\<RevitVersion>\Modules
+%APPDATA%\TrueBIM\<RevitVersion>\Assets
+%APPDATA%\TrueBIM\<RevitVersion>\Docs
+%APPDATA%\Autodesk\Revit\Addins\<RevitVersion>\TrueBIM.addin
+```
+
+This prevents stale DLLs, module manifests, icons, and docs from older packages from accumulating across installs. User data is preserved: logs, exports, and `%APPDATA%\TrueBIM\<RevitVersion>\module-settings.json` are not removed by installer upgrade cleanup.
+
 ## Local QA Preflight
 
 Before manual Revit QA, run:

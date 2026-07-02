@@ -39,6 +39,8 @@ if (-not (Test-Path $projectOutput)) {
     throw "Build output was not found at '$projectOutput'."
 }
 
+& (Join-Path $PSScriptRoot "clean-local-2025.ps1")
+
 New-Item -ItemType Directory -Path $coreTargetDir -Force | Out-Null
 New-Item -ItemType Directory -Path $sheetNumberingTargetDir -Force | Out-Null
 New-Item -ItemType Directory -Path $scheduleColumnCollapseTargetDir -Force | Out-Null

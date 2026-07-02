@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.1"
 #define Publisher "TrueBIM"
 
 [Setup]
@@ -36,6 +36,13 @@ Name: "{app}\Modules\ScheduleColumnCollapse"; Components: modules\schedulecolumn
 Name: "{app}\Assets"; Components: assets
 Name: "{app}\Docs"; Components: docs
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\Core"
+Type: filesandordirs; Name: "{app}\Modules"
+Type: filesandordirs; Name: "{app}\Assets"
+Type: filesandordirs; Name: "{app}\Docs"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"
+
 [Files]
 Source: "..\artifacts-2022\Core\*"; DestDir: "{app}\Core"; Components: core; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\artifacts-2022\Modules\SheetNumbering\*"; DestDir: "{app}\Modules\SheetNumbering"; Components: modules\sheetnumbering; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -51,6 +58,11 @@ Filename: "{cmd}"; Parameters: "/c echo TrueBIM for Revit 2022 installed"; Flags
 
 [UninstallDelete]
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"
+Type: filesandordirs; Name: "{app}\Core"
+Type: filesandordirs; Name: "{app}\Modules"
+Type: filesandordirs; Name: "{app}\Assets"
+Type: filesandordirs; Name: "{app}\Docs"
+Type: dirifempty; Name: "{app}"
 
 [Code]
 procedure CurStepChanged(CurStep: TSetupStep);
