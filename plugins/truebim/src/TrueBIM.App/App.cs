@@ -7,7 +7,10 @@ namespace TrueBIM.App;
 public sealed class App : IExternalApplication
 {
     private const string TabName = "TrueBIM";
-    private const string PanelName = "TrueBIM";
+    private const string BimPanelName = "БИМ";
+    private const string KrPanelName = "КР";
+    private const string EomPanelName = "ЭОМ";
+    private const string SsPanelName = "СС";
 
     public Result OnStartup(UIControlledApplication application)
     {
@@ -20,10 +23,13 @@ public sealed class App : IExternalApplication
             // Revit throws if the tab already exists.
         }
 
-        RibbonPanel panel = application.CreateRibbonPanel(TabName, PanelName);
+        RibbonPanel bimPanel = application.CreateRibbonPanel(TabName, BimPanelName);
+        RibbonPanel krPanel = application.CreateRibbonPanel(TabName, KrPanelName);
+        application.CreateRibbonPanel(TabName, EomPanelName);
+        application.CreateRibbonPanel(TabName, SsPanelName);
 
         AddButton(
-            panel,
+            bimPanel,
             "TrueBIM_SheetNumbering",
             "Нумератор\nлистов",
             typeof(OpenSheetNumberingCommand).FullName,
@@ -31,7 +37,7 @@ public sealed class App : IExternalApplication
             "Открывает нумератор листов TrueBIM.");
 
         AddButton(
-            panel,
+            krPanel,
             "TrueBIM_CollapseScheduleColumns",
             "Свернуть\nВРС",
             typeof(CollapseScheduleColumnsCommand).FullName,
