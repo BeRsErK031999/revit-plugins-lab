@@ -1,0 +1,8 @@
+{
+  "id": "truebim.print",
+  "displayName": "Печать",
+  "description": "Пакетная печать и экспорт листов Revit в PDF, DWG и DXF.",
+  "version": "0.1.0",
+  "enabledByDefault": true,
+  "revitVersions": ["2022", "2025"]
+}

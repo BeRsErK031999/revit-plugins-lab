@@ -30,6 +30,7 @@ public sealed class OpenTrueBimCommand : IExternalCommand
 
         Dictionary<string, Action<System.Windows.Window>> moduleActions = new()
         {
+            ["truebim.print"] = owner => TrueBimCommandActions.OpenPrint(commandData, owner, logger),
             ["truebim.sheet-numbering"] = owner => TrueBimCommandActions.OpenSheetNumbering(commandData, owner, logger),
             ["truebim.schedule-column-collapse"] = _ => TrueBimCommandActions.CollapseScheduleColumns(commandData, logger)
         };

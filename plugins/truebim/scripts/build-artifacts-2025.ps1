@@ -12,6 +12,7 @@ $dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
 $projectOutputDir = Join-Path $trueBimRoot "src\TrueBIM.App\bin\$Configuration\net8.0-windows"
 $artifactsDir = Join-Path $trueBimRoot "artifacts"
 $coreArtifactsDir = Join-Path $artifactsDir "Core"
+$printArtifactsDir = Join-Path $artifactsDir "Modules\Print"
 $sheetNumberingArtifactsDir = Join-Path $artifactsDir "Modules\SheetNumbering"
 $scheduleColumnCollapseArtifactsDir = Join-Path $artifactsDir "Modules\ScheduleColumnCollapse"
 $docsArtifactsDir = Join-Path $artifactsDir "Docs"
@@ -33,6 +34,7 @@ if (Test-Path $artifactsDir) {
 }
 
 New-Item -ItemType Directory -Path $coreArtifactsDir -Force | Out-Null
+New-Item -ItemType Directory -Path $printArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $sheetNumberingArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $scheduleColumnCollapseArtifactsDir -Force | Out-Null
 New-Item -ItemType Directory -Path $docsArtifactsDir -Force | Out-Null
@@ -42,6 +44,8 @@ Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.dll") -Destination $co
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.pdb") -Destination $coreArtifactsDir -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.deps.json") -Destination $coreArtifactsDir -Force -ErrorAction SilentlyContinue
 
+Copy-Item -Path (Join-Path $trueBimRoot "modules\print\module.json") -Destination $printArtifactsDir -Force
+Copy-Item -Path (Join-Path $trueBimRoot "modules\print\README.md") -Destination $printArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "modules\sheet-numbering\module.json") -Destination $sheetNumberingArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "modules\sheet-numbering\README.md") -Destination $sheetNumberingArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "modules\schedule-column-collapse\module.json") -Destination $scheduleColumnCollapseArtifactsDir -Force
@@ -55,6 +59,7 @@ Copy-Item -Path (Join-Path $trueBimRoot "assets\icons") -Destination $assetsArti
 
 Write-Host "Built TrueBIM artifacts for Revit 2025."
 Write-Host "Core: $coreArtifactsDir"
+Write-Host "Print: $printArtifactsDir"
 Write-Host "Sheet Numbering: $sheetNumberingArtifactsDir"
 Write-Host "Schedule Column Collapse: $scheduleColumnCollapseArtifactsDir"
 Write-Host "Docs: $docsArtifactsDir"

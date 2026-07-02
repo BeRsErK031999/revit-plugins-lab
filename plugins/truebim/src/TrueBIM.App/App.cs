@@ -37,6 +37,14 @@ public sealed class App : IExternalApplication
             "Открывает нумератор листов TrueBIM.");
 
         AddButton(
+            bimPanel,
+            "TrueBIM_Print",
+            "Печать",
+            typeof(OpenPrintCommand).FullName,
+            TrueBimIcon.Print,
+            "Открывает модуль печати и экспорта листов TrueBIM.");
+
+        AddButton(
             krPanel,
             "TrueBIM_CollapseScheduleColumns",
             "Свернуть\nВРС",

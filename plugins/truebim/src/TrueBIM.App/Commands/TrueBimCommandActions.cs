@@ -11,6 +11,31 @@ namespace TrueBIM.App.Commands;
 
 internal static class TrueBimCommandActions
 {
+    public static void OpenPrint(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
+    {
+        try
+        {
+            logger.Info("Opening Print module.");
+
+            Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
+            if (activeDocument is null)
+            {
+                logger.Warning("Print module requested without an active document.");
+                TaskDialog.Show("Печать", "Откройте документ Revit перед запуском модуля печати.");
+                return;
+            }
+
+            TaskDialog.Show(
+                "Печать",
+                "Модуль печати подключен. Выбор листов, конструктор имени и экспорт PDF/DWG/DXF будут добавлены следующими задачами.");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to open Print module.", exception);
+            TaskDialog.Show("Печать", "Не удалось открыть модуль печати. Используйте логи для диагностики.");
+        }
+    }
+
     public static void OpenSheetNumbering(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
         try

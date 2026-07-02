@@ -11,10 +11,12 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $solutionPath = Join-Path $repoRoot "TrueBIM.sln"
 $projectOutput = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\bin\$Configuration\net8.0-windows\TrueBIM.App.dll"
 $manifestSource = Join-Path $repoRoot "plugins\truebim\manifests\2025\TrueBIM.addin"
+$printModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\print"
 $sheetNumberingModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\sheet-numbering"
 $scheduleColumnCollapseModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\schedule-column-collapse"
 $assetsSourceDir = Join-Path $repoRoot "plugins\truebim\assets"
 $coreTargetDir = Join-Path $env:APPDATA "TrueBIM\2025\Core"
+$printTargetDir = Join-Path $env:APPDATA "TrueBIM\2025\Modules\Print"
 $sheetNumberingTargetDir = Join-Path $env:APPDATA "TrueBIM\2025\Modules\SheetNumbering"
 $scheduleColumnCollapseTargetDir = Join-Path $env:APPDATA "TrueBIM\2025\Modules\ScheduleColumnCollapse"
 $assetsTargetDir = Join-Path $env:APPDATA "TrueBIM\2025\Assets"
@@ -42,6 +44,7 @@ if (-not (Test-Path $projectOutput)) {
 & (Join-Path $PSScriptRoot "clean-local-2025.ps1")
 
 New-Item -ItemType Directory -Path $coreTargetDir -Force | Out-Null
+New-Item -ItemType Directory -Path $printTargetDir -Force | Out-Null
 New-Item -ItemType Directory -Path $sheetNumberingTargetDir -Force | Out-Null
 New-Item -ItemType Directory -Path $scheduleColumnCollapseTargetDir -Force | Out-Null
 New-Item -ItemType Directory -Path $assetsTargetDir -Force | Out-Null
@@ -50,6 +53,8 @@ New-Item -ItemType Directory -Path $addinTargetDir -Force | Out-Null
 $deployedAssemblyPath = [string] (Join-Path $coreTargetDir "TrueBIM.App.dll")
 
 Copy-Item -Path $projectOutput -Destination $deployedAssemblyPath -Force
+Copy-Item -Path (Join-Path $printModuleSourceDir "module.json") -Destination $printTargetDir -Force
+Copy-Item -Path (Join-Path $printModuleSourceDir "README.md") -Destination $printTargetDir -Force
 Copy-Item -Path (Join-Path $sheetNumberingModuleSourceDir "module.json") -Destination $sheetNumberingTargetDir -Force
 Copy-Item -Path (Join-Path $sheetNumberingModuleSourceDir "README.md") -Destination $sheetNumberingTargetDir -Force
 Copy-Item -Path (Join-Path $scheduleColumnCollapseModuleSourceDir "module.json") -Destination $scheduleColumnCollapseTargetDir -Force
@@ -63,6 +68,7 @@ $manifest.RevitAddIns.AddIn.Assembly = $deployedAssemblyPath
 $manifest.Save($addinTargetPath)
 
 Write-Host "Deployed TrueBIM.App.dll to $coreTargetDir"
+Write-Host "Deployed Print module manifest to $printTargetDir"
 Write-Host "Deployed Sheet Numbering module manifest to $sheetNumberingTargetDir"
 Write-Host "Deployed Schedule Column Collapse module manifest to $scheduleColumnCollapseTargetDir"
 Write-Host "Deployed TrueBIM assets to $assetsTargetDir"

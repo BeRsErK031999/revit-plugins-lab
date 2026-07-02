@@ -1,4 +1,5 @@
 using System.IO;
+using TrueBIM.App.Modules.Print;
 using TrueBIM.App.Modules.ScheduleColumnCollapse;
 using TrueBIM.App.Modules.SheetNumbering;
 using TrueBIM.App.Services.Logging;
@@ -90,6 +91,7 @@ public sealed class ModuleRegistry
     {
         ITrueBimModule[] implementations =
         [
+            new PrintModule(),
             new SheetNumberingModule(),
             new ScheduleColumnCollapseModule()
         ];

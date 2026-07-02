@@ -48,6 +48,7 @@ public sealed class ModuleRegistryTests
 
         Assert.Collection(
             registry.Modules.OrderBy(module => module.Id, StringComparer.Ordinal),
+            module => Assert.Equal("truebim.print", module.Id),
             module => Assert.Equal("truebim.schedule-column-collapse", module.Id),
             module => Assert.Equal("truebim.sheet-numbering", module.Id));
         Assert.Contains(logger.Warnings, warning => warning.Contains("Falling back", StringComparison.Ordinal));
