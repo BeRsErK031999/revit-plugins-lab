@@ -49,6 +49,13 @@ public static class TrueBimRibbon
             "Свернуть\nВРС",
             $"{CommandNamespace}.{nameof(CollapseScheduleColumnsCommand)}",
             TrueBimIcon.ScheduleCollapse,
-            "Скрывает нулевые столбцы в выбранной спецификации.")
+            "Скрывает нулевые столбцы в выбранной спецификации."),
+        new(
+            EomPanelName,
+            "TrueBIM_VoltageDropCalculation",
+            "Расчет\nпотери\nнапряжения",
+            $"{CommandNamespace}.{nameof(OpenVoltageDropCalculationCommand)}",
+            TrueBimIcon.VoltageDrop,
+            "Открывает расчет потери напряжения и нагрузок по данным первого листа Excel.")
     ];
 }

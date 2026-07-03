@@ -8,6 +8,7 @@ using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 using TrueBIM.App.Modules.SheetNumbering.Models;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Modules.SheetNumbering.UI;
+using TrueBIM.App.Modules.VoltageDrop.UI;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -82,6 +83,24 @@ internal static class TrueBimCommandActions
         {
             logger.Error("Failed to open Sheet Numbering window.", exception);
             TaskDialog.Show("Нумератор листов", "Не удалось открыть нумератор листов. Используйте логи для диагностики.");
+        }
+    }
+
+    public static void OpenVoltageDropCalculation(System.Windows.Window? owner, ITrueBimLogger logger)
+    {
+        try
+        {
+            logger.Info("Opening Voltage Drop Calculation window.");
+            VoltageDropWindow window = new(logger)
+            {
+                Owner = owner
+            };
+            window.ShowDialog();
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to open Voltage Drop Calculation window.", exception);
+            TaskDialog.Show("Расчет потери напряжения", "Не удалось открыть расчет потери напряжения. Используйте логи для диагностики.");
         }
     }
 

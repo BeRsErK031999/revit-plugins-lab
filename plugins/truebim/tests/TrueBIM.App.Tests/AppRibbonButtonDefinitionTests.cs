@@ -21,6 +21,20 @@ public sealed class AppRibbonButtonDefinitionTests
     }
 
     [Fact]
+    public void RibbonButtons_IncludesVoltageDropCalculationOnEomPanel()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_VoltageDropCalculation", StringComparison.Ordinal));
+
+        Assert.Equal("ЭОМ", button.PanelName);
+        Assert.Equal("Расчет\nпотери\nнапряжения", button.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenVoltageDropCalculationCommand)}", button.CommandClassName);
+        Assert.Equal(TrueBimIcon.VoltageDrop, button.Icon);
+        Assert.Contains("потери напряжения", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
     public void RibbonButtons_HaveUniqueNames()
     {
         string[] duplicateNames = TrueBimRibbon.Buttons

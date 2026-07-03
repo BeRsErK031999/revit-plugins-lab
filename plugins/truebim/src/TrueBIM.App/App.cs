@@ -20,13 +20,15 @@ public sealed class App : IExternalApplication
 
         RibbonPanel bimPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.BimPanelName);
         RibbonPanel krPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.KrPanelName);
-        application.CreateRibbonPanel(TabName, TrueBimRibbon.EomPanelName);
-        application.CreateRibbonPanel(TabName, TrueBimRibbon.SsPanelName);
+        RibbonPanel eomPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.EomPanelName);
+        RibbonPanel ssPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.SsPanelName);
 
         Dictionary<string, RibbonPanel> panels = new(StringComparer.Ordinal)
         {
             [TrueBimRibbon.BimPanelName] = bimPanel,
-            [TrueBimRibbon.KrPanelName] = krPanel
+            [TrueBimRibbon.KrPanelName] = krPanel,
+            [TrueBimRibbon.EomPanelName] = eomPanel,
+            [TrueBimRibbon.SsPanelName] = ssPanel
         };
         foreach (TrueBimRibbonButtonDefinition button in TrueBimRibbon.Buttons)
         {
