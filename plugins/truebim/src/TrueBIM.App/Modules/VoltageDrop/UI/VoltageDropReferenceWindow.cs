@@ -43,7 +43,6 @@ public sealed class VoltageDropReferenceWindow : Window
         tabs.Items.Add(CreateTab("Квартиры", CreateApartmentContent()));
         tabs.Items.Add(CreateTab("Лифты", CreateLiftContent()));
         tabs.Items.Add(CreateTab("Формулы", CreateFormulaContent()));
-        tabs.Items.Add(CreateTab("Изображения", CreateImageMapContent()));
         root.Children.Add(tabs);
 
         return root;
@@ -166,26 +165,10 @@ public sealed class VoltageDropReferenceWindow : Window
         };
 
         panel.Children.Add(CreateSection(
-            "Формулы первого листа",
+            "Формулы расчета",
             CreateReferenceTable(
-                ["Блок", "Формула", "Ячейки Excel"],
+                ["Блок", "Расчет", "Пояснение"],
                 CreateFormulaRows())));
-
-        return panel;
-    }
-
-    private static UIElement CreateImageMapContent()
-    {
-        StackPanel panel = new()
-        {
-            Margin = new Thickness(0, 12, 0, 0)
-        };
-
-        panel.Children.Add(CreateSection(
-            "Карта встроенных изображений первого листа",
-            CreateReferenceTable(
-                ["Изображения", "Что перенесено", "Использование"],
-                CreateImageMapRows())));
 
         return panel;
     }
@@ -287,7 +270,7 @@ public sealed class VoltageDropReferenceWindow : Window
         yield return ["14-19", "0.8..0.65", "Линейная интерполяция к 20 кВт"];
         yield return ["20-29", "0.65..0.6", "Линейная интерполяция к 30 кВт"];
         yield return ["30-39", "0.6..0.55", "Линейная интерполяция к 40 кВт"];
-        yield return ["40-49", "0.55..0.5", "Формула сохранена как в Excel"];
+        yield return ["40-49", "0.55..0.5", "Расчетная ветка диапазона"];
         yield return ["50-59", "0.5..0.48", "Линейная интерполяция к 60 кВт"];
         yield return ["60-70", "0.48..0.45", "Линейная интерполяция"];
     }
@@ -316,29 +299,22 @@ public sealed class VoltageDropReferenceWindow : Window
 
     private static IEnumerable<IReadOnlyList<string>> CreateFormulaRows()
     {
-        yield return ["Потеря напряжения", "M = L*P", "B9"];
-        yield return ["Потеря напряжения", "ΔU% = M/(C*S)", "B11:B14"];
-        yield return ["Ток 3Ф", "I = P/(0.38*1.73*cosφ)", "B16:B22"];
-        yield return ["Ток 1Ф", "I = P/(0.22*cosφ)", "B24:B30"];
-        yield return ["Квартиры", "Pр = n*Ко/Руд*Кс*Кс.об", "K67"];
-        yield return ["Лифты", "Pр = Pуст*Кс*Кс.об", "K68, K75"];
-        yield return ["Полная мощность", "S = P/cosφ", "N67, N68, N73, N75, N77"];
-        yield return ["Реактивная мощность", "Q = SQRT(S*S-P*P)", "M67, M68, M73, M75, M77"];
-        yield return ["cosφ 3Ф", "cosφ = P/(I*0.38*1.73)", "U78"];
-        yield return ["cosφ 1Ф", "cosφ = P/(I*0.22)", "Y78"];
-        yield return ["Новый ток 3Ф", "I = P/(0.38*1.73*cosφ)", "U81"];
-        yield return ["sinφ", "sinφ = SQRT(1-cosφ^2)", "F90"];
-        yield return ["Потеря U", "U = (ρ1*(l/s)*cosφ + λ*l*sinφ)*Ip", "F85"];
-        yield return ["Потеря U%", "U% = 100*(U/380)", "J85"];
-        yield return ["Линейная ΔU", "ΔU = 1.73*Ip*L*(ro*cosφ+xo*sinφ)", "K99"];
-        yield return ["Линейная ΔU%", "ΔU% = ΔU*100/380", "M99"];
-    }
-
-    private static IEnumerable<IReadOnlyList<string>> CreateImageMapRows()
-    {
-        yield return ["image1:image4", "Таблицы допустимых токовых нагрузок", "Справочный источник первого листа; в текущих формулах окна не участвует"];
-        yield return ["image5:image11", "Коэффициенты спроса квартир и лифтов", "Перенесены в табличные правила и интерполяцию"];
-        yield return ["image12:image14", "Формулы ΔU, M и коэффициенты C", "Перенесены в расчеты и справочник коэффициентов"];
+        yield return ["Потеря напряжения", "M = L * P", "Момент нагрузки"];
+        yield return ["Потеря напряжения", "ΔU% = M / (C * S)", "Процент потери напряжения"];
+        yield return ["Ток 3Ф", "I = P / (0,38 * 1,73 * cosφ)", "Трехфазный ток"];
+        yield return ["Ток 1Ф", "I = P / (0,22 * cosφ)", "Однофазный ток"];
+        yield return ["Квартиры", "Pр = количество квартир * Ко/Руд * Кс * Кс.об", "Расчетная мощность квартир"];
+        yield return ["Лифты", "Pр = установленная мощность * Кс * Кс.об", "Расчетная мощность лифтов"];
+        yield return ["Полная мощность", "S = P / cosφ", "Полная расчетная мощность"];
+        yield return ["Реактивная мощность", "Q = √(S² - P²)", "Реактивная расчетная мощность"];
+        yield return ["cosφ 3Ф", "cosφ = P / (I * 0,38 * 1,73)", "Коэффициент мощности по 3Ф току"];
+        yield return ["cosφ 1Ф", "cosφ = P / (I * 0,22)", "Коэффициент мощности по 1Ф току"];
+        yield return ["Новый ток 3Ф", "I = P / (0,38 * 1,73 * cosφ)", "Пересчет тока при новой мощности"];
+        yield return ["sinφ", "sinφ = √(1 - cos²φ)", "Расчет синуса по cosφ"];
+        yield return ["Потеря U", "U = (ρ1 * (l / s) * cosφ + λ * l * sinφ) * Ip", "Падение напряжения в вольтах"];
+        yield return ["Потеря U%", "U% = 100 * U / 380", "Падение напряжения в процентах"];
+        yield return ["Линейная ΔU", "ΔU = 1,73 * Ip * L * (ro * cosφ + xo * sinφ)", "Линейная формула падения напряжения"];
+        yield return ["Линейная ΔU%", "ΔU% = ΔU * 100 / 380", "Линейная потеря в процентах"];
     }
 
     private static string FormatMaterial(VoltageDropConductorMaterial material)

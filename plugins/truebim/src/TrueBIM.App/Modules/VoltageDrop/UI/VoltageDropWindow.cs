@@ -17,6 +17,7 @@ public sealed class VoltageDropWindow : Window
     private readonly Dictionary<string, TextBlock> outputs = new(StringComparer.Ordinal);
     private readonly ComboBox conductorMaterialInput = CreateReferenceComboBox("Материал жилы кабеля.");
     private readonly ComboBox voltageInput = CreateReferenceComboBox("Напряжение сети для расчета выбранного варианта.");
+    private readonly TabControl tableTabs = new();
     private readonly TextBlock statusText = new();
     private readonly StackPanel threePhaseCurrentRows = new();
     private readonly StackPanel singlePhaseCurrentRows = new();
@@ -38,10 +39,10 @@ public sealed class VoltageDropWindow : Window
 
         Title = "Расчет потери напряжения";
         Icon = IconFactory.CreateImage(TrueBimIcon.VoltageDrop, 32);
-        Width = 1100;
-        Height = 760;
-        MinWidth = 980;
-        MinHeight = 640;
+        Width = 1220;
+        Height = 820;
+        MinWidth = 1080;
+        MinHeight = 680;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
@@ -58,32 +59,80 @@ public sealed class VoltageDropWindow : Window
     {
         DockPanel root = new()
         {
-            Margin = new Thickness(20)
+            Margin = new Thickness(12)
         };
 
         UIElement footer = CreateFooter();
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
 
-        statusText.Margin = new Thickness(0, 0, 0, 12);
+        statusText.Margin = new Thickness(0, 0, 0, 8);
         statusText.Foreground = Brushes.DimGray;
         DockPanel.SetDock(statusText, Dock.Top);
         root.Children.Add(statusText);
 
-        ScrollViewer scrollViewer = new()
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
-        };
-        StackPanel content = new();
-        content.Children.Add(CreateVoltageDropTable());
-        content.Children.Add(CreateApartmentDemandTable());
-        content.Children.Add(CreateHighComfortDemandTable());
-        content.Children.Add(CreateSupplementaryTable());
-        scrollViewer.Content = content;
-        root.Children.Add(scrollViewer);
+        tableTabs.Margin = new Thickness(0, 0, 0, 4);
+        tableTabs.SelectionChanged += TableTabsSelectionChanged;
+        tableTabs.Items.Add(CreateTableTab("Таблица 1: Потеря напряжения", CreateVoltageDropTable(), new TableViewport(1220, 820)));
+        tableTabs.Items.Add(CreateTableTab("Таблица 2: Квартиры и лифты", CreateApartmentDemandTable(), new TableViewport(1240, 860)));
+        tableTabs.Items.Add(CreateTableTab("Таблица 3: Повышенная комфортность", CreateHighComfortDemandTable(), new TableViewport(1320, 940)));
+        tableTabs.Items.Add(CreateTableTab("Таблица 4: Дополнительные формулы", CreateSupplementaryTable(), new TableViewport(1320, 940)));
+        tableTabs.SelectedIndex = 0;
+        root.Children.Add(tableTabs);
 
         return root;
+    }
+
+    private static TabItem CreateTableTab(string header, UIElement content, TableViewport viewport)
+    {
+        return new TabItem
+        {
+            Header = header,
+            Tag = viewport,
+            Content = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = content
+            }
+        };
+    }
+
+    private void TableTabsSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.Source, tableTabs))
+        {
+            return;
+        }
+
+        ResizeForSelectedTable();
+    }
+
+    private void ResizeForSelectedTable()
+    {
+        if (tableTabs.SelectedItem is not TabItem { Tag: TableViewport viewport })
+        {
+            return;
+        }
+
+        Rect workArea = SystemParameters.WorkArea;
+        Width = Math.Min(workArea.Width - 40, Math.Max(MinWidth, viewport.Width));
+        Height = Math.Min(workArea.Height - 40, Math.Max(MinHeight, viewport.Height));
+
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        if (Left + Width > workArea.Right)
+        {
+            Left = Math.Max(workArea.Left, workArea.Right - Width);
+        }
+
+        if (Top + Height > workArea.Bottom)
+        {
+            Top = Math.Max(workArea.Top, workArea.Bottom - Height);
+        }
     }
 
     private UIElement CreateFooter()
@@ -134,10 +183,10 @@ public sealed class VoltageDropWindow : Window
     {
         Grid grid = CreateTableGrid();
         AddTableHeader(grid, "Исходные данные и расчет потери напряжения", 4);
-        AddComboRow(grid, 1, "Материал кабеля", conductorMaterialInput, "Справочник коэффициентов C");
-        AddComboRow(grid, 2, "Напряжение сети", voltageInput, "Справочник коэффициентов C");
-        AddOutputRow(grid, 3, "C выбранного варианта", "selectedCoefficient", "Справочник C");
-        AddOutputRow(grid, 4, "ΔU% выбранного варианта", "selectedVoltageDrop", "M/(C*F)");
+        AddComboRow(grid, 1, "Материал кабеля", conductorMaterialInput, "Выбор материала для коэффициента C");
+        AddComboRow(grid, 2, "Напряжение сети", voltageInput, "Выбор напряжения для коэффициента C");
+        AddOutputRow(grid, 3, "C выбранного варианта", "selectedCoefficient", "Материал + напряжение");
+        AddOutputRow(grid, 4, "ΔU% выбранного варианта", "selectedVoltageDrop", "Момент нагрузки / (C * сечение)");
         AddInputRow(grid, 5, "Коэффициент C для Al, 400 В", "al400");
         AddInputRow(grid, 6, "Коэффициент C для Cu, 400 В", "cu400");
         AddInputRow(grid, 7, "Коэффициент C для Cu, 230 В", "cu230");
@@ -145,26 +194,26 @@ public sealed class VoltageDropWindow : Window
         AddInputRow(grid, 9, "Длина линии L, м", "length");
         AddInputRow(grid, 10, "Сечение кабеля F, мм2", "section");
         AddInputRow(grid, 11, "Мощность Pp, кВт", "power");
-        AddOutputRow(grid, 12, "Момент нагрузки M", "loadMoment", "B6*B8");
-        AddOutputRow(grid, 13, "ΔU%, Al 400 В", "al400Drop", "B9/(B2*B7)");
-        AddOutputRow(grid, 14, "ΔU%, Cu 400 В", "cu400Drop", "B9/(B3*B7)");
-        AddOutputRow(grid, 15, "ΔU%, Cu 230 В", "cu230Drop", "B9/(B4*B7)");
-        AddOutputRow(grid, 16, "ΔU%, Al 230 В", "al230Drop", "B9/(B5*B7)");
+        AddOutputRow(grid, 12, "Момент нагрузки M", "loadMoment", "Длина линии * мощность");
+        AddOutputRow(grid, 13, "ΔU%, Al 400 В", "al400Drop", "Момент нагрузки / (C Al 400 В * сечение)");
+        AddOutputRow(grid, 14, "ΔU%, Cu 400 В", "cu400Drop", "Момент нагрузки / (C Cu 400 В * сечение)");
+        AddOutputRow(grid, 15, "ΔU%, Cu 230 В", "cu230Drop", "Момент нагрузки / (C Cu 230 В * сечение)");
+        AddOutputRow(grid, 16, "ΔU%, Al 230 В", "al230Drop", "Момент нагрузки / (C Al 230 В * сечение)");
 
         TextBlock threePhaseHeader = CreateSubHeader("Расчет 3Ф тока");
         Grid.SetRow(threePhaseHeader, 17);
-        Grid.SetColumnSpan(threePhaseHeader, 4);
+        Grid.SetColumnSpan(threePhaseHeader, grid.ColumnDefinitions.Count);
         grid.Children.Add(threePhaseHeader);
         Grid.SetRow(threePhaseCurrentRows, 18);
-        Grid.SetColumnSpan(threePhaseCurrentRows, 4);
+        Grid.SetColumnSpan(threePhaseCurrentRows, grid.ColumnDefinitions.Count);
         grid.Children.Add(threePhaseCurrentRows);
 
         TextBlock singlePhaseHeader = CreateSubHeader("Расчет 1Ф тока");
         Grid.SetRow(singlePhaseHeader, 19);
-        Grid.SetColumnSpan(singlePhaseHeader, 4);
+        Grid.SetColumnSpan(singlePhaseHeader, grid.ColumnDefinitions.Count);
         grid.Children.Add(singlePhaseHeader);
         Grid.SetRow(singlePhaseCurrentRows, 20);
-        Grid.SetColumnSpan(singlePhaseCurrentRows, 4);
+        Grid.SetColumnSpan(singlePhaseCurrentRows, grid.ColumnDefinitions.Count);
         grid.Children.Add(singlePhaseCurrentRows);
 
         return CreateSection("Таблица 1", grid);
@@ -177,24 +226,24 @@ public sealed class VoltageDropWindow : Window
         AddInputRow(grid, 1, "Кол-во этажей", "stdFloors");
         AddInputRow(grid, 2, "Кол-во квартир", "stdApartmentCount");
         AddInputRow(grid, 3, "Ру., кВт на квартиру", "stdApartmentUnitPower");
-        AddOutputRow(grid, 4, "Ко/Руд, кВт", "stdApartmentSpecificDemand", "G67");
-        AddOutputRow(grid, 5, "Ру.общ., кВт", "stdApartmentInstalledPower", "C67*F67");
+        AddOutputRow(grid, 4, "Ко/Руд, кВт", "stdApartmentSpecificDemand", "По количеству квартир");
+        AddOutputRow(grid, 5, "Ру.общ., кВт", "stdApartmentInstalledPower", "Кол-во квартир * Ру на квартиру");
         AddInputRow(grid, 6, "Кс квартир", "stdApartmentUsageFactor");
         AddInputRow(grid, 7, "Кс.об квартир", "stdApartmentCoincidenceFactor");
-        AddOutputRow(grid, 8, "Рр квартир, кВт", "stdApartmentActivePower", "C67*G67*I67*J67");
+        AddOutputRow(grid, 8, "Рр квартир, кВт", "stdApartmentActivePower", "Кол-во квартир * Ко/Руд * Кс * Кс.об");
         AddInputRow(grid, 9, "cos(ϕ) квартир", "stdApartmentCosPhi");
-        AddOutputRow(grid, 10, "Qр квартир, кВАр", "stdApartmentReactivePower", "SQRT(N67^2-K67^2)");
-        AddOutputRow(grid, 11, "Sр квартир, кВА", "stdApartmentApparentPower", "K67/L67");
-        AddOutputRow(grid, 12, "Ip квартир, A", "stdApartmentCurrent", "K67/(0.38*SQRT(3)*L67)");
+        AddOutputRow(grid, 10, "Qр квартир, кВАр", "stdApartmentReactivePower", "√(Sр² - Pр²)");
+        AddOutputRow(grid, 11, "Sр квартир, кВА", "stdApartmentApparentPower", "Pр / cos(ϕ)");
+        AddOutputRow(grid, 12, "Ip квартир, A", "stdApartmentCurrent", "Pр / (0,38 * √3 * cos(ϕ))");
         AddInputRow(grid, 13, "Кол-во лифтов", "stdElevatorCount");
         AddInputRow(grid, 14, "Ру.общ. лифтов, кВт", "stdLiftInstalledPower");
-        AddOutputRow(grid, 15, "Кс лифтов", "stdLiftDemandFactor", "I68");
+        AddOutputRow(grid, 15, "Кс лифтов", "stdLiftDemandFactor", "По этажам и количеству лифтов");
         AddInputRow(grid, 16, "Кс.об лифтов", "stdLiftCoincidenceFactor");
-        AddOutputRow(grid, 17, "Рр лифтов, кВт", "stdLiftActivePower", "H68*I68*J68");
+        AddOutputRow(grid, 17, "Рр лифтов, кВт", "stdLiftActivePower", "Ру.общ. лифтов * Кс * Кс.об");
         AddInputRow(grid, 18, "cos(ϕ) лифтов", "stdLiftCosPhi");
-        AddOutputRow(grid, 19, "Qр лифтов, кВАр", "stdLiftReactivePower", "SQRT(N68^2-K68^2)");
-        AddOutputRow(grid, 20, "Sр лифтов, кВА", "stdLiftApparentPower", "K68/L68");
-        AddOutputRow(grid, 21, "Ip лифтов, A", "stdLiftCurrent", "K68/(0.38*SQRT(3)*L68)");
+        AddOutputRow(grid, 19, "Qр лифтов, кВАр", "stdLiftReactivePower", "√(Sр² - Pр²)");
+        AddOutputRow(grid, 20, "Sр лифтов, кВА", "stdLiftApparentPower", "Pр / cos(ϕ)");
+        AddOutputRow(grid, 21, "Ip лифтов, A", "stdLiftCurrent", "Pр / (0,38 * √3 * cos(ϕ))");
 
         return CreateSection("Таблица 2", grid);
     }
@@ -206,31 +255,31 @@ public sealed class VoltageDropWindow : Window
         AddInputRow(grid, 1, "Кол-во этажей", "comfortFloors");
         AddInputRow(grid, 2, "Кол-во квартир", "comfortApartmentCount");
         AddInputRow(grid, 3, "Ру., кВт на квартиру", "comfortApartmentUnitPower");
-        AddOutputRow(grid, 4, "Кс/Ко по Ру.", "comfortUnitPowerDemandFactor", "G73");
+        AddOutputRow(grid, 4, "Кс/Ко по Ру.", "comfortUnitPowerDemandFactor", "По Ру на квартиру");
         AddInputRow(grid, 5, "Кол-во квартир для Кс/Ко", "comfortSpecificDemandApartmentCount");
-        AddOutputRow(grid, 6, "Кс/Ко по количеству", "comfortApartmentCountDemandFactor", "G74");
-        AddOutputRow(grid, 7, "Ру.общ., кВт", "comfortApartmentInstalledPower", "C73*F73");
+        AddOutputRow(grid, 6, "Кс/Ко по количеству", "comfortApartmentCountDemandFactor", "По количеству квартир");
+        AddOutputRow(grid, 7, "Ру.общ., кВт", "comfortApartmentInstalledPower", "Кол-во квартир * Ру на квартиру");
         AddInputRow(grid, 8, "Кс квартир", "comfortApartmentUsageFactor");
         AddInputRow(grid, 9, "Кс.об квартир", "comfortApartmentCoincidenceFactor");
-        AddOutputRow(grid, 10, "Рр квартир, кВт", "comfortApartmentActivePower", "C73*F73*G73*G74*I73*J73");
+        AddOutputRow(grid, 10, "Рр квартир, кВт", "comfortApartmentActivePower", "Кол-во квартир * Ру * Кс/Ко по Ру * Кс/Ко по количеству * Кс * Кс.об");
         AddInputRow(grid, 11, "cos(ϕ) квартир", "comfortApartmentCosPhi");
-        AddOutputRow(grid, 12, "Qр квартир, кВАр", "comfortApartmentReactivePower", "SQRT(N73^2-K73^2)");
-        AddOutputRow(grid, 13, "Sр квартир, кВА", "comfortApartmentApparentPower", "K73/L73");
-        AddOutputRow(grid, 14, "Ip квартир, A", "comfortApartmentCurrent", "K73/(0.38*SQRT(3)*L73)");
+        AddOutputRow(grid, 12, "Qр квартир, кВАр", "comfortApartmentReactivePower", "√(Sр² - Pр²)");
+        AddOutputRow(grid, 13, "Sр квартир, кВА", "comfortApartmentApparentPower", "Pр / cos(ϕ)");
+        AddOutputRow(grid, 14, "Ip квартир, A", "comfortApartmentCurrent", "Pр / (0,38 * √3 * cos(ϕ))");
         AddInputRow(grid, 15, "Кол-во лифтов", "comfortElevatorCount");
         AddInputRow(grid, 16, "Ру.общ. лифтов, кВт", "comfortLiftInstalledPower");
-        AddOutputRow(grid, 17, "Кс лифтов", "comfortLiftDemandFactor", "I75");
+        AddOutputRow(grid, 17, "Кс лифтов", "comfortLiftDemandFactor", "По этажам и количеству лифтов");
         AddInputRow(grid, 18, "Кс.об лифтов", "comfortLiftCoincidenceFactor");
-        AddOutputRow(grid, 19, "Рр лифтов, кВт", "comfortLiftActivePower", "H75*I75*J75");
+        AddOutputRow(grid, 19, "Рр лифтов, кВт", "comfortLiftActivePower", "Ру.общ. лифтов * Кс * Кс.об");
         AddInputRow(grid, 20, "cos(ϕ) лифтов", "comfortLiftCosPhi");
-        AddOutputRow(grid, 21, "Qр лифтов, кВАр", "comfortLiftReactivePower", "SQRT(N75^2-K75^2)");
-        AddOutputRow(grid, 22, "Sр лифтов, кВА", "comfortLiftApparentPower", "K75/L75");
-        AddOutputRow(grid, 23, "Ip лифтов, A", "comfortLiftCurrent", "K75/(0.38*SQRT(3)*L75)");
+        AddOutputRow(grid, 21, "Qр лифтов, кВАр", "comfortLiftReactivePower", "√(Sр² - Pр²)");
+        AddOutputRow(grid, 22, "Sр лифтов, кВА", "comfortLiftApparentPower", "Pр / cos(ϕ)");
+        AddOutputRow(grid, 23, "Ip лифтов, A", "comfortLiftCurrent", "Pр / (0,38 * √3 * cos(ϕ))");
         AddInputRow(grid, 24, "cos(ϕ) общего по квартирам", "comfortCombinedCosPhi");
-        AddOutputRow(grid, 25, "Общее по квартирам Рр, кВт", "comfortCombinedActivePower", "K67+K73");
-        AddOutputRow(grid, 26, "Общее по квартирам Qр, кВАр", "comfortCombinedReactivePower", "SQRT(N77^2-K77^2)");
-        AddOutputRow(grid, 27, "Общее по квартирам Sр, кВА", "comfortCombinedApparentPower", "K77/L77");
-        AddOutputRow(grid, 28, "Общее по квартирам Ip, A", "comfortCombinedCurrent", "K77/(0.38*SQRT(3)*L77)");
+        AddOutputRow(grid, 25, "Общее по квартирам Рр, кВт", "comfortCombinedActivePower", "Pр обычных квартир + Pр квартир повышенной комфортности");
+        AddOutputRow(grid, 26, "Общее по квартирам Qр, кВАр", "comfortCombinedReactivePower", "√(Sр² - Pр²)");
+        AddOutputRow(grid, 27, "Общее по квартирам Sр, кВА", "comfortCombinedApparentPower", "Pр / cos(ϕ)");
+        AddOutputRow(grid, 28, "Общее по квартирам Ip, A", "comfortCombinedCurrent", "Pр / (0,38 * √3 * cos(ϕ))");
 
         return CreateSection("Таблица 3", grid);
     }
@@ -238,21 +287,21 @@ public sealed class VoltageDropWindow : Window
     private UIElement CreateSupplementaryTable()
     {
         Grid grid = CreateTableGrid();
-        AddTableHeader(grid, "Дополнительные расчетные блоки первого листа, строки 75-104", 4);
+        AddTableHeader(grid, "Дополнительные расчетные блоки", 4);
         AddInputRow(grid, 1, "P 3Ф, кВт", "suppThreePhasePower");
         AddInputRow(grid, 2, "I 3Ф, A", "suppThreePhaseCurrent");
-        AddOutputRow(grid, 3, "0,38*1,73", "suppThreePhaseVoltageFactor", "U77");
-        AddOutputRow(grid, 4, "cos(φ) 3Ф", "suppThreePhaseCosPhi", "U75/(U76*U77)");
+        AddOutputRow(grid, 3, "0,38 * 1,73", "suppThreePhaseVoltageFactor", "Напряжение 3Ф * √3");
+        AddOutputRow(grid, 4, "cos(φ) 3Ф", "suppThreePhaseCosPhi", "P 3Ф / (I 3Ф * напряжение 3Ф * √3)");
         AddInputRow(grid, 5, "Pнов 3Ф, кВт", "suppNewThreePhasePower");
-        AddOutputRow(grid, 6, "Iнов 3Ф, A", "suppNewThreePhaseCurrent", "U80/(U77*U78)");
+        AddOutputRow(grid, 6, "Iнов 3Ф, A", "suppNewThreePhaseCurrent", "Pнов 3Ф / (напряжение 3Ф * √3 * cos(φ))");
         AddInputRow(grid, 7, "P 1Ф, кВт", "suppSinglePhasePower");
         AddInputRow(grid, 8, "I 1Ф, A", "suppSinglePhaseCurrent");
-        AddOutputRow(grid, 9, "U 1Ф, кВ", "suppSinglePhaseVoltageFactor", "Y77");
-        AddOutputRow(grid, 10, "cos(φ) 1Ф", "suppSinglePhaseCosPhi", "Y75/(Y76*Y77)");
+        AddOutputRow(grid, 9, "U 1Ф, кВ", "suppSinglePhaseVoltageFactor", "Напряжение однофазной сети");
+        AddOutputRow(grid, 10, "cos(φ) 1Ф", "suppSinglePhaseCosPhi", "P 1Ф / (I 1Ф * U 1Ф)");
 
-        TextBlock legacyHeader = CreateSubHeader("Формулы потери напряжения из строк 82-90");
+        TextBlock legacyHeader = CreateSubHeader("Формулы потери напряжения");
         Grid.SetRow(legacyHeader, 11);
-        Grid.SetColumnSpan(legacyHeader, 4);
+        Grid.SetColumnSpan(legacyHeader, grid.ColumnDefinitions.Count);
         grid.Children.Add(legacyHeader);
         AddInputRow(grid, 12, "ρ1", "suppLegacyResistivity");
         AddInputRow(grid, 13, "l, м", "suppLegacyLength");
@@ -260,14 +309,14 @@ public sealed class VoltageDropWindow : Window
         AddInputRow(grid, 15, "cos(φ)", "suppLegacyCosPhi");
         AddInputRow(grid, 16, "λ", "suppLegacyReactance");
         AddInputRow(grid, 17, "Ip, A", "suppLegacyCurrent");
-        AddOutputRow(grid, 18, "sin(φ)", "suppLegacySinPhi", "SQRT(1-F89^2)");
-        AddOutputRow(grid, 19, "ΔU%, упрощенная", "suppLegacyDropPercent", "F82");
-        AddOutputRow(grid, 20, "U, В", "suppLegacyVoltageDrop", "F85");
-        AddOutputRow(grid, 21, "U, %", "suppLegacyVoltageDropPercent", "J85");
+        AddOutputRow(grid, 18, "sin(φ)", "suppLegacySinPhi", "√(1 - cos²(φ))");
+        AddOutputRow(grid, 19, "ΔU%, упрощенная", "suppLegacyDropPercent", "((ρ1 * 10 / s * 0,8 + λ * 10 * 0,6) * Ip / 380) * 100");
+        AddOutputRow(grid, 20, "U, В", "suppLegacyVoltageDrop", "(ρ1 * (l / s) * cos(φ) + λ * l * sin(φ)) * Ip");
+        AddOutputRow(grid, 21, "U, %", "suppLegacyVoltageDropPercent", "100 * (U / 380)");
 
-        TextBlock lineHeader = CreateSubHeader("Линейная формула строк 98-104");
+        TextBlock lineHeader = CreateSubHeader("Линейная формула");
         Grid.SetRow(lineHeader, 22);
-        Grid.SetColumnSpan(lineHeader, 4);
+        Grid.SetColumnSpan(lineHeader, grid.ColumnDefinitions.Count);
         grid.Children.Add(lineHeader);
         AddInputRow(grid, 23, "Ip, A", "suppLineCurrent");
         AddInputRow(grid, 24, "L, км", "suppLineLength");
@@ -275,8 +324,8 @@ public sealed class VoltageDropWindow : Window
         AddInputRow(grid, 26, "xo", "suppLineReactance");
         AddInputRow(grid, 27, "cos(φ)", "suppLineCosPhi");
         AddInputRow(grid, 28, "sin(φ)", "suppLineSinPhi");
-        AddOutputRow(grid, 29, "ΔU, В", "suppLineVoltageDrop", "1,73*Ip*L*(ro*cos+xo*sin)");
-        AddOutputRow(grid, 30, "ΔU, %", "suppLineVoltageDropPercent", "(ΔU*100)/380");
+        AddOutputRow(grid, 29, "ΔU, В", "suppLineVoltageDrop", "1,73 * Ip * L * (ro * cos(φ) + xo * sin(φ))");
+        AddOutputRow(grid, 30, "ΔU, %", "suppLineVoltageDropPercent", "ΔU * 100 / 380");
 
         return CreateSection("Таблица 4", grid);
     }
@@ -287,8 +336,8 @@ public sealed class VoltageDropWindow : Window
         {
             Header = header,
             Content = content,
-            Margin = new Thickness(0, 0, 0, 14),
-            Padding = new Thickness(10)
+            Margin = new Thickness(0, 6, 0, 6),
+            Padding = new Thickness(6)
         };
         return groupBox;
     }
@@ -296,10 +345,9 @@ public sealed class VoltageDropWindow : Window
     private static Grid CreateTableGrid()
     {
         Grid grid = new();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(700) });
         for (int index = 0; index < 32; index++)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -316,7 +364,7 @@ public sealed class VoltageDropWindow : Window
         Grid.SetRow(textBox, row);
         Grid.SetColumn(textBox, 1);
         grid.Children.Add(textBox);
-        AddMutedText(grid, row, "Ввод", 3);
+        AddMutedText(grid, row, "Ввод", 2);
     }
 
     private void AddComboRow(Grid grid, int row, string label, ComboBox comboBox, string note)
@@ -325,7 +373,7 @@ public sealed class VoltageDropWindow : Window
         Grid.SetRow(comboBox, row);
         Grid.SetColumn(comboBox, 1);
         grid.Children.Add(comboBox);
-        AddMutedText(grid, row, note, 3);
+        AddMutedText(grid, row, note, 2);
     }
 
     private void AddOutputRow(Grid grid, int row, string label, string key, string formula)
@@ -336,7 +384,7 @@ public sealed class VoltageDropWindow : Window
         Grid.SetRow(value, row);
         Grid.SetColumn(value, 1);
         grid.Children.Add(value);
-        AddMutedText(grid, row, formula, 3);
+        AddMutedText(grid, row, formula, 2);
     }
 
     private static void AddTableHeader(Grid grid, string title, int columnSpan)
@@ -349,7 +397,7 @@ public sealed class VoltageDropWindow : Window
             Margin = new Thickness(0, 0, 0, 8)
         };
         Grid.SetRow(textBlock, 0);
-        Grid.SetColumnSpan(textBlock, columnSpan);
+        Grid.SetColumnSpan(textBlock, grid.ColumnDefinitions.Count);
         grid.Children.Add(textBlock);
     }
 
@@ -359,7 +407,7 @@ public sealed class VoltageDropWindow : Window
         {
             Text = text,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 12, 0, 4)
+            Margin = new Thickness(0, 8, 0, 3)
         };
     }
 
@@ -370,11 +418,12 @@ public sealed class VoltageDropWindow : Window
             Text = label,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 2, 10, 2)
+            Padding = new Thickness(6, 3, 6, 3)
         };
-        Grid.SetRow(textBlock, row);
-        Grid.SetColumn(textBlock, 0);
-        grid.Children.Add(textBlock);
+        Border cell = CreateTextCell(textBlock);
+        Grid.SetRow(cell, row);
+        Grid.SetColumn(cell, 0);
+        grid.Children.Add(cell);
     }
 
     private static void AddMutedText(Grid grid, int row, string text, int column)
@@ -385,23 +434,35 @@ public sealed class VoltageDropWindow : Window
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(10, 2, 0, 2)
+            Padding = new Thickness(8, 3, 8, 3)
         };
-        Grid.SetRow(textBlock, row);
-        Grid.SetColumn(textBlock, column);
-        grid.Children.Add(textBlock);
+        Border cell = CreateTextCell(textBlock);
+        Grid.SetRow(cell, row);
+        Grid.SetColumn(cell, column);
+        grid.Children.Add(cell);
+    }
+
+    private static Border CreateTextCell(UIElement content)
+    {
+        return new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 224, 229)),
+            BorderThickness = new Thickness(0, 0, 1, 1),
+            Background = Brushes.White,
+            Child = content
+        };
     }
 
     private TextBox CreateInputTextBox()
     {
         TextBox textBox = new()
         {
-            Height = 26,
+            Height = 24,
             MinWidth = 120,
             Background = new SolidColorBrush(Color.FromRgb(232, 246, 231)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(80, 150, 80)),
             VerticalContentAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 2, 0, 2)
+            Margin = new Thickness(0, 1, 0, 1)
         };
         textBox.TextChanged += (_, _) => UpdateResults();
         return textBox;
@@ -412,10 +473,10 @@ public sealed class VoltageDropWindow : Window
         return new ComboBox
         {
             DisplayMemberPath = "DisplayName",
-            Height = 28,
+            Height = 24,
             MinWidth = 140,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 2, 0, 2),
+            Margin = new Thickness(0, 1, 0, 1),
             ToolTip = toolTip
         };
     }
@@ -424,11 +485,11 @@ public sealed class VoltageDropWindow : Window
     {
         return new TextBlock
         {
-            MinHeight = 26,
+            MinHeight = 24,
             Background = new SolidColorBrush(Color.FromRgb(229, 242, 249)),
-            Padding = new Thickness(6, 4, 6, 4),
+            Padding = new Thickness(6, 3, 6, 3),
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 2, 0, 2)
+            Margin = new Thickness(0, 1, 0, 1)
         };
     }
 
@@ -748,9 +809,9 @@ public sealed class VoltageDropWindow : Window
             {
                 Margin = new Thickness(0, 1, 0, 1)
             };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(700) });
 
             AddCurrentCell(row, 0, current.Label, Brushes.Transparent);
             AddCurrentCell(row, 1, Format(current.Current), new SolidColorBrush(Color.FromRgb(229, 242, 249)));
@@ -894,4 +955,6 @@ public sealed class VoltageDropWindow : Window
     private sealed record ConductorMaterialOption(VoltageDropConductorMaterial Material, string DisplayName);
 
     private sealed record VoltageOption(double Voltage, string DisplayName);
+
+    private sealed record TableViewport(double Width, double Height);
 }
