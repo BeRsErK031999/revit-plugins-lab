@@ -51,6 +51,23 @@ These can be added after the first stable multi-version installer workflow.
 
 - Batch processing multiple schedules from one sheet.
 
+## Core command: BIM View Visibility
+
+### Completed scope
+
+- Add the `Видимость` command to the `TrueBIM` ribbon tab, `БИМ` panel.
+- Work against the active Revit view only.
+- Show controllable categories with their current active-view visibility state.
+- Group categories by category type and support search by category name.
+- Apply visibility changes inside one Revit transaction.
+- Keep the command in `TrueBIM.App` core code instead of installing it as a `module.json` module.
+- Cover ribbon metadata with automated smoke tests so the button stays on the expected panel with the expected command and icon.
+
+### Manual verification scope
+
+- Revit 2022 and Revit 2025 local preflight must pass before manual UI QA.
+- Manual UI QA should confirm the `БИМ > Видимость` button opens, toggles safe categories, supports undo, and reports clear status text.
+
 ## Installer scope
 
 The release installer should install the TrueBIM shell and selected modules for one or more Revit versions from 2019 through 2025.

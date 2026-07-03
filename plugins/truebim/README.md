@@ -2,7 +2,7 @@
 
 TrueBIM is planned as a modular Revit add-in platform.
 
-The first module is `sheet-numbering`.
+The first installed module is `sheet-numbering`. The app also contains core ribbon commands that do not require a separate module manifest.
 
 ## Product direction
 
@@ -16,6 +16,10 @@ The first module is `sheet-numbering`.
 
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
 - `schedule-column-collapse` - copies a schedule and hides zero-only numeric columns (`Свернуть ВРС`).
+
+## Core ribbon commands
+
+- `БИМ > Видимость` - active-view category visibility control. It lets users turn controllable Revit categories on and off in the current view, with grouping, search, status text, logging, manual QA notes, and automated ribbon metadata smoke tests.
 
 ## Target Revit versions
 
