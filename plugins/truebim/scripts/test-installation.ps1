@@ -49,13 +49,19 @@ $report = foreach ($year in $Years) {
     $xmlValid = $false
     $assemblyPath = ""
     $assemblyFound = $false
+    $manifestPathEncodingValid = $false
     $errorMessage = ""
 
     if ($manifestInstalled) {
         try {
             [xml] $manifest = Get-Content -LiteralPath $manifestPath
             $assemblyPath = [string] $manifest.RevitAddIns.AddIn.Assembly
-            $xmlValid = -not [string]::IsNullOrWhiteSpace($assemblyPath)
+            $manifestPathEncodingValid = -not (
+                [string]::IsNullOrWhiteSpace($assemblyPath) -or
+                $assemblyPath.Contains([string] [char] 0xFFFD) -or
+                $assemblyPath.Contains("?")
+            )
+            $xmlValid = $manifestPathEncodingValid
             $assemblyFound = $xmlValid -and (Test-Path -LiteralPath $assemblyPath)
         }
         catch {
@@ -80,6 +86,7 @@ $report = foreach ($year in $Years) {
         ManifestPath = $manifestPath
         ManifestInstalled = $manifestInstalled
         XmlValid = $xmlValid
+        ManifestPathEncodingValid = $manifestPathEncodingValid
         AssemblyPath = $assemblyPath
         AssemblyFound = $assemblyFound
         Revit2025DepsFound = if ($year -eq "2025") { $depsFound } else { $null }
@@ -93,6 +100,6 @@ $report = foreach ($year in $Years) {
 $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
 
 Write-Host "TrueBIM installed file validation:"
-$report | Format-Table RevitVersion, RevitInstalledOnPc, PayloadDllFound, ManifestInstalled, XmlValid, AssemblyFound, RuntimeSmokeTested, SuccessfulFileValidation -AutoSize
+$report | Format-Table RevitVersion, RevitInstalledOnPc, PayloadDllFound, ManifestInstalled, XmlValid, ManifestPathEncodingValid, AssemblyFound, RuntimeSmokeTested, SuccessfulFileValidation -AutoSize
 Write-Host "Report: $ReportPath"
 Write-Host "Runtime smoke-test is marked only for years passed in -SmokeTestedYears."

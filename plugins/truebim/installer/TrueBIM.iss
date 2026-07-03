@@ -272,8 +272,8 @@ procedure SaveManifest(Year: String);
 var
   AddinDir: String;
   AssemblyPath: String;
+  ManifestLines: TArrayOfString;
   ManifestPath: String;
-  ManifestText: String;
 begin
   if not ShouldInstallYear(Year) then
     exit;
@@ -283,20 +283,21 @@ begin
   ManifestPath := AddinDir + '\TrueBIM.addin';
   ForceDirectories(AddinDir);
 
-  ManifestText :=
-    '<?xml version="1.0" encoding="utf-8" standalone="no"?>' + #13#10 +
-    '<RevitAddIns>' + #13#10 +
-    '  <AddIn Type="Application">' + #13#10 +
-    '    <Name>TrueBIM</Name>' + #13#10 +
-    '    <Assembly>' + AssemblyPath + '</Assembly>' + #13#10 +
-    '    <AddInId>8F8E8CC7-D3C9-49BA-8F40-AD0F2F8D32F7</AddInId>' + #13#10 +
-    '    <FullClassName>TrueBIM.App.App</FullClassName>' + #13#10 +
-    '    <VendorId>TRBM</VendorId>' + #13#10 +
-    '    <VendorDescription>TrueBIM</VendorDescription>' + #13#10 +
-    '  </AddIn>' + #13#10 +
-    '</RevitAddIns>' + #13#10;
+  SetArrayLength(ManifestLines, 11);
+  ManifestLines[0] := '<?xml version="1.0" encoding="utf-8" standalone="no"?>';
+  ManifestLines[1] := '<RevitAddIns>';
+  ManifestLines[2] := '  <AddIn Type="Application">';
+  ManifestLines[3] := '    <Name>TrueBIM</Name>';
+  ManifestLines[4] := '    <Assembly>' + AssemblyPath + '</Assembly>';
+  ManifestLines[5] := '    <AddInId>8F8E8CC7-D3C9-49BA-8F40-AD0F2F8D32F7</AddInId>';
+  ManifestLines[6] := '    <FullClassName>TrueBIM.App.App</FullClassName>';
+  ManifestLines[7] := '    <VendorId>TRBM</VendorId>';
+  ManifestLines[8] := '    <VendorDescription>TrueBIM</VendorDescription>';
+  ManifestLines[9] := '  </AddIn>';
+  ManifestLines[10] := '</RevitAddIns>';
 
-  SaveStringToFile(ManifestPath, ManifestText, False);
+  if not SaveStringsToUTF8FileWithoutBOM(ManifestPath, ManifestLines, False) then
+    RaiseException('Failed to write add-in manifest: ' + ManifestPath);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
