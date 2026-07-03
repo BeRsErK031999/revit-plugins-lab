@@ -10,17 +10,24 @@ public sealed class PrintSheetCollectorService
 
     public IReadOnlyList<PrintSheetInfo> Collect(Document document)
     {
-        Guard.NotNull(document, nameof(document));
+        return Collect(document, CreateDefaultSourceId(document), ResolveSourceName(document));
+    }
 
-        string sourceName = string.IsNullOrWhiteSpace(document.Title)
-            ? "Активный документ"
-            : document.Title;
+    public IReadOnlyList<PrintSheetInfo> Collect(
+        Document document,
+        string sourceId,
+        string sourceName)
+    {
+        Guard.NotNull(document, nameof(document));
+        Guard.NotNullOrWhiteSpace(sourceId, nameof(sourceId));
+        Guard.NotNullOrWhiteSpace(sourceName, nameof(sourceName));
 
         return new FilteredElementCollector(document)
             .OfClass(typeof(ViewSheet))
             .Cast<ViewSheet>()
             .Select(sheet => new PrintSheetInfo(
                 RevitElementIds.GetValue(sheet.Id),
+                sourceId,
                 sourceName,
                 sheet.SheetNumber,
                 sheet.Name,
@@ -30,6 +37,29 @@ public sealed class PrintSheetCollectorService
             .OrderBy(sheet => sheet.SheetNumber, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(sheet => sheet.SheetName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+    }
+
+    private static string CreateDefaultSourceId(Document document)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(document.PathName))
+            {
+                return document.PathName;
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return ResolveSourceName(document);
+    }
+
+    private static string ResolveSourceName(Document document)
+    {
+        return string.IsNullOrWhiteSpace(document.Title)
+            ? "Активный документ"
+            : document.Title;
     }
 
     private static string ResolveSheetFormat(ViewSheet sheet)

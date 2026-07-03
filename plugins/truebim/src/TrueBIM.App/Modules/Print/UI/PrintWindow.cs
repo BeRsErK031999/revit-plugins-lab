@@ -16,6 +16,10 @@ namespace TrueBIM.App.Modules.Print.UI;
 public sealed class PrintWindow : Window
 {
     private readonly ObservableCollection<PrintSheetRow> sheetRows = new();
+    private readonly ObservableCollection<PrintSheetSourceFilterOption> sourceFilterOptions = new();
+    private readonly IReadOnlyList<PrintSheetSource> sheetSources;
+    private readonly Dictionary<string, PrintSheetSource> sheetSourcesById;
+    private readonly Dictionary<string, PrintFileNameContext> fileNameContextsBySourceId;
     private readonly IReadOnlyList<PrintSheetInfo> sheets;
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
@@ -27,6 +31,13 @@ public sealed class PrintWindow : Window
     private readonly PrintFileNameContext fileNameContext;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
+    private readonly ComboBox sourceFilterInput = new()
+    {
+        DisplayMemberPath = nameof(PrintSheetSourceFilterOption.DisplayName),
+        Height = 32,
+        MinWidth = 220,
+        ToolTip = "Фильтр листов по открытому документу Revit."
+    };
     private readonly TextBox exportFolderInput = new();
     private readonly TextBox fileNameMaskInput = new()
     {
@@ -75,11 +86,24 @@ public sealed class PrintWindow : Window
     private readonly Button exportButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetInfo> sheets, ITrueBimLogger logger)
+        : this(document, CreateSingleSource(document, sheets), logger)
+    {
+    }
+
+    public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetSource> sheetSources, ITrueBimLogger logger)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
-        this.sheets = sheets ?? throw new ArgumentNullException(nameof(sheets));
+        this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
+        IReadOnlyList<PrintSheetInfo> allSheets = this.sheetSources.SelectMany(source => source.Sheets).ToList();
+        this.sheets = allSheets;
+        sheetSourcesById = this.sheetSources.ToDictionary(source => source.SourceId, StringComparer.Ordinal);
+        fileNameContextsBySourceId = this.sheetSources.ToDictionary(
+            source => source.SourceId,
+            source => CreateFileNameContext(source.Document),
+            StringComparer.Ordinal);
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         fileNameContext = CreateFileNameContext(document);
+        LoadSourceFilterOptions();
         LoadCadExportSetupOptions();
         combinedPdfNameInput.Text = PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName);
 
@@ -94,7 +118,7 @@ public sealed class PrintWindow : Window
         Content = CreateContent();
 
         LoadSheets();
-        logger.Info($"Print window opened for '{document.Title}' with {sheets.Count} sheets.");
+        logger.Info($"Print window opened for '{document.Title}' with {sheets.Count} sheets from {this.sheetSources.Count} sources.");
     }
 
     private UIElement CreateContent()
@@ -154,14 +178,23 @@ public sealed class PrintWindow : Window
         includePlaceholdersInput.VerticalAlignment = VerticalAlignment.Center;
         includePlaceholdersInput.Checked += (_, _) => LoadSheets();
         includePlaceholdersInput.Unchecked += (_, _) => LoadSheets();
+        includePlaceholdersInput.Margin = new Thickness(0, 0, 16, 0);
         selectionActions.Children.Add(includePlaceholdersInput);
+
+        sourceFilterInput.ItemsSource = sourceFilterOptions;
+        sourceFilterInput.SelectedIndex = sourceFilterOptions.Count > 0 ? 0 : -1;
+        sourceFilterInput.IsEnabled = sourceFilterOptions.Count > 2;
+        sourceFilterInput.SelectionChanged += (_, _) => LoadSheets();
+        selectionActions.Children.Add(sourceFilterInput);
 
         DockPanel.SetDock(selectionActions, Dock.Left);
         controls.Children.Add(selectionActions);
 
         TextBlock documentText = new()
         {
-            Text = string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title,
+            Text = sheetSources.Count > 1
+                ? $"Открытых документов: {sheetSources.Count}. Активный: {(string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title)}"
+                : string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -492,13 +525,28 @@ public sealed class PrintWindow : Window
         }
     }
 
+    private void LoadSourceFilterOptions()
+    {
+        sourceFilterOptions.Clear();
+        sourceFilterOptions.Add(new PrintSheetSourceFilterOption(null, "Все открытые документы"));
+        foreach (PrintSheetSource source in sheetSources)
+        {
+            sourceFilterOptions.Add(new PrintSheetSourceFilterOption(source.SourceId, source.SourceName));
+        }
+    }
+
     private void LoadSheets()
     {
         sheetRows.Clear();
         bool includePlaceholders = includePlaceholdersInput.IsChecked == true;
+        string? selectedSourceId = GetSelectedSourceId();
         IEnumerable<PrintSheetInfo> visibleSheets = includePlaceholders
             ? sheets
             : sheets.Where(sheet => !sheet.IsPlaceholder);
+        if (!string.IsNullOrWhiteSpace(selectedSourceId))
+        {
+            visibleSheets = visibleSheets.Where(sheet => string.Equals(sheet.SourceId, selectedSourceId, StringComparison.Ordinal));
+        }
 
         foreach (PrintSheetInfo sheet in visibleSheets)
         {
@@ -521,10 +569,13 @@ public sealed class PrintWindow : Window
         int counter = 1;
         foreach (PrintSheetRow row in sheetRows)
         {
+            PrintFileNameContext context = fileNameContextsBySourceId.TryGetValue(row.Sheet.SourceId, out PrintFileNameContext? sourceContext)
+                ? sourceContext
+                : fileNameContext;
             PrintFileNamePreview preview = fileNameTemplateService.Build(
                 fileNameMaskInput.Text,
                 row.Sheet,
-                fileNameContext,
+                context,
                 counter);
             row.UpdateFileNamePreview(preview);
             row.ExportStatus = string.Empty;
@@ -603,8 +654,8 @@ public sealed class PrintWindow : Window
         string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
 
         logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
-        Dictionary<long, List<string>> rowStatuses = selectedRows.ToDictionary(
-            row => row.Sheet.ElementId,
+        Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
+            row => row,
             _ => new List<string>());
         int exportedCount = 0;
         int failureCount = 0;
@@ -614,61 +665,83 @@ public sealed class PrintWindow : Window
             row.ExportStatus = "Экспорт: в очереди";
         }
 
-        if (exportPdf)
-        {
-            PrintPdfExportResult result = pdfExportService.Export(
-                document,
-                exportFolderInput.Text,
-                selectedRows
-                    .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
-                    .ToList(),
-                pdfMode,
-                combinedPdfNameInput.Text,
-                pdfSettings,
-                logger);
-            exportedCount += result.ExportedFiles.Count;
-            failureCount += result.Failures.Count;
-            ApplyPdfStatus(rowStatuses, result);
-            failureMessages.AddRange(result.Failures.Select(failure => $"PDF {failure.Item.FileName}: {failure.Message}"));
-        }
+        IReadOnlyList<IGrouping<string, PrintSheetRow>> rowGroups = selectedRows
+            .GroupBy(row => row.Sheet.SourceId)
+            .ToList();
+        bool exportCombinedPdfPerSource = exportPdf
+            && pdfMode == PrintPdfExportMode.CombinedFile
+            && rowGroups.Count > 1;
 
-        if (exportDwg)
+        foreach (IGrouping<string, PrintSheetRow> rowGroup in rowGroups)
         {
-            PrintCadExportResult result = cadExportService.Export(
-                document,
-                exportFolderInput.Text,
-                selectedRows
-                    .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
-                    .ToList(),
-                PrintCadExportFormat.Dwg,
-                dwgSetupName,
-                logger);
-            exportedCount += result.ExportedFiles.Count;
-            failureCount += result.Failures.Count;
-            ApplyCadStatus(rowStatuses, result);
-            failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {failure.Item.FileName}: {failure.Message}"));
-        }
+            if (!sheetSourcesById.TryGetValue(rowGroup.Key, out PrintSheetSource? source))
+            {
+                failureCount += rowGroup.Count();
+                failureMessages.Add($"Источник листов не найден: {rowGroup.Key}");
+                continue;
+            }
 
-        if (exportDxf)
-        {
-            PrintCadExportResult result = cadExportService.Export(
-                document,
-                exportFolderInput.Text,
-                selectedRows
-                    .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
-                    .ToList(),
-                PrintCadExportFormat.Dxf,
-                dxfSetupName,
-                logger);
-            exportedCount += result.ExportedFiles.Count;
-            failureCount += result.Failures.Count;
-            ApplyCadStatus(rowStatuses, result);
-            failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {failure.Item.FileName}: {failure.Message}"));
+            IReadOnlyList<PrintSheetRow> sourceRows = rowGroup.ToList();
+            string sourceCombinedPdfName = exportCombinedPdfPerSource
+                ? $"{source.SourceName}_{combinedPdfNameInput.Text}"
+                : combinedPdfNameInput.Text;
+
+            if (exportPdf)
+            {
+                PrintPdfExportResult result = pdfExportService.Export(
+                    source.Document,
+                    exportFolderInput.Text,
+                    sourceRows
+                        .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                        .ToList(),
+                    pdfMode,
+                    sourceCombinedPdfName,
+                    pdfSettings,
+                    logger);
+                exportedCount += result.ExportedFiles.Count;
+                failureCount += result.Failures.Count;
+                ApplyPdfStatus(rowStatuses, sourceRows, result);
+                failureMessages.AddRange(result.Failures.Select(failure => $"PDF {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
+            }
+
+            if (exportDwg)
+            {
+                PrintCadExportResult result = cadExportService.Export(
+                    source.Document,
+                    exportFolderInput.Text,
+                    sourceRows
+                        .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                        .ToList(),
+                    PrintCadExportFormat.Dwg,
+                    dwgSetupName,
+                    logger);
+                exportedCount += result.ExportedFiles.Count;
+                failureCount += result.Failures.Count;
+                ApplyCadStatus(rowStatuses, sourceRows, result);
+                failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
+            }
+
+            if (exportDxf)
+            {
+                PrintCadExportResult result = cadExportService.Export(
+                    source.Document,
+                    exportFolderInput.Text,
+                    sourceRows
+                        .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                        .ToList(),
+                    PrintCadExportFormat.Dxf,
+                    dxfSetupName,
+                    logger);
+                exportedCount += result.ExportedFiles.Count;
+                failureCount += result.Failures.Count;
+                ApplyCadStatus(rowStatuses, sourceRows, result);
+                failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
+            }
         }
 
         foreach (PrintSheetRow row in selectedRows)
         {
-            row.ExportStatus = rowStatuses.TryGetValue(row.Sheet.ElementId, out List<string>? statuses)
+            row.ExportStatus = rowStatuses.TryGetValue(row, out List<string>? statuses)
                 ? string.Join(", ", statuses)
                 : string.Empty;
         }
@@ -682,26 +755,32 @@ public sealed class PrintWindow : Window
         UpdateExportState();
     }
 
-    private static void ApplyPdfStatus(Dictionary<long, List<string>> rowStatuses, PrintPdfExportResult result)
+    private static void ApplyPdfStatus(
+        Dictionary<PrintSheetRow, List<string>> rowStatuses,
+        IReadOnlyList<PrintSheetRow> rows,
+        PrintPdfExportResult result)
     {
         HashSet<long> failedIds = result.Failures
             .Select(failure => failure.Item.ElementId)
             .ToHashSet();
-        foreach (long elementId in rowStatuses.Keys.ToList())
+        foreach (PrintSheetRow row in rows)
         {
-            rowStatuses[elementId].Add(failedIds.Contains(elementId) ? "PDF ошибка" : "PDF готов");
+            rowStatuses[row].Add(failedIds.Contains(row.Sheet.ElementId) ? "PDF ошибка" : "PDF готов");
         }
     }
 
-    private static void ApplyCadStatus(Dictionary<long, List<string>> rowStatuses, PrintCadExportResult result)
+    private static void ApplyCadStatus(
+        Dictionary<PrintSheetRow, List<string>> rowStatuses,
+        IReadOnlyList<PrintSheetRow> rows,
+        PrintCadExportResult result)
     {
         string formatName = PrintCadExportService.GetDisplayName(result.Format);
         HashSet<long> failedIds = result.Failures
             .Select(failure => failure.Item.ElementId)
             .ToHashSet();
-        foreach (long elementId in rowStatuses.Keys.ToList())
+        foreach (PrintSheetRow row in rows)
         {
-            rowStatuses[elementId].Add(failedIds.Contains(elementId) ? $"{formatName} ошибка" : $"{formatName} готов");
+            rowStatuses[row].Add(failedIds.Contains(row.Sheet.ElementId) ? $"{formatName} ошибка" : $"{formatName} готов");
         }
     }
 
@@ -752,10 +831,13 @@ public sealed class PrintWindow : Window
         string unknownTokenText = unknownTokenCount > 0
             ? $" Неизвестные токены в маске: {unknownTokenCount}."
             : string.Empty;
+        string sourceText = sheetSources.Count > 1
+            ? $" Источников: {sheetSources.Count}. Фильтр: {GetSelectedSourceDisplayName()}."
+            : string.Empty;
         string pdfModeText = GetSelectedPdfModeText();
         string pdfSettingsText = GetSelectedPdfSettingsText();
         string cadSetupText = GetSelectedCadSetupsText();
-        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{pdfModeText}{pdfSettingsText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
+        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{sourceText} Форматы: {GetSelectedFormatsText()}.{pdfModeText}{pdfSettingsText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -851,6 +933,20 @@ public sealed class PrintWindow : Window
         return setupDisplays.Count == 0
             ? string.Empty
             : $" CAD настройки: {string.Join("; ", setupDisplays)}.";
+    }
+
+    private string? GetSelectedSourceId()
+    {
+        return sourceFilterInput.SelectedItem is PrintSheetSourceFilterOption option
+            ? option.SourceId
+            : null;
+    }
+
+    private string GetSelectedSourceDisplayName()
+    {
+        return sourceFilterInput.SelectedItem is PrintSheetSourceFilterOption option
+            ? option.DisplayName
+            : "Все открытые документы";
     }
 
     private static string? GetSelectedSetupName(ComboBox setupInput)
@@ -949,6 +1045,48 @@ public sealed class PrintWindow : Window
         {
             return new PrintFileNameContext(documentName, string.Empty, string.Empty, DateTime.Now);
         }
+    }
+
+    private static string CreateFallbackSourceId(RevitDocument document)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(document.PathName))
+            {
+                return document.PathName;
+            }
+        }
+        catch (ArgumentException)
+        {
+        }
+
+        return string.IsNullOrWhiteSpace(document.Title)
+            ? "active-document"
+            : document.Title;
+    }
+
+    private static IReadOnlyList<PrintSheetSource> CreateSingleSource(
+        RevitDocument document,
+        IReadOnlyList<PrintSheetInfo> sheets)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        if (sheets is null)
+        {
+            throw new ArgumentNullException(nameof(sheets));
+        }
+
+        return
+        [
+            new PrintSheetSource(
+                sheets.FirstOrDefault()?.SourceId ?? CreateFallbackSourceId(document),
+                string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title,
+                document,
+                sheets)
+        ];
     }
 
     private sealed class PrintSheetRow : INotifyPropertyChanged
@@ -1142,6 +1280,8 @@ public sealed class PrintWindow : Window
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
+
+    private sealed record PrintSheetSourceFilterOption(string? SourceId, string DisplayName);
 
     private static IReadOnlyList<KeyValuePair<PrintPdfColorMode, string>> GetPdfColorModeOptions()
     {

@@ -89,6 +89,7 @@ public sealed class PrintFileNameTemplateServiceTests
     {
         return new PrintSheetInfo(
             10,
+            "model",
             "Model",
             number,
             name,
