@@ -6,6 +6,7 @@ using TrueBIM.App.Modules.ViewVisibility.Models;
 using TrueBIM.App.Modules.ViewVisibility.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using WpfColor = System.Windows.Media.Color;
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.ViewVisibility.UI;
@@ -20,6 +21,8 @@ public sealed class ViewVisibilityWindow : Window
     private readonly ListBox categoryList = new();
     private readonly TextBlock statusText = new();
     private readonly TextBox searchBox = new();
+    private readonly ComboBox categoryTypeFilter = new();
+    private string? applySummary;
 
     public ViewVisibilityWindow(
         Document document,
@@ -37,16 +40,17 @@ public sealed class ViewVisibilityWindow : Window
             .ToList();
 
         Title = "Видимость";
-        Width = 540;
-        Height = 680;
-        MinWidth = 480;
-        MinHeight = 520;
+        Width = 620;
+        Height = 720;
+        MinWidth = 540;
+        MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        InitializeCategoryTypeFilter();
         Content = CreateContent();
 
         searchBox.TextChanged += (_, _) => RefreshList();
+        categoryTypeFilter.SelectionChanged += (_, _) => RefreshList();
         RefreshList();
-        UpdateStatus();
     }
 
     private UIElement CreateContent()
@@ -81,40 +85,80 @@ public sealed class ViewVisibilityWindow : Window
 
         WpfGrid body = new();
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         WpfGrid.SetRow(body, 2);
         root.Children.Add(body);
 
-        DockPanel tools = new()
+        StackPanel actionBar = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        body.Children.Add(actionBar);
+
+        Button showAllButton = CreateSmallButton("Показать все", (_, _) => SetAllVisible(true));
+        actionBar.Children.Add(showAllButton);
+
+        Button hideAllButton = CreateSmallButton("Скрыть все", (_, _) => SetAllVisible(false));
+        hideAllButton.Margin = new Thickness(8, 0, 16, 0);
+        actionBar.Children.Add(hideAllButton);
+
+        actionBar.Children.Add(new TextBlock
+        {
+            Text = "Группа:",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
+        });
+
+        categoryTypeFilter.Width = 190;
+        categoryTypeFilter.Height = 28;
+        categoryTypeFilter.VerticalContentAlignment = VerticalAlignment.Center;
+        actionBar.Children.Add(categoryTypeFilter);
+
+        DockPanel searchBar = new()
         {
             LastChildFill = true,
             Margin = new Thickness(0, 0, 0, 8)
         };
-        body.Children.Add(tools);
+        WpfGrid.SetRow(searchBar, 1);
+        body.Children.Add(searchBar);
 
-        Button showAllButton = CreateSmallButton("Показать все", (_, _) => SetAllVisible(true));
-        DockPanel.SetDock(showAllButton, Dock.Left);
-        tools.Children.Add(showAllButton);
+        Button clearSearchButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Очистить"),
+            Height = 28,
+            MinWidth = 92,
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+        clearSearchButton.Click += (_, _) => searchBox.Clear();
+        DockPanel.SetDock(clearSearchButton, Dock.Right);
+        searchBar.Children.Add(clearSearchButton);
 
-        Button hideAllButton = CreateSmallButton("Скрыть все", (_, _) => SetAllVisible(false));
-        hideAllButton.Margin = new Thickness(8, 0, 12, 0);
-        DockPanel.SetDock(hideAllButton, Dock.Left);
-        tools.Children.Add(hideAllButton);
+        TextBlock searchLabel = new()
+        {
+            Text = "Поиск:",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        DockPanel.SetDock(searchLabel, Dock.Left);
+        searchBar.Children.Add(searchLabel);
 
         searchBox.MinWidth = 180;
         searchBox.Height = 28;
         searchBox.VerticalContentAlignment = VerticalAlignment.Center;
-        searchBox.ToolTip = "Фильтр категорий";
-        tools.Children.Add(searchBox);
+        searchBox.ToolTip = "Поиск категории по названию или группе.";
+        searchBar.Children.Add(searchBox);
 
         categoryList.BorderBrush = Brushes.LightGray;
         categoryList.BorderThickness = new Thickness(1);
         categoryList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        WpfGrid.SetRow(categoryList, 1);
+        WpfGrid.SetRow(categoryList, 2);
         body.Children.Add(categoryList);
 
         statusText.Foreground = Brushes.DimGray;
         statusText.Margin = new Thickness(0, 10, 0, 10);
+        statusText.TextWrapping = TextWrapping.Wrap;
         WpfGrid.SetRow(statusText, 3);
         root.Children.Add(statusText);
 
@@ -151,13 +195,59 @@ public sealed class ViewVisibilityWindow : Window
 
     private void RefreshList()
     {
-        string filter = searchBox.Text.Trim();
+        IReadOnlyList<CategoryToggleRow> filteredRows = GetFilteredRows();
         categoryList.Items.Clear();
 
-        foreach (CategoryToggleRow row in rows.Where(row => MatchesFilter(row, filter)))
+        foreach (IGrouping<CategoryType, CategoryToggleRow> group in filteredRows
+            .GroupBy(row => row.Item.CategoryType)
+            .OrderBy(group => GetCategoryTypeOrder(group.Key)))
         {
-            categoryList.Items.Add(CreateCategoryRow(row));
+            IReadOnlyList<CategoryToggleRow> groupRows = group.ToList();
+            categoryList.Items.Add(CreateGroupHeader(group.Key, groupRows));
+            foreach (CategoryToggleRow row in groupRows)
+            {
+                categoryList.Items.Add(CreateCategoryRow(row));
+            }
         }
+
+        UpdateStatus(filteredRows);
+    }
+
+    private UIElement CreateGroupHeader(CategoryType categoryType, IReadOnlyList<CategoryToggleRow> groupRows)
+    {
+        DockPanel content = new()
+        {
+            LastChildFill = true,
+            Background = new SolidColorBrush(WpfColor.FromRgb(242, 244, 247)),
+            Margin = new Thickness(0, 6, 0, 2),
+            MinHeight = 28
+        };
+
+        TextBlock summary = new()
+        {
+            Text = $"{groupRows.Count} / видно {groupRows.Count(row => row.IsVisible)}",
+            Foreground = Brushes.DimGray,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(12, 0, 10, 0)
+        };
+        DockPanel.SetDock(summary, Dock.Right);
+        content.Children.Add(summary);
+
+        content.Children.Add(new TextBlock
+        {
+            Text = LocalizeCategoryType(categoryType),
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 10, 0)
+        });
+
+        return new ListBoxItem
+        {
+            Content = content,
+            Padding = new Thickness(0),
+            Focusable = false,
+            IsHitTestVisible = false
+        };
     }
 
     private UIElement CreateCategoryRow(CategoryToggleRow row)
@@ -165,7 +255,7 @@ public sealed class ViewVisibilityWindow : Window
         CheckBox checkBox = new()
         {
             IsChecked = row.IsVisible,
-            Margin = new Thickness(8, 6, 8, 6),
+            Margin = new Thickness(22, 5, 8, 5),
             VerticalAlignment = VerticalAlignment.Center,
             Content = new StackPanel
             {
@@ -179,7 +269,7 @@ public sealed class ViewVisibilityWindow : Window
                     },
                     new TextBlock
                     {
-                        Text = LocalizeCategoryType(row.Item.CategoryType),
+                        Text = row.IsVisible == row.InitialIsVisible ? "Без изменений" : "Изменено",
                         Foreground = Brushes.DimGray,
                         FontSize = 11
                     }
@@ -194,14 +284,14 @@ public sealed class ViewVisibilityWindow : Window
 
     private void SetAllVisible(bool isVisible)
     {
-        string filter = searchBox.Text.Trim();
-        foreach (CategoryToggleRow row in rows.Where(row => MatchesFilter(row, filter)))
+        IReadOnlyList<CategoryToggleRow> filteredRows = GetFilteredRows();
+        foreach (CategoryToggleRow row in filteredRows)
         {
             row.IsVisible = isVisible;
         }
 
+        applySummary = null;
         RefreshList();
-        UpdateStatus();
     }
 
     private void ApplyChanges()
@@ -225,12 +315,14 @@ public sealed class ViewVisibilityWindow : Window
                 row.InitialIsVisible = row.IsVisible;
             }
 
-            statusText.Text =
+            applySummary =
                 $"Применено: {result.UpdatedCount}. Показано: {result.ShownCount}. Скрыто: {result.HiddenCount}. Без изменений: {result.UnchangedCount}.";
             if (result.SkippedCount > 0)
             {
-                statusText.Text += $" Пропущено: {result.SkippedCount}.";
+                applySummary += $" Пропущено: {result.SkippedCount}.";
             }
+
+            RefreshList();
         }
         catch (Exception exception)
         {
@@ -242,14 +334,30 @@ public sealed class ViewVisibilityWindow : Window
     private void UpdateRowVisibility(CategoryToggleRow row, bool isVisible)
     {
         row.IsVisible = isVisible;
-        UpdateStatus();
+        applySummary = null;
+        RefreshList();
     }
 
-    private void UpdateStatus()
+    private void UpdateStatus(IReadOnlyList<CategoryToggleRow> filteredRows)
     {
         int visibleCount = rows.Count(row => row.IsVisible);
         int changedCount = rows.Count(row => row.IsVisible != row.InitialIsVisible);
-        statusText.Text = $"Категорий: {rows.Count}. Видимых: {visibleCount}. Изменений: {changedCount}.";
+        int filteredChangedCount = filteredRows.Count(row => row.IsVisible != row.InitialIsVisible);
+        string shownText = filteredRows.Count == rows.Count
+            ? $"Показано категорий: {rows.Count}"
+            : $"Показано категорий: {filteredRows.Count} из {rows.Count}";
+        statusText.Text =
+            $"{shownText}. Всего видимых: {visibleCount}. Всего скрытых: {rows.Count - visibleCount}. Изменений: {changedCount}.";
+
+        if (filteredRows.Count != rows.Count)
+        {
+            statusText.Text += $" Изменений в фильтре: {filteredChangedCount}.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(applySummary))
+        {
+            statusText.Text += $" {applySummary}";
+        }
     }
 
     private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler)
@@ -264,10 +372,54 @@ public sealed class ViewVisibilityWindow : Window
         return button;
     }
 
-    private static bool MatchesFilter(CategoryToggleRow row, string filter)
+    private void InitializeCategoryTypeFilter()
+    {
+        categoryTypeFilter.Items.Add(new CategoryTypeFilterOption(null, "Все группы"));
+        foreach (CategoryType categoryType in rows
+            .Select(row => row.Item.CategoryType)
+            .Distinct()
+            .OrderBy(GetCategoryTypeOrder))
+        {
+            categoryTypeFilter.Items.Add(new CategoryTypeFilterOption(categoryType, LocalizeCategoryType(categoryType)));
+        }
+
+        categoryTypeFilter.SelectedIndex = 0;
+    }
+
+    private IReadOnlyList<CategoryToggleRow> GetFilteredRows()
+    {
+        string filter = searchBox.Text.Trim();
+        CategoryType? selectedCategoryType = GetSelectedCategoryType();
+
+        return rows
+            .Where(row => selectedCategoryType is null || row.Item.CategoryType == selectedCategoryType)
+            .Where(row => MatchesSearch(row, filter))
+            .ToList();
+    }
+
+    private CategoryType? GetSelectedCategoryType()
+    {
+        return categoryTypeFilter.SelectedItem is CategoryTypeFilterOption option
+            ? option.CategoryType
+            : null;
+    }
+
+    private static bool MatchesSearch(CategoryToggleRow row, string filter)
     {
         return string.IsNullOrWhiteSpace(filter)
-            || row.Item.Name.IndexOf(filter, StringComparison.CurrentCultureIgnoreCase) >= 0;
+            || row.Item.Name.IndexOf(filter, StringComparison.CurrentCultureIgnoreCase) >= 0
+            || LocalizeCategoryType(row.Item.CategoryType).IndexOf(filter, StringComparison.CurrentCultureIgnoreCase) >= 0;
+    }
+
+    private static int GetCategoryTypeOrder(CategoryType categoryType)
+    {
+        return categoryType switch
+        {
+            CategoryType.Model => 0,
+            CategoryType.Annotation => 1,
+            CategoryType.AnalyticalModel => 2,
+            _ => 3
+        };
     }
 
     private static string LocalizeCategoryType(CategoryType categoryType)
@@ -295,5 +447,23 @@ public sealed class ViewVisibilityWindow : Window
         public bool IsVisible { get; set; }
 
         public bool InitialIsVisible { get; set; }
+    }
+
+    private sealed class CategoryTypeFilterOption
+    {
+        public CategoryTypeFilterOption(CategoryType? categoryType, string displayName)
+        {
+            CategoryType = categoryType;
+            DisplayName = displayName;
+        }
+
+        public CategoryType? CategoryType { get; }
+
+        private string DisplayName { get; }
+
+        public override string ToString()
+        {
+            return DisplayName;
+        }
     }
 }
