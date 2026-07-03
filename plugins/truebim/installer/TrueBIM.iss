@@ -50,13 +50,13 @@ AppId={{8F8E8CC7-D3C9-49BA-8F40-AD0F2F8D32F7}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#Publisher}
-DefaultDirName={commonpf}\TrueBIM
+DefaultDirName={userappdata}\TrueBIM
 DefaultGroupName=TrueBIM
 OutputDir=..\..\..\dist\installer
 OutputBaseFilename=TrueBIM-Setup
 Compression=lzma
 SolidCompression=yes
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
@@ -78,22 +78,22 @@ Type: filesandordirs; Name: "{app}\2022"; Check: ShouldInstallYear('2022')
 Type: filesandordirs; Name: "{app}\2023"; Check: ShouldInstallYear('2023')
 Type: filesandordirs; Name: "{app}\2024"; Check: ShouldInstallYear('2024')
 Type: filesandordirs; Name: "{app}\2025"; Check: ShouldInstallYear('2025')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"; Check: ShouldInstallYear('2019')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2020\TrueBIM.addin"; Check: ShouldInstallYear('2020')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2021\TrueBIM.addin"; Check: ShouldInstallYear('2021')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"; Check: ShouldInstallYear('2022')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"; Check: ShouldInstallYear('2023')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"; Check: ShouldInstallYear('2024')
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"; Check: ShouldInstallYear('2019')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2020\TrueBIM.addin"; Check: ShouldInstallYear('2020')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2021\TrueBIM.addin"; Check: ShouldInstallYear('2021')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"; Check: ShouldInstallYear('2022')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"; Check: ShouldInstallYear('2023')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"; Check: ShouldInstallYear('2024')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"; Check: ShouldInstallYear('2025')
 
 [UninstallDelete]
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2020\TrueBIM.addin"
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2021\TrueBIM.addin"
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"
-Type: files; Name: "{commonappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2020\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2021\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"
 Type: filesandordirs; Name: "{app}\2019"
 Type: filesandordirs; Name: "{app}\2020"
 Type: filesandordirs; Name: "{app}\2021"
@@ -119,6 +119,7 @@ function IsRevitInstalled(Year: String): Boolean;
 begin
   Result :=
     FileExists(ExpandConstant('{commonpf}\Autodesk\Revit ' + Year + '\Revit.exe')) or
+    DirExists(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + Year)) or
     DirExists(ExpandConstant('{commonappdata}\Autodesk\Revit\Addins\' + Year)) or
     RegKeyExists(HKLM64, 'SOFTWARE\Autodesk\Revit\' + Year) or
     RegKeyExists(HKLM64, 'SOFTWARE\Autodesk\Revit\Autodesk Revit ' + Year) or
@@ -276,7 +277,7 @@ begin
   if not ShouldInstallYear(Year) then
     exit;
 
-  AddinDir := ExpandConstant('{commonappdata}\Autodesk\Revit\Addins\' + Year);
+  AddinDir := ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + Year);
   AssemblyPath := ExpandConstant('{app}\' + Year + '\TrueBIM.App.dll');
   ManifestPath := AddinDir + '\TrueBIM.addin';
   ForceDirectories(AddinDir);
