@@ -21,6 +21,7 @@ public sealed class PrintWindow : Window
     private readonly Dictionary<string, PrintSheetSource> sheetSourcesById;
     private readonly Dictionary<string, PrintFileNameContext> fileNameContextsBySourceId;
     private readonly IReadOnlyList<PrintSheetInfo> sheets;
+    private readonly PrintSheetSelectionState sheetSelectionState;
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
     private readonly PrintFileNameTemplateService fileNameTemplateService = new();
@@ -96,6 +97,7 @@ public sealed class PrintWindow : Window
         this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
         IReadOnlyList<PrintSheetInfo> allSheets = this.sheetSources.SelectMany(source => source.Sheets).ToList();
         this.sheets = allSheets;
+        sheetSelectionState = new PrintSheetSelectionState(this.sheets);
         sheetSourcesById = this.sheetSources.ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         fileNameContextsBySourceId = this.sheetSources.ToDictionary(
             source => source.SourceId,
@@ -550,11 +552,12 @@ public sealed class PrintWindow : Window
 
         foreach (PrintSheetInfo sheet in visibleSheets)
         {
-            PrintSheetRow row = new(sheet);
+            PrintSheetRow row = new(sheet, sheetSelectionState.Get(sheet));
             row.PropertyChanged += (_, args) =>
             {
                 if (args.PropertyName == nameof(PrintSheetRow.IsSelected))
                 {
+                    sheetSelectionState.Set(row.Sheet, row.IsSelected);
                     UpdateExportState();
                 }
             };
@@ -795,6 +798,7 @@ public sealed class PrintWindow : Window
     private void UpdateExportState()
     {
         int selectedCount = sheetRows.Count(row => row.IsSelected && row.CanBePrinted);
+        int selectedTotalCount = sheetSelectionState.CountSelected(sheets);
         int printableCount = sheetRows.Count(row => row.CanBePrinted);
         int hiddenPlaceholderCount = includePlaceholdersInput.IsChecked == true
             ? 0
@@ -834,10 +838,13 @@ public sealed class PrintWindow : Window
         string sourceText = sheetSources.Count > 1
             ? $" Источников: {sheetSources.Count}. Фильтр: {GetSelectedSourceDisplayName()}."
             : string.Empty;
+        string selectedTotalText = selectedTotalCount == selectedCount
+            ? string.Empty
+            : $" Всего выбрано: {selectedTotalCount}.";
         string pdfModeText = GetSelectedPdfModeText();
         string pdfSettingsText = GetSelectedPdfSettingsText();
         string cadSetupText = GetSelectedCadSetupsText();
-        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{sourceText} Форматы: {GetSelectedFormatsText()}.{pdfModeText}{pdfSettingsText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
+        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText} Форматы: {GetSelectedFormatsText()}.{pdfModeText}{pdfSettingsText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -1099,10 +1106,10 @@ public sealed class PrintWindow : Window
         private bool isFileNameTruncated;
         private bool hasUnknownFileNameTokens;
 
-        public PrintSheetRow(PrintSheetInfo sheet)
+        public PrintSheetRow(PrintSheetInfo sheet, bool isSelected)
         {
             Sheet = sheet;
-            isSelected = sheet.CanBePrinted;
+            this.isSelected = sheet.CanBePrinted && isSelected;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
