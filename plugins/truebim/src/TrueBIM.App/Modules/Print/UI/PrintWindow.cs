@@ -44,6 +44,15 @@ public sealed class PrintWindow : Window
         IsChecked = true,
         ToolTip = "Добавить PDF в очередь экспорта."
     };
+    private readonly CheckBox combinePdfInput = new()
+    {
+        Content = "Один PDF",
+        ToolTip = "Объединить выбранные листы в один PDF файл."
+    };
+    private readonly TextBox combinedPdfNameInput = new()
+    {
+        ToolTip = "Имя файла для объединенного PDF."
+    };
     private readonly CheckBox dwgInput = new()
     {
         Content = "DWG",
@@ -65,6 +74,7 @@ public sealed class PrintWindow : Window
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         fileNameContext = CreateFileNameContext(document);
         LoadCadExportSetupOptions();
+        combinedPdfNameInput.Text = PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName);
 
         Title = "Печать";
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
@@ -203,6 +213,7 @@ public sealed class PrintWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         Grid folderRow = new();
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -258,6 +269,41 @@ public sealed class PrintWindow : Window
         Grid.SetRow(maskRow, 1);
         root.Children.Add(maskRow);
 
+        Grid pdfRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        combinePdfInput.VerticalAlignment = VerticalAlignment.Center;
+        combinePdfInput.Margin = new Thickness(0, 0, 16, 0);
+        combinePdfInput.Checked += (_, _) => UpdatePdfOptionsState();
+        combinePdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+        pdfRow.Children.Add(combinePdfInput);
+
+        TextBlock combinedPdfNameLabel = new()
+        {
+            Text = "PDF файл",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        Grid.SetColumn(combinedPdfNameLabel, 1);
+        pdfRow.Children.Add(combinedPdfNameLabel);
+
+        combinedPdfNameInput.Height = 32;
+        combinedPdfNameInput.TextChanged += (_, _) =>
+        {
+            ResetExportStatuses();
+            UpdateExportState();
+        };
+        Grid.SetColumn(combinedPdfNameInput, 2);
+        pdfRow.Children.Add(combinedPdfNameInput);
+
+        Grid.SetRow(pdfRow, 2);
+        root.Children.Add(pdfRow);
+
         Grid cadSetupRow = new()
         {
             Margin = new Thickness(0, 8, 0, 0)
@@ -291,7 +337,7 @@ public sealed class PrintWindow : Window
         Grid.SetColumn(dxfSetupInput, 3);
         cadSetupRow.Children.Add(dxfSetupInput);
 
-        Grid.SetRow(cadSetupRow, 2);
+        Grid.SetRow(cadSetupRow, 3);
         root.Children.Add(cadSetupRow);
 
         DockPanel actionRow = new()
@@ -308,8 +354,8 @@ public sealed class PrintWindow : Window
         pdfInput.Margin = new Thickness(0, 0, 16, 0);
         dwgInput.Margin = new Thickness(0, 0, 16, 0);
         dxfInput.Margin = new Thickness(0, 0, 16, 0);
-        pdfInput.Checked += (_, _) => UpdateExportState();
-        pdfInput.Unchecked += (_, _) => UpdateExportState();
+        pdfInput.Checked += (_, _) => UpdatePdfOptionsState();
+        pdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
         dwgInput.Checked += (_, _) => UpdateExportState();
         dwgInput.Unchecked += (_, _) => UpdateExportState();
         dxfInput.Checked += (_, _) => UpdateExportState();
@@ -339,9 +385,10 @@ public sealed class PrintWindow : Window
         actions.Children.Add(closeButton);
 
         actionRow.Children.Add(actions);
-        Grid.SetRow(actionRow, 3);
+        Grid.SetRow(actionRow, 4);
         root.Children.Add(actionRow);
 
+        UpdatePdfOptionsState();
         return root;
     }
 
@@ -355,6 +402,16 @@ public sealed class PrintWindow : Window
         };
         setupInput.SelectedIndex = cadExportSetupOptions.Count > 0 ? 0 : -1;
         setupInput.IsEnabled = cadExportSetupOptions.Count > 1;
+    }
+
+    private void UpdatePdfOptionsState()
+    {
+        bool exportPdf = pdfInput.IsChecked == true;
+        bool combinePdf = combinePdfInput.IsChecked == true;
+        combinePdfInput.IsEnabled = exportPdf;
+        combinedPdfNameInput.IsEnabled = exportPdf && combinePdf;
+        ResetExportStatuses();
+        UpdateExportState();
     }
 
     private void LoadCadExportSetupOptions()
@@ -465,10 +522,14 @@ public sealed class PrintWindow : Window
         bool exportPdf = pdfInput.IsChecked == true;
         bool exportDwg = dwgInput.IsChecked == true;
         bool exportDxf = dxfInput.IsChecked == true;
+        PrintPdfExportMode pdfMode = GetSelectedPdfMode();
+        string pdfModeLogText = exportPdf
+            ? PrintPdfExportService.GetModeDisplayName(pdfMode)
+            : "не выбран";
         string? dwgSetupName = GetSelectedSetupName(dwgSetupInput);
         string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
 
-        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
+        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Dictionary<long, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row.Sheet.ElementId,
             _ => new List<string>());
@@ -488,6 +549,8 @@ public sealed class PrintWindow : Window
                 selectedRows
                     .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
                     .ToList(),
+                pdfMode,
+                combinedPdfNameInput.Text,
                 logger);
             exportedCount += result.ExportedFiles.Count;
             failureCount += result.Failures.Count;
@@ -588,8 +651,17 @@ public sealed class PrintWindow : Window
         int unknownTokenCount = sheetRows.Count(row => row.HasUnknownFileNameTokens);
         bool hasFormat = pdfInput.IsChecked == true || dwgInput.IsChecked == true || dxfInput.IsChecked == true;
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
+        bool exportsPerSheetFiles = dwgInput.IsChecked == true
+            || dxfInput.IsChecked == true
+            || (pdfInput.IsChecked == true && combinePdfInput.IsChecked != true);
+        foreach (PrintSheetRow row in sheetRows)
+        {
+            row.ShowFileNameDuplicateWarning = exportsPerSheetFiles;
+        }
 
-        exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder && duplicateSelectedCount == 0;
+        int blockingDuplicateCount = exportsPerSheetFiles ? duplicateSelectedCount : 0;
+
+        exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder && blockingDuplicateCount == 0;
         exportButton.ToolTip = exportButton.IsEnabled
             ? "Подготовить выбранные листы к экспорту."
             : "Выберите листы, формат, папку назначения и устраните дубли имен.";
@@ -597,8 +669,8 @@ public sealed class PrintWindow : Window
         string hiddenText = hiddenPlaceholderCount > 0
             ? $" Скрыто листов-заглушек: {hiddenPlaceholderCount}."
             : string.Empty;
-        string duplicateText = duplicateSelectedCount > 0
-            ? $" Дубли имен: {duplicateSelectedCount}."
+        string duplicateText = blockingDuplicateCount > 0
+            ? $" Дубли имен: {blockingDuplicateCount}."
             : string.Empty;
         string truncatedText = truncatedSelectedCount > 0
             ? $" Обрезанных имен: {truncatedSelectedCount}."
@@ -606,8 +678,9 @@ public sealed class PrintWindow : Window
         string unknownTokenText = unknownTokenCount > 0
             ? $" Неизвестные токены в маске: {unknownTokenCount}."
             : string.Empty;
+        string pdfModeText = GetSelectedPdfModeText();
         string cadSetupText = GetSelectedCadSetupsText();
-        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
+        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{pdfModeText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -631,6 +704,27 @@ public sealed class PrintWindow : Window
         return formats.Count == 0
             ? "не выбраны"
             : string.Join(", ", formats);
+    }
+
+    private PrintPdfExportMode GetSelectedPdfMode()
+    {
+        return combinePdfInput.IsChecked == true
+            ? PrintPdfExportMode.CombinedFile
+            : PrintPdfExportMode.SeparateFiles;
+    }
+
+    private string GetSelectedPdfModeText()
+    {
+        if (pdfInput.IsChecked != true)
+        {
+            return string.Empty;
+        }
+
+        PrintPdfExportMode mode = GetSelectedPdfMode();
+        string details = mode == PrintPdfExportMode.CombinedFile
+            ? $": {PrintPdfExportService.BuildCombinedPdfFileName(combinedPdfNameInput.Text)}"
+            : string.Empty;
+        return $" PDF: {PrintPdfExportService.GetModeDisplayName(mode)}{details}.";
     }
 
     private string GetSelectedCadSetupsText()
@@ -747,6 +841,7 @@ public sealed class PrintWindow : Window
         private string fileNamePreview = string.Empty;
         private string exportStatus = string.Empty;
         private bool isFileNameDuplicate;
+        private bool showFileNameDuplicateWarning = true;
         private bool isFileNameTruncated;
         private bool hasUnknownFileNameTokens;
 
@@ -821,6 +916,21 @@ public sealed class PrintWindow : Window
             }
         }
 
+        public bool ShowFileNameDuplicateWarning
+        {
+            get => showFileNameDuplicateWarning;
+            set
+            {
+                if (showFileNameDuplicateWarning == value)
+                {
+                    return;
+                }
+
+                showFileNameDuplicateWarning = value;
+                NotifyChanged(nameof(Status));
+            }
+        }
+
         public bool IsFileNameTruncated
         {
             get => isFileNameTruncated;
@@ -878,7 +988,7 @@ public sealed class PrintWindow : Window
                     return "Лист-заглушка";
                 }
 
-                if (IsFileNameDuplicate)
+                if (IsFileNameDuplicate && ShowFileNameDuplicateWarning)
                 {
                     return "Дубликат имени";
                 }
