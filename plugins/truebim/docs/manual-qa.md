@@ -162,6 +162,61 @@ Expected logs:
 - Apply confirmation accepted/cancelled;
 - final Apply result.
 
+## Print Module QA
+
+Run this check in both Revit 2022 and Revit 2025 after the matching local deploy or QA preflight script passes.
+
+Status: the first working release is implemented and preflight-verified. Repeat this checklist on a safe sample model before handing a build to users.
+
+1. Open a sample project with several printable sheets.
+2. Open `TrueBIM`.
+3. Confirm `Печать` is listed from the installed module manifest and is enabled.
+4. Open `Печать`.
+5. Confirm the window lists printable sheets with source, sheet number, sheet name, format, export status, and filename preview columns.
+6. If more than one document is open, change the source filter and confirm selected sheets are preserved when switching back.
+7. Set an export folder.
+8. Change the filename template and confirm filename previews update.
+9. Use a template containing `{SheetNumber}`, `{SheetName}`, `{ProjectNumber}`, `{ProjectName}`, `{DocumentName}`, `{Date:yyyy-MM-dd}`, `{Counter}`, and `{Counter:000}` as needed.
+10. Confirm invalid Windows filename characters are normalized in previews.
+11. Enable PDF and select separate PDF mode.
+12. Choose PDF color, raster quality, and raster/vector settings.
+13. Export 1-2 safe sheets and confirm separate PDF files are created.
+14. Enable `Один PDF`, enter a combined PDF name, export again, and confirm one PDF is created per source document.
+15. Enable DWG and DXF.
+16. If DWG/DXF export setups are available, choose a saved setup; otherwise keep the default setup option.
+17. Export 1-2 safe sheets and confirm DWG/DXF files are created or a clear Revit export error is shown.
+18. Close and reopen `Печать`.
+19. Confirm the saved export folder, filename template, selected formats, PDF settings, combined PDF name, and selected CAD setups are restored from `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`.
+20. Review `%APPDATA%\TrueBIM\Logs\truebim.log`.
+
+Expected logs:
+
+- Print module/window startup with sheet/source counts;
+- selected PDF mode and PDF settings;
+- selected DWG/DXF setup or default fallback;
+- exported file counts and any per-sheet failures.
+
+Completed first-release tasks:
+
+- ribbon/launcher registration;
+- sheet selection from open documents;
+- filename template preview and normalization;
+- separate and combined PDF export;
+- PDF color, raster quality, and raster/vector settings;
+- DWG/DXF export setup selection and default fallback;
+- persisted print settings;
+- unit-test coverage for clean logic;
+- Revit 2022 and Revit 2025 local deploy/preflight.
+
+Backlog outside the first release:
+
+- source tabs;
+- linked models;
+- print sets;
+- named configurations;
+- sheet-parameter filters and grouping;
+- advanced CAD parameters beyond saved Revit export setups.
+
 ## BIM View Visibility QA
 
 Run this check in both Revit 2022 and Revit 2025 after the matching local deploy or QA preflight script passes.

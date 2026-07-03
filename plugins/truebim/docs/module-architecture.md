@@ -46,6 +46,7 @@ Example module id:
 ```text
 truebim.sheet-numbering
 truebim.schedule-column-collapse
+truebim.print
 ```
 
 ## Installed manifests

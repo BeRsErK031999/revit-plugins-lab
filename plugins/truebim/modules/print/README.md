@@ -2,7 +2,22 @@
 
 Модуль пакетной печати и экспорта листов Revit в PDF, DWG и DXF.
 
-Текущий этап: кнопка, команда, manifest, подключение к TrueBIM launcher, окно выбора листов из открытых документов Revit с сохранением выбора при переключении источников, конструктор имени файла, прямой экспорт отдельных PDF, объединенного PDF, DWG и DXF, выбор DWG/DXF export setup из сохраненных настроек Revit и сохранение базовых настроек окна.
+Статус: первый рабочий релиз готов как release candidate для Revit 2022 и Revit 2025. Модуль установлен через manifest `truebim.print`, доступен из TrueBIM launcher и панели `БИМ`, проходит Release build/test и локальный preflight deploy для целевых версий.
+
+## Что сделано
+
+- Кнопка `Печать`, Revit-команда, manifest и подключение к launcher.
+- Окно выбора листов из открытых документов Revit.
+- Фильтр источника и сохранение выбора листов при переключении источников.
+- Конструктор имени файла с предпросмотром, нормализацией и токенами `{SheetNumber}`, `{SheetName}`, `{ProjectNumber}`, `{ProjectName}`, `{DocumentName}`, `{Date:yyyy-MM-dd}`, `{Counter}` и `{Counter:000}`.
+- Прямой экспорт отдельных PDF через `PDFExportOptions`.
+- Объединенный PDF через один вызов `Document.Export` на документ-источник.
+- PDF-настройки цвета, качества растровых элементов и raster/vector режима.
+- Прямой экспорт DWG и DXF.
+- Выбор DWG/DXF export setup из сохраненных настроек Revit.
+- Fallback на стандартные `DWGExportOptions` / `DXFExportOptions`, если setup не выбран или в документе нет сохраненных CAD setups.
+- Сохранение базовых настроек окна в `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`.
+- Unit-тесты чистой логики печати.
 
 Если в Revit открыто несколько документов, модуль собирает листы из каждого документа с печатаемыми листами. В окне есть фильтр источника; выбор листов сохраняется при переключении фильтра и восстанавливается при возврате к источнику. При экспорте каждый лист отправляется через свой `Document`. Для режима `Один PDF` при выборе листов из нескольких документов создается отдельный объединенный PDF на каждый документ.
 
@@ -12,4 +27,27 @@
 
 Настройки окна сохраняются в `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`: папка экспорта, маска имени, отображение листов-заглушек, выбранные форматы, режим объединенного PDF, имя общего PDF, PDF-настройки и выбранные CAD setups.
 
-Вкладки по источникам, чтение связанных моделей, именованные конфигурации и расширенные CAD-параметры сверх сохраненных Revit export setups добавляются следующими шагами по плану в `docs/print-module-plan.md`.
+## Завершенные задачи первого релиза
+
+1. Каркас кнопки и модуля.
+2. MVP окна печати.
+3. Конструктор имени файла.
+4. PDF export: отдельные файлы, объединенный PDF и PDF-настройки.
+5. DWG/DXF export: прямой экспорт, выбор Revit export setup и default fallback.
+6. Несколько источников листов: открытые документы, фильтр источника и сохранение выбора.
+7. Сохранение базовой конфигурации окна.
+8. Unit-тесты, Release build/test, local deploy и installer preflight.
+
+## Проверка
+
+Последний локальный preflight выполнен 2026-07-03:
+
+- `plugins\truebim\scripts\qa-preflight-2025.ps1` - PASS;
+- `plugins\truebim\scripts\qa-preflight-2022.ps1` - PASS;
+- `C:\Program Files\dotnet\dotnet.exe format TrueBIM.sln --verify-no-changes` - PASS;
+- `C:\Program Files\dotnet\dotnet.exe build TrueBIM.sln --configuration Release` - PASS;
+- `C:\Program Files\dotnet\dotnet.exe test TrueBIM.sln --configuration Release` - PASS.
+
+## Backlog
+
+Вкладки по источникам, чтение связанных моделей, print sets, именованные конфигурации, фильтры/группировка по параметрам листов и расширенные CAD-параметры сверх сохраненных Revit export setups добавляются следующими шагами по плану в `docs/print-module-plan.md`.

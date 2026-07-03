@@ -51,6 +51,34 @@ These can be added after the first stable multi-version installer workflow.
 
 - Batch processing multiple schedules from one sheet.
 
+## Module: print
+
+### Completed first-release scope
+
+- Add the `Печать` module as installed module `truebim.print`.
+- Open the print window from the `TrueBIM` launcher and the `БИМ` ribbon panel.
+- Read printable sheets from open Revit documents.
+- Preserve sheet selection while switching the source filter.
+- Build filenames from supported tokens and normalize invalid Windows filename characters.
+- Export selected sheets to separate PDF files.
+- Export selected sheets to one combined PDF per source document.
+- Support PDF color, raster quality, and raster/vector settings.
+- Export selected sheets to DWG and DXF.
+- Read saved Revit CAD export setup names and use selected DWG/DXF predefined options.
+- Fall back to default DWG/DXF options when no setup is selected or no setups are available.
+- Persist basic window settings in `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`.
+- Cover clean print logic with unit tests.
+- Pass Revit 2022 and Revit 2025 local preflight for build, tests, local deploy, and installer artifacts.
+
+### Backlog
+
+- Source tabs instead of only the current source filter.
+- Linked model sheet sources.
+- Print sets.
+- Named print configurations.
+- Sheet-parameter filters and grouping.
+- Advanced CAD parameters beyond saved Revit export setups.
+
 ## Core command: BIM View Visibility
 
 ### Completed scope
