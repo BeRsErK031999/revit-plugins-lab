@@ -68,6 +68,84 @@ public sealed class VoltageDropCalculationServiceTests
         AssertClose(100.15947739384897, result.CombinedApartmentLoad.Current);
     }
 
+    [Fact]
+    public void CalculateVoltageDrop_ZeroCableSection_ThrowsValidationError()
+    {
+        VoltageDropInputs inputs = VoltageDropInputs.Default with { CableSection = 0 };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateVoltageDrop(inputs));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(VoltageDropInputs.CableSection), error.FieldKey);
+        Assert.Contains("Сечение кабеля", error.Message, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
+    public void CalculateVoltageDrop_NaNPower_ThrowsValidationError()
+    {
+        VoltageDropInputs inputs = VoltageDropInputs.Default with { Power = double.NaN };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateVoltageDrop(inputs));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(VoltageDropInputs.Power), error.FieldKey);
+        Assert.Contains("Мощность", error.Message, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
+    public void CalculateApartmentDemand_UnsupportedApartmentCount_ThrowsValidationError()
+    {
+        ApartmentDemandInputs inputs = ApartmentDemandInputs.Default with { ApartmentCount = 1001 };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateApartmentDemand(inputs));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(ApartmentDemandInputs.ApartmentCount), error.FieldKey);
+        Assert.Contains("1..1000", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CalculateApartmentDemand_FractionalElevatorCount_ThrowsValidationError()
+    {
+        ApartmentDemandInputs inputs = ApartmentDemandInputs.Default with { ElevatorCount = 2.5 };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateApartmentDemand(inputs));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(ApartmentDemandInputs.ElevatorCount), error.FieldKey);
+        Assert.Contains("целым числом", error.Message, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
+    public void CalculateHighComfortApartmentDemand_UnsupportedUnitPower_ThrowsValidationError()
+    {
+        HighComfortApartmentDemandInputs inputs = HighComfortApartmentDemandInputs.Default with { ApartmentUnitPower = 71 };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateHighComfortApartmentDemand(inputs, 0));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(HighComfortApartmentDemandInputs.ApartmentUnitPower), error.FieldKey);
+        Assert.Contains("1..70", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CalculateHighComfortApartmentDemand_InvalidCosPhi_ThrowsValidationError()
+    {
+        HighComfortApartmentDemandInputs inputs = HighComfortApartmentDemandInputs.Default with { CombinedApartmentCosPhi = 1.2 };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateHighComfortApartmentDemand(inputs, 0));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(HighComfortApartmentDemandInputs.CombinedApartmentCosPhi), error.FieldKey);
+        Assert.Contains("cos", error.Message, StringComparison.CurrentCultureIgnoreCase);
+    }
+
     private static void AssertClose(double expected, double actual)
     {
         Assert.Equal(expected, actual, precision: 9);

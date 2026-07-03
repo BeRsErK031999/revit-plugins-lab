@@ -18,6 +18,10 @@ public sealed class VoltageDropWindow : Window
     private readonly TextBlock statusText = new();
     private readonly StackPanel threePhaseCurrentRows = new();
     private readonly StackPanel singlePhaseCurrentRows = new();
+    private readonly Brush inputBackground = new SolidColorBrush(Color.FromRgb(232, 246, 231));
+    private readonly Brush inputBorder = new SolidColorBrush(Color.FromRgb(80, 150, 80));
+    private readonly Brush invalidInputBackground = new SolidColorBrush(Color.FromRgb(255, 235, 235));
+    private readonly Brush invalidInputBorder = new SolidColorBrush(Color.FromRgb(180, 40, 40));
 
     public VoltageDropWindow(ITrueBimLogger logger)
         : this(new VoltageDropCalculationService(), logger)
@@ -375,11 +379,42 @@ public sealed class VoltageDropWindow : Window
 
         try
         {
-            VoltageDropResult voltage = calculationService.CalculateVoltageDrop(ReadVoltageInputs());
-            ApartmentDemandResult standard = calculationService.CalculateApartmentDemand(ReadApartmentInputs());
-            HighComfortApartmentDemandResult comfort = calculationService.CalculateHighComfortApartmentDemand(
-                ReadHighComfortInputs(),
-                standard.ApartmentLoad.ActivePower);
+            ResetInputValidation();
+
+            VoltageDropResult voltage;
+            try
+            {
+                voltage = calculationService.CalculateVoltageDrop(ReadVoltageInputs());
+            }
+            catch (VoltageDropValidationException exception)
+            {
+                ApplyValidationErrors(exception, VoltageInputKeys);
+                return;
+            }
+
+            ApartmentDemandResult standard;
+            try
+            {
+                standard = calculationService.CalculateApartmentDemand(ReadApartmentInputs());
+            }
+            catch (VoltageDropValidationException exception)
+            {
+                ApplyValidationErrors(exception, StandardApartmentInputKeys);
+                return;
+            }
+
+            HighComfortApartmentDemandResult comfort;
+            try
+            {
+                comfort = calculationService.CalculateHighComfortApartmentDemand(
+                    ReadHighComfortInputs(),
+                    standard.ApartmentLoad.ActivePower);
+            }
+            catch (VoltageDropValidationException exception)
+            {
+                ApplyValidationErrors(exception, HighComfortApartmentInputKeys);
+                return;
+            }
 
             SetOutput("loadMoment", voltage.LoadMoment);
             SetOutput("al400Drop", voltage.Aluminum400DropPercent);
@@ -421,10 +456,9 @@ public sealed class VoltageDropWindow : Window
             statusText.Text = "Готово";
             statusText.Foreground = Brushes.DimGray;
         }
-        catch (FormatException exception)
+        catch (VoltageDropValidationException exception)
         {
-            statusText.Text = exception.Message;
-            statusText.Foreground = Brushes.DarkRed;
+            ApplyValidationErrors(exception, EmptyInputKeys);
         }
     }
 
@@ -486,7 +520,10 @@ public sealed class VoltageDropWindow : Window
             return parsedValue;
         }
 
-        throw new FormatException("Проверьте числовые значения в подсвеченных полях ввода.");
+        throw new VoltageDropValidationException(
+        [
+            new VoltageDropValidationError(key, "Проверьте числовые значения в подсвеченных полях ввода.")
+        ]);
     }
 
     private void SetInput(string key, double value)
@@ -538,4 +575,94 @@ public sealed class VoltageDropWindow : Window
             ? "-"
             : value.ToString("0.###", CultureInfo.CurrentCulture);
     }
+
+    private void ResetInputValidation()
+    {
+        foreach (TextBox input in inputs.Values)
+        {
+            input.Background = inputBackground;
+            input.BorderBrush = inputBorder;
+            input.ToolTip = null;
+        }
+    }
+
+    private void ApplyValidationErrors(
+        VoltageDropValidationException exception,
+        IReadOnlyDictionary<string, string> fieldKeyMap)
+    {
+        foreach (VoltageDropValidationError error in exception.Errors)
+        {
+            string inputKey = ResolveInputKey(error.FieldKey, fieldKeyMap);
+            if (!inputs.TryGetValue(inputKey, out TextBox? input))
+            {
+                continue;
+            }
+
+            input.Background = invalidInputBackground;
+            input.BorderBrush = invalidInputBorder;
+            input.ToolTip = error.Message;
+        }
+
+        statusText.Text = exception.Message;
+        statusText.Foreground = Brushes.DarkRed;
+    }
+
+    private string ResolveInputKey(string fieldKey, IReadOnlyDictionary<string, string> fieldKeyMap)
+    {
+        if (inputs.ContainsKey(fieldKey))
+        {
+            return fieldKey;
+        }
+
+        return fieldKeyMap.TryGetValue(fieldKey, out string? inputKey)
+            ? inputKey
+            : fieldKey;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyInputKeys =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, string> VoltageInputKeys =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [nameof(VoltageDropInputs.AluminumCoefficient400)] = "al400",
+            [nameof(VoltageDropInputs.CopperCoefficient400)] = "cu400",
+            [nameof(VoltageDropInputs.CopperCoefficient230)] = "cu230",
+            [nameof(VoltageDropInputs.AluminumCoefficient230)] = "al230",
+            [nameof(VoltageDropInputs.LineLength)] = "length",
+            [nameof(VoltageDropInputs.CableSection)] = "section",
+            [nameof(VoltageDropInputs.Power)] = "power"
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> StandardApartmentInputKeys =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [nameof(ApartmentDemandInputs.Floors)] = "stdFloors",
+            [nameof(ApartmentDemandInputs.ApartmentCount)] = "stdApartmentCount",
+            [nameof(ApartmentDemandInputs.ElevatorCount)] = "stdElevatorCount",
+            [nameof(ApartmentDemandInputs.ApartmentUnitPower)] = "stdApartmentUnitPower",
+            [nameof(ApartmentDemandInputs.ApartmentUsageFactor)] = "stdApartmentUsageFactor",
+            [nameof(ApartmentDemandInputs.ApartmentCoincidenceFactor)] = "stdApartmentCoincidenceFactor",
+            [nameof(ApartmentDemandInputs.ApartmentCosPhi)] = "stdApartmentCosPhi",
+            [nameof(ApartmentDemandInputs.LiftInstalledPower)] = "stdLiftInstalledPower",
+            [nameof(ApartmentDemandInputs.LiftCoincidenceFactor)] = "stdLiftCoincidenceFactor",
+            [nameof(ApartmentDemandInputs.LiftCosPhi)] = "stdLiftCosPhi"
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> HighComfortApartmentInputKeys =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [nameof(HighComfortApartmentDemandInputs.Floors)] = "comfortFloors",
+            [nameof(HighComfortApartmentDemandInputs.ApartmentCount)] = "comfortApartmentCount",
+            [nameof(HighComfortApartmentDemandInputs.SpecificDemandApartmentCount)] = "comfortSpecificDemandApartmentCount",
+            [nameof(HighComfortApartmentDemandInputs.ElevatorCount)] = "comfortElevatorCount",
+            [nameof(HighComfortApartmentDemandInputs.ApartmentUnitPower)] = "comfortApartmentUnitPower",
+            [nameof(HighComfortApartmentDemandInputs.ApartmentUsageFactor)] = "comfortApartmentUsageFactor",
+            [nameof(HighComfortApartmentDemandInputs.ApartmentCoincidenceFactor)] = "comfortApartmentCoincidenceFactor",
+            [nameof(HighComfortApartmentDemandInputs.ApartmentCosPhi)] = "comfortApartmentCosPhi",
+            [nameof(HighComfortApartmentDemandInputs.LiftInstalledPower)] = "comfortLiftInstalledPower",
+            [nameof(HighComfortApartmentDemandInputs.LiftCoincidenceFactor)] = "comfortLiftCoincidenceFactor",
+            [nameof(HighComfortApartmentDemandInputs.LiftCosPhi)] = "comfortLiftCosPhi",
+            [nameof(HighComfortApartmentDemandInputs.CombinedApartmentCosPhi)] = "comfortCombinedCosPhi"
+        };
 }
