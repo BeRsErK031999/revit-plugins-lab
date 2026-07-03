@@ -79,6 +79,7 @@ public sealed class VoltageDropWindow : Window
         content.Children.Add(CreateVoltageDropTable());
         content.Children.Add(CreateApartmentDemandTable());
         content.Children.Add(CreateHighComfortDemandTable());
+        content.Children.Add(CreateSupplementaryTable());
         scrollViewer.Content = content;
         root.Children.Add(scrollViewer);
 
@@ -94,6 +95,17 @@ public sealed class VoltageDropWindow : Window
             Margin = new Thickness(0, 16, 0, 0)
         };
 
+        Button referencesButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Справочники"),
+            MinWidth = 140,
+            Height = 32,
+            Margin = new Thickness(0, 0, 8, 0),
+            ToolTip = "Открыть оцифрованные справочные таблицы и формулы."
+        };
+        referencesButton.Click += (_, _) => OpenReferences();
+        footer.Children.Add(referencesButton);
+
         Button closeButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
@@ -106,6 +118,16 @@ public sealed class VoltageDropWindow : Window
         footer.Children.Add(closeButton);
 
         return footer;
+    }
+
+    private void OpenReferences()
+    {
+        VoltageDropReferenceWindow window = new(calculationService.ReferenceCatalog)
+        {
+            Owner = this
+        };
+        logger.Info("Voltage drop reference window opened.");
+        window.ShowDialog();
     }
 
     private UIElement CreateVoltageDropTable()
@@ -211,6 +233,52 @@ public sealed class VoltageDropWindow : Window
         AddOutputRow(grid, 28, "Общее по квартирам Ip, A", "comfortCombinedCurrent", "K77/(0.38*SQRT(3)*L77)");
 
         return CreateSection("Таблица 3", grid);
+    }
+
+    private UIElement CreateSupplementaryTable()
+    {
+        Grid grid = CreateTableGrid();
+        AddTableHeader(grid, "Дополнительные расчетные блоки первого листа, строки 75-104", 4);
+        AddInputRow(grid, 1, "P 3Ф, кВт", "suppThreePhasePower");
+        AddInputRow(grid, 2, "I 3Ф, A", "suppThreePhaseCurrent");
+        AddOutputRow(grid, 3, "0,38*1,73", "suppThreePhaseVoltageFactor", "U77");
+        AddOutputRow(grid, 4, "cos(φ) 3Ф", "suppThreePhaseCosPhi", "U75/(U76*U77)");
+        AddInputRow(grid, 5, "Pнов 3Ф, кВт", "suppNewThreePhasePower");
+        AddOutputRow(grid, 6, "Iнов 3Ф, A", "suppNewThreePhaseCurrent", "U80/(U77*U78)");
+        AddInputRow(grid, 7, "P 1Ф, кВт", "suppSinglePhasePower");
+        AddInputRow(grid, 8, "I 1Ф, A", "suppSinglePhaseCurrent");
+        AddOutputRow(grid, 9, "U 1Ф, кВ", "suppSinglePhaseVoltageFactor", "Y77");
+        AddOutputRow(grid, 10, "cos(φ) 1Ф", "suppSinglePhaseCosPhi", "Y75/(Y76*Y77)");
+
+        TextBlock legacyHeader = CreateSubHeader("Формулы потери напряжения из строк 82-90");
+        Grid.SetRow(legacyHeader, 11);
+        Grid.SetColumnSpan(legacyHeader, 4);
+        grid.Children.Add(legacyHeader);
+        AddInputRow(grid, 12, "ρ1", "suppLegacyResistivity");
+        AddInputRow(grid, 13, "l, м", "suppLegacyLength");
+        AddInputRow(grid, 14, "s, мм2", "suppLegacySection");
+        AddInputRow(grid, 15, "cos(φ)", "suppLegacyCosPhi");
+        AddInputRow(grid, 16, "λ", "suppLegacyReactance");
+        AddInputRow(grid, 17, "Ip, A", "suppLegacyCurrent");
+        AddOutputRow(grid, 18, "sin(φ)", "suppLegacySinPhi", "SQRT(1-F89^2)");
+        AddOutputRow(grid, 19, "ΔU%, упрощенная", "suppLegacyDropPercent", "F82");
+        AddOutputRow(grid, 20, "U, В", "suppLegacyVoltageDrop", "F85");
+        AddOutputRow(grid, 21, "U, %", "suppLegacyVoltageDropPercent", "J85");
+
+        TextBlock lineHeader = CreateSubHeader("Линейная формула строк 98-104");
+        Grid.SetRow(lineHeader, 22);
+        Grid.SetColumnSpan(lineHeader, 4);
+        grid.Children.Add(lineHeader);
+        AddInputRow(grid, 23, "Ip, A", "suppLineCurrent");
+        AddInputRow(grid, 24, "L, км", "suppLineLength");
+        AddInputRow(grid, 25, "ro", "suppLineResistance");
+        AddInputRow(grid, 26, "xo", "suppLineReactance");
+        AddInputRow(grid, 27, "cos(φ)", "suppLineCosPhi");
+        AddInputRow(grid, 28, "sin(φ)", "suppLineSinPhi");
+        AddOutputRow(grid, 29, "ΔU, В", "suppLineVoltageDrop", "1,73*Ip*L*(ro*cos+xo*sin)");
+        AddOutputRow(grid, 30, "ΔU, %", "suppLineVoltageDropPercent", "(ΔU*100)/380");
+
+        return CreateSection("Таблица 4", grid);
     }
 
     private static UIElement CreateSection(string header, UIElement content)
@@ -400,6 +468,25 @@ public sealed class VoltageDropWindow : Window
         SetInput("comfortLiftCoincidenceFactor", comfort.LiftCoincidenceFactor);
         SetInput("comfortLiftCosPhi", comfort.LiftCosPhi);
         SetInput("comfortCombinedCosPhi", comfort.CombinedApartmentCosPhi);
+
+        VoltageDropSupplementaryInputs supplementary = VoltageDropSupplementaryInputs.Default;
+        SetInput("suppThreePhasePower", supplementary.ThreePhasePower);
+        SetInput("suppThreePhaseCurrent", supplementary.ThreePhaseCurrent);
+        SetInput("suppNewThreePhasePower", supplementary.NewThreePhasePower);
+        SetInput("suppSinglePhasePower", supplementary.SinglePhasePower);
+        SetInput("suppSinglePhaseCurrent", supplementary.SinglePhaseCurrent);
+        SetInput("suppLegacyResistivity", supplementary.LegacyResistivity);
+        SetInput("suppLegacyLength", supplementary.LegacyLength);
+        SetInput("suppLegacySection", supplementary.LegacySection);
+        SetInput("suppLegacyCosPhi", supplementary.LegacyCosPhi);
+        SetInput("suppLegacyReactance", supplementary.LegacyReactance);
+        SetInput("suppLegacyCurrent", supplementary.LegacyCurrent);
+        SetInput("suppLineCurrent", supplementary.LineCurrent);
+        SetInput("suppLineLength", supplementary.LineLength);
+        SetInput("suppLineResistance", supplementary.LineResistance);
+        SetInput("suppLineReactance", supplementary.LineReactance);
+        SetInput("suppLineCosPhi", supplementary.LineCosPhi);
+        SetInput("suppLineSinPhi", supplementary.LineSinPhi);
     }
 
     private void LoadReferenceSelectors()
@@ -467,6 +554,17 @@ public sealed class VoltageDropWindow : Window
                 return;
             }
 
+            VoltageDropSupplementaryResult supplementary;
+            try
+            {
+                supplementary = calculationService.CalculateSupplementary(ReadSupplementaryInputs());
+            }
+            catch (VoltageDropValidationException exception)
+            {
+                ApplyValidationErrors(exception, SupplementaryInputKeys);
+                return;
+            }
+
             SetOutput("loadMoment", voltage.LoadMoment);
             SetOutput("al400Drop", voltage.Aluminum400DropPercent);
             SetOutput("cu400Drop", voltage.Copper400DropPercent);
@@ -509,6 +607,18 @@ public sealed class VoltageDropWindow : Window
             SetOutput("comfortCombinedReactivePower", comfort.CombinedApartmentLoad.ReactivePower);
             SetOutput("comfortCombinedApparentPower", comfort.CombinedApartmentLoad.ApparentPower);
             SetOutput("comfortCombinedCurrent", comfort.CombinedApartmentLoad.Current);
+
+            SetOutput("suppThreePhaseVoltageFactor", supplementary.ThreePhaseVoltageFactor);
+            SetOutput("suppThreePhaseCosPhi", supplementary.ThreePhaseCosPhi);
+            SetOutput("suppSinglePhaseVoltageFactor", supplementary.SinglePhaseVoltageFactor);
+            SetOutput("suppSinglePhaseCosPhi", supplementary.SinglePhaseCosPhi);
+            SetOutput("suppNewThreePhaseCurrent", supplementary.NewThreePhaseCurrent);
+            SetOutput("suppLegacySinPhi", supplementary.LegacySinPhi);
+            SetOutput("suppLegacyDropPercent", supplementary.LegacyDropPercent);
+            SetOutput("suppLegacyVoltageDrop", supplementary.LegacyVoltageDrop);
+            SetOutput("suppLegacyVoltageDropPercent", supplementary.LegacyVoltageDropPercent);
+            SetOutput("suppLineVoltageDrop", supplementary.LineVoltageDrop);
+            SetOutput("suppLineVoltageDropPercent", supplementary.LineVoltageDropPercent);
 
             statusText.Text = "Готово";
             statusText.Foreground = Brushes.DimGray;
@@ -561,6 +671,28 @@ public sealed class VoltageDropWindow : Window
             Read("comfortLiftCoincidenceFactor"),
             Read("comfortLiftCosPhi"),
             Read("comfortCombinedCosPhi"));
+    }
+
+    private VoltageDropSupplementaryInputs ReadSupplementaryInputs()
+    {
+        return new VoltageDropSupplementaryInputs(
+            Read("suppThreePhasePower"),
+            Read("suppThreePhaseCurrent"),
+            Read("suppNewThreePhasePower"),
+            Read("suppSinglePhasePower"),
+            Read("suppSinglePhaseCurrent"),
+            Read("suppLegacyResistivity"),
+            Read("suppLegacyLength"),
+            Read("suppLegacySection"),
+            Read("suppLegacyCosPhi"),
+            Read("suppLegacyReactance"),
+            Read("suppLegacyCurrent"),
+            Read("suppLineCurrent"),
+            Read("suppLineLength"),
+            Read("suppLineResistance"),
+            Read("suppLineReactance"),
+            Read("suppLineCosPhi"),
+            Read("suppLineSinPhi"));
     }
 
     private double Read(string key)
@@ -735,6 +867,28 @@ public sealed class VoltageDropWindow : Window
             [nameof(HighComfortApartmentDemandInputs.LiftCoincidenceFactor)] = "comfortLiftCoincidenceFactor",
             [nameof(HighComfortApartmentDemandInputs.LiftCosPhi)] = "comfortLiftCosPhi",
             [nameof(HighComfortApartmentDemandInputs.CombinedApartmentCosPhi)] = "comfortCombinedCosPhi"
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> SupplementaryInputKeys =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [nameof(VoltageDropSupplementaryInputs.ThreePhasePower)] = "suppThreePhasePower",
+            [nameof(VoltageDropSupplementaryInputs.ThreePhaseCurrent)] = "suppThreePhaseCurrent",
+            [nameof(VoltageDropSupplementaryInputs.NewThreePhasePower)] = "suppNewThreePhasePower",
+            [nameof(VoltageDropSupplementaryInputs.SinglePhasePower)] = "suppSinglePhasePower",
+            [nameof(VoltageDropSupplementaryInputs.SinglePhaseCurrent)] = "suppSinglePhaseCurrent",
+            [nameof(VoltageDropSupplementaryInputs.LegacyResistivity)] = "suppLegacyResistivity",
+            [nameof(VoltageDropSupplementaryInputs.LegacyLength)] = "suppLegacyLength",
+            [nameof(VoltageDropSupplementaryInputs.LegacySection)] = "suppLegacySection",
+            [nameof(VoltageDropSupplementaryInputs.LegacyCosPhi)] = "suppLegacyCosPhi",
+            [nameof(VoltageDropSupplementaryInputs.LegacyReactance)] = "suppLegacyReactance",
+            [nameof(VoltageDropSupplementaryInputs.LegacyCurrent)] = "suppLegacyCurrent",
+            [nameof(VoltageDropSupplementaryInputs.LineCurrent)] = "suppLineCurrent",
+            [nameof(VoltageDropSupplementaryInputs.LineLength)] = "suppLineLength",
+            [nameof(VoltageDropSupplementaryInputs.LineResistance)] = "suppLineResistance",
+            [nameof(VoltageDropSupplementaryInputs.LineReactance)] = "suppLineReactance",
+            [nameof(VoltageDropSupplementaryInputs.LineCosPhi)] = "suppLineCosPhi",
+            [nameof(VoltageDropSupplementaryInputs.LineSinPhi)] = "suppLineSinPhi"
         };
 
     private sealed record ConductorMaterialOption(VoltageDropConductorMaterial Material, string DisplayName);

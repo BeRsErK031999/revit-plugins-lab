@@ -87,6 +87,24 @@ public sealed class VoltageDropCalculationServiceTests
     }
 
     [Fact]
+    public void CalculateSupplementary_DefaultInputs_MatchesExcelRows75To104()
+    {
+        VoltageDropSupplementaryResult result = service.CalculateSupplementary(VoltageDropSupplementaryInputs.Default);
+
+        AssertClose(0.6574, result.ThreePhaseVoltageFactor);
+        AssertClose(0.22, result.SinglePhaseVoltageFactor);
+        AssertClose(0.84980106157148627, result.ThreePhaseCosPhi);
+        AssertClose(1.971664698937426, result.SinglePhaseCosPhi);
+        AssertClose(18.257999999999996, result.NewThreePhaseCurrent);
+        AssertClose(0.31224989991991997, result.LegacySinPhi);
+        AssertClose(0.3, result.LegacyDropPercent);
+        AssertClose(4.6958300416331529, result.LegacyVoltageDrop);
+        AssertClose(1.235744747798198, result.LegacyVoltageDropPercent);
+        AssertClose(2.6333662445999999, result.LineVoltageDrop);
+        AssertClose(0.69299111699999993, result.LineVoltageDropPercent);
+    }
+
+    [Fact]
     public void CalculateVoltageDrop_ZeroCableSection_ThrowsValidationError()
     {
         VoltageDropInputs inputs = VoltageDropInputs.Default with { CableSection = 0 };
@@ -162,6 +180,19 @@ public sealed class VoltageDropCalculationServiceTests
         VoltageDropValidationError error = Assert.Single(exception.Errors);
         Assert.Equal(nameof(HighComfortApartmentDemandInputs.CombinedApartmentCosPhi), error.FieldKey);
         Assert.Contains("cos", error.Message, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
+    public void CalculateSupplementary_ZeroLegacySection_ThrowsValidationError()
+    {
+        VoltageDropSupplementaryInputs inputs = VoltageDropSupplementaryInputs.Default with { LegacySection = 0 };
+
+        VoltageDropValidationException exception = Assert.Throws<VoltageDropValidationException>(
+            () => service.CalculateSupplementary(inputs));
+
+        VoltageDropValidationError error = Assert.Single(exception.Errors);
+        Assert.Equal(nameof(VoltageDropSupplementaryInputs.LegacySection), error.FieldKey);
+        Assert.Contains("s", error.Message, StringComparison.CurrentCultureIgnoreCase);
     }
 
     private static void AssertClose(double expected, double actual)

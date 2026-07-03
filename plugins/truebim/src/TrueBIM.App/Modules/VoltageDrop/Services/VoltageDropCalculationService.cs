@@ -30,6 +30,8 @@ public sealed class VoltageDropCalculationService
         this.referenceCatalog = referenceCatalog ?? throw new ArgumentNullException(nameof(referenceCatalog));
     }
 
+    public VoltageDropReferenceCatalog ReferenceCatalog => referenceCatalog;
+
     public VoltageDropResult CalculateVoltageDrop(VoltageDropInputs inputs)
     {
         if (inputs is null)
@@ -80,6 +82,51 @@ public sealed class VoltageDropCalculationService
             coefficient,
             loadMoment,
             Divide(loadMoment, coefficient.Coefficient * inputs.CableSection));
+    }
+
+    public VoltageDropSupplementaryResult CalculateSupplementary(VoltageDropSupplementaryInputs inputs)
+    {
+        if (inputs is null)
+        {
+            throw new ArgumentNullException(nameof(inputs));
+        }
+
+        ValidateSupplementaryInputs(inputs);
+
+        double threePhaseVoltageFactor = ThreePhaseVoltage * Sqrt3Rounded;
+        double singlePhaseVoltageFactor = SinglePhaseVoltage;
+        double threePhaseCosPhi = Divide(inputs.ThreePhasePower, inputs.ThreePhaseCurrent * threePhaseVoltageFactor);
+        double singlePhaseCosPhi = Divide(inputs.SinglePhasePower, inputs.SinglePhaseCurrent * singlePhaseVoltageFactor);
+        double newThreePhaseCurrent = Divide(inputs.NewThreePhasePower, threePhaseVoltageFactor * threePhaseCosPhi);
+        double legacySinPhi = Math.Sqrt(Math.Max(0, 1 - (inputs.LegacyCosPhi * inputs.LegacyCosPhi)));
+        double legacyDropPercent = ((((inputs.LegacyResistivity * 10 / inputs.LegacySection * 0.8)
+            + (inputs.LegacyReactance * 10 * 0.6))
+            * inputs.LegacyCurrent)
+            / 380)
+            * 100;
+        double legacyVoltageDrop = 1
+            * ((inputs.LegacyResistivity * (inputs.LegacyLength / inputs.LegacySection) * inputs.LegacyCosPhi)
+            + (inputs.LegacyReactance * inputs.LegacyLength * legacySinPhi))
+            * inputs.LegacyCurrent;
+        double legacyVoltageDropPercent = 100 * (legacyVoltageDrop / 380);
+        double lineVoltageDrop = 1.73
+            * inputs.LineCurrent
+            * inputs.LineLength
+            * ((inputs.LineResistance * inputs.LineCosPhi) + (inputs.LineReactance * inputs.LineSinPhi));
+        double lineVoltageDropPercent = (lineVoltageDrop * 100) / 380;
+
+        return new VoltageDropSupplementaryResult(
+            threePhaseVoltageFactor,
+            singlePhaseVoltageFactor,
+            threePhaseCosPhi,
+            singlePhaseCosPhi,
+            newThreePhaseCurrent,
+            legacySinPhi,
+            legacyDropPercent,
+            legacyVoltageDrop,
+            legacyVoltageDropPercent,
+            lineVoltageDrop,
+            lineVoltageDropPercent);
     }
 
     public ApartmentDemandResult CalculateApartmentDemand(ApartmentDemandInputs inputs)
@@ -220,6 +267,29 @@ public sealed class VoltageDropCalculationService
         AddFactor(errors, nameof(HighComfortApartmentDemandInputs.LiftCoincidenceFactor), inputs.LiftCoincidenceFactor, "Кс.об лифтов должен быть в диапазоне 0..1.");
         AddCosPhi(errors, nameof(HighComfortApartmentDemandInputs.LiftCosPhi), inputs.LiftCosPhi, "cos(φ) лифтов должен быть больше 0 и не больше 1.");
         AddCosPhi(errors, nameof(HighComfortApartmentDemandInputs.CombinedApartmentCosPhi), inputs.CombinedApartmentCosPhi, "cos(φ) общего расчета должен быть больше 0 и не больше 1.");
+        ThrowIfAny(errors);
+    }
+
+    private static void ValidateSupplementaryInputs(VoltageDropSupplementaryInputs inputs)
+    {
+        List<VoltageDropValidationError> errors = new();
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.ThreePhasePower), inputs.ThreePhasePower, "P для 3Ф расчета не может быть отрицательной.");
+        AddPositive(errors, nameof(VoltageDropSupplementaryInputs.ThreePhaseCurrent), inputs.ThreePhaseCurrent, "I для 3Ф расчета должен быть больше 0.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.NewThreePhasePower), inputs.NewThreePhasePower, "Pнов не может быть отрицательной.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.SinglePhasePower), inputs.SinglePhasePower, "P для 1Ф расчета не может быть отрицательной.");
+        AddPositive(errors, nameof(VoltageDropSupplementaryInputs.SinglePhaseCurrent), inputs.SinglePhaseCurrent, "I для 1Ф расчета должен быть больше 0.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LegacyResistivity), inputs.LegacyResistivity, "ρ1 не может быть отрицательной.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LegacyLength), inputs.LegacyLength, "l не может быть отрицательной.");
+        AddPositive(errors, nameof(VoltageDropSupplementaryInputs.LegacySection), inputs.LegacySection, "s должен быть больше 0.");
+        AddCosPhi(errors, nameof(VoltageDropSupplementaryInputs.LegacyCosPhi), inputs.LegacyCosPhi, "cos для формулы U должен быть больше 0 и не больше 1.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LegacyReactance), inputs.LegacyReactance, "λ не может быть отрицательной.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LegacyCurrent), inputs.LegacyCurrent, "Iр для формулы U не может быть отрицательной.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LineCurrent), inputs.LineCurrent, "Iр для линейной формулы не может быть отрицательной.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LineLength), inputs.LineLength, "L для линейной формулы не может быть отрицательной.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LineResistance), inputs.LineResistance, "ro не может быть отрицательным.");
+        AddNonNegative(errors, nameof(VoltageDropSupplementaryInputs.LineReactance), inputs.LineReactance, "xo не может быть отрицательным.");
+        AddCosPhi(errors, nameof(VoltageDropSupplementaryInputs.LineCosPhi), inputs.LineCosPhi, "cos для линейной формулы должен быть больше 0 и не больше 1.");
+        AddRange(errors, nameof(VoltageDropSupplementaryInputs.LineSinPhi), inputs.LineSinPhi, 0, 1, "sin для линейной формулы должен быть в диапазоне 0..1.");
         ThrowIfAny(errors);
     }
 
