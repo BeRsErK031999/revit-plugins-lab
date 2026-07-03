@@ -51,6 +51,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#Publisher}
 DefaultDirName={userappdata}\TrueBIM
+UsePreviousAppDir=no
 DefaultGroupName=TrueBIM
 OutputDir=..\..\..\dist\installer
 OutputBaseFilename=TrueBIM-Setup

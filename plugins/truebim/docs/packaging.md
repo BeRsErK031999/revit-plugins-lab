@@ -58,19 +58,19 @@ dist/
 
 ## Installer Layout
 
-The release installer is machine-wide and requires admin privileges.
+The release installer is current-user and does not require admin privileges.
 
 Installed payload:
 
 ```text
-C:\Program Files\TrueBIM\<year>\TrueBIM.App.dll
-C:\Program Files\TrueBIM\<year>\Modules\...
+%APPDATA%\TrueBIM\<year>\TrueBIM.App.dll
+%APPDATA%\TrueBIM\<year>\Modules\...
 ```
 
 Installed Revit manifests:
 
 ```text
-C:\ProgramData\Autodesk\Revit\Addins\<year>\TrueBIM.addin
+%APPDATA%\Autodesk\Revit\Addins\<year>\TrueBIM.addin
 ```
 
 The installer defaults to detected Revit versions only. Selecting a version that is not detected requires explicit confirmation. Upgrade cleanup removes install-owned payload folders and `.addin` files for the selected years before copying the new package.
@@ -97,4 +97,4 @@ Runtime smoke-tests are not automated by this script. Pass `-SmokeTestedYears 20
 
 ## Local Development Deploy
 
-The existing `deploy-local-2022.ps1` and `deploy-local-2025.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the machine-wide release installer.
+The existing `deploy-local-2022.ps1` and `deploy-local-2025.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the release installer.

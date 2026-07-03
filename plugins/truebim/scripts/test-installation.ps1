@@ -13,11 +13,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
-    $InstallRoot = Join-Path ${env:ProgramFiles} "TrueBIM"
+    $InstallRoot = Join-Path $env:APPDATA "TrueBIM"
 }
 
 if ([string]::IsNullOrWhiteSpace($AddinsRoot)) {
-    $AddinsRoot = Join-Path ${env:ProgramData} "Autodesk\Revit\Addins"
+    $AddinsRoot = Join-Path $env:APPDATA "Autodesk\Revit\Addins"
 }
 
 if ([string]::IsNullOrWhiteSpace($ReportPath)) {
@@ -35,9 +35,10 @@ function Test-RevitInstalled {
 
     $installRoot = Join-Path ${env:ProgramFiles} "Autodesk\Revit $Year"
     $revitExe = Join-Path $installRoot "Revit.exe"
-    $addinRoot = Join-Path ${env:ProgramData} "Autodesk\Revit\Addins\$Year"
+    $userAddinRoot = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$Year"
+    $machineAddinRoot = Join-Path ${env:ProgramData} "Autodesk\Revit\Addins\$Year"
 
-    return (Test-Path -LiteralPath $revitExe) -or (Test-Path -LiteralPath $addinRoot)
+    return (Test-Path -LiteralPath $revitExe) -or (Test-Path -LiteralPath $userAddinRoot) -or (Test-Path -LiteralPath $machineAddinRoot)
 }
 
 $report = foreach ($year in $Years) {

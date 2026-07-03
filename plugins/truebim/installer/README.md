@@ -21,11 +21,11 @@ dist/revit/2019 ... dist/revit/2025
 dist/installer/TrueBIM-Setup.exe
 ```
 
-The release installer is machine-wide:
+The release installer is current-user and does not require admin privileges:
 
 ```text
-C:\Program Files\TrueBIM\<year>\
-C:\ProgramData\Autodesk\Revit\Addins\<year>\TrueBIM.addin
+%APPDATA%\TrueBIM\<year>\
+%APPDATA%\Autodesk\Revit\Addins\<year>\TrueBIM.addin
 ```
 
 The installer defaults to Revit versions detected on the PC. A user can select an undetected version only after explicit confirmation.

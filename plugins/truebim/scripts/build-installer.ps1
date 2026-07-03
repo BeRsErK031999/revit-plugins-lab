@@ -21,7 +21,7 @@ $distRevitRoot = Join-Path $distRoot "revit"
 $distInstallerRoot = Join-Path $distRoot "installer"
 $buildTempRoot = Join-Path $trueBimRoot "obj\installer-build"
 $installerScriptPath = Join-Path $trueBimRoot "installer\TrueBIM.iss"
-$defaultInstallRoot = Join-Path ${env:ProgramFiles} "TrueBIM"
+$defaultInstallRoot = Join-Path $env:APPDATA "TrueBIM"
 
 . (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
 $dotnetPath = Resolve-DotNetSdk
@@ -62,9 +62,10 @@ function Test-RevitInstalled {
 
     $installRoot = Join-Path ${env:ProgramFiles} "Autodesk\Revit $Year"
     $revitExe = Join-Path $installRoot "Revit.exe"
-    $addinRoot = Join-Path ${env:ProgramData} "Autodesk\Revit\Addins\$Year"
+    $userAddinRoot = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$Year"
+    $machineAddinRoot = Join-Path ${env:ProgramData} "Autodesk\Revit\Addins\$Year"
 
-    return (Test-Path -LiteralPath $revitExe) -or (Test-Path -LiteralPath $addinRoot)
+    return (Test-Path -LiteralPath $revitExe) -or (Test-Path -LiteralPath $userAddinRoot) -or (Test-Path -LiteralPath $machineAddinRoot)
 }
 
 function Resolve-InnoCompiler {
