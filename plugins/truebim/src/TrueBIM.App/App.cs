@@ -45,6 +45,14 @@ public sealed class App : IExternalApplication
             "Открывает модуль печати и экспорта листов TrueBIM.");
 
         AddButton(
+            bimPanel,
+            "TrueBIM_ViewVisibility",
+            "Видимость",
+            typeof(OpenViewVisibilityCommand).FullName,
+            TrueBimIcon.Visibility,
+            "Включает и выключает видимость категорий на активном виде.");
+
+        AddButton(
             krPanel,
             "TrueBIM_CollapseScheduleColumns",
             "Свернуть\nВРС",
