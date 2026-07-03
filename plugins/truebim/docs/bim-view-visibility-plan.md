@@ -9,7 +9,8 @@ Add a BIM-panel visibility tool that lets users turn Revit categories on and off
 1. Add a `Видимость` button to the `БИМ` ribbon panel and implement the first active-view category visibility MVP. Done.
 2. Polish category grouping, search, and status text after Revit UI feedback. Done.
 3. Add manual QA notes for Revit 2022/2025 and update packaging/deploy scripts only if the module needs extra assets. Done.
+4. Run local QA preflight and fix any packaging/deploy blocker that prevents the visibility build from reaching manual Revit QA. Done.
 
 ## Current Step
 
-Task 3 is implemented. Manual QA now covers the `Видимость` ribbon button and active-view category visibility flow for Revit 2022 and Revit 2025. No packaging or deploy script changes are required because the tool is a core ribbon command and uses an `IconFactory` vector icon.
+Task 4 is implemented. `build-installer.ps1` now launches `ISCC.exe` from the folder containing `TrueBIM.iss`, so the installer script resolves `dist/revit/<year>` payload paths correctly. Revit 2025 and Revit 2022 preflight both passed local deploy and installed add-in manifest checks.

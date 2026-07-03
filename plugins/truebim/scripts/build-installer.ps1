@@ -277,9 +277,15 @@ if ($skipped.Count -gt 0 -and -not $SkipInstaller) {
 
 if (-not $SkipInstaller) {
     $innoPath = Resolve-InnoCompiler -RequestedPath $InnoCompilerPath
-    & $innoPath $installerScriptPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Inno Setup compiler failed."
+    Push-Location -LiteralPath (Split-Path -Parent $installerScriptPath)
+    try {
+        & $innoPath $installerScriptPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compiler failed."
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
 
