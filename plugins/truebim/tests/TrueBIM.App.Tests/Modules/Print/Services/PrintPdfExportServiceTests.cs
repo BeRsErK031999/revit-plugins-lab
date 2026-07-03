@@ -66,4 +66,40 @@ public sealed class PrintPdfExportServiceTests
         Assert.Equal("отдельные PDF", PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.SeparateFiles));
         Assert.Equal("один PDF", PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.CombinedFile));
     }
+
+    [Fact]
+    public void DefaultSettings_UseColorHighQualityAndVectorOutput()
+    {
+        PrintPdfExportSettings settings = PrintPdfExportService.DefaultSettings;
+
+        Assert.Equal(PrintPdfColorMode.Color, settings.ColorMode);
+        Assert.Equal(PrintPdfRasterQuality.High, settings.RasterQuality);
+        Assert.False(settings.AlwaysUseRaster);
+    }
+
+    [Fact]
+    public void GetSettingsDisplayName_DescribesVectorSettings()
+    {
+        PrintPdfExportSettings settings = new(
+            PrintPdfColorMode.GrayScale,
+            PrintPdfRasterQuality.Medium,
+            AlwaysUseRaster: false);
+
+        string displayName = PrintPdfExportService.GetSettingsDisplayName(settings);
+
+        Assert.Equal("оттенки серого, среднее качество, вектор", displayName);
+    }
+
+    [Fact]
+    public void GetSettingsDisplayName_DescribesRasterSettings()
+    {
+        PrintPdfExportSettings settings = new(
+            PrintPdfColorMode.BlackLine,
+            PrintPdfRasterQuality.Presentation,
+            AlwaysUseRaster: true);
+
+        string displayName = PrintPdfExportService.GetSettingsDisplayName(settings);
+
+        Assert.Equal("черные линии, презентационное качество, растр", displayName);
+    }
 }

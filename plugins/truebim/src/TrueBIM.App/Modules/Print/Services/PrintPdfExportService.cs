@@ -10,6 +10,11 @@ public sealed class PrintPdfExportService
 {
     public const string DefaultCombinedPdfFileName = "Объединенный PDF";
 
+    public static PrintPdfExportSettings DefaultSettings { get; } = new(
+        PrintPdfColorMode.Color,
+        PrintPdfRasterQuality.High,
+        AlwaysUseRaster: false);
+
     public PrintPdfExportResult Export(
         Document document,
         string exportFolder,
@@ -22,6 +27,7 @@ public sealed class PrintPdfExportService
             items,
             PrintPdfExportMode.SeparateFiles,
             combinedFileName: null,
+            DefaultSettings,
             logger);
     }
 
@@ -33,9 +39,29 @@ public sealed class PrintPdfExportService
         string? combinedFileName,
         ITrueBimLogger logger)
     {
+        return Export(
+            document,
+            exportFolder,
+            items,
+            mode,
+            combinedFileName,
+            DefaultSettings,
+            logger);
+    }
+
+    public PrintPdfExportResult Export(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintPdfExportItem> items,
+        PrintPdfExportMode mode,
+        string? combinedFileName,
+        PrintPdfExportSettings settings,
+        ITrueBimLogger logger)
+    {
         Guard.NotNull(document, nameof(document));
         Guard.NotNullOrWhiteSpace(exportFolder, nameof(exportFolder));
         Guard.NotNull(items, nameof(items));
+        Guard.NotNull(settings, nameof(settings));
         Guard.NotNull(logger, nameof(logger));
 
 #if !REVIT2022_OR_GREATER
@@ -67,8 +93,8 @@ public sealed class PrintPdfExportService
 
         return mode switch
         {
-            PrintPdfExportMode.SeparateFiles => ExportSeparateFiles(document, exportFolder, items, logger, exportedFiles, failures),
-            PrintPdfExportMode.CombinedFile => ExportCombinedFile(document, exportFolder, items, combinedFileName, logger, exportedFiles, failures),
+            PrintPdfExportMode.SeparateFiles => ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures),
+            PrintPdfExportMode.CombinedFile => ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF export mode.")
         };
 #endif
@@ -79,6 +105,7 @@ public sealed class PrintPdfExportService
         Document document,
         string exportFolder,
         IReadOnlyList<PrintPdfExportItem> items,
+        PrintPdfExportSettings settings,
         ITrueBimLogger logger,
         List<string> exportedFiles,
         List<PrintPdfExportFailure> failures)
@@ -94,12 +121,7 @@ public sealed class PrintPdfExportService
                     File.Delete(outputPath);
                 }
 
-                using PDFExportOptions options = new()
-                {
-                    Combine = true,
-                    FileName = pdfFileName,
-                    StopOnError = true
-                };
+                using PDFExportOptions options = CreateOptions(pdfFileName, settings);
 
                 List<ElementId> viewIds = new()
                 {
@@ -113,7 +135,7 @@ public sealed class PrintPdfExportService
                 }
 
                 exportedFiles.Add(outputPath);
-                logger.Info($"Exported PDF: {outputPath}");
+                logger.Info($"Exported PDF: {outputPath}. Settings: {GetSettingsDisplayName(settings)}.");
             }
             catch (Exception exception)
             {
@@ -130,6 +152,7 @@ public sealed class PrintPdfExportService
         string exportFolder,
         IReadOnlyList<PrintPdfExportItem> items,
         string? combinedFileName,
+        PrintPdfExportSettings settings,
         ITrueBimLogger logger,
         List<string> exportedFiles,
         List<PrintPdfExportFailure> failures)
@@ -143,12 +166,7 @@ public sealed class PrintPdfExportService
                 File.Delete(outputPath);
             }
 
-            using PDFExportOptions options = new()
-            {
-                Combine = true,
-                FileName = pdfFileName,
-                StopOnError = true
-            };
+            using PDFExportOptions options = CreateOptions(pdfFileName, settings);
 
             List<ElementId> viewIds = items
                 .Select(item => RevitElementIds.Create(item.ElementId))
@@ -161,7 +179,7 @@ public sealed class PrintPdfExportService
             }
 
             exportedFiles.Add(outputPath);
-            logger.Info($"Exported combined PDF: {outputPath}");
+            logger.Info($"Exported combined PDF: {outputPath}. Settings: {GetSettingsDisplayName(settings)}.");
         }
         catch (Exception exception)
         {
@@ -170,6 +188,42 @@ public sealed class PrintPdfExportService
         }
 
         return new PrintPdfExportResult(exportedFiles, failures);
+    }
+
+    private static PDFExportOptions CreateOptions(string fileName, PrintPdfExportSettings settings)
+    {
+        return new PDFExportOptions
+        {
+            Combine = true,
+            FileName = fileName,
+            StopOnError = true,
+            ColorDepth = MapColorDepth(settings.ColorMode),
+            RasterQuality = MapRasterQuality(settings.RasterQuality),
+            AlwaysUseRaster = settings.AlwaysUseRaster
+        };
+    }
+
+    private static ColorDepthType MapColorDepth(PrintPdfColorMode mode)
+    {
+        return mode switch
+        {
+            PrintPdfColorMode.Color => ColorDepthType.Color,
+            PrintPdfColorMode.GrayScale => ColorDepthType.GrayScale,
+            PrintPdfColorMode.BlackLine => ColorDepthType.BlackLine,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF color mode.")
+        };
+    }
+
+    private static RasterQualityType MapRasterQuality(PrintPdfRasterQuality quality)
+    {
+        return quality switch
+        {
+            PrintPdfRasterQuality.Low => RasterQualityType.Low,
+            PrintPdfRasterQuality.Medium => RasterQualityType.Medium,
+            PrintPdfRasterQuality.High => RasterQualityType.High,
+            PrintPdfRasterQuality.Presentation => RasterQualityType.Presentation,
+            _ => throw new ArgumentOutOfRangeException(nameof(quality), quality, "Unsupported PDF raster quality.")
+        };
     }
 #endif
 
@@ -204,6 +258,37 @@ public sealed class PrintPdfExportService
             PrintPdfExportMode.SeparateFiles => "отдельные PDF",
             PrintPdfExportMode.CombinedFile => "один PDF",
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF export mode.")
+        };
+    }
+
+    public static string GetSettingsDisplayName(PrintPdfExportSettings settings)
+    {
+        Guard.NotNull(settings, nameof(settings));
+
+        string vectorMode = settings.AlwaysUseRaster ? "растр" : "вектор";
+        return $"{GetColorModeDisplayName(settings.ColorMode)}, {GetRasterQualityDisplayName(settings.RasterQuality)}, {vectorMode}";
+    }
+
+    public static string GetColorModeDisplayName(PrintPdfColorMode mode)
+    {
+        return mode switch
+        {
+            PrintPdfColorMode.Color => "цвет",
+            PrintPdfColorMode.GrayScale => "оттенки серого",
+            PrintPdfColorMode.BlackLine => "черные линии",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF color mode.")
+        };
+    }
+
+    public static string GetRasterQualityDisplayName(PrintPdfRasterQuality quality)
+    {
+        return quality switch
+        {
+            PrintPdfRasterQuality.Low => "низкое качество",
+            PrintPdfRasterQuality.Medium => "среднее качество",
+            PrintPdfRasterQuality.High => "высокое качество",
+            PrintPdfRasterQuality.Presentation => "презентационное качество",
+            _ => throw new ArgumentOutOfRangeException(nameof(quality), quality, "Unsupported PDF raster quality.")
         };
     }
 

@@ -53,6 +53,13 @@ public sealed class PrintWindow : Window
     {
         ToolTip = "Имя файла для объединенного PDF."
     };
+    private readonly ComboBox pdfColorModeInput = CreatePdfSettingInput("Цветовой режим PDF.");
+    private readonly ComboBox pdfRasterQualityInput = CreatePdfSettingInput("Качество растровых элементов PDF.");
+    private readonly CheckBox forceRasterPdfInput = new()
+    {
+        Content = "Растр",
+        ToolTip = "Принудительно растрировать PDF вместо векторного вывода."
+    };
     private readonly CheckBox dwgInput = new()
     {
         Content = "DWG",
@@ -214,6 +221,7 @@ public sealed class PrintWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         Grid folderRow = new();
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -304,6 +312,50 @@ public sealed class PrintWindow : Window
         Grid.SetRow(pdfRow, 2);
         root.Children.Add(pdfRow);
 
+        Grid pdfSettingsRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        pdfSettingsRow.Children.Add(new TextBlock
+        {
+            Text = "PDF цвет",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+
+        BindPdfColorModeInput();
+        Grid.SetColumn(pdfColorModeInput, 1);
+        pdfSettingsRow.Children.Add(pdfColorModeInput);
+
+        TextBlock pdfRasterQualityLabel = new()
+        {
+            Text = "Качество",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 8, 0)
+        };
+        Grid.SetColumn(pdfRasterQualityLabel, 2);
+        pdfSettingsRow.Children.Add(pdfRasterQualityLabel);
+
+        BindPdfRasterQualityInput();
+        Grid.SetColumn(pdfRasterQualityInput, 3);
+        pdfSettingsRow.Children.Add(pdfRasterQualityInput);
+
+        forceRasterPdfInput.VerticalAlignment = VerticalAlignment.Center;
+        forceRasterPdfInput.Margin = new Thickness(16, 0, 0, 0);
+        forceRasterPdfInput.Checked += (_, _) => UpdatePdfOptionsState();
+        forceRasterPdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+        Grid.SetColumn(forceRasterPdfInput, 4);
+        pdfSettingsRow.Children.Add(forceRasterPdfInput);
+
+        Grid.SetRow(pdfSettingsRow, 3);
+        root.Children.Add(pdfSettingsRow);
+
         Grid cadSetupRow = new()
         {
             Margin = new Thickness(0, 8, 0, 0)
@@ -337,7 +389,7 @@ public sealed class PrintWindow : Window
         Grid.SetColumn(dxfSetupInput, 3);
         cadSetupRow.Children.Add(dxfSetupInput);
 
-        Grid.SetRow(cadSetupRow, 3);
+        Grid.SetRow(cadSetupRow, 4);
         root.Children.Add(cadSetupRow);
 
         DockPanel actionRow = new()
@@ -385,7 +437,7 @@ public sealed class PrintWindow : Window
         actions.Children.Add(closeButton);
 
         actionRow.Children.Add(actions);
-        Grid.SetRow(actionRow, 4);
+        Grid.SetRow(actionRow, 5);
         root.Children.Add(actionRow);
 
         UpdatePdfOptionsState();
@@ -404,12 +456,29 @@ public sealed class PrintWindow : Window
         setupInput.IsEnabled = cadExportSetupOptions.Count > 1;
     }
 
+    private void BindPdfColorModeInput()
+    {
+        pdfColorModeInput.ItemsSource = GetPdfColorModeOptions();
+        pdfColorModeInput.SelectedValue = PrintPdfExportService.DefaultSettings.ColorMode;
+        pdfColorModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
+    }
+
+    private void BindPdfRasterQualityInput()
+    {
+        pdfRasterQualityInput.ItemsSource = GetPdfRasterQualityOptions();
+        pdfRasterQualityInput.SelectedValue = PrintPdfExportService.DefaultSettings.RasterQuality;
+        pdfRasterQualityInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
+    }
+
     private void UpdatePdfOptionsState()
     {
         bool exportPdf = pdfInput.IsChecked == true;
         bool combinePdf = combinePdfInput.IsChecked == true;
         combinePdfInput.IsEnabled = exportPdf;
         combinedPdfNameInput.IsEnabled = exportPdf && combinePdf;
+        pdfColorModeInput.IsEnabled = exportPdf;
+        pdfRasterQualityInput.IsEnabled = exportPdf;
+        forceRasterPdfInput.IsEnabled = exportPdf;
         ResetExportStatuses();
         UpdateExportState();
     }
@@ -523,13 +592,17 @@ public sealed class PrintWindow : Window
         bool exportDwg = dwgInput.IsChecked == true;
         bool exportDxf = dxfInput.IsChecked == true;
         PrintPdfExportMode pdfMode = GetSelectedPdfMode();
+        PrintPdfExportSettings pdfSettings = GetSelectedPdfSettings();
         string pdfModeLogText = exportPdf
             ? PrintPdfExportService.GetModeDisplayName(pdfMode)
             : "не выбран";
+        string pdfSettingsLogText = exportPdf
+            ? PrintPdfExportService.GetSettingsDisplayName(pdfSettings)
+            : "не выбраны";
         string? dwgSetupName = GetSelectedSetupName(dwgSetupInput);
         string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
 
-        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
+        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Dictionary<long, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row.Sheet.ElementId,
             _ => new List<string>());
@@ -551,6 +624,7 @@ public sealed class PrintWindow : Window
                     .ToList(),
                 pdfMode,
                 combinedPdfNameInput.Text,
+                pdfSettings,
                 logger);
             exportedCount += result.ExportedFiles.Count;
             failureCount += result.Failures.Count;
@@ -679,8 +753,9 @@ public sealed class PrintWindow : Window
             ? $" Неизвестные токены в маске: {unknownTokenCount}."
             : string.Empty;
         string pdfModeText = GetSelectedPdfModeText();
+        string pdfSettingsText = GetSelectedPdfSettingsText();
         string cadSetupText = GetSelectedCadSetupsText();
-        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{pdfModeText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
+        statusText.Text = $"Листов в таблице: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}. Форматы: {GetSelectedFormatsText()}.{pdfModeText}{pdfSettingsText}{cadSetupText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -725,6 +800,35 @@ public sealed class PrintWindow : Window
             ? $": {PrintPdfExportService.BuildCombinedPdfFileName(combinedPdfNameInput.Text)}"
             : string.Empty;
         return $" PDF: {PrintPdfExportService.GetModeDisplayName(mode)}{details}.";
+    }
+
+    private PrintPdfExportSettings GetSelectedPdfSettings()
+    {
+        return new PrintPdfExportSettings(
+            GetSelectedPdfColorMode(),
+            GetSelectedPdfRasterQuality(),
+            forceRasterPdfInput.IsChecked == true);
+    }
+
+    private string GetSelectedPdfSettingsText()
+    {
+        return pdfInput.IsChecked == true
+            ? $" PDF настройки: {PrintPdfExportService.GetSettingsDisplayName(GetSelectedPdfSettings())}."
+            : string.Empty;
+    }
+
+    private PrintPdfColorMode GetSelectedPdfColorMode()
+    {
+        return pdfColorModeInput.SelectedValue is PrintPdfColorMode mode
+            ? mode
+            : PrintPdfExportService.DefaultSettings.ColorMode;
+    }
+
+    private PrintPdfRasterQuality GetSelectedPdfRasterQuality()
+    {
+        return pdfRasterQualityInput.SelectedValue is PrintPdfRasterQuality quality
+            ? quality
+            : PrintPdfExportService.DefaultSettings.RasterQuality;
     }
 
     private string GetSelectedCadSetupsText()
@@ -799,6 +903,18 @@ public sealed class PrintWindow : Window
             DisplayMemberPath = nameof(PrintCadExportSetupOption.DisplayName),
             Height = 32,
             MinWidth = 220,
+            ToolTip = tooltip
+        };
+    }
+
+    private static ComboBox CreatePdfSettingInput(string tooltip)
+    {
+        return new ComboBox
+        {
+            DisplayMemberPath = "Value",
+            SelectedValuePath = "Key",
+            Height = 32,
+            MinWidth = 160,
             ToolTip = tooltip
         };
     }
@@ -1025,5 +1141,40 @@ public sealed class PrintWindow : Window
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+    }
+
+    private static IReadOnlyList<KeyValuePair<PrintPdfColorMode, string>> GetPdfColorModeOptions()
+    {
+        return
+        [
+            new KeyValuePair<PrintPdfColorMode, string>(
+                PrintPdfColorMode.Color,
+                PrintPdfExportService.GetColorModeDisplayName(PrintPdfColorMode.Color)),
+            new KeyValuePair<PrintPdfColorMode, string>(
+                PrintPdfColorMode.GrayScale,
+                PrintPdfExportService.GetColorModeDisplayName(PrintPdfColorMode.GrayScale)),
+            new KeyValuePair<PrintPdfColorMode, string>(
+                PrintPdfColorMode.BlackLine,
+                PrintPdfExportService.GetColorModeDisplayName(PrintPdfColorMode.BlackLine))
+        ];
+    }
+
+    private static IReadOnlyList<KeyValuePair<PrintPdfRasterQuality, string>> GetPdfRasterQualityOptions()
+    {
+        return
+        [
+            new KeyValuePair<PrintPdfRasterQuality, string>(
+                PrintPdfRasterQuality.Low,
+                PrintPdfExportService.GetRasterQualityDisplayName(PrintPdfRasterQuality.Low)),
+            new KeyValuePair<PrintPdfRasterQuality, string>(
+                PrintPdfRasterQuality.Medium,
+                PrintPdfExportService.GetRasterQualityDisplayName(PrintPdfRasterQuality.Medium)),
+            new KeyValuePair<PrintPdfRasterQuality, string>(
+                PrintPdfRasterQuality.High,
+                PrintPdfExportService.GetRasterQualityDisplayName(PrintPdfRasterQuality.High)),
+            new KeyValuePair<PrintPdfRasterQuality, string>(
+                PrintPdfRasterQuality.Presentation,
+                PrintPdfExportService.GetRasterQualityDisplayName(PrintPdfRasterQuality.Presentation))
+        ];
     }
 }
