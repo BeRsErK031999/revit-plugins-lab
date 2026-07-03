@@ -1,0 +1,132 @@
+using TrueBIM.App.Modules.Print.Models;
+using TrueBIM.App.Modules.Print.Services;
+using TrueBIM.App.Services.Logging;
+using Xunit;
+
+namespace TrueBIM.App.Tests.Modules.Print.Services;
+
+public sealed class PrintSettingsServiceTests
+{
+    [Fact]
+    public void Load_ReturnsDefaultsWhenSettingsFileDoesNotExist()
+    {
+        using TempDirectory temp = new();
+        PrintSettingsService service = new(Path.Combine(temp.Path, "print-settings.json"), new TestLogger());
+
+        Assert.False(service.SettingsFileExists);
+        PrintSettings settings = service.Load();
+
+        Assert.Equal(PrintFileNameTemplateService.DefaultTemplate, settings.FileNameMask);
+        Assert.True(settings.ExportPdf);
+        Assert.False(settings.ExportDwg);
+        Assert.False(settings.ExportDxf);
+        Assert.Equal(PrintPdfExportService.DefaultSettings.ColorMode, settings.PdfColorMode);
+    }
+
+    [Fact]
+    public void Save_PersistsNormalizedSettings()
+    {
+        using TempDirectory temp = new();
+        string settingsPath = Path.Combine(temp.Path, "nested", "print-settings.json");
+        PrintSettingsService service = new(settingsPath, new TestLogger());
+
+        service.Save(new PrintSettings(
+            @"C:\Exports",
+            "  {SheetNumber}_{SheetName}  ",
+            IncludePlaceholders: true,
+            ExportPdf: false,
+            CombinePdf: true,
+            "Combined:File",
+            PrintPdfColorMode.GrayScale,
+            PrintPdfRasterQuality.Medium,
+            AlwaysUseRasterPdf: true,
+            ExportDwg: true,
+            ExportDxf: true,
+            "  Office DWG  ",
+            "  Office DXF  "));
+
+        Assert.True(service.SettingsFileExists);
+        PrintSettings reloadedSettings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
+        Assert.Equal(@"C:\Exports", reloadedSettings.ExportFolder);
+        Assert.Equal("{SheetNumber}_{SheetName}", reloadedSettings.FileNameMask);
+        Assert.True(reloadedSettings.IncludePlaceholders);
+        Assert.False(reloadedSettings.ExportPdf);
+        Assert.True(reloadedSettings.CombinePdf);
+        Assert.Equal("Combined_File.pdf", reloadedSettings.CombinedPdfFileName);
+        Assert.Equal(PrintPdfColorMode.GrayScale, reloadedSettings.PdfColorMode);
+        Assert.Equal(PrintPdfRasterQuality.Medium, reloadedSettings.PdfRasterQuality);
+        Assert.True(reloadedSettings.AlwaysUseRasterPdf);
+        Assert.True(reloadedSettings.ExportDwg);
+        Assert.True(reloadedSettings.ExportDxf);
+        Assert.Equal("Office DWG", reloadedSettings.DwgSetupName);
+        Assert.Equal("Office DXF", reloadedSettings.DxfSetupName);
+    }
+
+    [Fact]
+    public void Load_NormalizesBlankSettings()
+    {
+        using TempDirectory temp = new();
+        string settingsPath = Path.Combine(temp.Path, "print-settings.json");
+        File.WriteAllText(
+            settingsPath,
+            """
+            {
+              "exportFolder": "   ",
+              "fileNameMask": "   ",
+              "combinedPdfFileName": "   ",
+              "dwgSetupName": "  Office DWG  ",
+              "dxfSetupName": "   "
+            }
+            """);
+
+        PrintSettings settings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
+
+        Assert.Null(settings.ExportFolder);
+        Assert.Equal(PrintFileNameTemplateService.DefaultTemplate, settings.FileNameMask);
+        Assert.Equal(PrintPdfExportService.BuildCombinedPdfFileName(null), settings.CombinedPdfFileName);
+        Assert.Equal("Office DWG", settings.DwgSetupName);
+        Assert.Null(settings.DxfSetupName);
+    }
+
+    [Fact]
+    public void CreateSettingsPath_UsesVersionedTrueBimFolder()
+    {
+        string settingsPath = PrintSettingsService.CreateSettingsPath("2025");
+
+        Assert.EndsWith(Path.Combine("TrueBIM", "2025", "print-settings.json"), settingsPath);
+    }
+
+    private sealed class TempDirectory : IDisposable
+    {
+        public TempDirectory()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "truebim-tests-" + Guid.NewGuid());
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+        }
+    }
+
+    private sealed class TestLogger : ITrueBimLogger
+    {
+        public void Info(string message)
+        {
+        }
+
+        public void Warning(string message)
+        {
+        }
+
+        public void Error(string message, Exception? exception = null)
+        {
+        }
+    }
+}

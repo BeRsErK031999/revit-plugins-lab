@@ -29,6 +29,9 @@ public sealed class PrintWindow : Window
     private readonly PrintCadExportService cadExportService = new();
     private readonly PrintCadExportSetupService cadExportSetupService = new();
     private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
+    private readonly PrintSettingsService? printSettingsService;
+    private readonly PrintSettings initialSettings;
+    private readonly bool hasSavedPrintSettings;
     private readonly PrintFileNameContext fileNameContext;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
@@ -92,6 +95,15 @@ public sealed class PrintWindow : Window
     }
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetSource> sheetSources, ITrueBimLogger logger)
+        : this(document, sheetSources, printSettingsService: null, logger)
+    {
+    }
+
+    public PrintWindow(
+        RevitDocument document,
+        IReadOnlyList<PrintSheetSource> sheetSources,
+        PrintSettingsService? printSettingsService,
+        ITrueBimLogger logger)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
@@ -104,10 +116,13 @@ public sealed class PrintWindow : Window
             source => CreateFileNameContext(source.Document),
             StringComparer.Ordinal);
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.printSettingsService = printSettingsService;
+        hasSavedPrintSettings = printSettingsService?.SettingsFileExists == true;
+        initialSettings = printSettingsService?.Load() ?? PrintSettingsService.DefaultSettings;
         fileNameContext = CreateFileNameContext(document);
         LoadSourceFilterOptions();
         LoadCadExportSetupOptions();
-        combinedPdfNameInput.Text = PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName);
+        ApplyInitialSettings();
 
         Title = "Печать";
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
@@ -121,6 +136,12 @@ public sealed class PrintWindow : Window
 
         LoadSheets();
         logger.Info($"Print window opened for '{document.Title}' with {sheets.Count} sheets from {this.sheetSources.Count} sources.");
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        SavePrintSettings();
+        base.OnClosed(e);
     }
 
     private UIElement CreateContent()
@@ -407,7 +428,7 @@ public sealed class PrintWindow : Window
             Margin = new Thickness(0, 0, 8, 0)
         });
 
-        BindCadSetupInput(dwgSetupInput);
+        BindCadSetupInput(dwgSetupInput, initialSettings.DwgSetupName);
         Grid.SetColumn(dwgSetupInput, 1);
         cadSetupRow.Children.Add(dwgSetupInput);
 
@@ -420,7 +441,7 @@ public sealed class PrintWindow : Window
         Grid.SetColumn(dxfSetupLabel, 2);
         cadSetupRow.Children.Add(dxfSetupLabel);
 
-        BindCadSetupInput(dxfSetupInput);
+        BindCadSetupInput(dxfSetupInput, initialSettings.DxfSetupName);
         Grid.SetColumn(dxfSetupInput, 3);
         cadSetupRow.Children.Add(dxfSetupInput);
 
@@ -479,7 +500,7 @@ public sealed class PrintWindow : Window
         return root;
     }
 
-    private void BindCadSetupInput(ComboBox setupInput)
+    private void BindCadSetupInput(ComboBox setupInput, string? setupName)
     {
         setupInput.ItemsSource = cadExportSetupOptions;
         setupInput.SelectionChanged += (_, _) =>
@@ -487,22 +508,34 @@ public sealed class PrintWindow : Window
             ResetExportStatuses();
             UpdateExportState();
         };
-        setupInput.SelectedIndex = cadExportSetupOptions.Count > 0 ? 0 : -1;
+        setupInput.SelectedItem = FindCadSetupOption(setupName) ?? cadExportSetupOptions.FirstOrDefault();
         setupInput.IsEnabled = cadExportSetupOptions.Count > 1;
     }
 
     private void BindPdfColorModeInput()
     {
         pdfColorModeInput.ItemsSource = GetPdfColorModeOptions();
-        pdfColorModeInput.SelectedValue = PrintPdfExportService.DefaultSettings.ColorMode;
+        pdfColorModeInput.SelectedValue = initialSettings.PdfColorMode;
         pdfColorModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
     }
 
     private void BindPdfRasterQualityInput()
     {
         pdfRasterQualityInput.ItemsSource = GetPdfRasterQualityOptions();
-        pdfRasterQualityInput.SelectedValue = PrintPdfExportService.DefaultSettings.RasterQuality;
+        pdfRasterQualityInput.SelectedValue = initialSettings.PdfRasterQuality;
         pdfRasterQualityInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
+    }
+
+    private PrintCadExportSetupOption? FindCadSetupOption(string? setupName)
+    {
+        string? normalizedSetupName = PrintCadExportSetupService.NormalizeSetupName(setupName);
+        if (normalizedSetupName is null)
+        {
+            return null;
+        }
+
+        return cadExportSetupOptions.FirstOrDefault(option =>
+            string.Equals(option.SetupName, normalizedSetupName, StringComparison.OrdinalIgnoreCase));
     }
 
     private void UpdatePdfOptionsState()
@@ -638,6 +671,7 @@ public sealed class PrintWindow : Window
 
     private void StartExport()
     {
+        SavePrintSettings();
         IReadOnlyList<PrintSheetRow> selectedRows = sheetRows
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
@@ -965,6 +999,12 @@ public sealed class PrintWindow : Window
 
     private string GetInitialExportFolder()
     {
+        string? savedExportFolder = initialSettings.ExportFolder;
+        if (!string.IsNullOrWhiteSpace(savedExportFolder))
+        {
+            return savedExportFolder!;
+        }
+
         try
         {
             if (!string.IsNullOrWhiteSpace(document.PathName))
@@ -981,6 +1021,39 @@ public sealed class PrintWindow : Window
         }
 
         return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    }
+
+    private void ApplyInitialSettings()
+    {
+        PrintSettings settings = PrintSettingsService.Normalize(initialSettings);
+        includePlaceholdersInput.IsChecked = settings.IncludePlaceholders;
+        fileNameMaskInput.Text = settings.FileNameMask;
+        pdfInput.IsChecked = settings.ExportPdf;
+        combinePdfInput.IsChecked = settings.CombinePdf;
+        combinedPdfNameInput.Text = hasSavedPrintSettings
+            ? settings.CombinedPdfFileName
+            : PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName);
+        forceRasterPdfInput.IsChecked = settings.AlwaysUseRasterPdf;
+        dwgInput.IsChecked = settings.ExportDwg;
+        dxfInput.IsChecked = settings.ExportDxf;
+    }
+
+    private void SavePrintSettings()
+    {
+        printSettingsService?.Save(new PrintSettings(
+            exportFolderInput.Text,
+            fileNameMaskInput.Text,
+            includePlaceholdersInput.IsChecked == true,
+            pdfInput.IsChecked == true,
+            combinePdfInput.IsChecked == true,
+            combinedPdfNameInput.Text,
+            GetSelectedPdfColorMode(),
+            GetSelectedPdfRasterQuality(),
+            forceRasterPdfInput.IsChecked == true,
+            dwgInput.IsChecked == true,
+            dxfInput.IsChecked == true,
+            GetSelectedSetupName(dwgSetupInput),
+            GetSelectedSetupName(dxfSetupInput)));
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)

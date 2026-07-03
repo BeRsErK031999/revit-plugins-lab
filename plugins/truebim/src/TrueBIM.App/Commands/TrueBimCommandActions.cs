@@ -33,7 +33,10 @@ internal static class TrueBimCommandActions
                 activeDocument);
             int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
             logger.Info($"Print module collected {sheetCount} sheets from {sheetSources.Count} open documents.");
-            PrintWindow printWindow = new(activeDocument, sheetSources, logger)
+            PrintSettingsService settingsService = new(
+                PrintSettingsService.CreateSettingsPath(commandData.Application.Application.VersionNumber),
+                logger);
+            PrintWindow printWindow = new(activeDocument, sheetSources, settingsService, logger)
             {
                 Owner = owner
             };
