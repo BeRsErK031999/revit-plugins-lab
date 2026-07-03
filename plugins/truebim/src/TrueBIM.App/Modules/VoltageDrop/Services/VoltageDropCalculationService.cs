@@ -62,6 +62,26 @@ public sealed class VoltageDropCalculationService
                 .ToList());
     }
 
+    public VoltageDropSelectedResult CalculateSelectedVoltageDrop(
+        VoltageDropInputs inputs,
+        VoltageDropConductorMaterial material,
+        double voltage)
+    {
+        if (inputs is null)
+        {
+            throw new ArgumentNullException(nameof(inputs));
+        }
+
+        ValidateVoltageDropInputs(inputs);
+
+        double loadMoment = inputs.LineLength * inputs.Power;
+        VoltageDropCoefficientEntry coefficient = referenceCatalog.GetVoltageDropCoefficientEntry(material, voltage);
+        return new VoltageDropSelectedResult(
+            coefficient,
+            loadMoment,
+            Divide(loadMoment, coefficient.Coefficient * inputs.CableSection));
+    }
+
     public ApartmentDemandResult CalculateApartmentDemand(ApartmentDemandInputs inputs)
     {
         if (inputs is null)

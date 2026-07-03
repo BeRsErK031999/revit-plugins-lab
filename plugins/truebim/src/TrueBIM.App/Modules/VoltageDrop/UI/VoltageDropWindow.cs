@@ -15,6 +15,8 @@ public sealed class VoltageDropWindow : Window
     private readonly ITrueBimLogger logger;
     private readonly Dictionary<string, TextBox> inputs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextBlock> outputs = new(StringComparer.Ordinal);
+    private readonly ComboBox conductorMaterialInput = CreateReferenceComboBox("Материал жилы кабеля.");
+    private readonly ComboBox voltageInput = CreateReferenceComboBox("Напряжение сети для расчета выбранного варианта.");
     private readonly TextBlock statusText = new();
     private readonly StackPanel threePhaseCurrentRows = new();
     private readonly StackPanel singlePhaseCurrentRows = new();
@@ -22,6 +24,7 @@ public sealed class VoltageDropWindow : Window
     private readonly Brush inputBorder = new SolidColorBrush(Color.FromRgb(80, 150, 80));
     private readonly Brush invalidInputBackground = new SolidColorBrush(Color.FromRgb(255, 235, 235));
     private readonly Brush invalidInputBorder = new SolidColorBrush(Color.FromRgb(180, 40, 40));
+    private bool isLoadingDefaults;
 
     public VoltageDropWindow(ITrueBimLogger logger)
         : this(new VoltageDropCalculationService(), logger)
@@ -43,7 +46,10 @@ public sealed class VoltageDropWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
+        isLoadingDefaults = true;
+        LoadReferenceSelectors();
         LoadDefaults();
+        isLoadingDefaults = false;
         UpdateResults();
         logger.Info("Voltage drop calculation window opened.");
     }
@@ -106,32 +112,36 @@ public sealed class VoltageDropWindow : Window
     {
         Grid grid = CreateTableGrid();
         AddTableHeader(grid, "Исходные данные и расчет потери напряжения", 4);
-        AddInputRow(grid, 1, "Коэффициент C для Al, 400 В", "al400");
-        AddInputRow(grid, 2, "Коэффициент C для Cu, 400 В", "cu400");
-        AddInputRow(grid, 3, "Коэффициент C для Cu, 230 В", "cu230");
-        AddInputRow(grid, 4, "Коэффициент C для Al, 230 В", "al230");
-        AddInputRow(grid, 5, "Длина линии L, м", "length");
-        AddInputRow(grid, 6, "Сечение кабеля F, мм2", "section");
-        AddInputRow(grid, 7, "Мощность Pp, кВт", "power");
-        AddOutputRow(grid, 8, "Момент нагрузки M", "loadMoment", "B6*B8");
-        AddOutputRow(grid, 9, "ΔU%, Al 400 В", "al400Drop", "B9/(B2*B7)");
-        AddOutputRow(grid, 10, "ΔU%, Cu 400 В", "cu400Drop", "B9/(B3*B7)");
-        AddOutputRow(grid, 11, "ΔU%, Cu 230 В", "cu230Drop", "B9/(B4*B7)");
-        AddOutputRow(grid, 12, "ΔU%, Al 230 В", "al230Drop", "B9/(B5*B7)");
+        AddComboRow(grid, 1, "Материал кабеля", conductorMaterialInput, "Справочник коэффициентов C");
+        AddComboRow(grid, 2, "Напряжение сети", voltageInput, "Справочник коэффициентов C");
+        AddOutputRow(grid, 3, "C выбранного варианта", "selectedCoefficient", "Справочник C");
+        AddOutputRow(grid, 4, "ΔU% выбранного варианта", "selectedVoltageDrop", "M/(C*F)");
+        AddInputRow(grid, 5, "Коэффициент C для Al, 400 В", "al400");
+        AddInputRow(grid, 6, "Коэффициент C для Cu, 400 В", "cu400");
+        AddInputRow(grid, 7, "Коэффициент C для Cu, 230 В", "cu230");
+        AddInputRow(grid, 8, "Коэффициент C для Al, 230 В", "al230");
+        AddInputRow(grid, 9, "Длина линии L, м", "length");
+        AddInputRow(grid, 10, "Сечение кабеля F, мм2", "section");
+        AddInputRow(grid, 11, "Мощность Pp, кВт", "power");
+        AddOutputRow(grid, 12, "Момент нагрузки M", "loadMoment", "B6*B8");
+        AddOutputRow(grid, 13, "ΔU%, Al 400 В", "al400Drop", "B9/(B2*B7)");
+        AddOutputRow(grid, 14, "ΔU%, Cu 400 В", "cu400Drop", "B9/(B3*B7)");
+        AddOutputRow(grid, 15, "ΔU%, Cu 230 В", "cu230Drop", "B9/(B4*B7)");
+        AddOutputRow(grid, 16, "ΔU%, Al 230 В", "al230Drop", "B9/(B5*B7)");
 
         TextBlock threePhaseHeader = CreateSubHeader("Расчет 3Ф тока");
-        Grid.SetRow(threePhaseHeader, 13);
+        Grid.SetRow(threePhaseHeader, 17);
         Grid.SetColumnSpan(threePhaseHeader, 4);
         grid.Children.Add(threePhaseHeader);
-        Grid.SetRow(threePhaseCurrentRows, 14);
+        Grid.SetRow(threePhaseCurrentRows, 18);
         Grid.SetColumnSpan(threePhaseCurrentRows, 4);
         grid.Children.Add(threePhaseCurrentRows);
 
         TextBlock singlePhaseHeader = CreateSubHeader("Расчет 1Ф тока");
-        Grid.SetRow(singlePhaseHeader, 15);
+        Grid.SetRow(singlePhaseHeader, 19);
         Grid.SetColumnSpan(singlePhaseHeader, 4);
         grid.Children.Add(singlePhaseHeader);
-        Grid.SetRow(singlePhaseCurrentRows, 16);
+        Grid.SetRow(singlePhaseCurrentRows, 20);
         Grid.SetColumnSpan(singlePhaseCurrentRows, 4);
         grid.Children.Add(singlePhaseCurrentRows);
 
@@ -241,6 +251,15 @@ public sealed class VoltageDropWindow : Window
         AddMutedText(grid, row, "Ввод", 3);
     }
 
+    private void AddComboRow(Grid grid, int row, string label, ComboBox comboBox, string note)
+    {
+        AddLabel(grid, row, label);
+        Grid.SetRow(comboBox, row);
+        Grid.SetColumn(comboBox, 1);
+        grid.Children.Add(comboBox);
+        AddMutedText(grid, row, note, 3);
+    }
+
     private void AddOutputRow(Grid grid, int row, string label, string key, string formula)
     {
         AddLabel(grid, row, label);
@@ -320,6 +339,19 @@ public sealed class VoltageDropWindow : Window
         return textBox;
     }
 
+    private static ComboBox CreateReferenceComboBox(string toolTip)
+    {
+        return new ComboBox
+        {
+            DisplayMemberPath = "DisplayName",
+            Height = 28,
+            MinWidth = 140,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 2, 0, 2),
+            ToolTip = toolTip
+        };
+    }
+
     private static TextBlock CreateOutputTextBlock()
     {
         return new TextBlock
@@ -370,9 +402,28 @@ public sealed class VoltageDropWindow : Window
         SetInput("comfortCombinedCosPhi", comfort.CombinedApartmentCosPhi);
     }
 
+    private void LoadReferenceSelectors()
+    {
+        conductorMaterialInput.ItemsSource = new[]
+        {
+            new ConductorMaterialOption(VoltageDropConductorMaterial.Aluminum, "Al"),
+            new ConductorMaterialOption(VoltageDropConductorMaterial.Copper, "Cu")
+        };
+        conductorMaterialInput.SelectedIndex = 0;
+        conductorMaterialInput.SelectionChanged += (_, _) => UpdateResults();
+
+        voltageInput.ItemsSource = new[]
+        {
+            new VoltageOption(400, "400 В"),
+            new VoltageOption(230, "230 В")
+        };
+        voltageInput.SelectedIndex = 0;
+        voltageInput.SelectionChanged += (_, _) => UpdateResults();
+    }
+
     private void UpdateResults()
     {
-        if (inputs.Count == 0)
+        if (isLoadingDefaults || inputs.Count == 0)
         {
             return;
         }
@@ -421,6 +472,12 @@ public sealed class VoltageDropWindow : Window
             SetOutput("cu400Drop", voltage.Copper400DropPercent);
             SetOutput("cu230Drop", voltage.Copper230DropPercent);
             SetOutput("al230Drop", voltage.Aluminum230DropPercent);
+            VoltageDropSelectedResult selectedVoltageDrop = calculationService.CalculateSelectedVoltageDrop(
+                ReadVoltageInputs(),
+                GetSelectedMaterial(),
+                GetSelectedVoltage());
+            SetOutput("selectedCoefficient", selectedVoltageDrop.Coefficient.Coefficient);
+            SetOutput("selectedVoltageDrop", selectedVoltageDrop.DropPercent);
             LoadCurrentRows(threePhaseCurrentRows, voltage.ThreePhaseCurrents);
             LoadCurrentRows(singlePhaseCurrentRows, voltage.SinglePhaseCurrents);
 
@@ -524,6 +581,20 @@ public sealed class VoltageDropWindow : Window
         [
             new VoltageDropValidationError(key, "Проверьте числовые значения в подсвеченных полях ввода.")
         ]);
+    }
+
+    private VoltageDropConductorMaterial GetSelectedMaterial()
+    {
+        return conductorMaterialInput.SelectedItem is ConductorMaterialOption option
+            ? option.Material
+            : VoltageDropConductorMaterial.Aluminum;
+    }
+
+    private double GetSelectedVoltage()
+    {
+        return voltageInput.SelectedItem is VoltageOption option
+            ? option.Voltage
+            : 400;
     }
 
     private void SetInput(string key, double value)
@@ -665,4 +736,8 @@ public sealed class VoltageDropWindow : Window
             [nameof(HighComfortApartmentDemandInputs.LiftCosPhi)] = "comfortLiftCosPhi",
             [nameof(HighComfortApartmentDemandInputs.CombinedApartmentCosPhi)] = "comfortCombinedCosPhi"
         };
+
+    private sealed record ConductorMaterialOption(VoltageDropConductorMaterial Material, string DisplayName);
+
+    private sealed record VoltageOption(double Voltage, string DisplayName);
 }

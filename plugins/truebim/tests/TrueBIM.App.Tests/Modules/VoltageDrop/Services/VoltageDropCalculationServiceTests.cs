@@ -24,6 +24,24 @@ public sealed class VoltageDropCalculationServiceTests
         AssertClose(279.72027972027968, result.SinglePhaseCurrents[6].Current);
     }
 
+    [Theory]
+    [InlineData(VoltageDropConductorMaterial.Aluminum, 400, 44, 1.8787878787878789)]
+    [InlineData(VoltageDropConductorMaterial.Copper, 400, 72.2, 1.1449676823638042)]
+    [InlineData(VoltageDropConductorMaterial.Copper, 230, 12.1, 6.8319559228650135)]
+    [InlineData(VoltageDropConductorMaterial.Aluminum, 230, 7.7, 10.735930735930737)]
+    public void CalculateSelectedVoltageDrop_UsesCatalogCoefficient(
+        VoltageDropConductorMaterial material,
+        double voltage,
+        double expectedCoefficient,
+        double expectedDrop)
+    {
+        VoltageDropSelectedResult result = service.CalculateSelectedVoltageDrop(VoltageDropInputs.Default, material, voltage);
+
+        AssertClose(expectedCoefficient, result.Coefficient.Coefficient);
+        AssertClose(12400, result.LoadMoment);
+        AssertClose(expectedDrop, result.DropPercent);
+    }
+
     [Fact]
     public void CalculateApartmentDemand_DefaultInputs_MatchesExcelRows67To68()
     {

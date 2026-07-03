@@ -14,6 +14,11 @@ public sealed class VoltageDropReferenceCatalog
 
     public double GetVoltageDropCoefficient(VoltageDropConductorMaterial material, double voltage)
     {
+        return GetVoltageDropCoefficientEntry(material, voltage).Coefficient;
+    }
+
+    public VoltageDropCoefficientEntry GetVoltageDropCoefficientEntry(VoltageDropConductorMaterial material, double voltage)
+    {
         VoltageDropCoefficientEntry? entry = VoltageCoefficientEntries.FirstOrDefault(
             item => item.Material == material && Math.Abs(item.Voltage - voltage) < 0.000000001);
         if (entry is null)
@@ -26,7 +31,7 @@ public sealed class VoltageDropReferenceCatalog
             ]);
         }
 
-        return entry.Coefficient;
+        return entry;
     }
 
     public double CalculateStandardApartmentSpecificDemand(double apartmentCount)
