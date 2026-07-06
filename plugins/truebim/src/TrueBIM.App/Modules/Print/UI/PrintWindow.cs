@@ -734,22 +734,24 @@ public sealed class PrintWindow : Window
             .ThenBy(sheet => sheet.SheetNumber, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(sheet => sheet.SheetName, StringComparer.CurrentCultureIgnoreCase);
 
-        ICollectionView view = CollectionViewSource.GetDefaultView(sheetRows);
-        using (view.DeferRefresh())
+        List<PrintSheetRow> rows = new();
+        foreach (PrintSheetInfo sheet in visibleSheets)
         {
-            foreach (PrintSheetInfo sheet in visibleSheets)
+            PrintSheetRow row = new(sheet, sheetSelectionState.Get(sheet));
+            row.PropertyChanged += (_, args) =>
             {
-                PrintSheetRow row = new(sheet, sheetSelectionState.Get(sheet));
-                row.PropertyChanged += (_, args) =>
+                if (args.PropertyName == nameof(PrintSheetRow.IsSelected))
                 {
-                    if (args.PropertyName == nameof(PrintSheetRow.IsSelected))
-                    {
-                        sheetSelectionState.Set(row.Sheet, row.IsSelected);
-                        UpdateExportState();
-                    }
-                };
-                sheetRows.Add(row);
-            }
+                    sheetSelectionState.Set(row.Sheet, row.IsSelected);
+                    UpdateExportState();
+                }
+            };
+            rows.Add(row);
+        }
+
+        foreach (PrintSheetRow row in rows)
+        {
+            sheetRows.Add(row);
         }
 
         LoadFileNameTokenOptions();
