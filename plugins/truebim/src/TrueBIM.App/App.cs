@@ -22,18 +22,12 @@ public sealed class App : IExternalApplication
             // Revit throws if the tab already exists.
         }
 
-        RibbonPanel bimPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.BimPanelName);
-        RibbonPanel krPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.KrPanelName);
-        RibbonPanel eomPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.EomPanelName);
-        RibbonPanel ssPanel = application.CreateRibbonPanel(TabName, TrueBimRibbon.SsPanelName);
-
-        Dictionary<string, RibbonPanel> panels = new(StringComparer.Ordinal)
+        Dictionary<string, RibbonPanel> panels = new(StringComparer.Ordinal);
+        foreach (string panelName in TrueBimRibbon.PanelNames)
         {
-            [TrueBimRibbon.BimPanelName] = bimPanel,
-            [TrueBimRibbon.KrPanelName] = krPanel,
-            [TrueBimRibbon.EomPanelName] = eomPanel,
-            [TrueBimRibbon.SsPanelName] = ssPanel
-        };
+            panels[panelName] = application.CreateRibbonPanel(TabName, panelName);
+        }
+
         foreach (TrueBimRibbonButtonDefinition button in TrueBimRibbon.Buttons)
         {
             AddButton(panels[button.PanelName], button);
@@ -73,6 +67,7 @@ public sealed class App : IExternalApplication
         buttonData.Image = IconFactory.CreateImage(button.Icon, 16);
         buttonData.LargeImage = IconFactory.CreateImage(button.Icon, 32);
         buttonData.ToolTip = button.Tooltip;
+        buttonData.LongDescription = button.LongDescription;
         panel.AddItem(buttonData);
     }
 }

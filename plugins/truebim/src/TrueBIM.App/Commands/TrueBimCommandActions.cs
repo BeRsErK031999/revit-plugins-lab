@@ -1,5 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using TrueBIM.App.Modules.BimTools;
+using TrueBIM.App.Modules.BimTools.UI;
 using TrueBIM.App.Modules.Print.Models;
 using TrueBIM.App.Modules.Print.Services;
 using TrueBIM.App.Modules.Print.UI;
@@ -117,6 +119,29 @@ internal static class TrueBimCommandActions
         {
             logger.Error("Failed to open Voltage Drop Calculation window.", exception);
             TaskDialog.Show("Расчет потери напряжения", "Не удалось открыть расчет потери напряжения. Используйте логи для диагностики.");
+        }
+    }
+
+    public static void OpenBimToolPlaceholder(
+        ExternalCommandData commandData,
+        BimToolPlaceholderDefinition definition,
+        System.Windows.Window? owner,
+        ITrueBimLogger logger)
+    {
+        try
+        {
+            logger.Info($"Opening BIM tool scaffold: {definition.Title}.");
+            string? documentTitle = commandData.Application.ActiveUIDocument?.Document?.Title;
+            BimToolPlaceholderWindow window = new(definition, documentTitle, logger)
+            {
+                Owner = owner
+            };
+            window.ShowDialog();
+        }
+        catch (Exception exception)
+        {
+            logger.Error($"Failed to open BIM tool scaffold: {definition.Title}.", exception);
+            TaskDialog.Show(definition.Title, "Не удалось открыть окно инструмента. Используйте логи для диагностики.");
         }
     }
 
