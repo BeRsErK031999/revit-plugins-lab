@@ -9,6 +9,7 @@ public static class ParameterGroupResolver
         return TryNormalize(groupUnder, out _);
     }
 
+#if REVIT2022_OR_GREATER
     public static ForgeTypeId ResolveForgeTypeId(string groupUnder)
     {
         string normalized = NormalizeOrThrow(groupUnder);
@@ -23,6 +24,22 @@ public static class ParameterGroupResolver
             _ => throw new NotSupportedException($"Parameter group '{groupUnder}' is not supported.")
         };
     }
+#else
+    public static BuiltInParameterGroup ResolveBuiltInParameterGroup(string groupUnder)
+    {
+        string normalized = NormalizeOrThrow(groupUnder);
+        return normalized switch
+        {
+            "IdentityData" => BuiltInParameterGroup.PG_IDENTITY_DATA,
+            "Text" => BuiltInParameterGroup.PG_TEXT,
+            "Dimensions" => BuiltInParameterGroup.PG_GEOMETRY,
+            "Data" => BuiltInParameterGroup.PG_DATA,
+            "General" => BuiltInParameterGroup.PG_GENERAL,
+            "Other" => BuiltInParameterGroup.INVALID,
+            _ => throw new NotSupportedException($"Parameter group '{groupUnder}' is not supported.")
+        };
+    }
+#endif
 
     public static string NormalizeForDisplay(string groupUnder)
     {

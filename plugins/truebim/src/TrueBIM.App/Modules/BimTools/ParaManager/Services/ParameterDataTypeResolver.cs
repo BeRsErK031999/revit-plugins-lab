@@ -9,6 +9,7 @@ public static class ParameterDataTypeResolver
         return TryNormalize(dataType, out _);
     }
 
+#if REVIT2022_OR_GREATER
     public static ForgeTypeId ResolveForgeTypeId(string dataType)
     {
         string normalized = NormalizeOrThrow(dataType);
@@ -24,6 +25,23 @@ public static class ParameterDataTypeResolver
             _ => throw new NotSupportedException($"Data type '{dataType}' is not supported.")
         };
     }
+#else
+    public static ParameterType ResolveParameterType(string dataType)
+    {
+        string normalized = NormalizeOrThrow(dataType);
+        return normalized switch
+        {
+            "Text" => ParameterType.Text,
+            "Integer" => ParameterType.Integer,
+            "Number" => ParameterType.Number,
+            "YesNo" => ParameterType.YesNo,
+            "Length" => ParameterType.Length,
+            "Area" => ParameterType.Area,
+            "Volume" => ParameterType.Volume,
+            _ => throw new NotSupportedException($"Data type '{dataType}' is not supported.")
+        };
+    }
+#endif
 
     public static string NormalizeForDisplay(string dataType)
     {

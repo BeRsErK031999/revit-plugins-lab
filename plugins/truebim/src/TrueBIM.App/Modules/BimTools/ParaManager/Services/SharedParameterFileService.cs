@@ -54,7 +54,11 @@ public sealed class SharedParameterFileService
 
         row.TryGetVisible(out bool visible);
         row.TryGetUserModifiable(out bool userModifiable);
+#if REVIT2022_OR_GREATER
         ExternalDefinitionCreationOptions options = new(row.ParameterName, ParameterDataTypeResolver.ResolveForgeTypeId(row.DataType));
+#else
+        ExternalDefinitionCreationOptions options = new(row.ParameterName, ParameterDataTypeResolver.ResolveParameterType(row.DataType));
+#endif
         options.Description = row.Description;
         options.Visible = visible;
         options.UserModifiable = userModifiable;

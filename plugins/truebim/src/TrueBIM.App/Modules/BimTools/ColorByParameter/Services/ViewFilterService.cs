@@ -137,8 +137,19 @@ public sealed class ViewFilterService
         {
             if (value.IsEmpty)
             {
+#if REVIT2022_OR_GREATER
                 rule = ParameterFilterRuleFactory.CreateHasNoValueParameterRule(parameter.ParameterId);
                 return true;
+#else
+                if (parameter.StorageType == StorageType.String)
+                {
+                    rule = ParameterFilterRuleFactory.CreateEqualsRule(parameter.ParameterId, string.Empty, false);
+                    return true;
+                }
+
+                reason = "пустые значения для этого типа параметра поддержаны только в Revit 2022+.";
+                return false;
+#endif
             }
 
             switch (parameter.StorageType)

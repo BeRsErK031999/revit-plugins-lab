@@ -181,16 +181,25 @@ public sealed class ProjectParameterBindingService
 
     private static bool InsertBinding(Document document, Definition definition, Binding binding, string groupUnder)
     {
+#if REVIT2022_OR_GREATER
         return document.ParameterBindings.Insert(definition, binding, ParameterGroupResolver.ResolveForgeTypeId(groupUnder));
+#else
+        return document.ParameterBindings.Insert(definition, binding, ParameterGroupResolver.ResolveBuiltInParameterGroup(groupUnder));
+#endif
     }
 
     private static bool ReInsertBinding(Document document, Definition definition, Binding binding, string groupUnder)
     {
+#if REVIT2022_OR_GREATER
         return document.ParameterBindings.ReInsert(definition, binding, ParameterGroupResolver.ResolveForgeTypeId(groupUnder));
+#else
+        return document.ParameterBindings.ReInsert(definition, binding, ParameterGroupResolver.ResolveBuiltInParameterGroup(groupUnder));
+#endif
     }
 
     private static string GetDefinitionGroupDisplay(Definition definition)
     {
+#if REVIT2022_OR_GREATER
         ForgeTypeId groupTypeId = definition.GetGroupTypeId();
         if (groupTypeId == GroupTypeId.IdentityData)
         {
@@ -218,10 +227,14 @@ public sealed class ProjectParameterBindingService
         }
 
         return groupTypeId.TypeId;
+#else
+        return definition.ParameterGroup.ToString();
+#endif
     }
 
     private static string GetDefinitionDataTypeDisplay(Definition definition)
     {
+#if REVIT2022_OR_GREATER
         ForgeTypeId dataType = definition.GetDataType();
         if (dataType == SpecTypeId.String.Text)
         {
@@ -259,6 +272,9 @@ public sealed class ProjectParameterBindingService
         }
 
         return dataType.TypeId;
+#else
+        return definition.ParameterType.ToString();
+#endif
     }
 
     private sealed record ExistingBinding(
