@@ -16,6 +16,7 @@ public static class TrueBimRibbon
 {
     public const string BimPanelName = "БИМ";
     public const string ModelReviewPanelName = "Проверка модели";
+    public const string GeometryPanelName = "Геометрия";
     public const string ParametersPanelName = "Параметры";
     public const string AdministrationPanelName = "Администрирование";
     public const string KrPanelName = "КР";
@@ -28,6 +29,7 @@ public static class TrueBimRibbon
     [
         BimPanelName,
         ModelReviewPanelName,
+        GeometryPanelName,
         ParametersPanelName,
         AdministrationPanelName,
         KrPanelName,
@@ -66,6 +68,14 @@ public static class TrueBimRibbon
             TrueBimIcon.ColorByParameter,
             "Открывает подготовку раскраски активного вида по значениям выбранного параметра.",
             "Инструмент BIM-проверки для будущего выбора категорий, параметра, уникальных значений и применения фильтров с префиксом BIM_F_."),
+        new(
+            GeometryPanelName,
+            "TrueBIM_JoinCut",
+            "Соединить /\nВырезать",
+            $"{CommandNamespace}.{nameof(JoinCutCommand)}",
+            TrueBimIcon.JoinCut,
+            "Открывает настройку правил соединения и вырезания геометрии.",
+            "MVP-инструмент для конфигураций, правил соединения/вырезания, предпросмотра, выполнения и отчета по обработке геометрии."),
         new(
             ParametersPanelName,
             "TrueBIM_CopyParameters",

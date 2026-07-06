@@ -1,0 +1,273 @@
+<Window x:Class="TrueBIM.App.Modules.BimTools.JoinCut.UI.JoinCutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Соединить / Вырезать"
+        Width="1040"
+        Height="720"
+        MinWidth="940"
+        MinHeight="620"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Соединить / Вырезать"
+                       FontSize="22"
+                       FontWeight="SemiBold" />
+            <TextBlock x:Name="DocumentText"
+                       Foreground="DimGray"
+                       TextWrapping="Wrap"
+                       Margin="0,6,0,0" />
+        </StackPanel>
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,12" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
+                <Button x:Name="AddConfigurationButton" Content="Добавить" MinWidth="92" Height="30" Click="AddConfiguration_Click" />
+                <Button x:Name="DuplicateConfigurationButton" Content="Дублировать" MinWidth="112" Height="30" Margin="8,0,0,0" Click="DuplicateConfiguration_Click" />
+                <Button x:Name="RenameConfigurationButton" Content="Переименовать" MinWidth="124" Height="30" Margin="8,0,0,0" Click="RenameConfiguration_Click" />
+                <Button x:Name="DeleteConfigurationButton" Content="Удалить" MinWidth="88" Height="30" Margin="8,0,0,0" Click="DeleteConfiguration_Click" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Конфигурация"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Margin="0,0,10,0" />
+                <ComboBox x:Name="ConfigurationCombo"
+                          Width="300"
+                          Height="30"
+                          DisplayMemberPath="Name"
+                          SelectionChanged="ConfigurationCombo_SelectionChanged" />
+            </StackPanel>
+        </DockPanel>
+
+        <TabControl x:Name="MainTabs" Grid.Row="2" SelectionChanged="MainTabs_SelectionChanged">
+            <TabItem Header="Соединить">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Добавить правило" MinWidth="130" Height="30" Click="AddJoinRule_Click" />
+                        <Button Content="Дублировать" MinWidth="110" Height="30" Margin="8,0,0,0" Click="DuplicateJoinRule_Click" />
+                        <Button x:Name="MoveJoinUpButton" Content="Вверх" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveJoinRuleUp_Click" />
+                        <Button x:Name="MoveJoinDownButton" Content="Вниз" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveJoinRuleDown_Click" />
+                        <Button Content="Удалить" MinWidth="86" Height="30" Margin="8,0,0,0" Click="DeleteJoinRule_Click" />
+                        <Button Content="Поменять фильтры" MinWidth="140" Height="30" Margin="8,0,0,0" Click="SwapJoinFilters_Click" />
+                    </StackPanel>
+
+                    <ListBox x:Name="JoinRulesList"
+                             Grid.Row="1"
+                             Grid.Column="0"
+                             DisplayMemberPath="Name"
+                             BorderBrush="LightGray"
+                             BorderThickness="1"
+                             SelectionChanged="JoinRulesList_SelectionChanged" />
+
+                    <Border Grid.Row="1"
+                            Grid.Column="1"
+                            BorderBrush="LightGray"
+                            BorderThickness="1"
+                            Margin="12,0,0,0"
+                            Padding="14">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Параметры правила"
+                                       FontWeight="SemiBold"
+                                       FontSize="16"
+                                       Margin="0,0,0,12" />
+                            <StackPanel Grid.Row="1" Margin="0,0,0,12">
+                                <TextBlock Text="Название правила" FontWeight="SemiBold" Margin="0,0,0,5" />
+                                <TextBox x:Name="JoinRuleNameInput" Height="28" LostFocus="JoinRuleNameInput_LostFocus" />
+                            </StackPanel>
+                            <CheckBox x:Name="OnlyParallelWallsCheck"
+                                      Grid.Row="2"
+                                      Content="Только параллельные стены"
+                                      Margin="0,0,0,12"
+                                      Checked="OnlyParallelWallsCheck_Changed"
+                                      Unchecked="OnlyParallelWallsCheck_Changed" />
+                            <Grid Grid.Row="3" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="0,0,8,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Что присоединять" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <TextBlock x:Name="JoinLeftFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="1" BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="8,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="К чему присоединять" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <TextBlock x:Name="JoinRightFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <TextBlock Grid.Row="4"
+                                       Foreground="DimGray"
+                                       TextWrapping="Wrap"
+                                       Text="Фильтры правила: категории и условия по параметрам." />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Вырезать">
+                <Grid Margin="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Добавить правило" MinWidth="130" Height="30" Click="AddCutRule_Click" />
+                        <Button Content="Дублировать" MinWidth="110" Height="30" Margin="8,0,0,0" Click="DuplicateCutRule_Click" />
+                        <Button x:Name="MoveCutUpButton" Content="Вверх" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveCutRuleUp_Click" />
+                        <Button x:Name="MoveCutDownButton" Content="Вниз" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveCutRuleDown_Click" />
+                        <Button Content="Удалить" MinWidth="86" Height="30" Margin="8,0,0,0" Click="DeleteCutRule_Click" />
+                        <Button Content="Поменять фильтры" MinWidth="140" Height="30" Margin="8,0,0,0" Click="SwapCutFilters_Click" />
+                    </StackPanel>
+
+                    <ListBox x:Name="CutRulesList"
+                             Grid.Row="1"
+                             Grid.Column="0"
+                             DisplayMemberPath="Name"
+                             BorderBrush="LightGray"
+                             BorderThickness="1"
+                             SelectionChanged="CutRulesList_SelectionChanged" />
+
+                    <Border Grid.Row="1"
+                            Grid.Column="1"
+                            BorderBrush="LightGray"
+                            BorderThickness="1"
+                            Margin="12,0,0,0"
+                            Padding="14">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Параметры правила"
+                                       FontWeight="SemiBold"
+                                       FontSize="16"
+                                       Margin="0,0,0,12" />
+                            <StackPanel Grid.Row="1" Margin="0,0,0,12">
+                                <TextBlock Text="Название правила" FontWeight="SemiBold" Margin="0,0,0,5" />
+                                <TextBox x:Name="CutRuleNameInput" Height="28" LostFocus="CutRuleNameInput_LostFocus" />
+                            </StackPanel>
+                            <CheckBox x:Name="SplitFacesCheck"
+                                      Grid.Row="2"
+                                      Content="Разделить грани элемента вырезания"
+                                      Margin="0,0,0,12"
+                                      Checked="SplitFacesCheck_Changed"
+                                      Unchecked="SplitFacesCheck_Changed" />
+                            <Grid Grid.Row="3" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="0,0,8,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Что вырезает" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <TextBlock x:Name="CuttingFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Grid.Column="1" BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="8,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Из чего вырезает" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <TextBlock x:Name="CutElementFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <TextBlock Grid.Row="4"
+                                       Foreground="DimGray"
+                                       TextWrapping="Wrap"
+                                       Text="Фильтры правила: чем вырезать и из каких элементов вырезать." />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Отчёт">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Скопировать отчёт" MinWidth="140" Height="30" Click="CopyReport_Click" />
+                    </StackPanel>
+                    <TextBox x:Name="ReportText"
+                             Grid.Row="1"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             BorderBrush="LightGray"
+                             BorderThickness="1" />
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="3"
+                   Foreground="DimGray"
+                   TextWrapping="Wrap"
+                   Margin="0,10,0,10" />
+
+        <DockPanel Grid.Row="4" LastChildFill="False">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Область обработки"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Margin="0,0,10,0" />
+                <ComboBox x:Name="ScopeCombo"
+                          Width="180"
+                          Height="30"
+                          DisplayMemberPath="Text"
+                          SelectionChanged="ScopeCombo_SelectionChanged" />
+                <TextBlock Text="Действие"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Margin="18,0,10,0" />
+                <ComboBox x:Name="ActionCombo"
+                          Width="210"
+                          Height="30"
+                          DisplayMemberPath="Text"
+                          SelectionChanged="ActionCombo_SelectionChanged" />
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="PreviewButton" Content="Предпросмотр" MinWidth="136" Height="32" Click="Preview_Click" />
+                <Button x:Name="ExecuteButton" Content="Выполнить" MinWidth="124" Height="32" Margin="8,0,0,0" Click="Execute_Click" />
+                <Button x:Name="CloseButton" Content="Закрыть" MinWidth="110" Height="32" Margin="8,0,0,0" IsCancel="True" Click="Close_Click" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

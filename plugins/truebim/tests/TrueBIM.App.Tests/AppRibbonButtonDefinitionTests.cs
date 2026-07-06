@@ -17,6 +17,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "раскраски"
         },
         {
+            "TrueBIM_JoinCut",
+            "Геометрия",
+            "Соединить /\nВырезать",
+            $"TrueBIM.App.Commands.{nameof(JoinCutCommand)}",
+            TrueBimIcon.JoinCut,
+            "геометрии"
+        },
+        {
             "TrueBIM_CopyParameters",
             "Параметры",
             "Копирование\nпараметров",
@@ -96,6 +104,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonPanelNames_IncludeBimToolPanels()
     {
         Assert.Contains("Проверка модели", TrueBimRibbon.PanelNames);
+        Assert.Contains("Геометрия", TrueBimRibbon.PanelNames);
         Assert.Contains("Параметры", TrueBimRibbon.PanelNames);
         Assert.Contains("Администрирование", TrueBimRibbon.PanelNames);
     }
