@@ -61,6 +61,16 @@ public sealed class CategoryResolveService
         return ResolveCategory(document, categoryName) is not null;
     }
 
+    public IReadOnlyList<string> CollectBindableCategoryNames(Document document)
+    {
+        return document.Settings.Categories
+            .Cast<Category>()
+            .Where(IsUsableCategory)
+            .Select(category => category.Name)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
     public IReadOnlyList<Category> ResolveCategories(Document document, IEnumerable<string> categoryNames, out IReadOnlyList<string> missing)
     {
         List<Category> categories = [];

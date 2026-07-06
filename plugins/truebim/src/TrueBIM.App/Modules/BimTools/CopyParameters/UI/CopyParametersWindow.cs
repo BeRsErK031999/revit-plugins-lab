@@ -11,7 +11,8 @@ public sealed class CopyParametersWindow : Window
 {
     private readonly List<CopyParameterRow> rows;
     private readonly TextBlock statusText = new();
-    private readonly ListBox parameterList = new();
+    private readonly ListBox instanceParameterList = new();
+    private readonly ListBox typeParameterList = new();
 
     public CopyParametersWindow(string sourceElementLabel, IReadOnlyList<CopyParameterRow> parameters)
     {
@@ -85,11 +86,9 @@ public sealed class CopyParametersWindow : Window
         WpfGrid.SetRow(toolbar, 2);
         root.Children.Add(toolbar);
 
-        parameterList.BorderBrush = Brushes.LightGray;
-        parameterList.BorderThickness = new Thickness(1);
-        parameterList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        WpfGrid.SetRow(parameterList, 3);
-        root.Children.Add(parameterList);
+        UIElement parameterColumns = CreateParameterColumns();
+        WpfGrid.SetRow(parameterColumns, 3);
+        root.Children.Add(parameterColumns);
 
         statusText.Foreground = Brushes.DimGray;
         statusText.Margin = new Thickness(0, 10, 0, 10);
@@ -131,13 +130,63 @@ public sealed class CopyParametersWindow : Window
 
     private void RefreshList()
     {
-        parameterList.Items.Clear();
+        instanceParameterList.Items.Clear();
+        typeParameterList.Items.Clear();
         foreach (CopyParameterRow row in rows)
         {
-            parameterList.Items.Add(CreateParameterRow(row));
+            ListBox targetList = row.SourceKind == ParameterSourceKind.Instance
+                ? instanceParameterList
+                : typeParameterList;
+            targetList.Items.Add(CreateParameterRow(row));
         }
 
         UpdateStatus();
+    }
+
+    private UIElement CreateParameterColumns()
+    {
+        WpfGrid grid = new();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        AddColumnHeader(grid, "Параметры экземпляра", 0);
+        AddColumnHeader(grid, "Параметры типа", 1);
+
+        ConfigureParameterList(instanceParameterList);
+        ConfigureParameterList(typeParameterList);
+        instanceParameterList.Margin = new Thickness(0, 0, 6, 0);
+        typeParameterList.Margin = new Thickness(6, 0, 0, 0);
+
+        WpfGrid.SetRow(instanceParameterList, 1);
+        WpfGrid.SetColumn(instanceParameterList, 0);
+        grid.Children.Add(instanceParameterList);
+
+        WpfGrid.SetRow(typeParameterList, 1);
+        WpfGrid.SetColumn(typeParameterList, 1);
+        grid.Children.Add(typeParameterList);
+
+        return grid;
+    }
+
+    private static void AddColumnHeader(WpfGrid grid, string text, int column)
+    {
+        TextBlock header = new()
+        {
+            Text = text,
+            FontWeight = FontWeights.SemiBold,
+            Margin = column == 0 ? new Thickness(0, 0, 6, 6) : new Thickness(6, 0, 0, 6)
+        };
+        WpfGrid.SetColumn(header, column);
+        grid.Children.Add(header);
+    }
+
+    private static void ConfigureParameterList(ListBox list)
+    {
+        list.BorderBrush = Brushes.LightGray;
+        list.BorderThickness = new Thickness(1);
+        list.HorizontalContentAlignment = HorizontalAlignment.Stretch;
     }
 
     private UIElement CreateParameterRow(CopyParameterRow row)
@@ -216,7 +265,9 @@ public sealed class CopyParametersWindow : Window
     {
         int selectedCount = rows.Count(row => row.IsSelected);
         int warningCount = rows.Count(row => row.HasWarning);
-        statusText.Text = $"Доступно параметров: {rows.Count}. Выбрано: {selectedCount}. С предупреждениями: {warningCount}.";
+        int instanceCount = rows.Count(row => row.SourceKind == ParameterSourceKind.Instance);
+        int typeCount = rows.Count(row => row.SourceKind == ParameterSourceKind.Type);
+        statusText.Text = $"Доступно параметров: {rows.Count} (экземпляра: {instanceCount}, типа: {typeCount}). Выбрано: {selectedCount}. С предупреждениями: {warningCount}.";
     }
 
     private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler)

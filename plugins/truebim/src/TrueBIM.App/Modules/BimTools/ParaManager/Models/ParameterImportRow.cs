@@ -70,6 +70,25 @@ public sealed class ParameterImportRow
 
     public IReadOnlyList<string> CategoryNames => SplitCategories(Categories);
 
+    public ParameterImportRow WithCategories(string categories)
+    {
+        return new ParameterImportRow(
+            LineNumber,
+            ParameterName,
+            SharedGroup,
+            BindingType,
+            categories,
+            GroupUnder,
+            DataType,
+            VisibleText,
+            UserModifiableText,
+            Description)
+        {
+            Status = Status,
+            Message = Message
+        };
+    }
+
     public bool TryGetBindingKind(out ParameterBindingKind bindingKind)
     {
         string normalized = BindingType.Replace(" ", string.Empty).Replace("-", string.Empty);

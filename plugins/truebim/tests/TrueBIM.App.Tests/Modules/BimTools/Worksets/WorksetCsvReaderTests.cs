@@ -31,4 +31,28 @@ public sealed class WorksetCsvReaderTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void Read_LoadsXlsxTemplateRows()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "truebim-worksets-" + Guid.NewGuid() + ".xlsx");
+        try
+        {
+            WorksetCsvReader reader = new();
+            reader.WriteTemplate(path);
+
+            IReadOnlyList<TrueBIM.App.Modules.BimTools.Worksets.Models.WorksetImportRow> rows = reader.Read(path);
+
+            Assert.Contains(rows, row => row.WorksetName == "АР_Стены");
+            Assert.Contains(rows, row => row.WorksetName == "КР_Несущие конструкции");
+            Assert.DoesNotContain(rows, row => row.WorksetName == "WorksetName");
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
 }

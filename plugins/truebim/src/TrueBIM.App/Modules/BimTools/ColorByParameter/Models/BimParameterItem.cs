@@ -37,7 +37,7 @@ public sealed class BimParameterItem
 
     public string StorageTypeDisplay => ParameterStorageTypeFormatter.Format(StorageType);
 
-    public string DisplayName => $"{Name} | {SourceDisplay} | {StorageTypeDisplay} | элементов: {ElementCount}";
+    public string DisplayName => $"{Name} | проектный | {SourceDisplay} | {StorageTypeDisplay} | элементов: {ElementCount}";
 
     public override string ToString()
     {

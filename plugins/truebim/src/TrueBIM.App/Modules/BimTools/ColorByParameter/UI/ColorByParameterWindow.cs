@@ -105,7 +105,7 @@ public sealed class ColorByParameterWindow : Window
         });
         header.Children.Add(new TextBlock
         {
-            Text = $"Активный вид: {activeView.Name}. Инструмент создаёт фильтры вида с префиксом BIM_F_ и применяет их только к текущему виду.",
+            Text = $"Активный вид: {activeView.Name}. Выберите категории и параметр проекта; инструмент создаёт фильтры вида с префиксом BIM_F_ только для текущего вида.",
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 12)
@@ -140,8 +140,9 @@ public sealed class ColorByParameterWindow : Window
         Button clearButton = CreateSmallButton("Снять", (_, _) => SelectCategories(false));
         clearButton.Margin = new Thickness(8, 0, 0, 0);
         toolbar.Children.Add(clearButton);
-        Button refreshButton = CreateSmallButton("Параметры", (_, _) => LoadParameters());
+        Button refreshButton = CreateSmallButton("Обновить", (_, _) => LoadParameters());
         refreshButton.Margin = new Thickness(8, 0, 0, 0);
+        refreshButton.ToolTip = "Обновить список параметров проекта для выбранных категорий.";
         toolbar.Children.Add(refreshButton);
         WpfGrid.SetRow(toolbar, 1);
         panel.Children.Add(toolbar);
@@ -179,7 +180,7 @@ public sealed class ColorByParameterWindow : Window
 
         parameterInput.Height = 30;
         parameterInput.VerticalContentAlignment = VerticalAlignment.Center;
-        parameterInput.ToolTip = "Параметр для раскраски выбранных категорий.";
+        parameterInput.ToolTip = "Параметр проекта, по значениям которого будет создана раскраска.";
         parameterInput.SelectionChanged += (_, _) => LoadValues();
         parameterBar.Children.Add(parameterInput);
         panel.Children.Add(parameterBar);
@@ -290,8 +291,8 @@ public sealed class ColorByParameterWindow : Window
             parameterInput.DisplayMemberPath = nameof(BimParameterItem.DisplayName);
             parameterInput.SelectedIndex = parameters.Count > 0 ? 0 : -1;
             statusText.Text = parameters.Count == 0
-                ? "Для выбранных категорий не найдено параметров, доступных для фильтра."
-                : $"Категорий: {selectedCategories.Count}. Параметров: {parameters.Count}.";
+                ? "Для выбранных категорий не найдено параметров проекта, доступных для фильтра."
+                : $"Категорий: {selectedCategories.Count}. Параметров проекта: {parameters.Count}.";
         }
         catch (Exception exception)
         {

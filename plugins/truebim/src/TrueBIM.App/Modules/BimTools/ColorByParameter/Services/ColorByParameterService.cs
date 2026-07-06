@@ -52,6 +52,7 @@ public sealed class ColorByParameterService
     public IReadOnlyList<BimParameterItem> CollectParameters(Document document, View activeView, IReadOnlyList<BimCategoryItem> categories)
     {
         HashSet<long> selectedCategoryIds = CreateCategoryIdSet(categories);
+        ProjectParameterBindingIndex projectParameterBindings = ProjectParameterBindingIndex.Create(document);
         Dictionary<ParameterKey, ParameterBucket> buckets = [];
 
         foreach (Element element in CollectVisibleElements(document, activeView))
@@ -61,7 +62,7 @@ public sealed class ColorByParameterService
                 continue;
             }
 
-            AddParameters(element, ParameterSourceKind.Instance, buckets);
+            AddParameters(element, ParameterSourceKind.Instance, projectParameterBindings, buckets);
 
             ElementId typeId = element.GetTypeId();
             if (typeId != ElementId.InvalidElementId)
@@ -69,7 +70,7 @@ public sealed class ColorByParameterService
                 Element? typeElement = document.GetElement(typeId);
                 if (typeElement is not null)
                 {
-                    AddParameters(typeElement, ParameterSourceKind.Type, buckets);
+                    AddParameters(typeElement, ParameterSourceKind.Type, projectParameterBindings, buckets);
                 }
             }
         }
@@ -187,8 +188,14 @@ public sealed class ColorByParameterService
             && selectedCategoryIds.Contains(RevitElementIds.GetValue(element.Category.Id));
     }
 
-    private static void AddParameters(Element element, ParameterSourceKind sourceKind, Dictionary<ParameterKey, ParameterBucket> buckets)
+    private static void AddParameters(
+        Element element,
+        ParameterSourceKind sourceKind,
+        ProjectParameterBindingIndex projectParameterBindings,
+        Dictionary<ParameterKey, ParameterBucket> buckets)
     {
+        Category? category = element.Category;
+        long categoryId = category is null ? 0 : RevitElementIds.GetValue(category.Id);
         foreach (Parameter parameter in element.Parameters)
         {
             if (!IsSupportedParameter(parameter))
@@ -197,6 +204,11 @@ public sealed class ColorByParameterService
             }
 
             string name = parameter.Definition?.Name ?? string.Empty;
+            if (!projectParameterBindings.Contains(name, sourceKind, categoryId))
+            {
+                continue;
+            }
+
             ParameterKey key = new(RevitElementIds.GetValue(parameter.Id), parameter.StorageType, sourceKind, name);
             if (!buckets.TryGetValue(key, out ParameterBucket? bucket))
             {
@@ -205,9 +217,9 @@ public sealed class ColorByParameterService
             }
 
             bucket.ElementIds.Add(RevitElementIds.GetValue(element.Id));
-            if (element.Category is not null)
+            if (category is not null)
             {
-                bucket.CategoryIds.Add(RevitElementIds.GetValue(element.Category.Id));
+                bucket.CategoryIds.Add(categoryId);
             }
         }
     }
@@ -309,6 +321,62 @@ public sealed class ColorByParameterService
     }
 
     private sealed record ParameterKey(long ParameterId, StorageType StorageType, ParameterSourceKind SourceKind, string Name);
+
+    private sealed class ProjectParameterBindingIndex
+    {
+        private readonly Dictionary<BindingKey, HashSet<long>> categoryIdsByBinding;
+
+        private ProjectParameterBindingIndex(Dictionary<BindingKey, HashSet<long>> categoryIdsByBinding)
+        {
+            this.categoryIdsByBinding = categoryIdsByBinding;
+        }
+
+        public static ProjectParameterBindingIndex Create(Document document)
+        {
+            Dictionary<BindingKey, HashSet<long>> bindings = [];
+            DefinitionBindingMapIterator iterator = document.ParameterBindings.ForwardIterator();
+            iterator.Reset();
+            while (iterator.MoveNext())
+            {
+                Definition definition = iterator.Key;
+                Binding binding = (Binding)iterator.Current;
+                if (binding is not ElementBinding elementBinding)
+                {
+                    continue;
+                }
+
+                ParameterSourceKind sourceKind = binding is TypeBinding
+                    ? ParameterSourceKind.Type
+                    : ParameterSourceKind.Instance;
+                BindingKey key = new(NormalizeParameterName(definition.Name), sourceKind);
+                if (!bindings.TryGetValue(key, out HashSet<long>? categoryIds))
+                {
+                    categoryIds = [];
+                    bindings.Add(key, categoryIds);
+                }
+
+                foreach (Category category in elementBinding.Categories)
+                {
+                    categoryIds.Add(RevitElementIds.GetValue(category.Id));
+                }
+            }
+
+            return new ProjectParameterBindingIndex(bindings);
+        }
+
+        public bool Contains(string name, ParameterSourceKind sourceKind, long categoryId)
+        {
+            return categoryIdsByBinding.TryGetValue(new BindingKey(NormalizeParameterName(name), sourceKind), out HashSet<long>? categoryIds)
+                && categoryIds.Contains(categoryId);
+        }
+
+        private static string NormalizeParameterName(string name)
+        {
+            return name.Trim().ToUpperInvariant();
+        }
+    }
+
+    private sealed record BindingKey(string Name, ParameterSourceKind SourceKind);
 
     private sealed class ParameterBucket
     {

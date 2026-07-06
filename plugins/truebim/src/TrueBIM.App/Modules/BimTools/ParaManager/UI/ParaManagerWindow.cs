@@ -23,14 +23,18 @@ public sealed class ParaManagerWindow : Window
     private readonly ProjectParameterExportService projectParameterExportService;
     private readonly ParaManagerValidationService validationService;
     private readonly ProjectParameterBindingService bindingService;
+    private readonly CategoryResolveService categoryResolveService;
+    private readonly ParaManagerCategoryPresetService categoryPresetService;
     private readonly ITrueBimLogger logger;
     private readonly WpfTextBox sharedParameterPathInput = new();
     private readonly WpfTextBox csvPathInput = new();
+    private readonly WpfTextBox categoryPresetInput = new();
     private readonly ListBox importRowList = new();
     private readonly ListBox projectParameterList = new();
     private readonly WpfTextBox reportText = new();
     private readonly TextBlock statusText = new();
     private List<ParameterImportRow> importRows = [];
+    private List<string> selectedCategoryPreset = [];
 
     public ParaManagerWindow(
         UIApplication uiApplication,
@@ -46,7 +50,12 @@ public sealed class ParaManagerWindow : Window
         projectParameterExportService = new ProjectParameterExportService();
         this.validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
         this.bindingService = bindingService ?? throw new ArgumentNullException(nameof(bindingService));
+        categoryResolveService = new CategoryResolveService();
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        categoryPresetService = new ParaManagerCategoryPresetService(
+            ParaManagerCategoryPresetService.GetDefaultSettingsPath(),
+            logger);
+        selectedCategoryPreset = categoryPresetService.Load().ToList();
 
         Title = "ParaManager";
         Icon = IconFactory.CreateImage(TrueBimIcon.Parameters, 32);
@@ -58,6 +67,7 @@ public sealed class ParaManagerWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
         sharedParameterPathInput.Text = uiApplication.Application.SharedParametersFilename ?? string.Empty;
+        UpdateCategoryPresetText();
         RefreshProjectParameters();
         UpdateStatus();
     }
@@ -119,7 +129,7 @@ public sealed class ParaManagerWindow : Window
         });
         header.Children.Add(new TextBlock
         {
-            Text = "Импорт shared parameters в проект из CSV. Семейства, .xlsx и редактор shared parameter file будут отдельными этапами.",
+            Text = "Просмотр параметров проекта, выбор shared parameter .txt и импорт привязок из таблицы настройки.",
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 12)
@@ -153,7 +163,7 @@ public sealed class ParaManagerWindow : Window
 
         Button exportButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, "Экспорт CSV"),
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, "Экспорт списка"),
             Height = 30,
             MinWidth = 130,
             Margin = new Thickness(8, 0, 0, 0)
@@ -184,15 +194,20 @@ public sealed class ParaManagerWindow : Window
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         UIElement sharedFileBar = CreatePathBar(sharedParameterPathInput, "Shared parameter file (*.txt)|*.txt|All files (*.*)|*.*", "Выбрать shared parameters", ChooseSharedParameterFile);
         panel.Children.Add(sharedFileBar);
 
-        UIElement csvFileBar = CreatePathBar(csvPathInput, "CSV files (*.csv)|*.csv|All files (*.*)|*.*", "Выбрать CSV", ChooseCsvFile);
+        UIElement csvFileBar = CreatePathBar(csvPathInput, "CSV files (*.csv)|*.csv|All files (*.*)|*.*", "Выбрать таблицу", ChooseImportFile);
         WpfGrid.SetRow(csvFileBar, 1);
         panel.Children.Add(csvFileBar);
+
+        UIElement categoryBar = CreateCategoryPresetBar();
+        WpfGrid.SetRow(categoryBar, 2);
+        panel.Children.Add(categoryBar);
 
         StackPanel toolbar = new()
         {
@@ -203,13 +218,14 @@ public sealed class ParaManagerWindow : Window
         Button templateButton = CreateSmallButton("Экспортировать шаблон", (_, _) => ExportTemplate());
         templateButton.Margin = new Thickness(8, 0, 0, 0);
         toolbar.Children.Add(templateButton);
-        WpfGrid.SetRow(toolbar, 2);
+        WpfGrid.SetRow(toolbar, 3);
         panel.Children.Add(toolbar);
 
         importRowList.BorderBrush = Brushes.LightGray;
         importRowList.BorderThickness = new Thickness(1);
         importRowList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        WpfGrid.SetRow(importRowList, 3);
+        importRowList.SelectionMode = SelectionMode.Extended;
+        WpfGrid.SetRow(importRowList, 4);
         panel.Children.Add(importRowList);
 
         StackPanel footer = new()
@@ -226,12 +242,12 @@ public sealed class ParaManagerWindow : Window
         };
         applyButton.Click += (_, _) => ApplyImport();
         footer.Children.Add(applyButton);
-        WpfGrid.SetRow(footer, 4);
+        WpfGrid.SetRow(footer, 5);
         panel.Children.Add(footer);
 
         return new TabItem
         {
-            Header = "Импорт CSV",
+            Header = "Импорт",
             Content = panel
         };
     }
@@ -283,12 +299,56 @@ public sealed class ParaManagerWindow : Window
         return fileBar;
     }
 
-    private void ChooseSharedParameterFile(object sender, RoutedEventArgs args)
+    private DockPanel CreateCategoryPresetBar()
     {
-        ChooseFile(sharedParameterPathInput, "Shared parameter file (*.txt)|*.txt|All files (*.*)|*.*");
+        DockPanel categoryBar = new()
+        {
+            LastChildFill = true,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        Button applyButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Добавить к выбранным"),
+            Height = 30,
+            MinWidth = 185,
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Записать сохранённый список категорий в выделенные строки импорта."
+        };
+        applyButton.Click += (_, _) => ApplyCategoriesToSelectedRows();
+        DockPanel.SetDock(applyButton, Dock.Right);
+        categoryBar.Children.Add(applyButton);
+
+        Button chooseButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Категории"),
+            Height = 30,
+            MinWidth = 125,
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Выбрать и сохранить список категорий для ParaManager."
+        };
+        chooseButton.Click += (_, _) => ChooseCategories();
+        DockPanel.SetDock(chooseButton, Dock.Right);
+        categoryBar.Children.Add(chooseButton);
+
+        categoryPresetInput.Height = 30;
+        categoryPresetInput.VerticalContentAlignment = VerticalAlignment.Center;
+        categoryPresetInput.IsReadOnly = true;
+        categoryPresetInput.ToolTip = "Сохранённые категории для применения к выбранным параметрам.";
+        categoryBar.Children.Add(categoryPresetInput);
+
+        return categoryBar;
     }
 
-    private void ChooseCsvFile(object sender, RoutedEventArgs args)
+    private void ChooseSharedParameterFile(object sender, RoutedEventArgs args)
+    {
+        if (ChooseFile(sharedParameterPathInput, "Shared parameter file (*.txt)|*.txt|All files (*.*)|*.*"))
+        {
+            statusText.Text = $"Shared parameter .txt выбран: {sharedParameterPathInput.Text}";
+        }
+    }
+
+    private void ChooseImportFile(object sender, RoutedEventArgs args)
     {
         if (ChooseFile(csvPathInput, "CSV files (*.csv)|*.csv|All files (*.*)|*.*"))
         {
@@ -312,13 +372,74 @@ public sealed class ParaManagerWindow : Window
         return true;
     }
 
+    private void ChooseCategories()
+    {
+        IReadOnlyList<string> categoryNames = categoryResolveService.CollectBindableCategoryNames(document);
+        ParameterCategorySelectionWindow window = new(categoryNames, selectedCategoryPreset)
+        {
+            Owner = this
+        };
+        if (window.ShowDialog() != true)
+        {
+            return;
+        }
+
+        selectedCategoryPreset = window.SelectedCategoryNames.ToList();
+        categoryPresetService.Save(selectedCategoryPreset);
+        UpdateCategoryPresetText();
+        statusText.Text = selectedCategoryPreset.Count == 0
+            ? "Список категорий очищен."
+            : $"Сохранено категорий: {selectedCategoryPreset.Count}.";
+    }
+
+    private void ApplyCategoriesToSelectedRows()
+    {
+        if (importRows.Count == 0)
+        {
+            statusText.Text = "Сначала загрузите строки импорта.";
+            return;
+        }
+
+        if (selectedCategoryPreset.Count == 0)
+        {
+            statusText.Text = "Сначала выберите категории.";
+            return;
+        }
+
+        IReadOnlyList<ParameterImportRow> selectedRows = GetSelectedImportRows();
+        if (selectedRows.Count == 0)
+        {
+            statusText.Text = "Выделите одну или несколько строк импорта.";
+            return;
+        }
+
+        HashSet<ParameterImportRow> selectedRowSet = selectedRows.ToHashSet();
+        string categories = string.Join(",", selectedCategoryPreset);
+        importRows = importRows
+            .Select(row => selectedRowSet.Contains(row) ? row.WithCategories(categories) : row)
+            .ToList();
+        ValidateRows();
+        RefreshImportRows();
+        statusText.Text = $"Категории добавлены к строкам: {selectedRows.Count}.";
+    }
+
+    private IReadOnlyList<ParameterImportRow> GetSelectedImportRows()
+    {
+        return importRowList.SelectedItems
+            .OfType<FrameworkElement>()
+            .Select(item => item.Tag as ParameterImportRow)
+            .Where(row => row is not null)
+            .Cast<ParameterImportRow>()
+            .ToList();
+    }
+
     private void LoadAndValidate()
     {
         try
         {
             if (string.IsNullOrWhiteSpace(csvPathInput.Text) || !File.Exists(csvPathInput.Text))
             {
-                statusText.Text = "Выберите существующий CSV-файл.";
+                statusText.Text = "Выберите существующий файл таблицы импорта.";
                 return;
             }
 
@@ -328,14 +449,13 @@ public sealed class ParaManagerWindow : Window
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to read ParaManager CSV.", exception);
-            TaskDialog.Show("ParaManager", "Не удалось прочитать CSV-файл. Используйте логи для диагностики.");
+            logger.Error("Failed to read ParaManager import file.", exception);
+            TaskDialog.Show("ParaManager", "Не удалось прочитать файл импорта. Используйте логи для диагностики.");
         }
     }
 
     private void ValidateRows()
     {
-        CategoryResolveService categoryResolveService = new();
         ISet<string> existingNames = bindingService.CollectExistingProjectParameterNames(document);
         validationService.Validate(
             importRows,
@@ -359,7 +479,8 @@ public sealed class ParaManagerWindow : Window
         DockPanel panel = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(8, 6, 8, 6)
+            Margin = new Thickness(8, 6, 8, 6),
+            Tag = row
         };
 
         TextBlock status = new()
@@ -562,18 +683,25 @@ public sealed class ParaManagerWindow : Window
         return dialog.Show() == TaskDialogResult.Yes;
     }
 
+    private void UpdateCategoryPresetText()
+    {
+        categoryPresetInput.Text = selectedCategoryPreset.Count == 0
+            ? "Категории не выбраны."
+            : string.Join(", ", selectedCategoryPreset);
+    }
+
     private void UpdateStatus()
     {
         if (importRows.Count == 0)
         {
-            statusText.Text = $"Параметров проекта: {projectParameterList.Items.Count}. CSV не выбран.";
+            statusText.Text = $"Параметров проекта: {projectParameterList.Items.Count}. Файл импорта не выбран.";
             return;
         }
 
         int willCreate = importRows.Count(row => row.Status == ParameterImportStatus.WillCreate);
         int willUpdate = importRows.Count(row => row.Status == ParameterImportStatus.WillUpdate);
         int invalid = importRows.Count(row => row.Status is ParameterImportStatus.Invalid or ParameterImportStatus.Empty or ParameterImportStatus.DuplicateInFile);
-        statusText.Text = $"Строк CSV: {importRows.Count}. Будет создано: {willCreate}. Будет обновлено: {willUpdate}. Ошибок проверки: {invalid}.";
+        statusText.Text = $"Строк импорта: {importRows.Count}. Будет создано: {willCreate}. Будет обновлено: {willUpdate}. Ошибок проверки: {invalid}.";
     }
 
     private static Brush GetStatusBrush(ParameterImportStatus status)

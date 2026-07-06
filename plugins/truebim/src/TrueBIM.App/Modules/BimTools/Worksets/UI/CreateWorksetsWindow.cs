@@ -132,7 +132,7 @@ public sealed class CreateWorksetsWindow : Window
         });
         header.Children.Add(new TextBlock
         {
-            Text = "Выберите CSV-файл с одним рабочим набором в строке. Инструмент создаёт только пользовательские worksets и не распределяет элементы.",
+            Text = "Выберите CSV или XLSX с одним рабочим набором в строке. Инструмент создаёт только пользовательские worksets и не распределяет элементы.",
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 12)
@@ -150,18 +150,18 @@ public sealed class CreateWorksetsWindow : Window
 
         Button chooseButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать CSV"),
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать файл"),
             Height = 30,
             MinWidth = 130,
             Margin = new Thickness(8, 0, 0, 0)
         };
-        chooseButton.Click += (_, _) => ChooseCsvFile();
+        chooseButton.Click += (_, _) => ChooseImportFile();
         DockPanel.SetDock(chooseButton, Dock.Right);
         fileBar.Children.Add(chooseButton);
 
         pathInput.Height = 30;
         pathInput.VerticalContentAlignment = VerticalAlignment.Center;
-        pathInput.ToolTip = "Путь к CSV-файлу.";
+        pathInput.ToolTip = "Путь к CSV или XLSX-файлу.";
         fileBar.Children.Add(pathInput);
 
         return fileBar;
@@ -185,12 +185,12 @@ public sealed class CreateWorksetsWindow : Window
         return toolbar;
     }
 
-    private void ChooseCsvFile()
+    private void ChooseImportFile()
     {
         OpenFileDialog dialog = new()
         {
-            Title = "Выберите CSV-файл рабочих наборов",
-            Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+            Title = "Выберите файл рабочих наборов",
+            Filter = "Workset files (*.xlsx;*.csv)|*.xlsx;*.csv|Excel workbook (*.xlsx)|*.xlsx|CSV files (*.csv)|*.csv|All files (*.*)|*.*",
             CheckFileExists = true
         };
 
@@ -209,7 +209,7 @@ public sealed class CreateWorksetsWindow : Window
         {
             if (string.IsNullOrWhiteSpace(pathInput.Text) || !File.Exists(pathInput.Text))
             {
-                statusText.Text = "Выберите существующий CSV-файл.";
+                statusText.Text = "Выберите существующий CSV или XLSX-файл.";
                 return;
             }
 
@@ -219,8 +219,8 @@ public sealed class CreateWorksetsWindow : Window
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to read workset CSV file.", exception);
-            Autodesk.Revit.UI.TaskDialog.Show("Рабочие наборы", "Не удалось прочитать CSV-файл. Используйте логи для диагностики.");
+            logger.Error("Failed to read workset import file.", exception);
+            Autodesk.Revit.UI.TaskDialog.Show("Рабочие наборы", "Не удалось прочитать файл рабочих наборов. Используйте логи для диагностики.");
         }
     }
 
@@ -285,7 +285,7 @@ public sealed class CreateWorksetsWindow : Window
         {
             if (rows.Count == 0)
             {
-                statusText.Text = "Сначала выберите и проверьте CSV-файл.";
+                statusText.Text = "Сначала выберите и проверьте CSV или XLSX-файл.";
                 return;
             }
 
@@ -343,10 +343,10 @@ public sealed class CreateWorksetsWindow : Window
         SaveFileDialog dialog = new()
         {
             Title = "Сохранить шаблон рабочих наборов",
-            Filter = "CSV files (*.csv)|*.csv",
-            FileName = "truebim-worksets-template.csv",
+            Filter = "Excel workbook (*.xlsx)|*.xlsx|CSV files (*.csv)|*.csv",
+            FileName = "truebim-worksets-template.xlsx",
             AddExtension = true,
-            DefaultExt = ".csv"
+            DefaultExt = ".xlsx"
         };
 
         if (dialog.ShowDialog(this) != true)
@@ -354,18 +354,7 @@ public sealed class CreateWorksetsWindow : Window
             return;
         }
 
-        File.WriteAllLines(dialog.FileName, [
-            "WorksetName",
-            "АР_Стены",
-            "АР_Двери",
-            "АР_Окна",
-            "КР_Несущие конструкции",
-            "ОВ_Воздуховоды",
-            "ВК_Трубы",
-            "ЭОМ_Оборудование",
-            "Связи_RVT",
-            "Координация"
-        ]);
+        csvReader.WriteTemplate(dialog.FileName);
         statusText.Text = $"Шаблон сохранён: {dialog.FileName}";
     }
 
