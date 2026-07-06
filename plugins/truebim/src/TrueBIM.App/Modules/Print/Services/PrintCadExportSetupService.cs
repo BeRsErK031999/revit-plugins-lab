@@ -124,6 +124,7 @@ public sealed class PrintCadExportSetupService
         {
             PrintCadExportFormat.Dwg => "DWG",
             PrintCadExportFormat.Dxf => "DXF",
+            PrintCadExportFormat.Dwf => "DWF",
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported CAD export format.")
         };
     }

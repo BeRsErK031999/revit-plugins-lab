@@ -12,5 +12,8 @@ public sealed record PrintSettings(
     bool AlwaysUseRasterPdf,
     bool ExportDwg,
     bool ExportDxf,
+    bool ExportDwf,
+    bool CombineDwg,
+    bool ExportSeparatePdfWithCombined,
     string? DwgSetupName,
     string? DxfSetupName);

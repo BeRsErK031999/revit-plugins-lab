@@ -34,6 +34,26 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void Build_ReplacesSheetAndProjectParameterTokens()
+    {
+        PrintFileNamePreview preview = service.Build(
+            "{SheetParameter:Формат листа}_{ProjectParameter:Шифр}_{SheetNumber}",
+            Sheet(
+                "A-101",
+                "План",
+                new Dictionary<string, string> { ["Формат листа"] = "A1" }),
+            Context(
+                "РД",
+                "P-42",
+                "Model",
+                new Dictionary<string, string> { ["Шифр"] = "KR-01" }),
+            counter: 1);
+
+        Assert.Equal("A1_KR-01_A-101", preview.FileName);
+        Assert.False(preview.HasUnknownTokens);
+    }
+
+    [Fact]
     public void Build_SanitizesWindowsFileNameCharacters()
     {
         PrintFileNamePreview preview = service.Build(
@@ -87,23 +107,44 @@ public sealed class PrintFileNameTemplateServiceTests
 
     private static PrintSheetInfo Sheet(string number, string name)
     {
+        return Sheet(number, name, new Dictionary<string, string>());
+    }
+
+    private static PrintSheetInfo Sheet(
+        string number,
+        string name,
+        IReadOnlyDictionary<string, string> sheetParameters)
+    {
         return new PrintSheetInfo(
             10,
             "model",
             "Model",
+            SourceIsLinked: false,
+            GroupName: "Без группы",
             number,
             name,
             "841 x 594 мм",
             IsPlaceholder: false,
-            CanBePrinted: true);
+            CanBePrinted: true,
+            sheetParameters);
     }
 
     private static PrintFileNameContext Context(string projectName, string projectNumber, string documentName)
+    {
+        return Context(projectName, projectNumber, documentName, new Dictionary<string, string>());
+    }
+
+    private static PrintFileNameContext Context(
+        string projectName,
+        string projectNumber,
+        string documentName,
+        IReadOnlyDictionary<string, string> projectParameters)
     {
         return new PrintFileNameContext(
             documentName,
             projectName,
             projectNumber,
-            new DateTime(2026, 7, 2));
+            new DateTime(2026, 7, 2),
+            projectParameters);
     }
 }

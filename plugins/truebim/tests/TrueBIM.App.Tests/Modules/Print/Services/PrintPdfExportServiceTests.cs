@@ -65,6 +65,7 @@ public sealed class PrintPdfExportServiceTests
     {
         Assert.Equal("отдельные PDF", PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.SeparateFiles));
         Assert.Equal("один PDF", PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.CombinedFile));
+        Assert.Equal("отдельные PDF и один общий", PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.SeparateAndCombined));
     }
 
     [Fact]

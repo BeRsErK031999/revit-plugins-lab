@@ -15,11 +15,25 @@ namespace TrueBIM.App.Commands;
 
 internal static class TrueBimCommandActions
 {
+    private static PrintWindow? activePrintWindow;
+
     public static void OpenPrint(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
         try
         {
             logger.Info("Opening Print module.");
+
+            if (activePrintWindow is { IsVisible: true })
+            {
+                if (activePrintWindow.WindowState == System.Windows.WindowState.Minimized)
+                {
+                    activePrintWindow.WindowState = System.Windows.WindowState.Normal;
+                }
+
+                activePrintWindow.Activate();
+                logger.Info("Print module window is already open. Existing window was activated.");
+                return;
+            }
 
             Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
             if (activeDocument is null)
@@ -41,6 +55,8 @@ internal static class TrueBimCommandActions
             {
                 Owner = owner
             };
+            activePrintWindow = printWindow;
+            printWindow.Closed += (_, _) => activePrintWindow = null;
             printWindow.ShowDialog();
         }
         catch (Exception exception)
@@ -155,16 +171,33 @@ internal static class TrueBimCommandActions
             Document document = orderedDocuments[index];
             string sourceId = CreatePrintSourceId(document, index);
             string sourceName = CreatePrintSourceName(document, sourceNameCounts, sourceNameIndexes);
-            IReadOnlyList<PrintSheetInfo> sheets = collector.Collect(document, sourceId, sourceName);
-            if (sheets.Count == 0)
+            PrintSheetSourceKind sourceKind = IsLinkedDocument(document)
+                ? PrintSheetSourceKind.LinkedDocument
+                : PrintSheetSourceKind.OpenDocument;
+            IReadOnlyList<PrintSheetInfo> sheets = ReferenceEquals(document, activeDocument)
+                ? collector.Collect(document, sourceId, sourceName, sourceKind)
+                : Array.Empty<PrintSheetInfo>();
+            if (sheets.Count == 0 && ReferenceEquals(document, activeDocument))
             {
                 continue;
             }
 
-            sources.Add(new PrintSheetSource(sourceId, sourceName, document, sheets));
+            sources.Add(new PrintSheetSource(sourceId, sourceName, sourceKind, document, sheets));
         }
 
         return sources;
+    }
+
+    private static bool IsLinkedDocument(Document document)
+    {
+        try
+        {
+            return document.IsLinked;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static string CreatePrintSourceId(Document document, int index)

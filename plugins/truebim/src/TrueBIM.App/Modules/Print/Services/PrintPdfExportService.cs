@@ -95,12 +95,28 @@ public sealed class PrintPdfExportService
         {
             PrintPdfExportMode.SeparateFiles => ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures),
             PrintPdfExportMode.CombinedFile => ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures),
+            PrintPdfExportMode.SeparateAndCombined => ExportSeparateAndCombined(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF export mode.")
         };
 #endif
     }
 
 #if REVIT2022_OR_GREATER
+    private static PrintPdfExportResult ExportSeparateAndCombined(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintPdfExportItem> items,
+        string? combinedFileName,
+        PrintPdfExportSettings settings,
+        ITrueBimLogger logger,
+        List<string> exportedFiles,
+        List<PrintPdfExportFailure> failures)
+    {
+        ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures);
+        ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures);
+        return new PrintPdfExportResult(exportedFiles, failures);
+    }
+
     private static PrintPdfExportResult ExportSeparateFiles(
         Document document,
         string exportFolder,
@@ -257,6 +273,7 @@ public sealed class PrintPdfExportService
         {
             PrintPdfExportMode.SeparateFiles => "отдельные PDF",
             PrintPdfExportMode.CombinedFile => "один PDF",
+            PrintPdfExportMode.SeparateAndCombined => "отдельные PDF и один общий",
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF export mode.")
         };
     }

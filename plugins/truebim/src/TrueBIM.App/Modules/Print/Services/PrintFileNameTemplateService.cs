@@ -72,8 +72,27 @@ public sealed class PrintFileNameTemplateService
             "Counter" => counter.ToString(CultureInfo.InvariantCulture),
             _ when token.StartsWith("Counter:", StringComparison.Ordinal) => FormatCounter(token, counter),
             _ when token.StartsWith("Date:", StringComparison.Ordinal) => FormatDate(token, context.ExportDate),
+            _ when token.StartsWith("SheetParameter:", StringComparison.Ordinal) => ResolveDictionaryToken(
+                sheet.SheetParameters,
+                token,
+                "SheetParameter:"),
+            _ when token.StartsWith("ProjectParameter:", StringComparison.Ordinal) => ResolveDictionaryToken(
+                context.ProjectParameters,
+                token,
+                "ProjectParameter:"),
             _ => null
         };
+    }
+
+    private static string? ResolveDictionaryToken(
+        IReadOnlyDictionary<string, string> values,
+        string token,
+        string prefix)
+    {
+        string key = token.Substring(prefix.Length).Trim();
+        return !string.IsNullOrWhiteSpace(key) && values.TryGetValue(key, out string? value)
+            ? value
+            : null;
     }
 
     private static string FormatCounter(string token, int counter)

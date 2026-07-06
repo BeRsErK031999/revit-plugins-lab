@@ -61,10 +61,13 @@ public sealed class PrintSheetSelectionStateTests
             elementId,
             sourceId,
             sourceId,
+            SourceIsLinked: false,
+            GroupName: "Без группы",
             $"A-{elementId}",
             "Plan",
             "A1",
             IsPlaceholder: !canBePrinted,
-            CanBePrinted: canBePrinted);
+            CanBePrinted: canBePrinted,
+            new Dictionary<string, string>());
     }
 }

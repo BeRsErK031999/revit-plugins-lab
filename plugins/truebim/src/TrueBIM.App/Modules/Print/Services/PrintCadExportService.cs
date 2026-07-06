@@ -28,6 +28,19 @@ public sealed class PrintCadExportService
         string? setupName,
         ITrueBimLogger logger)
     {
+        return Export(document, exportFolder, items, format, setupName, mergeViews: false, mergedFileName: null, logger);
+    }
+
+    public PrintCadExportResult Export(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintCadExportItem> items,
+        PrintCadExportFormat format,
+        string? setupName,
+        bool mergeViews,
+        string? mergedFileName,
+        ITrueBimLogger logger)
+    {
         Guard.NotNull(document, nameof(document));
         Guard.NotNullOrWhiteSpace(exportFolder, nameof(exportFolder));
         Guard.NotNull(items, nameof(items));
@@ -49,7 +62,17 @@ public sealed class PrintCadExportService
                 items.Select(item => new PrintCadExportFailure(format, item, exception.Message)).ToList());
         }
 
+        if (format == PrintCadExportFormat.Dwf)
+        {
+            return ExportDwf(document, exportFolder, items, mergeViews, mergedFileName, logger, exportedFiles, failures);
+        }
+
         BaseExportOptions options = setupService.CreateOptions(document, format, setupName, logger);
+        if (mergeViews && format == PrintCadExportFormat.Dwg)
+        {
+            return ExportMergedDwg(document, exportFolder, items, mergedFileName, options, logger, exportedFiles, failures);
+        }
+
         foreach (PrintCadExportItem item in items)
         {
             try
@@ -86,6 +109,140 @@ public sealed class PrintCadExportService
         return new PrintCadExportResult(format, exportedFiles, failures);
     }
 
+    private static PrintCadExportResult ExportMergedDwg(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintCadExportItem> items,
+        string? mergedFileName,
+        BaseExportOptions options,
+        ITrueBimLogger logger,
+        List<string> exportedFiles,
+        List<PrintCadExportFailure> failures)
+    {
+        try
+        {
+            string cadFileName = NormalizeCadFileName(
+                string.IsNullOrWhiteSpace(mergedFileName) ? "Объединенный DWG" : mergedFileName!,
+                PrintCadExportFormat.Dwg);
+            string exportName = Path.GetFileNameWithoutExtension(cadFileName);
+            string outputPath = Path.Combine(exportFolder, cadFileName);
+            if (File.Exists(outputPath))
+            {
+                File.Delete(outputPath);
+            }
+
+            if (options is DWGExportOptions dwgOptions)
+            {
+                dwgOptions.MergedViews = true;
+            }
+
+            List<ElementId> viewIds = items
+                .Select(item => RevitElementIds.Create(item.ElementId))
+                .ToList();
+            bool exported = ExportWithOptions(document, exportFolder, exportName, viewIds, PrintCadExportFormat.Dwg, options);
+            if (!exported)
+            {
+                AddFailureForItems(PrintCadExportFormat.Dwg, items, failures, "Revit не подтвердил экспорт объединенного DWG.");
+                return new PrintCadExportResult(PrintCadExportFormat.Dwg, exportedFiles, failures);
+            }
+
+            exportedFiles.Add(outputPath);
+            logger.Info($"Exported merged DWG: {outputPath}");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to export merged DWG.", exception);
+            AddFailureForItems(PrintCadExportFormat.Dwg, items, failures, exception.Message);
+        }
+
+        return new PrintCadExportResult(PrintCadExportFormat.Dwg, exportedFiles, failures);
+    }
+
+    private static PrintCadExportResult ExportDwf(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintCadExportItem> items,
+        bool mergeViews,
+        string? mergedFileName,
+        ITrueBimLogger logger,
+        List<string> exportedFiles,
+        List<PrintCadExportFailure> failures)
+    {
+        if (mergeViews)
+        {
+            try
+            {
+                string dwfFileName = NormalizeCadFileName(
+                    string.IsNullOrWhiteSpace(mergedFileName) ? "Объединенный DWF" : mergedFileName!,
+                    PrintCadExportFormat.Dwf);
+                string outputPath = Path.Combine(exportFolder, dwfFileName);
+                if (File.Exists(outputPath))
+                {
+                    File.Delete(outputPath);
+                }
+
+                ViewSet viewSet = CreateViewSet(document, items);
+                DWFExportOptions options = new()
+                {
+                    MergedViews = true,
+                    StopOnError = true
+                };
+                bool exported = document.Export(exportFolder, Path.GetFileNameWithoutExtension(dwfFileName), viewSet, options);
+                if (!exported)
+                {
+                    AddFailureForItems(PrintCadExportFormat.Dwf, items, failures, "Revit не подтвердил экспорт объединенного DWF.");
+                    return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
+                }
+
+                exportedFiles.Add(outputPath);
+                logger.Info($"Exported merged DWF: {outputPath}");
+            }
+            catch (Exception exception)
+            {
+                logger.Error("Failed to export merged DWF.", exception);
+                AddFailureForItems(PrintCadExportFormat.Dwf, items, failures, exception.Message);
+            }
+
+            return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
+        }
+
+        foreach (PrintCadExportItem item in items)
+        {
+            try
+            {
+                string dwfFileName = NormalizeCadFileName(item.FileName, PrintCadExportFormat.Dwf);
+                string outputPath = Path.Combine(exportFolder, dwfFileName);
+                if (File.Exists(outputPath))
+                {
+                    File.Delete(outputPath);
+                }
+
+                ViewSet viewSet = CreateViewSet(document, [item]);
+                DWFExportOptions options = new()
+                {
+                    MergedViews = false,
+                    StopOnError = true
+                };
+                bool exported = document.Export(exportFolder, Path.GetFileNameWithoutExtension(dwfFileName), viewSet, options);
+                if (!exported)
+                {
+                    failures.Add(new PrintCadExportFailure(PrintCadExportFormat.Dwf, item, "Revit не подтвердил экспорт DWF."));
+                    continue;
+                }
+
+                exportedFiles.Add(outputPath);
+                logger.Info($"Exported DWF: {outputPath}");
+            }
+            catch (Exception exception)
+            {
+                logger.Error($"Failed to export DWF for sheet element id {item.ElementId}.", exception);
+                failures.Add(new PrintCadExportFailure(PrintCadExportFormat.Dwf, item, exception.Message));
+            }
+        }
+
+        return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
+    }
+
     public static string NormalizeCadFileName(string fileName, PrintCadExportFormat format)
     {
         Guard.NotNullOrWhiteSpace(fileName, nameof(fileName));
@@ -103,6 +260,7 @@ public sealed class PrintCadExportService
         {
             PrintCadExportFormat.Dwg => "DWG",
             PrintCadExportFormat.Dxf => "DXF",
+            PrintCadExportFormat.Dwf => "DWF",
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported CAD export format.")
         };
     }
@@ -113,8 +271,32 @@ public sealed class PrintCadExportService
         {
             PrintCadExportFormat.Dwg => ".dwg",
             PrintCadExportFormat.Dxf => ".dxf",
+            PrintCadExportFormat.Dwf => ".dwf",
             _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported CAD export format.")
         };
+    }
+
+    private static ViewSet CreateViewSet(Document document, IEnumerable<PrintCadExportItem> items)
+    {
+        ViewSet viewSet = new();
+        foreach (PrintCadExportItem item in items)
+        {
+            if (document.GetElement(RevitElementIds.Create(item.ElementId)) is View view)
+            {
+                viewSet.Insert(view);
+            }
+        }
+
+        return viewSet;
+    }
+
+    private static void AddFailureForItems(
+        PrintCadExportFormat format,
+        IReadOnlyList<PrintCadExportItem> items,
+        List<PrintCadExportFailure> failures,
+        string message)
+    {
+        failures.AddRange(items.Select(item => new PrintCadExportFailure(format, item, message)));
     }
 
     private static bool ExportWithOptions(

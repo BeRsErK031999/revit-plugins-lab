@@ -20,6 +20,9 @@ public sealed class PrintSettingsServiceTests
         Assert.True(settings.ExportPdf);
         Assert.False(settings.ExportDwg);
         Assert.False(settings.ExportDxf);
+        Assert.False(settings.ExportDwf);
+        Assert.False(settings.CombineDwg);
+        Assert.False(settings.ExportSeparatePdfWithCombined);
         Assert.Equal(PrintPdfExportService.DefaultSettings.ColorMode, settings.PdfColorMode);
     }
 
@@ -42,8 +45,11 @@ public sealed class PrintSettingsServiceTests
             AlwaysUseRasterPdf: true,
             ExportDwg: true,
             ExportDxf: true,
-            "  Office DWG  ",
-            "  Office DXF  "));
+            ExportDwf: true,
+            CombineDwg: true,
+            ExportSeparatePdfWithCombined: true,
+            DwgSetupName: "  Office DWG  ",
+            DxfSetupName: "  Office DXF  "));
 
         Assert.True(service.SettingsFileExists);
         PrintSettings reloadedSettings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
@@ -58,6 +64,9 @@ public sealed class PrintSettingsServiceTests
         Assert.True(reloadedSettings.AlwaysUseRasterPdf);
         Assert.True(reloadedSettings.ExportDwg);
         Assert.True(reloadedSettings.ExportDxf);
+        Assert.True(reloadedSettings.ExportDwf);
+        Assert.True(reloadedSettings.CombineDwg);
+        Assert.True(reloadedSettings.ExportSeparatePdfWithCombined);
         Assert.Equal("Office DWG", reloadedSettings.DwgSetupName);
         Assert.Equal("Office DXF", reloadedSettings.DxfSetupName);
     }

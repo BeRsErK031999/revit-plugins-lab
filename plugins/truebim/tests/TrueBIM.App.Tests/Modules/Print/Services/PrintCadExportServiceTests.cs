@@ -23,6 +23,14 @@ public sealed class PrintCadExportServiceTests
     }
 
     [Fact]
+    public void NormalizeCadFileName_AddsDwfExtension()
+    {
+        string fileName = PrintCadExportService.NormalizeCadFileName("A-101_План", PrintCadExportFormat.Dwf);
+
+        Assert.Equal("A-101_План.dwf", fileName);
+    }
+
+    [Fact]
     public void NormalizeCadFileName_KeepsExistingFormatExtension()
     {
         string fileName = PrintCadExportService.NormalizeCadFileName("A-101.DWG", PrintCadExportFormat.Dwg);

@@ -4,6 +4,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Win32;
 using TrueBIM.App.Modules.Print.Services;
 using TrueBIM.App.Modules.Print.Models;
@@ -19,8 +21,9 @@ public sealed class PrintWindow : Window
     private readonly ObservableCollection<PrintSheetSourceFilterOption> sourceFilterOptions = new();
     private readonly IReadOnlyList<PrintSheetSource> sheetSources;
     private readonly Dictionary<string, PrintSheetSource> sheetSourcesById;
+    private readonly Dictionary<string, List<PrintSheetInfo>> sourceSheetsById;
+    private readonly HashSet<string> loadedSourceIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PrintFileNameContext> fileNameContextsBySourceId;
-    private readonly IReadOnlyList<PrintSheetInfo> sheets;
     private readonly PrintSheetSelectionState sheetSelectionState;
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
@@ -29,6 +32,7 @@ public sealed class PrintWindow : Window
     private readonly PrintCadExportService cadExportService = new();
     private readonly PrintCadExportSetupService cadExportSetupService = new();
     private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
+    private readonly ObservableCollection<PrintFileNameTokenOption> fileNameTokenOptions = new();
     private readonly PrintSettingsService? printSettingsService;
     private readonly PrintSettings initialSettings;
     private readonly bool hasSavedPrintSettings;
@@ -64,6 +68,11 @@ public sealed class PrintWindow : Window
         Content = "Один PDF",
         ToolTip = "Объединить выбранные листы в один PDF файл."
     };
+    private readonly CheckBox separatePdfWithCombinedInput = new()
+    {
+        Content = "И отдельные PDF",
+        ToolTip = "В режиме одного PDF дополнительно сохранить отдельный PDF на каждый лист."
+    };
     private readonly TextBox combinedPdfNameInput = new()
     {
         ToolTip = "Имя файла для объединенного PDF."
@@ -85,8 +94,25 @@ public sealed class PrintWindow : Window
         Content = "DXF",
         ToolTip = "Добавить DXF в очередь экспорта."
     };
+    private readonly CheckBox dwfInput = new()
+    {
+        Content = "DWF",
+        ToolTip = "Добавить DWF в очередь экспорта."
+    };
+    private readonly CheckBox combineDwgInput = new()
+    {
+        Content = "Один DWG",
+        ToolTip = "Экспортировать выбранные DWG в один файл через MergedViews."
+    };
     private readonly ComboBox dwgSetupInput = CreateCadSetupInput("Настройка экспорта DWG из сохраненных настроек Revit.");
     private readonly ComboBox dxfSetupInput = CreateCadSetupInput("Настройка экспорта DXF из сохраненных настроек Revit.");
+    private readonly ComboBox fileNameTokenInput = new()
+    {
+        DisplayMemberPath = nameof(PrintFileNameTokenOption.DisplayName),
+        Height = 32,
+        MinWidth = 240,
+        ToolTip = "Токен или параметр для вставки в маску имени файла."
+    };
     private readonly Button exportButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetInfo> sheets, ITrueBimLogger logger)
@@ -107,9 +133,20 @@ public sealed class PrintWindow : Window
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
-        IReadOnlyList<PrintSheetInfo> allSheets = this.sheetSources.SelectMany(source => source.Sheets).ToList();
-        this.sheets = allSheets;
-        sheetSelectionState = new PrintSheetSelectionState(this.sheets);
+        sourceSheetsById = this.sheetSources.ToDictionary(
+            source => source.SourceId,
+            source =>
+            {
+                List<PrintSheetInfo> sourceSheets = source.Sheets.ToList();
+                if (sourceSheets.Count > 0)
+                {
+                    loadedSourceIds.Add(source.SourceId);
+                }
+
+                return sourceSheets;
+            },
+            StringComparer.Ordinal);
+        sheetSelectionState = new PrintSheetSelectionState(GetAllLoadedSheets());
         sheetSourcesById = this.sheetSources.ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         fileNameContextsBySourceId = this.sheetSources.ToDictionary(
             source => source.SourceId,
@@ -121,6 +158,7 @@ public sealed class PrintWindow : Window
         initialSettings = printSettingsService?.Load() ?? PrintSettingsService.DefaultSettings;
         fileNameContext = CreateFileNameContext(document);
         LoadSourceFilterOptions();
+        LoadFileNameTokenOptions();
         LoadCadExportSetupOptions();
         ApplyInitialSettings();
 
@@ -135,7 +173,7 @@ public sealed class PrintWindow : Window
         Content = CreateContent();
 
         LoadSheets();
-        logger.Info($"Print window opened for '{document.Title}' with {sheets.Count} sheets from {this.sheetSources.Count} sources.");
+        logger.Info($"Print window opened for '{document.Title}' with {GetAllLoadedSheets().Count} loaded sheets from {this.sheetSources.Count} sources.");
     }
 
     protected override void OnClosed(EventArgs e)
@@ -205,8 +243,8 @@ public sealed class PrintWindow : Window
         selectionActions.Children.Add(includePlaceholdersInput);
 
         sourceFilterInput.ItemsSource = sourceFilterOptions;
-        sourceFilterInput.SelectedIndex = sourceFilterOptions.Count > 0 ? 0 : -1;
-        sourceFilterInput.IsEnabled = sourceFilterOptions.Count > 2;
+        sourceFilterInput.SelectedItem = FindActiveSourceFilterOption() ?? sourceFilterOptions.FirstOrDefault();
+        sourceFilterInput.IsEnabled = sourceFilterOptions.Count > 1;
         sourceFilterInput.SelectionChanged += (_, _) => LoadSheets();
         selectionActions.Children.Add(sourceFilterInput);
 
@@ -216,7 +254,7 @@ public sealed class PrintWindow : Window
         TextBlock documentText = new()
         {
             Text = sheetSources.Count > 1
-                ? $"Открытых документов: {sheetSources.Count}. Активный: {(string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title)}"
+                ? $"Источников: {sheetSources.Count}. Активный: {(string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title)}"
                 : string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
@@ -240,23 +278,25 @@ public sealed class PrintWindow : Window
         sheetGrid.CanUserAddRows = false;
         sheetGrid.IsReadOnly = false;
         sheetGrid.ItemsSource = sheetRows;
+        ICollectionView groupedView = CollectionViewSource.GetDefaultView(sheetRows);
+        groupedView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PrintSheetRow.GroupName)));
+        groupedView.SortDescriptions.Add(new SortDescription(nameof(PrintSheetRow.GroupName), ListSortDirection.Ascending));
+        groupedView.SortDescriptions.Add(new SortDescription(nameof(PrintSheetRow.SheetNumber), ListSortDirection.Ascending));
+        groupedView.SortDescriptions.Add(new SortDescription(nameof(PrintSheetRow.SheetName), ListSortDirection.Ascending));
         sheetGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
         sheetGrid.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
         sheetGrid.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-        sheetGrid.SelectionMode = DataGridSelectionMode.Single;
-        sheetGrid.ToolTip = "Список листов активного документа для будущей печати и экспорта.";
+        sheetGrid.SelectionMode = DataGridSelectionMode.Extended;
+        sheetGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
+        sheetGrid.CanUserSortColumns = true;
+        sheetGrid.KeyDown += OnSheetGridKeyDown;
+        sheetGrid.GroupStyle.Add(CreateSheetGroupStyle());
+        sheetGrid.RowStyle = CreateSheetRowStyle();
+        sheetGrid.ToolTip = "Список листов. Shift выделяет диапазон, Space переключает выбор выделенных строк.";
 
-        sheetGrid.Columns.Add(new DataGridCheckBoxColumn
-        {
-            Header = "Выбран",
-            Binding = new Binding(nameof(PrintSheetRow.IsSelected))
-            {
-                Mode = BindingMode.TwoWay,
-                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
-            },
-            Width = 72
-        });
+        sheetGrid.Columns.Add(CreateSelectionColumn());
         sheetGrid.Columns.Add(CreateTextColumn("Источник", nameof(PrintSheetRow.SourceName), 150));
+        sheetGrid.Columns.Add(CreateTextColumn("Группа", nameof(PrintSheetRow.GroupName), 120));
         sheetGrid.Columns.Add(CreateTextColumn("Номер", nameof(PrintSheetRow.SheetNumber), 110));
         sheetGrid.Columns.Add(CreateTextColumn("Имя листа", nameof(PrintSheetRow.SheetName), new DataGridLength(1, DataGridLengthUnitType.Star)));
         sheetGrid.Columns.Add(CreateTextColumn("Формат", nameof(PrintSheetRow.SheetFormat), 120));
@@ -272,6 +312,7 @@ public sealed class PrintWindow : Window
         {
             Margin = new Thickness(0, 16, 0, 0)
         };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -333,10 +374,40 @@ public sealed class PrintWindow : Window
         Grid.SetRow(maskRow, 1);
         root.Children.Add(maskRow);
 
+        Grid tokenRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        tokenRow.Children.Add(new TextBlock
+        {
+            Text = "Добавить в маску",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+
+        fileNameTokenInput.ItemsSource = fileNameTokenOptions;
+        fileNameTokenInput.SelectedIndex = fileNameTokenOptions.Count > 0 ? 0 : -1;
+        Grid.SetColumn(fileNameTokenInput, 1);
+        tokenRow.Children.Add(fileNameTokenInput);
+
+        Button addTokenButton = CreateActionButton("Добавить", TrueBimIcon.Apply, isEnabled: true);
+        addTokenButton.Margin = new Thickness(8, 0, 0, 0);
+        addTokenButton.ToolTip = "Вставить выбранный токен в маску имени файла.";
+        addTokenButton.Click += (_, _) => InsertSelectedFileNameToken();
+        Grid.SetColumn(addTokenButton, 2);
+        tokenRow.Children.Add(addTokenButton);
+
+        Grid.SetRow(tokenRow, 2);
+        root.Children.Add(tokenRow);
+
         Grid pdfRow = new()
         {
             Margin = new Thickness(0, 8, 0, 0)
         };
+        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -347,13 +418,20 @@ public sealed class PrintWindow : Window
         combinePdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
         pdfRow.Children.Add(combinePdfInput);
 
+        separatePdfWithCombinedInput.VerticalAlignment = VerticalAlignment.Center;
+        separatePdfWithCombinedInput.Margin = new Thickness(0, 0, 16, 0);
+        separatePdfWithCombinedInput.Checked += (_, _) => UpdatePdfOptionsState();
+        separatePdfWithCombinedInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+        Grid.SetColumn(separatePdfWithCombinedInput, 1);
+        pdfRow.Children.Add(separatePdfWithCombinedInput);
+
         TextBlock combinedPdfNameLabel = new()
         {
             Text = "PDF файл",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0)
         };
-        Grid.SetColumn(combinedPdfNameLabel, 1);
+        Grid.SetColumn(combinedPdfNameLabel, 2);
         pdfRow.Children.Add(combinedPdfNameLabel);
 
         combinedPdfNameInput.Height = 32;
@@ -362,10 +440,10 @@ public sealed class PrintWindow : Window
             ResetExportStatuses();
             UpdateExportState();
         };
-        Grid.SetColumn(combinedPdfNameInput, 2);
+        Grid.SetColumn(combinedPdfNameInput, 3);
         pdfRow.Children.Add(combinedPdfNameInput);
 
-        Grid.SetRow(pdfRow, 2);
+        Grid.SetRow(pdfRow, 3);
         root.Children.Add(pdfRow);
 
         Grid pdfSettingsRow = new()
@@ -409,7 +487,7 @@ public sealed class PrintWindow : Window
         Grid.SetColumn(forceRasterPdfInput, 4);
         pdfSettingsRow.Children.Add(forceRasterPdfInput);
 
-        Grid.SetRow(pdfSettingsRow, 3);
+        Grid.SetRow(pdfSettingsRow, 4);
         root.Children.Add(pdfSettingsRow);
 
         Grid cadSetupRow = new()
@@ -445,7 +523,7 @@ public sealed class PrintWindow : Window
         Grid.SetColumn(dxfSetupInput, 3);
         cadSetupRow.Children.Add(dxfSetupInput);
 
-        Grid.SetRow(cadSetupRow, 4);
+        Grid.SetRow(cadSetupRow, 5);
         root.Children.Add(cadSetupRow);
 
         DockPanel actionRow = new()
@@ -462,15 +540,23 @@ public sealed class PrintWindow : Window
         pdfInput.Margin = new Thickness(0, 0, 16, 0);
         dwgInput.Margin = new Thickness(0, 0, 16, 0);
         dxfInput.Margin = new Thickness(0, 0, 16, 0);
+        dwfInput.Margin = new Thickness(0, 0, 16, 0);
+        combineDwgInput.Margin = new Thickness(0, 0, 16, 0);
         pdfInput.Checked += (_, _) => UpdatePdfOptionsState();
         pdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
         dwgInput.Checked += (_, _) => UpdateExportState();
         dwgInput.Unchecked += (_, _) => UpdateExportState();
         dxfInput.Checked += (_, _) => UpdateExportState();
         dxfInput.Unchecked += (_, _) => UpdateExportState();
+        dwfInput.Checked += (_, _) => UpdateExportState();
+        dwfInput.Unchecked += (_, _) => UpdateExportState();
+        combineDwgInput.Checked += (_, _) => UpdateExportState();
+        combineDwgInput.Unchecked += (_, _) => UpdateExportState();
         formatActions.Children.Add(pdfInput);
         formatActions.Children.Add(dwgInput);
+        formatActions.Children.Add(combineDwgInput);
         formatActions.Children.Add(dxfInput);
+        formatActions.Children.Add(dwfInput);
 
         DockPanel.SetDock(formatActions, Dock.Left);
         actionRow.Children.Add(formatActions);
@@ -493,7 +579,7 @@ public sealed class PrintWindow : Window
         actions.Children.Add(closeButton);
 
         actionRow.Children.Add(actions);
-        Grid.SetRow(actionRow, 5);
+        Grid.SetRow(actionRow, 6);
         root.Children.Add(actionRow);
 
         UpdatePdfOptionsState();
@@ -543,6 +629,12 @@ public sealed class PrintWindow : Window
         bool exportPdf = pdfInput.IsChecked == true;
         bool combinePdf = combinePdfInput.IsChecked == true;
         combinePdfInput.IsEnabled = exportPdf;
+        separatePdfWithCombinedInput.IsEnabled = exportPdf && combinePdf;
+        if (!exportPdf || !combinePdf)
+        {
+            separatePdfWithCombinedInput.IsChecked = false;
+        }
+
         combinedPdfNameInput.IsEnabled = exportPdf && combinePdf;
         pdfColorModeInput.IsEnabled = exportPdf;
         pdfRasterQualityInput.IsEnabled = exportPdf;
@@ -563,10 +655,58 @@ public sealed class PrintWindow : Window
     private void LoadSourceFilterOptions()
     {
         sourceFilterOptions.Clear();
-        sourceFilterOptions.Add(new PrintSheetSourceFilterOption(null, "Все открытые документы"));
+        sourceFilterOptions.Add(new PrintSheetSourceFilterOption(null, "Все открытые документы", IncludeLinked: false));
+        if (sheetSources.Any(source => source.IsLinked))
+        {
+            sourceFilterOptions.Add(new PrintSheetSourceFilterOption(null, "Все открытые и связи", IncludeLinked: true));
+        }
+
         foreach (PrintSheetSource source in sheetSources)
         {
-            sourceFilterOptions.Add(new PrintSheetSourceFilterOption(source.SourceId, source.SourceName));
+            string displayName = source.IsLinked
+                ? $"Связь: {source.SourceName}"
+                : source.SourceName;
+            sourceFilterOptions.Add(new PrintSheetSourceFilterOption(source.SourceId, displayName, IncludeLinked: true));
+        }
+    }
+
+    private PrintSheetSourceFilterOption? FindActiveSourceFilterOption()
+    {
+        string? activeSourceId = sheetSources.FirstOrDefault(source => ReferenceEquals(source.Document, document))?.SourceId;
+        return string.IsNullOrWhiteSpace(activeSourceId)
+            ? null
+            : sourceFilterOptions.FirstOrDefault(option => string.Equals(option.SourceId, activeSourceId, StringComparison.Ordinal));
+    }
+
+    private void LoadFileNameTokenOptions()
+    {
+        fileNameTokenOptions.Clear();
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер листа", "{SheetNumber}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя листа", "{SheetName}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя документа", "{DocumentName}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер проекта", "{ProjectNumber}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя проекта", "{ProjectName}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Дата сегодня", "{Date:yyyy-MM-dd}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Счетчик 001", "{Counter:000}"));
+
+        foreach (string parameterName in GetAllLoadedSheets()
+            .SelectMany(sheet => sheet.SheetParameters.Keys)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            fileNameTokenOptions.Add(new PrintFileNameTokenOption(
+                $"Параметр листа: {parameterName}",
+                $"{{SheetParameter:{parameterName}}}"));
+        }
+
+        foreach (string parameterName in fileNameContextsBySourceId.Values
+            .SelectMany(context => context.ProjectParameters.Keys)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            fileNameTokenOptions.Add(new PrintFileNameTokenOption(
+                $"Параметр проекта: {parameterName}",
+                $"{{ProjectParameter:{parameterName}}}"));
         }
     }
 
@@ -574,30 +714,82 @@ public sealed class PrintWindow : Window
     {
         sheetRows.Clear();
         bool includePlaceholders = includePlaceholdersInput.IsChecked == true;
-        string? selectedSourceId = GetSelectedSourceId();
+        PrintSheetSourceFilterOption? selectedSource = GetSelectedSourceFilterOption();
+        EnsureSheetsLoaded(selectedSource);
         IEnumerable<PrintSheetInfo> visibleSheets = includePlaceholders
-            ? sheets
-            : sheets.Where(sheet => !sheet.IsPlaceholder);
+            ? GetAllLoadedSheets()
+            : GetAllLoadedSheets().Where(sheet => !sheet.IsPlaceholder);
+        string? selectedSourceId = selectedSource?.SourceId;
         if (!string.IsNullOrWhiteSpace(selectedSourceId))
         {
             visibleSheets = visibleSheets.Where(sheet => string.Equals(sheet.SourceId, selectedSourceId, StringComparison.Ordinal));
         }
-
-        foreach (PrintSheetInfo sheet in visibleSheets)
+        else if (selectedSource?.IncludeLinked != true)
         {
-            PrintSheetRow row = new(sheet, sheetSelectionState.Get(sheet));
-            row.PropertyChanged += (_, args) =>
-            {
-                if (args.PropertyName == nameof(PrintSheetRow.IsSelected))
-                {
-                    sheetSelectionState.Set(row.Sheet, row.IsSelected);
-                    UpdateExportState();
-                }
-            };
-            sheetRows.Add(row);
+            visibleSheets = visibleSheets.Where(sheet => !sheet.SourceIsLinked);
         }
 
+        visibleSheets = visibleSheets
+            .OrderBy(sheet => sheet.GroupName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(sheet => sheet.SheetNumber, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(sheet => sheet.SheetName, StringComparer.CurrentCultureIgnoreCase);
+
+        ICollectionView view = CollectionViewSource.GetDefaultView(sheetRows);
+        using (view.DeferRefresh())
+        {
+            foreach (PrintSheetInfo sheet in visibleSheets)
+            {
+                PrintSheetRow row = new(sheet, sheetSelectionState.Get(sheet));
+                row.PropertyChanged += (_, args) =>
+                {
+                    if (args.PropertyName == nameof(PrintSheetRow.IsSelected))
+                    {
+                        sheetSelectionState.Set(row.Sheet, row.IsSelected);
+                        UpdateExportState();
+                    }
+                };
+                sheetRows.Add(row);
+            }
+        }
+
+        LoadFileNameTokenOptions();
         UpdateFileNamePreviews();
+    }
+
+    private void EnsureSheetsLoaded(PrintSheetSourceFilterOption? selectedSource)
+    {
+        IEnumerable<PrintSheetSource> sourcesToLoad;
+        string? selectedSourceId = selectedSource?.SourceId;
+        if (!string.IsNullOrWhiteSpace(selectedSourceId))
+        {
+            sourcesToLoad = sheetSources.Where(source => string.Equals(source.SourceId, selectedSourceId, StringComparison.Ordinal));
+        }
+        else if (selectedSource?.IncludeLinked == true)
+        {
+            sourcesToLoad = sheetSources;
+        }
+        else
+        {
+            sourcesToLoad = sheetSources.Where(source => !source.IsLinked);
+        }
+
+        PrintSheetCollectorService collector = new();
+        foreach (PrintSheetSource source in sourcesToLoad)
+        {
+            if (loadedSourceIds.Contains(source.SourceId))
+            {
+                continue;
+            }
+
+            IReadOnlyList<PrintSheetInfo> sourceSheets = collector.Collect(
+                source.Document,
+                source.SourceId,
+                source.SourceName,
+                source.SourceKind);
+            sourceSheetsById[source.SourceId] = sourceSheets.ToList();
+            loadedSourceIds.Add(source.SourceId);
+            logger.Info($"Loaded {sourceSheets.Count} sheets for print source '{source.SourceName}'.");
+        }
     }
 
     private void UpdateFileNamePreviews()
@@ -669,16 +861,124 @@ public sealed class PrintWindow : Window
         }
     }
 
+    private ExistingFileDecision ResolveExistingFileDecision(
+        IReadOnlyList<PrintSheetRow> selectedRows,
+        PrintPdfExportMode pdfMode,
+        bool combineDwg)
+    {
+        List<string> existingPaths = GetExistingOutputPaths(selectedRows, pdfMode, combineDwg)
+            .Where(File.Exists)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        if (existingPaths.Count == 0)
+        {
+            return ExistingFileDecision.Replace;
+        }
+
+        MessageBoxResult result = MessageBox.Show(
+            this,
+            $"В папке экспорта уже есть файлов с такими именами: {existingPaths.Count}.\n\nДа - заменить существующие файлы.\nНет - пропустить листы с совпадающими файлами.\nОтмена - не запускать экспорт.",
+            "Печать",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Warning);
+
+        return result switch
+        {
+            MessageBoxResult.Yes => ExistingFileDecision.Replace,
+            MessageBoxResult.No => ExistingFileDecision.Skip,
+            _ => ExistingFileDecision.Cancel
+        };
+    }
+
+    private bool HasExistingOutput(
+        PrintSheetRow row,
+        PrintPdfExportMode pdfMode,
+        bool combineDwg)
+    {
+        return GetOutputPathsForRow(row, pdfMode, combineDwg).Any(File.Exists);
+    }
+
+    private IEnumerable<string> GetExistingOutputPaths(
+        IReadOnlyList<PrintSheetRow> selectedRows,
+        PrintPdfExportMode pdfMode,
+        bool combineDwg)
+    {
+        foreach (PrintSheetRow row in selectedRows)
+        {
+            foreach (string outputPath in GetOutputPathsForRow(row, pdfMode, combineDwg))
+            {
+                yield return outputPath;
+            }
+        }
+    }
+
+    private IEnumerable<string> GetOutputPathsForRow(
+        PrintSheetRow row,
+        PrintPdfExportMode pdfMode,
+        bool combineDwg)
+    {
+        string exportFolder = exportFolderInput.Text;
+        if (pdfInput.IsChecked == true && pdfMode is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined)
+        {
+            yield return Path.Combine(exportFolder, PrintPdfExportService.NormalizePdfFileName(row.FileNamePreview));
+        }
+
+        if (pdfInput.IsChecked == true && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined)
+        {
+            yield return Path.Combine(exportFolder, PrintPdfExportService.BuildCombinedPdfFileName(BuildSourceCombinedPdfName(row.Sheet.SourceId)));
+        }
+
+        if (dwgInput.IsChecked == true)
+        {
+            string dwgFileName = combineDwg
+                ? BuildMergedCadFileName(row.SourceName, PrintCadExportFormat.Dwg)
+                : row.FileNamePreview;
+            yield return Path.Combine(exportFolder, PrintCadExportService.NormalizeCadFileName(dwgFileName, PrintCadExportFormat.Dwg));
+        }
+
+        if (dxfInput.IsChecked == true)
+        {
+            yield return Path.Combine(exportFolder, PrintCadExportService.NormalizeCadFileName(row.FileNamePreview, PrintCadExportFormat.Dxf));
+        }
+
+        if (dwfInput.IsChecked == true)
+        {
+            yield return Path.Combine(exportFolder, PrintCadExportService.NormalizeCadFileName(row.FileNamePreview, PrintCadExportFormat.Dwf));
+        }
+    }
+
+    private string BuildSourceCombinedPdfName(string sourceId)
+    {
+        bool exportCombinedPdfPerSource = sheetRows
+            .Where(row => row.IsSelected && row.CanBePrinted)
+            .Select(row => row.Sheet.SourceId)
+            .Distinct(StringComparer.Ordinal)
+            .Count() > 1;
+        if (!exportCombinedPdfPerSource || !sheetSourcesById.TryGetValue(sourceId, out PrintSheetSource? source))
+        {
+            return combinedPdfNameInput.Text;
+        }
+
+        return $"{source.SourceName}_{combinedPdfNameInput.Text}";
+    }
+
+    private static string BuildMergedCadFileName(string sourceName, PrintCadExportFormat format)
+    {
+        return $"{sourceName}_{PrintCadExportService.GetDisplayName(format)}";
+    }
+
     private void StartExport()
     {
         SavePrintSettings();
-        IReadOnlyList<PrintSheetRow> selectedRows = sheetRows
+        List<PrintSheetRow> selectedRows = sheetRows
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
         string formats = GetSelectedFormatsText();
         bool exportPdf = pdfInput.IsChecked == true;
         bool exportDwg = dwgInput.IsChecked == true;
         bool exportDxf = dxfInput.IsChecked == true;
+        bool exportDwf = dwfInput.IsChecked == true;
+        bool combineDwg = combineDwgInput.IsChecked == true;
         PrintPdfExportMode pdfMode = GetSelectedPdfMode();
         PrintPdfExportSettings pdfSettings = GetSelectedPdfSettings();
         string pdfModeLogText = exportPdf
@@ -689,6 +989,25 @@ public sealed class PrintWindow : Window
             : "не выбраны";
         string? dwgSetupName = GetSelectedSetupName(dwgSetupInput);
         string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
+
+        ExistingFileDecision existingFileDecision = ResolveExistingFileDecision(selectedRows, pdfMode, combineDwg);
+        if (existingFileDecision == ExistingFileDecision.Cancel)
+        {
+            return;
+        }
+
+        if (existingFileDecision == ExistingFileDecision.Skip)
+        {
+            selectedRows = selectedRows
+                .Where(row => !HasExistingOutput(row, pdfMode, combineDwg))
+                .ToList();
+            if (selectedRows.Count == 0)
+            {
+                Autodesk.Revit.UI.TaskDialog.Show("Печать", "Все выбранные листы пропущены: файлы уже существуют.");
+                UpdateExportState();
+                return;
+            }
+        }
 
         logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
@@ -706,7 +1025,7 @@ public sealed class PrintWindow : Window
             .GroupBy(row => row.Sheet.SourceId)
             .ToList();
         bool exportCombinedPdfPerSource = exportPdf
-            && pdfMode == PrintPdfExportMode.CombinedFile
+            && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined
             && rowGroups.Count > 1;
 
         foreach (IGrouping<string, PrintSheetRow> rowGroup in rowGroups)
@@ -720,7 +1039,7 @@ public sealed class PrintWindow : Window
 
             IReadOnlyList<PrintSheetRow> sourceRows = rowGroup.ToList();
             string sourceCombinedPdfName = exportCombinedPdfPerSource
-                ? $"{source.SourceName}_{combinedPdfNameInput.Text}"
+                ? BuildSourceCombinedPdfName(source.SourceId)
                 : combinedPdfNameInput.Text;
 
             if (exportPdf)
@@ -751,6 +1070,8 @@ public sealed class PrintWindow : Window
                         .ToList(),
                     PrintCadExportFormat.Dwg,
                     dwgSetupName,
+                    combineDwg,
+                    BuildMergedCadFileName(source.SourceName, PrintCadExportFormat.Dwg),
                     logger);
                 exportedCount += result.ExportedFiles.Count;
                 failureCount += result.Failures.Count;
@@ -768,6 +1089,23 @@ public sealed class PrintWindow : Window
                         .ToList(),
                     PrintCadExportFormat.Dxf,
                     dxfSetupName,
+                    logger);
+                exportedCount += result.ExportedFiles.Count;
+                failureCount += result.Failures.Count;
+                ApplyCadStatus(rowStatuses, sourceRows, result);
+                failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
+            }
+
+            if (exportDwf)
+            {
+                PrintCadExportResult result = cadExportService.Export(
+                    source.Document,
+                    exportFolderInput.Text,
+                    sourceRows
+                        .Select(row => new PrintCadExportItem(row.Sheet.ElementId, row.FileNamePreview))
+                        .ToList(),
+                    PrintCadExportFormat.Dwf,
+                    setupName: null,
                     logger);
                 exportedCount += result.ExportedFiles.Count;
                 failureCount += result.Failures.Count;
@@ -832,36 +1170,37 @@ public sealed class PrintWindow : Window
     private void UpdateExportState()
     {
         int selectedCount = sheetRows.Count(row => row.IsSelected && row.CanBePrinted);
-        int selectedTotalCount = sheetSelectionState.CountSelected(sheets);
+        IReadOnlyList<PrintSheetInfo> loadedSheets = GetAllLoadedSheets();
+        int selectedTotalCount = sheetSelectionState.CountSelected(loadedSheets);
         int printableCount = sheetRows.Count(row => row.CanBePrinted);
         int hiddenPlaceholderCount = includePlaceholdersInput.IsChecked == true
             ? 0
-            : sheets.Count(sheet => sheet.IsPlaceholder);
+            : loadedSheets.Count(sheet => sheet.IsPlaceholder);
         int duplicateSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameDuplicate);
         int truncatedSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameTruncated);
         int unknownTokenCount = sheetRows.Count(row => row.HasUnknownFileNameTokens);
-        bool hasFormat = pdfInput.IsChecked == true || dwgInput.IsChecked == true || dxfInput.IsChecked == true;
+        bool hasFormat = pdfInput.IsChecked == true || dwgInput.IsChecked == true || dxfInput.IsChecked == true || dwfInput.IsChecked == true;
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
-        bool exportsPerSheetFiles = dwgInput.IsChecked == true
+        bool exportsPerSheetFiles = dwgInput.IsChecked == true && combineDwgInput.IsChecked != true
             || dxfInput.IsChecked == true
+            || dwfInput.IsChecked == true
             || (pdfInput.IsChecked == true && combinePdfInput.IsChecked != true);
+        combineDwgInput.IsEnabled = dwgInput.IsChecked == true;
         foreach (PrintSheetRow row in sheetRows)
         {
             row.ShowFileNameDuplicateWarning = exportsPerSheetFiles;
         }
 
-        int blockingDuplicateCount = exportsPerSheetFiles ? duplicateSelectedCount : 0;
-
-        exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder && blockingDuplicateCount == 0;
+        exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder;
         exportButton.ToolTip = exportButton.IsEnabled
             ? "Подготовить выбранные листы к экспорту."
-            : "Выберите листы, формат, папку назначения и устраните дубли имен.";
+            : "Выберите листы, формат и папку назначения.";
 
         string hiddenText = hiddenPlaceholderCount > 0
             ? $" Скрыто листов-заглушек: {hiddenPlaceholderCount}."
             : string.Empty;
-        string duplicateText = blockingDuplicateCount > 0
-            ? $" Дубли имен: {blockingDuplicateCount}."
+        string duplicateText = exportsPerSheetFiles && duplicateSelectedCount > 0
+            ? $" Дубли имен: {duplicateSelectedCount}."
             : string.Empty;
         string truncatedText = truncatedSelectedCount > 0
             ? $" Обрезанных имен: {truncatedSelectedCount}."
@@ -891,12 +1230,17 @@ public sealed class PrintWindow : Window
 
         if (dwgInput.IsChecked == true)
         {
-            formats.Add("DWG");
+            formats.Add(combineDwgInput.IsChecked == true ? "DWG (один файл)" : "DWG");
         }
 
         if (dxfInput.IsChecked == true)
         {
             formats.Add("DXF");
+        }
+
+        if (dwfInput.IsChecked == true)
+        {
+            formats.Add("DWF");
         }
 
         return formats.Count == 0
@@ -906,9 +1250,14 @@ public sealed class PrintWindow : Window
 
     private PrintPdfExportMode GetSelectedPdfMode()
     {
-        return combinePdfInput.IsChecked == true
-            ? PrintPdfExportMode.CombinedFile
-            : PrintPdfExportMode.SeparateFiles;
+        if (combinePdfInput.IsChecked != true)
+        {
+            return PrintPdfExportMode.SeparateFiles;
+        }
+
+        return separatePdfWithCombinedInput.IsChecked == true
+            ? PrintPdfExportMode.SeparateAndCombined
+            : PrintPdfExportMode.CombinedFile;
     }
 
     private string GetSelectedPdfModeText()
@@ -919,7 +1268,7 @@ public sealed class PrintWindow : Window
         }
 
         PrintPdfExportMode mode = GetSelectedPdfMode();
-        string details = mode == PrintPdfExportMode.CombinedFile
+        string details = mode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined
             ? $": {PrintPdfExportService.BuildCombinedPdfFileName(combinedPdfNameInput.Text)}"
             : string.Empty;
         return $" PDF: {PrintPdfExportService.GetModeDisplayName(mode)}{details}.";
@@ -959,9 +1308,10 @@ public sealed class PrintWindow : Window
         List<string> setupDisplays = new();
         if (dwgInput.IsChecked == true)
         {
-            setupDisplays.Add(PrintCadExportSetupService.GetSelectionDisplayName(
+            string dwgDisplay = PrintCadExportSetupService.GetSelectionDisplayName(
                 PrintCadExportFormat.Dwg,
-                dwgSetupInput.SelectedItem as PrintCadExportSetupOption));
+                dwgSetupInput.SelectedItem as PrintCadExportSetupOption);
+            setupDisplays.Add(combineDwgInput.IsChecked == true ? $"{dwgDisplay}, один файл" : dwgDisplay);
         }
 
         if (dxfInput.IsChecked == true)
@@ -971,6 +1321,11 @@ public sealed class PrintWindow : Window
                 dxfSetupInput.SelectedItem as PrintCadExportSetupOption));
         }
 
+        if (dwfInput.IsChecked == true)
+        {
+            setupDisplays.Add("DWF: без CAD setup");
+        }
+
         return setupDisplays.Count == 0
             ? string.Empty
             : $" CAD настройки: {string.Join("; ", setupDisplays)}.";
@@ -978,9 +1333,12 @@ public sealed class PrintWindow : Window
 
     private string? GetSelectedSourceId()
     {
-        return sourceFilterInput.SelectedItem is PrintSheetSourceFilterOption option
-            ? option.SourceId
-            : null;
+        return GetSelectedSourceFilterOption()?.SourceId;
+    }
+
+    private PrintSheetSourceFilterOption? GetSelectedSourceFilterOption()
+    {
+        return sourceFilterInput.SelectedItem as PrintSheetSourceFilterOption;
     }
 
     private string GetSelectedSourceDisplayName()
@@ -988,6 +1346,11 @@ public sealed class PrintWindow : Window
         return sourceFilterInput.SelectedItem is PrintSheetSourceFilterOption option
             ? option.DisplayName
             : "Все открытые документы";
+    }
+
+    private IReadOnlyList<PrintSheetInfo> GetAllLoadedSheets()
+    {
+        return sourceSheetsById.Values.SelectMany(sourceSheets => sourceSheets).ToList();
     }
 
     private static string? GetSelectedSetupName(ComboBox setupInput)
@@ -1036,6 +1399,9 @@ public sealed class PrintWindow : Window
         forceRasterPdfInput.IsChecked = settings.AlwaysUseRasterPdf;
         dwgInput.IsChecked = settings.ExportDwg;
         dxfInput.IsChecked = settings.ExportDxf;
+        dwfInput.IsChecked = settings.ExportDwf;
+        combineDwgInput.IsChecked = settings.CombineDwg;
+        separatePdfWithCombinedInput.IsChecked = settings.ExportSeparatePdfWithCombined;
     }
 
     private void SavePrintSettings()
@@ -1052,6 +1418,9 @@ public sealed class PrintWindow : Window
             forceRasterPdfInput.IsChecked == true,
             dwgInput.IsChecked == true,
             dxfInput.IsChecked == true,
+            dwfInput.IsChecked == true,
+            combineDwgInput.IsChecked == true,
+            separatePdfWithCombinedInput.IsChecked == true,
             GetSelectedSetupName(dwgSetupInput),
             GetSelectedSetupName(dxfSetupInput)));
     }
@@ -1070,6 +1439,105 @@ public sealed class PrintWindow : Window
             Width = width,
             IsReadOnly = true
         };
+    }
+
+    private static DataGridTemplateColumn CreateSelectionColumn()
+    {
+        FrameworkElementFactory checkBox = new(typeof(CheckBox));
+        checkBox.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        checkBox.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        checkBox.SetBinding(
+            CheckBox.IsCheckedProperty,
+            new Binding(nameof(PrintSheetRow.IsSelected))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            });
+
+        return new DataGridTemplateColumn
+        {
+            Header = "Выбран",
+            CellTemplate = new DataTemplate
+            {
+                VisualTree = checkBox
+            },
+            Width = 72
+        };
+    }
+
+    private static GroupStyle CreateSheetGroupStyle()
+    {
+        FrameworkElementFactory expander = new(typeof(Expander));
+        expander.SetValue(Expander.IsExpandedProperty, true);
+        expander.SetBinding(HeaderedContentControl.HeaderProperty, new Binding("Name") { StringFormat = "Группа: {0}" });
+        FrameworkElementFactory presenter = new(typeof(ItemsPresenter));
+        expander.AppendChild(presenter);
+
+        ControlTemplate template = new(typeof(GroupItem))
+        {
+            VisualTree = expander
+        };
+        Style containerStyle = new(typeof(GroupItem));
+        containerStyle.Setters.Add(new Setter(Control.TemplateProperty, template));
+
+        return new GroupStyle
+        {
+            ContainerStyle = containerStyle
+        };
+    }
+
+    private static Style CreateSheetRowStyle()
+    {
+        Style style = new(typeof(DataGridRow));
+        style.Triggers.Add(new DataTrigger
+        {
+            Binding = new Binding(nameof(PrintSheetRow.SourceIsLinked)),
+            Value = true,
+            Setters =
+            {
+                new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(238, 246, 255)))
+            }
+        });
+        return style;
+    }
+
+    private void OnSheetGridKeyDown(object sender, KeyEventArgs args)
+    {
+        if (args.Key != Key.Space || sheetGrid.SelectedItems.Count == 0)
+        {
+            return;
+        }
+
+        List<PrintSheetRow> selectedRows = sheetGrid.SelectedItems
+            .OfType<PrintSheetRow>()
+            .Where(row => row.CanBePrinted)
+            .ToList();
+        if (selectedRows.Count == 0)
+        {
+            return;
+        }
+
+        bool shouldSelect = selectedRows.Any(row => !row.IsSelected);
+        foreach (PrintSheetRow row in selectedRows)
+        {
+            row.IsSelected = shouldSelect;
+        }
+
+        args.Handled = true;
+        UpdateExportState();
+    }
+
+    private void InsertSelectedFileNameToken()
+    {
+        if (fileNameTokenInput.SelectedItem is not PrintFileNameTokenOption option)
+        {
+            return;
+        }
+
+        int caretIndex = Math.Max(0, fileNameMaskInput.CaretIndex);
+        fileNameMaskInput.Text = fileNameMaskInput.Text.Insert(caretIndex, option.Token);
+        fileNameMaskInput.CaretIndex = caretIndex + option.Token.Length;
+        fileNameMaskInput.Focus();
     }
 
     private static ComboBox CreateCadSetupInput(string tooltip)
@@ -1115,16 +1583,44 @@ public sealed class PrintWindow : Window
 
         try
         {
+            IReadOnlyDictionary<string, string> projectParameters = CollectProjectParameters(document);
             return new PrintFileNameContext(
                 documentName,
                 document.ProjectInformation?.Name ?? string.Empty,
                 document.ProjectInformation?.Number ?? string.Empty,
-                DateTime.Now);
+                DateTime.Now,
+                projectParameters);
         }
         catch (Exception)
         {
-            return new PrintFileNameContext(documentName, string.Empty, string.Empty, DateTime.Now);
+            return new PrintFileNameContext(documentName, string.Empty, string.Empty, DateTime.Now, new Dictionary<string, string>());
         }
+    }
+
+    private static IReadOnlyDictionary<string, string> CollectProjectParameters(RevitDocument document)
+    {
+        Dictionary<string, string> parameters = new(StringComparer.CurrentCultureIgnoreCase);
+        if (document.ProjectInformation is null)
+        {
+            return parameters;
+        }
+
+        foreach (Autodesk.Revit.DB.Parameter parameter in document.ProjectInformation.Parameters)
+        {
+            string name = parameter.Definition?.Name ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(name) || parameters.ContainsKey(name))
+            {
+                continue;
+            }
+
+            string value = parameter.AsValueString() ?? parameter.AsString() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                parameters[name] = value.Trim();
+            }
+        }
+
+        return parameters;
     }
 
     private static string CreateFallbackSourceId(RevitDocument document)
@@ -1164,6 +1660,7 @@ public sealed class PrintWindow : Window
             new PrintSheetSource(
                 sheets.FirstOrDefault()?.SourceId ?? CreateFallbackSourceId(document),
                 string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title,
+                PrintSheetSourceKind.OpenDocument,
                 document,
                 sheets)
         ];
@@ -1209,7 +1706,11 @@ public sealed class PrintWindow : Window
             }
         }
 
-        public string SourceName => Sheet.SourceName;
+        public string SourceName => Sheet.SourceIsLinked ? $"{Sheet.SourceName} (связь)" : Sheet.SourceName;
+
+        public bool SourceIsLinked => Sheet.SourceIsLinked;
+
+        public string GroupName => Sheet.GroupName;
 
         public string SheetNumber => Sheet.SheetNumber;
 
@@ -1361,7 +1862,16 @@ public sealed class PrintWindow : Window
         }
     }
 
-    private sealed record PrintSheetSourceFilterOption(string? SourceId, string DisplayName);
+    private sealed record PrintSheetSourceFilterOption(string? SourceId, string DisplayName, bool IncludeLinked);
+
+    private sealed record PrintFileNameTokenOption(string DisplayName, string Token);
+
+    private enum ExistingFileDecision
+    {
+        Replace,
+        Skip,
+        Cancel
+    }
 
     private static IReadOnlyList<KeyValuePair<PrintPdfColorMode, string>> GetPdfColorModeOptions()
     {

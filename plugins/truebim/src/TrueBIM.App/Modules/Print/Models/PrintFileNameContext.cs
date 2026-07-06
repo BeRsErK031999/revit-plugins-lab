@@ -4,4 +4,5 @@ public sealed record PrintFileNameContext(
     string DocumentName,
     string ProjectName,
     string ProjectNumber,
-    DateTime ExportDate);
+    DateTime ExportDate,
+    IReadOnlyDictionary<string, string> ProjectParameters);

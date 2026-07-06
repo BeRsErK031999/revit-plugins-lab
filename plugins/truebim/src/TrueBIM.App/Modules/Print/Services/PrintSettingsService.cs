@@ -22,6 +22,9 @@ public sealed class PrintSettingsService
         AlwaysUseRasterPdf: PrintPdfExportService.DefaultSettings.AlwaysUseRaster,
         ExportDwg: false,
         ExportDxf: false,
+        ExportDwf: false,
+        CombineDwg: false,
+        ExportSeparatePdfWithCombined: false,
         DwgSetupName: null,
         DxfSetupName: null);
 
@@ -112,6 +115,9 @@ public sealed class PrintSettingsService
             AlwaysUseRasterPdf: settings.AlwaysUseRasterPdf,
             ExportDwg: settings.ExportDwg,
             ExportDxf: settings.ExportDxf,
+            ExportDwf: settings.ExportDwf,
+            CombineDwg: settings.CombineDwg,
+            ExportSeparatePdfWithCombined: settings.ExportSeparatePdfWithCombined,
             DwgSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DwgSetupName),
             DxfSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DxfSetupName));
     }
@@ -130,6 +136,9 @@ public sealed class PrintSettingsService
             dto.AlwaysUseRasterPdf ?? DefaultSettings.AlwaysUseRasterPdf,
             dto.ExportDwg ?? DefaultSettings.ExportDwg,
             dto.ExportDxf ?? DefaultSettings.ExportDxf,
+            dto.ExportDwf ?? DefaultSettings.ExportDwf,
+            dto.CombineDwg ?? DefaultSettings.CombineDwg,
+            dto.ExportSeparatePdfWithCombined ?? DefaultSettings.ExportSeparatePdfWithCombined,
             dto.DwgSetupName,
             dto.DxfSetupName);
     }
@@ -149,6 +158,9 @@ public sealed class PrintSettingsService
             AlwaysUseRasterPdf = settings.AlwaysUseRasterPdf,
             ExportDwg = settings.ExportDwg,
             ExportDxf = settings.ExportDxf,
+            ExportDwf = settings.ExportDwf,
+            CombineDwg = settings.CombineDwg,
+            ExportSeparatePdfWithCombined = settings.ExportSeparatePdfWithCombined,
             DwgSetupName = settings.DwgSetupName,
             DxfSetupName = settings.DxfSetupName
         };
@@ -206,6 +218,15 @@ public sealed class PrintSettingsService
 
         [JsonPropertyName("exportDxf")]
         public bool? ExportDxf { get; init; }
+
+        [JsonPropertyName("exportDwf")]
+        public bool? ExportDwf { get; init; }
+
+        [JsonPropertyName("combineDwg")]
+        public bool? CombineDwg { get; init; }
+
+        [JsonPropertyName("exportSeparatePdfWithCombined")]
+        public bool? ExportSeparatePdfWithCombined { get; init; }
 
         [JsonPropertyName("dwgSetupName")]
         public string? DwgSetupName { get; init; }
