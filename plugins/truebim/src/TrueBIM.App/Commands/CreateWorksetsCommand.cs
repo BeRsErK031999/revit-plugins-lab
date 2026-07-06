@@ -1,7 +1,8 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using TrueBIM.App.Modules.BimTools;
+using TrueBIM.App.Modules.BimTools.Worksets.Services;
+using TrueBIM.App.Modules.BimTools.Worksets.UI;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -11,11 +12,38 @@ public sealed class CreateWorksetsCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
-        TrueBimCommandActions.OpenBimToolPlaceholder(
-            commandData,
-            BimToolPlaceholders.CreateWorksets,
-            owner: null,
-            new FileTrueBimLogger(new TrueBimLogPaths()));
+        FileTrueBimLogger logger = new(new TrueBimLogPaths());
+
+        try
+        {
+            UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
+            if (uiDocument is null)
+            {
+                logger.Warning("Create Worksets requested without an active document.");
+                TaskDialog.Show("Рабочие наборы", "Откройте документ Revit перед созданием рабочих наборов.");
+                return Result.Succeeded;
+            }
+
+            CreateWorksetsWindow window = new(
+                uiDocument.Document,
+                new WorksetCsvReader(),
+                new WorksetValidationService(),
+                new WorksharingService(logger),
+                new WorksetCreationService(logger),
+                logger);
+            System.Windows.Interop.WindowInteropHelper helper = new(window)
+            {
+                Owner = commandData.Application.MainWindowHandle
+            };
+
+            window.ShowDialog();
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to open Create Worksets window.", exception);
+            TaskDialog.Show("Рабочие наборы", "Не удалось открыть инструмент рабочих наборов. Используйте логи для диагностики.");
+            return Result.Failed;
+        }
 
         return Result.Succeeded;
     }
