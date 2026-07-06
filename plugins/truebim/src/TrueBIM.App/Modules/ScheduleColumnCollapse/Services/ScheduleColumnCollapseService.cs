@@ -111,7 +111,7 @@ public sealed class ScheduleColumnCollapseService
     private static ViewSchedule? ResolveTargetSchedule(UIDocument uiDocument, IntPtr ownerWindowHandle, out string? error)
     {
         Document document = uiDocument.Document;
-        ViewSchedule? activeSchedule = GetActiveSchedule(document);
+        ViewSchedule? activeSchedule = GetActiveSchedule(uiDocument);
         IReadOnlyList<ViewSchedule> selectedProjectBrowserSchedules = CollectSelectedProjectBrowserSchedules(uiDocument);
 
         ScheduleSourceSelectionWindow sourceSelectionWindow = new(
@@ -189,11 +189,11 @@ public sealed class ScheduleColumnCollapseService
         return document.GetElement(selectionWindow.SelectedSchedule.ScheduleId) as ViewSchedule;
     }
 
-    private static ViewSchedule? GetActiveSchedule(Document document)
+    private static ViewSchedule? GetActiveSchedule(UIDocument uiDocument)
     {
-        return document.ActiveView is ViewSchedule activeSchedule && !activeSchedule.IsTemplate
+        return uiDocument.ActiveView is ViewSchedule activeSchedule && !activeSchedule.IsTemplate
             ? activeSchedule
-            : null;
+            : ScheduleActiveViewTracker.GetLastActivatedSchedule(uiDocument);
     }
 
     private static IReadOnlyList<ScheduleSelectionItem> CollectScheduleSelectionItems(UIDocument uiDocument)
@@ -223,7 +223,7 @@ public sealed class ScheduleColumnCollapseService
             AddSchedule(schedule, "Выбрано на листе");
         }
 
-        if (GetActiveSchedule(document) is ViewSchedule activeSchedule)
+        if (GetActiveSchedule(uiDocument) is ViewSchedule activeSchedule)
         {
             AddSchedule(activeSchedule, "Активная спецификация");
         }

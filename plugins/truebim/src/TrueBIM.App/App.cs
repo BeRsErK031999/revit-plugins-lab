@@ -1,4 +1,6 @@
 using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Events;
+using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 using TrueBIM.App.UI;
 
 namespace TrueBIM.App;
@@ -9,6 +11,8 @@ public sealed class App : IExternalApplication
 
     public Result OnStartup(UIControlledApplication application)
     {
+        application.ViewActivated += OnViewActivated;
+
         try
         {
             application.CreateRibbonTab(TabName);
@@ -40,7 +44,21 @@ public sealed class App : IExternalApplication
 
     public Result OnShutdown(UIControlledApplication application)
     {
+        application.ViewActivated -= OnViewActivated;
+        ScheduleActiveViewTracker.Clear();
+
         return Result.Succeeded;
+    }
+
+    private static void OnViewActivated(object? sender, ViewActivatedEventArgs args)
+    {
+        try
+        {
+            ScheduleActiveViewTracker.CaptureActivatedView(args.CurrentActiveView);
+        }
+        catch
+        {
+        }
     }
 
     private static void AddButton(
