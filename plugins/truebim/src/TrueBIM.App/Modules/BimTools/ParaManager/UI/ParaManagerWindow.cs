@@ -20,6 +20,7 @@ public sealed class ParaManagerWindow : Window
     private readonly UIApplication uiApplication;
     private readonly Document document;
     private readonly ParameterCsvImportService csvImportService;
+    private readonly ProjectParameterExportService projectParameterExportService;
     private readonly ParaManagerValidationService validationService;
     private readonly ProjectParameterBindingService bindingService;
     private readonly ITrueBimLogger logger;
@@ -42,6 +43,7 @@ public sealed class ParaManagerWindow : Window
         this.uiApplication = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.csvImportService = csvImportService ?? throw new ArgumentNullException(nameof(csvImportService));
+        projectParameterExportService = new ProjectParameterExportService();
         this.validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
         this.bindingService = bindingService ?? throw new ArgumentNullException(nameof(bindingService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -134,16 +136,31 @@ public sealed class ParaManagerWindow : Window
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        StackPanel toolbar = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
         Button refreshButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Обновить список"),
             Height = 30,
-            MinWidth = 160,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0, 0, 0, 8)
+            MinWidth = 160
         };
         refreshButton.Click += (_, _) => RefreshProjectParameters();
-        panel.Children.Add(refreshButton);
+        toolbar.Children.Add(refreshButton);
+
+        Button exportButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, "Экспорт CSV"),
+            Height = 30,
+            MinWidth = 130,
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+        exportButton.Click += (_, _) => ExportProjectParameters();
+        toolbar.Children.Add(exportButton);
+        panel.Children.Add(toolbar);
 
         projectParameterList.BorderBrush = Brushes.LightGray;
         projectParameterList.BorderThickness = new Thickness(1);
@@ -391,6 +408,42 @@ public sealed class ParaManagerWindow : Window
         {
             logger.Error("Failed to collect project parameters.", exception);
             TaskDialog.Show("ParaManager", "Не удалось собрать параметры проекта. Используйте логи для диагностики.");
+        }
+    }
+
+    private void ExportProjectParameters()
+    {
+        try
+        {
+            IReadOnlyList<ProjectParameterRow> rows = bindingService.CollectProjectParameters(document);
+            if (rows.Count == 0)
+            {
+                statusText.Text = "В проекте не найдено параметров для экспорта.";
+                return;
+            }
+
+            SaveFileDialog dialog = new()
+            {
+                Title = "Экспорт параметров проекта",
+                Filter = "CSV files (*.csv)|*.csv",
+                FileName = "truebim-project-parameters.csv",
+                AddExtension = true,
+                DefaultExt = ".csv"
+            };
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            File.WriteAllText(dialog.FileName, projectParameterExportService.BuildCsv(rows), System.Text.Encoding.UTF8);
+            statusText.Text = $"Параметры проекта экспортированы: {rows.Count}. Файл: {dialog.FileName}";
+            reportText.Text = $"Экспорт параметров проекта завершён.\n\nФайл: {dialog.FileName}\nСтрок: {rows.Count}";
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to export project parameters.", exception);
+            TaskDialog.Show("ParaManager", "Не удалось экспортировать параметры проекта. Используйте логи для диагностики.");
         }
     }
 
