@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "source": {
+    "fileName": "sample-slab-isofields.png",
+    "units": "px",
+    "targetHost": "Slab"
+  },
+  "polylines": [
+    {
+      "id": "slab-zone-a",
+      "zoneName": "Slab Zone A",
+      "confidence": 0.92,
+      "points": [
+        { "x": 80.0, "y": 70.0 },
+        { "x": 360.0, "y": 70.0 },
+        { "x": 360.0, "y": 210.0 },
+        { "x": 80.0, "y": 210.0 },
+        { "x": 80.0, "y": 70.0 }
+      ]
+    },
+    {
+      "id": "slab-zone-b",
+      "zoneName": "Slab Zone B",
+      "confidence": 0.78,
+      "points": [
+        { "x": 130.0, "y": 250.0 },
+        { "x": 420.0, "y": 250.0 },
+        { "x": 420.0, "y": 390.0 },
+        { "x": 130.0, "y": 390.0 },
+        { "x": 130.0, "y": 250.0 }
+      ]
+    }
+  ],
+  "diagnostics": [
+    "Sample slab fixture for manual QA; no real recognition was executed."
+  ]
+}

@@ -35,7 +35,8 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 - Этап 13 выполнен: добавлен wall-specific placement для простых прямых стен с локальной осью/нормалью, несколькими зонами и направлениями `AlongHost`/`Vertical`.
 - Этап 14 выполнен: добавлен CLI runner для внешнего worker-а с timeout, temp request/output files и строгой валидацией output JSON.
 - Этап 15 выполнен: расширено логирование диагностики вокруг file selection, recognition, preview, правил и controlled write-flow.
-- Следующий рекомендуемый этап: добавить manual QA checklist и sample-сценарии для проверки на воспроизводимых Revit-моделях.
+- Этап 16 выполнен: добавлены manual QA checklist, sample JSON inputs и тест, который валидирует documented examples.
+- Следующий рекомендуемый этап: включить модуль в существующий build/deploy/installer flow и проверить установку.
 
 ## Этапы
 
@@ -177,11 +178,11 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 ### 16. Тестирование на sample-моделях
 
 - Цель: закрепить ожидаемое поведение на воспроизводимых моделях.
-- Код: добавить checklist и при необходимости lightweight fixtures.
-- Файлы: `docs/IsoFieldRebar/manual-qa.md`, sample inputs.
-- Проверка: Revit 2022/2025 smoke, preview, selection, cancel flows.
+- Код: добавить checklist и lightweight fixtures.
+- Файлы: `docs/IsoFieldRebar/manual-qa.md`, sample inputs в `docs/IsoFieldRebar/examples/*.json`.
+- Проверка: Revit 2022/2025 smoke, preview, selection, cancel flows; unit-тест чтения documented example JSON.
 - Риски: sample-модели могут быть несовместимы с частью версий Revit.
-- Готово: есть повторяемый QA сценарий и known limitations.
+- Готово: есть повторяемый QA сценарий, sample inputs и known limitations.
 
 ### 17. Упаковка и установка
 

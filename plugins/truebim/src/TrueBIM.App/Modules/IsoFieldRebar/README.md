@@ -23,6 +23,7 @@
 - Wall-specific placement для простых прямых стен: валидные зоны превращаются в тестовые Rebar-линии вдоль локальной оси стены или вертикально.
 - CLI worker runner для внешнего распознавания: Revit запускает настроенный процесс с timeout/temp files и валидирует `schemaVersion: "1.0"` output JSON.
 - Расширенное логирование диагностики вокруг выбора файла, recognition runner-а, preview, правил и controlled write-flow.
+- Manual QA checklist и sample JSON inputs для повторяемых Revit 2022/2025 smoke-сценариев.
 
 ## Пока не реализовано
 
@@ -31,4 +32,4 @@
 
 ## Следующие шаги
 
-1. Добавить manual QA checklist и sample-сценарии для проверки на воспроизводимых Revit-моделях.
+1. Включить модуль в существующий build/deploy/installer flow и проверить установку.

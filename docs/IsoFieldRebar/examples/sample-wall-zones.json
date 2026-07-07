@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "source": {
+    "fileName": "sample-wall-isofields.png",
+    "units": "px",
+    "targetHost": "Wall"
+  },
+  "polylines": [
+    {
+      "id": "wall-zone-along-host",
+      "zoneName": "Wall Zone Along Host",
+      "confidence": 0.9,
+      "points": [
+        { "x": 60.0, "y": 80.0 },
+        { "x": 460.0, "y": 80.0 },
+        { "x": 460.0, "y": 160.0 },
+        { "x": 60.0, "y": 160.0 },
+        { "x": 60.0, "y": 80.0 }
+      ]
+    },
+    {
+      "id": "wall-zone-upper-band",
+      "zoneName": "Wall Zone Upper Band",
+      "confidence": 0.72,
+      "points": [
+        { "x": 80.0, "y": 210.0 },
+        { "x": 440.0, "y": 210.0 },
+        { "x": 440.0, "y": 290.0 },
+        { "x": 80.0, "y": 290.0 },
+        { "x": 80.0, "y": 210.0 }
+      ]
+    }
+  ],
+  "diagnostics": [
+    "Sample wall fixture for manual QA; use a straight wall host."
+  ]
+}

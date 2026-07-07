@@ -250,6 +250,26 @@ public sealed class IsoFieldRecognitionRunnerTests
         }
     }
 
+    [Fact]
+    public void IsoFieldJsonReader_ReadsDocumentedExampleFiles()
+    {
+        string examplesDirectory = Path.Combine(
+            FindRepositoryRoot(),
+            "docs",
+            "IsoFieldRebar",
+            "examples");
+        string[] examplePaths = Directory.GetFiles(examplesDirectory, "*.json");
+
+        Assert.NotEmpty(examplePaths);
+        foreach (string examplePath in examplePaths)
+        {
+            var result = new IsoFieldJsonReader().Read(examplePath);
+
+            Assert.NotEmpty(result.Polylines);
+            Assert.All(result.Polylines, polyline => Assert.True(polyline.Points.Count >= 2));
+        }
+    }
+
     private static IsoFieldCliRecognitionRunner CreateCliRunner(
         string scriptPath,
         string tempDirectory,
@@ -283,6 +303,23 @@ public sealed class IsoFieldRecognitionRunnerTests
         return File.Exists(path)
             ? path
             : "powershell.exe";
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            string examplesPath = Path.Combine(directory.FullName, "docs", "IsoFieldRebar", "examples");
+            if (Directory.Exists(examplesPath))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate docs/IsoFieldRebar/examples from test output directory.");
     }
 
     private sealed class TestLogger : TrueBIM.App.Services.Logging.ITrueBimLogger
