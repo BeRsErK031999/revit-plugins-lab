@@ -28,6 +28,7 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
                 new StubIsoFieldRecognitionRunner(),
                 new IsoFieldRevitPreviewService(logger),
                 new IsoFieldHostSelectionService(),
+                new IsoFieldRebarCreationService(logger),
                 logger);
             System.Windows.Interop.WindowInteropHelper helper = new(window)
             {

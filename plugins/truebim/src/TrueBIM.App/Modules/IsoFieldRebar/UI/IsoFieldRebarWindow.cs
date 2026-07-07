@@ -25,6 +25,7 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly IIsoFieldRecognitionRunner recognitionRunner;
     private readonly IsoFieldRevitPreviewService revitPreviewService;
     private readonly IsoFieldHostSelectionService hostSelectionService;
+    private readonly IsoFieldRebarCreationService rebarCreationService;
     private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
@@ -34,6 +35,7 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly TextBlock hostStatusText;
     private readonly TextBlock calibrationStatusText;
     private readonly TextBlock ruleStatusText;
+    private readonly TextBlock rebarCreationStatusText;
     private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
@@ -60,6 +62,7 @@ public sealed class IsoFieldRebarWindow : Window
         IIsoFieldRecognitionRunner recognitionRunner,
         IsoFieldRevitPreviewService revitPreviewService,
         IsoFieldHostSelectionService hostSelectionService,
+        IsoFieldRebarCreationService rebarCreationService,
         ITrueBimLogger logger)
     {
         this.documentTitle = string.IsNullOrWhiteSpace(documentTitle)
@@ -71,6 +74,7 @@ public sealed class IsoFieldRebarWindow : Window
         this.recognitionRunner = recognitionRunner ?? throw new ArgumentNullException(nameof(recognitionRunner));
         this.revitPreviewService = revitPreviewService ?? throw new ArgumentNullException(nameof(revitPreviewService));
         this.hostSelectionService = hostSelectionService ?? throw new ArgumentNullException(nameof(hostSelectionService));
+        this.rebarCreationService = rebarCreationService ?? throw new ArgumentNullException(nameof(rebarCreationService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         selectedFileText = CreateMutedText("Файл не выбран.");
@@ -88,6 +92,7 @@ public sealed class IsoFieldRebarWindow : Window
         };
         calibrationStatusText = CreateMutedText(FormatCalibration(currentCalibration));
         ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
+        rebarCreationStatusText = CreateMutedText("Тестовая арматура пока не создана.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
         previewCanvas = CreatePreviewCanvas();
         showRevitPreviewButton = CreateRevitPreviewButton();
@@ -97,9 +102,9 @@ public sealed class IsoFieldRebarWindow : Window
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
         Width = 840;
-        Height = 820;
+        Height = 840;
         MinWidth = 760;
-        MinHeight = 740;
+        MinHeight = 760;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
@@ -322,6 +327,11 @@ public sealed class IsoFieldRebarWindow : Window
     {
         StackPanel content = CreatePanelContent("Правила армирования");
 
+        StackPanel buttonRow = new()
+        {
+            Orientation = Orientation.Horizontal
+        };
+
         Button previewRulesButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Рассчитать правила"),
@@ -331,10 +341,26 @@ public sealed class IsoFieldRebarWindow : Window
             ToolTip = "Сформировать read-only preview правил армирования для распознанных зон."
         };
         previewRulesButton.Click += (_, _) => PreviewRebarRules();
-        content.Children.Add(previewRulesButton);
+        buttonRow.Children.Add(previewRulesButton);
+
+        Button createTestRebarButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Создать тестовую"),
+            MinWidth = 160,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = "Создать один тестовый Rebar на выбранном host-элементе после явного подтверждения."
+        };
+        createTestRebarButton.Click += (_, _) => CreateTestRebar();
+        buttonRow.Children.Add(createTestRebarButton);
+
+        content.Children.Add(buttonRow);
 
         ruleStatusText.Margin = new Thickness(0, 10, 0, 0);
         content.Children.Add(ruleStatusText);
+        rebarCreationStatusText.Margin = new Thickness(0, 8, 0, 0);
+        content.Children.Add(rebarCreationStatusText);
 
         return CreatePanel(content);
     }
@@ -369,9 +395,9 @@ public sealed class IsoFieldRebarWindow : Window
         content.Children.Add(CreateStep("Выбор стены или плиты", false, true));
         content.Children.Add(CreateStep("Калибровка координат", false, true));
         content.Children.Add(CreateStep("Правила армирования", false, true));
-        content.Children.Add(CreateStep("Создание арматуры", false));
+        content.Children.Add(CreateStep("Тестовая арматура", false, true));
 
-        TextBlock note = CreateMutedText("Правила армирования рассчитываются как read-only preview. Создание арматуры будет отдельным write-flow.");
+        TextBlock note = CreateMutedText("Тестовая арматура создается только по отдельной кнопке и после подтверждения пользователя.");
         note.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(note);
 
@@ -552,6 +578,7 @@ public sealed class IsoFieldRebarWindow : Window
             IsoFieldHostElement hostElement = hostSelectionService.PickHost(uiDocument);
             selectedHostElement = hostElement;
             RefreshHostStatus();
+            ClearRulePreview("Нажмите «Рассчитать правила» для выбранного host-элемента.");
             footerStatusText.Text = $"Host-элемент выбран: {hostElement.DisplayName}. Модель Revit не изменялась.";
             logger.Info($"IsoField host selected. Kind={hostElement.HostKind}; ElementId={hostElement.ElementId}; Name='{hostElement.Name}'.");
         }
@@ -660,10 +687,91 @@ public sealed class IsoFieldRebarWindow : Window
             selectedHostElement);
         currentRulePreview = preview;
         ruleStatusText.Text = FormatRulePreview(preview);
+        rebarCreationStatusText.Text = preview.CanCreateRebar
+            ? "Готово к созданию одной тестовой арматуры после подтверждения."
+            : "Тестовая арматура недоступна: проверьте диагностику правил.";
         footerStatusText.Text = preview.CanCreateRebar
             ? $"Правила армирования рассчитаны: {preview.Items.Count}. Модель Revit не изменялась."
             : "Правила армирования требуют проверки.";
         logger.Info($"IsoField rebar rules preview calculated. Items={preview.Items.Count}; Diagnostics={preview.Diagnostics.Count}; CanCreateRebar={preview.CanCreateRebar}.");
+    }
+
+    private void CreateTestRebar()
+    {
+        if (uiDocument is null)
+        {
+            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием тестовой арматуры.");
+            return;
+        }
+
+        if (selectedHostElement is null)
+        {
+            TaskDialog.Show("Армирование по изополям", "Сначала выберите стену или плиту как host-элемент.");
+            rebarCreationStatusText.Text = "Тестовая арматура не создана: host-элемент не выбран.";
+            return;
+        }
+
+        if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
+        {
+            TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
+            rebarCreationStatusText.Text = "Тестовая арматура не создана: нет контуров изополей.";
+            return;
+        }
+
+        RebarRulePreviewResult? preview = currentRulePreview;
+        if (preview is null || !preview.CanCreateRebar)
+        {
+            PreviewRebarRules();
+            preview = currentRulePreview;
+        }
+
+        if (preview is null || !preview.CanCreateRebar)
+        {
+            TaskDialog.Show("Армирование по изополям", "Перед созданием тестовой арматуры исправьте диагностику правил.");
+            rebarCreationStatusText.Text = "Тестовая арматура не создана: правила не готовы.";
+            return;
+        }
+
+        if (!ConfirmCreateTestRebar(preview, selectedHostElement))
+        {
+            rebarCreationStatusText.Text = "Создание тестовой арматуры отменено.";
+            footerStatusText.Text = "Создание тестовой арматуры отменено пользователем.";
+            logger.Info("IsoField test rebar creation canceled by user.");
+            return;
+        }
+
+        try
+        {
+            IsoFieldRebarCreationResult result = rebarCreationService.CreateTestRebar(
+                uiDocument,
+                selectedHostElement,
+                preview);
+            rebarCreationStatusText.Text = result.Message;
+            footerStatusText.Text = result.Message;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            logger.Error("Failed to create IsoField test rebar.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось создать тестовую арматуру. Проверьте host-элемент, наличие RebarBarType в модели и логи.");
+            rebarCreationStatusText.Text = "Тестовая арматура не создана: см. логи диагностики.";
+            footerStatusText.Text = "Не удалось создать тестовую арматуру.";
+        }
+    }
+
+    private static bool ConfirmCreateTestRebar(RebarRulePreviewResult preview, IsoFieldHostElement hostElement)
+    {
+        RebarRulePreviewItem firstItem = preview.Items.First();
+        TaskDialog dialog = new("Армирование по изополям")
+        {
+            MainInstruction = "Создать одну тестовую арматуру в модели Revit?",
+            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зона: {firstItem.ZoneName}{Environment.NewLine}Правило: {firstItem.DisplayName}{Environment.NewLine}Это действие изменит модель, но его можно отменить через Undo.",
+            CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
+            DefaultButton = TaskDialogResult.No
+        };
+
+        return dialog.Show() == TaskDialogResult.Yes;
     }
 
     private void RenderPreview(IsoFieldRecognitionResult result)
@@ -725,6 +833,7 @@ public sealed class IsoFieldRebarWindow : Window
     {
         currentRulePreview = null;
         ruleStatusText.Text = message;
+        rebarCreationStatusText.Text = "Тестовая арматура не создана: сначала рассчитайте валидные правила.";
     }
 
     private static StackPanel CreatePanelContent(string title)
