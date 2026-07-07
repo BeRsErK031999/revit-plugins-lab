@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
+using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.Revit;
@@ -8,8 +9,8 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Revit;
 public sealed class IsoFieldRevitPreviewService
 {
     private const string OwnedComment = "TrueBIM IsoFieldRebar Preview";
-    private const double DefaultPreviewSpanFeet = 20.0;
     private const double MinimumSegmentLengthFeet = 0.001;
+    private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly ITrueBimLogger logger;
 
     public IsoFieldRevitPreviewService(ITrueBimLogger logger)
@@ -20,7 +21,8 @@ public sealed class IsoFieldRevitPreviewService
     public IsoFieldRevitPreviewResult Show(
         UIDocument uiDocument,
         IsoFieldRecognitionResult recognitionResult,
-        IReadOnlyCollection<ElementId> currentPreviewIds)
+        IReadOnlyCollection<ElementId> currentPreviewIds,
+        IsoFieldCalibration calibration)
     {
         if (uiDocument is null)
         {
@@ -31,6 +33,8 @@ public sealed class IsoFieldRevitPreviewService
         {
             throw new ArgumentNullException(nameof(recognitionResult));
         }
+
+        coordinateMapper.Validate(calibration);
 
         Document document = uiDocument.Document;
         View activeView = uiDocument.ActiveView;
@@ -47,7 +51,7 @@ public sealed class IsoFieldRevitPreviewService
                 "Нет контуров для предпросмотра в Revit.");
         }
 
-        PreviewFrame frame = CreatePreviewFrame(uiDocument, activeView, recognitionResult);
+        PreviewFrame frame = CreatePreviewFrame(uiDocument, activeView);
         List<ElementId> createdIds = new();
         int deletedCount = 0;
 
@@ -61,8 +65,8 @@ public sealed class IsoFieldRevitPreviewService
             {
                 for (int index = 0; index < polyline.Points.Count - 1; index++)
                 {
-                    XYZ start = frame.ToRevitPoint(polyline.Points[index]);
-                    XYZ end = frame.ToRevitPoint(polyline.Points[index + 1]);
+                    XYZ start = ToRevitPoint(frame, calibration, polyline.Points[index]);
+                    XYZ end = ToRevitPoint(frame, calibration, polyline.Points[index + 1]);
                     if (start.DistanceTo(end) < MinimumSegmentLengthFeet)
                     {
                         continue;
@@ -82,14 +86,14 @@ public sealed class IsoFieldRevitPreviewService
             throw;
         }
 
-        logger.Info($"IsoField Revit preview updated. Created={createdIds.Count}; Deleted={deletedCount}; View='{activeView.Name}'.");
+        logger.Info($"IsoField Revit preview updated. Created={createdIds.Count}; Deleted={deletedCount}; View='{activeView.Name}'; MillimetersPerPixel={calibration.MillimetersPerPixel}.");
         return new IsoFieldRevitPreviewResult(
             createdIds.Count,
             deletedCount,
             createdIds,
             createdIds.Count == 0
-                ? "Контуры прочитаны, но подходящих сегментов для предпросмотра в Revit не найдено."
-                : $"Линии предпросмотра в Revit созданы: {createdIds.Count}.");
+                ? "Контуры прочитаны, но подходящих сегментов для калиброванного предпросмотра в Revit не найдено."
+                : $"Калиброванные линии предпросмотра в Revit созданы: {createdIds.Count}.");
     }
 
     public IsoFieldRevitPreviewResult Clear(
@@ -215,54 +219,12 @@ public sealed class IsoFieldRevitPreviewService
             or ViewType.Legend;
     }
 
-    private static PreviewFrame CreatePreviewFrame(
-        UIDocument uiDocument,
-        View activeView,
-        IsoFieldRecognitionResult recognitionResult)
+    private PreviewFrame CreatePreviewFrame(UIDocument uiDocument, View activeView)
     {
-        IReadOnlyList<IsoFieldPoint> points = recognitionResult.Polylines
-            .SelectMany(polyline => polyline.Points)
-            .ToArray();
-        double minX = points.Min(point => point.X);
-        double maxX = points.Max(point => point.X);
-        double minY = points.Min(point => point.Y);
-        double maxY = points.Max(point => point.Y);
-        double sourceWidth = Math.Max(maxX - minX, 1);
-        double sourceHeight = Math.Max(maxY - minY, 1);
-        double sourceCenterX = (minX + maxX) / 2;
-        double sourceCenterY = (minY + maxY) / 2;
-        double targetSpan = ResolveTargetSpan(uiDocument, activeView);
-        double scale = Math.Min(targetSpan / sourceWidth, targetSpan / sourceHeight);
-
         return new PreviewFrame(
             ResolveViewCenter(uiDocument, activeView),
             activeView.RightDirection.Normalize(),
-            activeView.UpDirection.Normalize(),
-            sourceCenterX,
-            sourceCenterY,
-            scale);
-    }
-
-    private static double ResolveTargetSpan(UIDocument uiDocument, View activeView)
-    {
-        UIView? uiView = uiDocument.GetOpenUIViews()
-            .FirstOrDefault(view => view.ViewId == activeView.Id);
-        if (uiView is null)
-        {
-            return DefaultPreviewSpanFeet;
-        }
-
-        IList<XYZ> corners = uiView.GetZoomCorners();
-        if (corners.Count < 2)
-        {
-            return DefaultPreviewSpanFeet;
-        }
-
-        XYZ diagonal = corners[1] - corners[0];
-        double width = Math.Abs(diagonal.DotProduct(activeView.RightDirection.Normalize()));
-        double height = Math.Abs(diagonal.DotProduct(activeView.UpDirection.Normalize()));
-        double span = Math.Min(width, height) * 0.45;
-        return span > 0 ? span : DefaultPreviewSpanFeet;
+            activeView.UpDirection.Normalize());
     }
 
     private static XYZ ResolveViewCenter(UIDocument uiDocument, View activeView)
@@ -280,19 +242,11 @@ public sealed class IsoFieldRevitPreviewService
             : activeView.Origin;
     }
 
-    private sealed record PreviewFrame(
-        XYZ Center,
-        XYZ Right,
-        XYZ Up,
-        double SourceCenterX,
-        double SourceCenterY,
-        double Scale)
+    private XYZ ToRevitPoint(PreviewFrame frame, IsoFieldCalibration calibration, IsoFieldPoint point)
     {
-        public XYZ ToRevitPoint(IsoFieldPoint point)
-        {
-            double x = (point.X - SourceCenterX) * Scale;
-            double y = (SourceCenterY - point.Y) * Scale;
-            return Center + Right * x + Up * y;
-        }
+        IsoFieldPoint mappedPoint = coordinateMapper.MapToRevitPlaneFeet(point, calibration);
+        return frame.Center + (frame.Right * mappedPoint.X) + (frame.Up * mappedPoint.Y);
     }
+
+    private sealed record PreviewFrame(XYZ Center, XYZ Right, XYZ Up);
 }

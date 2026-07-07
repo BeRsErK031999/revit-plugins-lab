@@ -1,4 +1,5 @@
 using System.IO;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -9,6 +10,7 @@ using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using WpfGrid = System.Windows.Controls.Grid;
+using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfPolyline = System.Windows.Shapes.Polyline;
 using ElementId = Autodesk.Revit.DB.ElementId;
 
@@ -23,19 +25,26 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly IIsoFieldRecognitionRunner recognitionRunner;
     private readonly IsoFieldRevitPreviewService revitPreviewService;
     private readonly IsoFieldHostSelectionService hostSelectionService;
+    private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly ITrueBimLogger logger;
     private readonly TextBlock selectedFileText;
     private readonly TextBlock recognitionStatusText;
     private readonly TextBlock hostStatusText;
+    private readonly TextBlock calibrationStatusText;
     private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
     private readonly Button showRevitPreviewButton;
     private readonly Button clearRevitPreviewButton;
+    private readonly WpfTextBox calibrationAnchorXInput;
+    private readonly WpfTextBox calibrationAnchorYInput;
+    private readonly WpfTextBox calibrationMillimetersPerPixelInput;
+    private readonly CheckBox calibrationInvertYInput;
     private string? selectedFilePath;
     private IsoFieldRecognitionResult? currentRecognitionResult;
     private IsoFieldHostElement? selectedHostElement;
+    private IsoFieldCalibration currentCalibration = IsoFieldCalibration.Default;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -64,6 +73,17 @@ public sealed class IsoFieldRebarWindow : Window
         selectedFileText = CreateMutedText("Файл не выбран.");
         recognitionStatusText = CreateMutedText("Распознавание пока не запускалось.");
         hostStatusText = CreateMutedText("Host-элемент не выбран.");
+        calibrationAnchorXInput = CreateCalibrationInput(currentCalibration.ImageAnchor.X);
+        calibrationAnchorYInput = CreateCalibrationInput(currentCalibration.ImageAnchor.Y);
+        calibrationMillimetersPerPixelInput = CreateCalibrationInput(currentCalibration.MillimetersPerPixel);
+        calibrationInvertYInput = new CheckBox
+        {
+            Content = "Y вниз",
+            IsChecked = currentCalibration.InvertImageY,
+            Margin = new Thickness(0, 6, 0, 0),
+            ToolTip = "Инвертировать ось Y изображения относительно направления вверх на виде."
+        };
+        calibrationStatusText = CreateMutedText(FormatCalibration(currentCalibration));
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
         previewCanvas = CreatePreviewCanvas();
         showRevitPreviewButton = CreateRevitPreviewButton();
@@ -73,9 +93,9 @@ public sealed class IsoFieldRebarWindow : Window
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
         Width = 840;
-        Height = 640;
+        Height = 740;
         MinWidth = 760;
-        MinHeight = 580;
+        MinHeight = 660;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
@@ -105,6 +125,7 @@ public sealed class IsoFieldRebarWindow : Window
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         Border filePanel = CreateFilePanel();
@@ -113,7 +134,7 @@ public sealed class IsoFieldRebarWindow : Window
 
         Border nextStepsPanel = CreateNextStepsPanel();
         WpfGrid.SetColumn(nextStepsPanel, 1);
-        WpfGrid.SetRowSpan(nextStepsPanel, 4);
+        WpfGrid.SetRowSpan(nextStepsPanel, 5);
         nextStepsPanel.Margin = new Thickness(14, 0, 0, 0);
         body.Children.Add(nextStepsPanel);
 
@@ -127,8 +148,13 @@ public sealed class IsoFieldRebarWindow : Window
         hostPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(hostPanel);
 
+        Border calibrationPanel = CreateCalibrationPanel();
+        WpfGrid.SetRow(calibrationPanel, 3);
+        calibrationPanel.Margin = new Thickness(0, 14, 0, 0);
+        body.Children.Add(calibrationPanel);
+
         Border previewPanel = CreatePreviewPanel();
-        WpfGrid.SetRow(previewPanel, 3);
+        WpfGrid.SetRow(previewPanel, 4);
         previewPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(previewPanel);
 
@@ -253,6 +279,35 @@ public sealed class IsoFieldRebarWindow : Window
         return CreatePanel(content);
     }
 
+    private Border CreateCalibrationPanel()
+    {
+        StackPanel content = CreatePanelContent("Калибровка");
+
+        StackPanel rows = new();
+        rows.Children.Add(CreateInputRow("Якорь X", calibrationAnchorXInput));
+        rows.Children.Add(CreateInputRow("Якорь Y", calibrationAnchorYInput));
+        rows.Children.Add(CreateInputRow("Мм/пикс", calibrationMillimetersPerPixelInput));
+        rows.Children.Add(calibrationInvertYInput);
+        content.Children.Add(rows);
+
+        Button applyCalibrationButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Применить"),
+            MinWidth = 130,
+            Height = 32,
+            Margin = new Thickness(0, 10, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = "Проверить параметры калибровки."
+        };
+        applyCalibrationButton.Click += (_, _) => ApplyCalibration(showDialogOnError: true);
+        content.Children.Add(applyCalibrationButton);
+
+        calibrationStatusText.Margin = new Thickness(0, 10, 0, 0);
+        content.Children.Add(calibrationStatusText);
+
+        return CreatePanel(content);
+    }
+
     private Border CreateRecognitionPanel()
     {
         StackPanel content = CreatePanelContent("Распознавание");
@@ -281,9 +336,10 @@ public sealed class IsoFieldRebarWindow : Window
         content.Children.Add(CreateStep("Экранный preview контуров", false, true));
         content.Children.Add(CreateStep("Линии предпросмотра в Revit", false, true));
         content.Children.Add(CreateStep("Выбор стены или плиты", false, true));
+        content.Children.Add(CreateStep("Калибровка координат", false, true));
         content.Children.Add(CreateStep("Создание арматуры", false));
 
-        TextBlock note = CreateMutedText("Host-элемент выбирается без изменения модели. Калибровка координат и создание арматуры будут отдельными срезами.");
+        TextBlock note = CreateMutedText("Калибровка управляет Revit preview без создания арматуры. Правила армирования и write-flow будут отдельными срезами.");
         note.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(note);
 
@@ -399,10 +455,16 @@ public sealed class IsoFieldRebarWindow : Window
 
         try
         {
+            if (!ApplyCalibration(showDialogOnError: true))
+            {
+                return;
+            }
+
             IsoFieldRevitPreviewResult result = revitPreviewService.Show(
                 uiDocument,
                 currentRecognitionResult,
-                activeRevitPreviewIds);
+                activeRevitPreviewIds,
+                currentCalibration);
             activeRevitPreviewIds = result.CreatedElementIds;
             footerStatusText.Text = result.Message;
         }
@@ -491,6 +553,61 @@ public sealed class IsoFieldRebarWindow : Window
         hostStatusText.Text = selectedHostElement is null
             ? "Host-элемент не выбран."
             : selectedHostElement.DisplayName;
+    }
+
+    private bool ApplyCalibration(bool showDialogOnError)
+    {
+        if (!TryBuildCalibration(out IsoFieldCalibration calibration, out string errorMessage))
+        {
+            if (showDialogOnError)
+            {
+                TaskDialog.Show("Армирование по изополям", errorMessage);
+            }
+
+            footerStatusText.Text = "Калибровка не применена.";
+            return false;
+        }
+
+        currentCalibration = calibration;
+        RefreshCalibrationStatus();
+        footerStatusText.Text = "Калибровка применена. Модель Revit не изменялась.";
+        logger.Info($"IsoField calibration applied. Anchor=({calibration.ImageAnchor.X}; {calibration.ImageAnchor.Y}); MillimetersPerPixel={calibration.MillimetersPerPixel}; InvertY={calibration.InvertImageY}.");
+        return true;
+    }
+
+    private bool TryBuildCalibration(out IsoFieldCalibration calibration, out string errorMessage)
+    {
+        calibration = currentCalibration;
+        if (!TryReadDouble(calibrationAnchorXInput, "Якорь X", out double anchorX, out errorMessage)
+            || !TryReadDouble(calibrationAnchorYInput, "Якорь Y", out double anchorY, out errorMessage)
+            || !TryReadDouble(calibrationMillimetersPerPixelInput, "Мм/пикс", out double millimetersPerPixel, out errorMessage))
+        {
+            return false;
+        }
+
+        calibration = new IsoFieldCalibration(
+            new IsoFieldPoint(anchorX, anchorY),
+            0,
+            0,
+            millimetersPerPixel,
+            calibrationInvertYInput.IsChecked == true);
+
+        try
+        {
+            coordinateMapper.Validate(calibration);
+            errorMessage = string.Empty;
+            return true;
+        }
+        catch (InvalidOperationException exception)
+        {
+            errorMessage = exception.Message;
+            return false;
+        }
+    }
+
+    private void RefreshCalibrationStatus()
+    {
+        calibrationStatusText.Text = FormatCalibration(currentCalibration);
     }
 
     private void RenderPreview(IsoFieldRecognitionResult result)
@@ -598,6 +715,37 @@ public sealed class IsoFieldRebarWindow : Window
         };
     }
 
+    private static WpfTextBox CreateCalibrationInput(double value)
+    {
+        return new WpfTextBox
+        {
+            Text = FormatNumber(value),
+            Width = 110,
+            Height = 26,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+    }
+
+    private static StackPanel CreateInputRow(string label, WpfTextBox input)
+    {
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+
+        row.Children.Add(new TextBlock
+        {
+            Text = label,
+            Width = 80,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brushes.DimGray
+        });
+        row.Children.Add(input);
+        return row;
+    }
+
     private static Canvas CreatePreviewCanvas()
     {
         return new Canvas
@@ -638,5 +786,30 @@ public sealed class IsoFieldRebarWindow : Window
     private static bool IsJsonFile(string path)
     {
         return string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryReadDouble(WpfTextBox input, string label, out double value, out string message)
+    {
+        string text = input.Text?.Trim() ?? string.Empty;
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+            || double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value))
+        {
+            message = string.Empty;
+            return true;
+        }
+
+        message = $"Поле \"{label}\" должно содержать число.";
+        value = 0;
+        return false;
+    }
+
+    private static string FormatCalibration(IsoFieldCalibration calibration)
+    {
+        return $"Якорь: {FormatNumber(calibration.ImageAnchor.X)}; {FormatNumber(calibration.ImageAnchor.Y)}. Масштаб: {FormatNumber(calibration.MillimetersPerPixel)} мм/пикс.";
+    }
+
+    private static string FormatNumber(double value)
+    {
+        return value.ToString("0.###", CultureInfo.CurrentCulture);
     }
 }
