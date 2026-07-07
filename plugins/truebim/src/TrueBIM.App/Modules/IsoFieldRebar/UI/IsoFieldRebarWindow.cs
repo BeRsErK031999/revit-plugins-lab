@@ -22,10 +22,12 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly IIsoFieldJsonReader jsonReader;
     private readonly IIsoFieldRecognitionRunner recognitionRunner;
     private readonly IsoFieldRevitPreviewService revitPreviewService;
+    private readonly IsoFieldHostSelectionService hostSelectionService;
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly ITrueBimLogger logger;
     private readonly TextBlock selectedFileText;
     private readonly TextBlock recognitionStatusText;
+    private readonly TextBlock hostStatusText;
     private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
@@ -33,6 +35,7 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly Button clearRevitPreviewButton;
     private string? selectedFilePath;
     private IsoFieldRecognitionResult? currentRecognitionResult;
+    private IsoFieldHostElement? selectedHostElement;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -44,6 +47,7 @@ public sealed class IsoFieldRebarWindow : Window
         IIsoFieldJsonReader jsonReader,
         IIsoFieldRecognitionRunner recognitionRunner,
         IsoFieldRevitPreviewService revitPreviewService,
+        IsoFieldHostSelectionService hostSelectionService,
         ITrueBimLogger logger)
     {
         this.documentTitle = string.IsNullOrWhiteSpace(documentTitle)
@@ -54,10 +58,12 @@ public sealed class IsoFieldRebarWindow : Window
         this.jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
         this.recognitionRunner = recognitionRunner ?? throw new ArgumentNullException(nameof(recognitionRunner));
         this.revitPreviewService = revitPreviewService ?? throw new ArgumentNullException(nameof(revitPreviewService));
+        this.hostSelectionService = hostSelectionService ?? throw new ArgumentNullException(nameof(hostSelectionService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         selectedFileText = CreateMutedText("Файл не выбран.");
         recognitionStatusText = CreateMutedText("Распознавание пока не запускалось.");
+        hostStatusText = CreateMutedText("Host-элемент не выбран.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
         previewCanvas = CreatePreviewCanvas();
         showRevitPreviewButton = CreateRevitPreviewButton();
@@ -67,9 +73,9 @@ public sealed class IsoFieldRebarWindow : Window
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
         Width = 840;
-        Height = 560;
+        Height = 640;
         MinWidth = 760;
-        MinHeight = 500;
+        MinHeight = 580;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
@@ -98,6 +104,7 @@ public sealed class IsoFieldRebarWindow : Window
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         Border filePanel = CreateFilePanel();
@@ -106,7 +113,7 @@ public sealed class IsoFieldRebarWindow : Window
 
         Border nextStepsPanel = CreateNextStepsPanel();
         WpfGrid.SetColumn(nextStepsPanel, 1);
-        WpfGrid.SetRowSpan(nextStepsPanel, 3);
+        WpfGrid.SetRowSpan(nextStepsPanel, 4);
         nextStepsPanel.Margin = new Thickness(14, 0, 0, 0);
         body.Children.Add(nextStepsPanel);
 
@@ -115,8 +122,13 @@ public sealed class IsoFieldRebarWindow : Window
         recognitionPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(recognitionPanel);
 
+        Border hostPanel = CreateHostPanel();
+        WpfGrid.SetRow(hostPanel, 2);
+        hostPanel.Margin = new Thickness(0, 14, 0, 0);
+        body.Children.Add(hostPanel);
+
         Border previewPanel = CreatePreviewPanel();
-        WpfGrid.SetRow(previewPanel, 2);
+        WpfGrid.SetRow(previewPanel, 3);
         previewPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(previewPanel);
 
@@ -202,6 +214,45 @@ public sealed class IsoFieldRebarWindow : Window
         return CreatePanel(content);
     }
 
+    private Border CreateHostPanel()
+    {
+        StackPanel content = CreatePanelContent("Host-элемент");
+
+        StackPanel buttonRow = new()
+        {
+            Orientation = Orientation.Horizontal
+        };
+
+        Button selectHostButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выбрать стену/плиту"),
+            MinWidth = 180,
+            Height = 32,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = "Выбрать стену или плиту как будущий host для армирования."
+        };
+        selectHostButton.Click += (_, _) => SelectHostElement();
+        buttonRow.Children.Add(selectHostButton);
+
+        Button clearHostButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Сбросить"),
+            MinWidth = 110,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Сбросить выбранный host-элемент."
+        };
+        clearHostButton.Click += (_, _) => ClearHostElement();
+        buttonRow.Children.Add(clearHostButton);
+
+        content.Children.Add(buttonRow);
+
+        hostStatusText.Margin = new Thickness(0, 10, 0, 0);
+        content.Children.Add(hostStatusText);
+
+        return CreatePanel(content);
+    }
+
     private Border CreateRecognitionPanel()
     {
         StackPanel content = CreatePanelContent("Распознавание");
@@ -229,10 +280,10 @@ public sealed class IsoFieldRebarWindow : Window
 
         content.Children.Add(CreateStep("Экранный preview контуров", false, true));
         content.Children.Add(CreateStep("Линии предпросмотра в Revit", false, true));
-        content.Children.Add(CreateStep("Выбор стены или плиты", false));
+        content.Children.Add(CreateStep("Выбор стены или плиты", false, true));
         content.Children.Add(CreateStep("Создание арматуры", false));
 
-        TextBlock note = CreateMutedText("Линии предпросмотра создаются только по кнопке и могут быть очищены модулем. Выбор host-элемента и создание арматуры будут отдельными срезами.");
+        TextBlock note = CreateMutedText("Host-элемент выбирается без изменения модели. Калибровка координат и создание арматуры будут отдельными срезами.");
         note.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(note);
 
@@ -387,6 +438,59 @@ public sealed class IsoFieldRebarWindow : Window
                 "Не удалось очистить линии предпросмотра в Revit. Используйте логи для диагностики.");
             footerStatusText.Text = "Не удалось очистить линии предпросмотра в Revit.";
         }
+    }
+
+    private void SelectHostElement()
+    {
+        if (uiDocument is null)
+        {
+            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед выбором host-элемента.");
+            return;
+        }
+
+        Visibility previousVisibility = Visibility;
+        try
+        {
+            Visibility = Visibility.Hidden;
+            IsoFieldHostElement hostElement = hostSelectionService.PickHost(uiDocument);
+            selectedHostElement = hostElement;
+            RefreshHostStatus();
+            footerStatusText.Text = $"Host-элемент выбран: {hostElement.DisplayName}. Модель Revit не изменялась.";
+            logger.Info($"IsoField host selected. Kind={hostElement.HostKind}; ElementId={hostElement.ElementId}; Name='{hostElement.Name}'.");
+        }
+        catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+        {
+            footerStatusText.Text = "Выбор host-элемента отменен.";
+            logger.Info("IsoField host selection canceled.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            logger.Error("Failed to select IsoField host element.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось выбрать host-элемент. Выберите стену или плиту и используйте логи для диагностики.");
+            footerStatusText.Text = "Не удалось выбрать host-элемент.";
+        }
+        finally
+        {
+            Visibility = previousVisibility;
+            Activate();
+        }
+    }
+
+    private void ClearHostElement()
+    {
+        selectedHostElement = null;
+        RefreshHostStatus();
+        footerStatusText.Text = "Host-элемент сброшен. Модель Revit не изменялась.";
+        logger.Info("IsoField host selection cleared.");
+    }
+
+    private void RefreshHostStatus()
+    {
+        hostStatusText.Text = selectedHostElement is null
+            ? "Host-элемент не выбран."
+            : selectedHostElement.DisplayName;
     }
 
     private void RenderPreview(IsoFieldRecognitionResult result)
