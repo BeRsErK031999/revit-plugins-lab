@@ -61,6 +61,14 @@ public static class TrueBimRibbon
             TrueBimIcon.Visibility,
             "Включает и выключает видимость категорий на активном виде."),
         new(
+            BimPanelName,
+            "TrueBIM_IsoFieldRebar",
+            "Армирование\nпо изополям",
+            $"{CommandNamespace}.{nameof(IsoFieldRebarCommand)}",
+            TrueBimIcon.IsoFieldRebar,
+            "Открывает экспериментальный модуль армирования по изополям.",
+            "Безопасная заглушка: показывает статус подключения без распознавания, OpenCV/Python и создания арматуры."),
+        new(
             ModelReviewPanelName,
             "TrueBIM_ColorByParameter",
             "Цвета\nпо параметрам",

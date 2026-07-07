@@ -17,6 +17,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "раскраски"
         },
         {
+            "TrueBIM_IsoFieldRebar",
+            "БИМ",
+            "Армирование\nпо изополям",
+            $"TrueBIM.App.Commands.{nameof(IsoFieldRebarCommand)}",
+            TrueBimIcon.IsoFieldRebar,
+            "изополям"
+        },
+        {
             "TrueBIM_JoinCut",
             "Геометрия",
             "Соединить /\nВырезать",
