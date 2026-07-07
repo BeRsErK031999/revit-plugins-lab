@@ -21,6 +21,7 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
             IsoFieldRebarWindow window = new(
                 documentTitle,
                 new IsoFieldFilePicker(),
+                new IsoFieldJsonReader(),
                 new StubIsoFieldRecognitionRunner(),
                 logger);
             System.Windows.Interop.WindowInteropHelper helper = new(window)

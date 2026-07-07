@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0",
+  "source": {
+    "fileName": "sample-isofields.png",
+    "units": "px"
+  },
+  "polylines": [
+    {
+      "id": "zone-a-main-contour",
+      "zoneName": "Zone A",
+      "confidence": 0.94,
+      "points": [
+        {
+          "x": 120.0,
+          "y": 80.0
+        },
+        {
+          "x": 420.0,
+          "y": 80.0
+        },
+        {
+          "x": 420.0,
+          "y": 260.0
+        },
+        {
+          "x": 120.0,
+          "y": 260.0
+        },
+        {
+          "x": 120.0,
+          "y": 80.0
+        }
+      ]
+    }
+  ],
+  "diagnostics": [
+    "Sample contract only; no real recognition was executed."
+  ]
+}

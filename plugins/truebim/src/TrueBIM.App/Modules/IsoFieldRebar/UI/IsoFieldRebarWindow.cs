@@ -15,6 +15,7 @@ public sealed class IsoFieldRebarWindow : Window
 {
     private readonly string documentTitle;
     private readonly IIsoFieldFilePicker filePicker;
+    private readonly IIsoFieldJsonReader jsonReader;
     private readonly IIsoFieldRecognitionRunner recognitionRunner;
     private readonly ITrueBimLogger logger;
     private readonly TextBlock selectedFileText;
@@ -25,6 +26,7 @@ public sealed class IsoFieldRebarWindow : Window
     public IsoFieldRebarWindow(
         string? documentTitle,
         IIsoFieldFilePicker filePicker,
+        IIsoFieldJsonReader jsonReader,
         IIsoFieldRecognitionRunner recognitionRunner,
         ITrueBimLogger logger)
     {
@@ -32,6 +34,7 @@ public sealed class IsoFieldRebarWindow : Window
             ? "документ не открыт"
             : documentTitle!;
         this.filePicker = filePicker ?? throw new ArgumentNullException(nameof(filePicker));
+        this.jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
         this.recognitionRunner = recognitionRunner ?? throw new ArgumentNullException(nameof(recognitionRunner));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -215,13 +218,21 @@ public sealed class IsoFieldRebarWindow : Window
                 return;
             }
 
-            selectedFilePath = path;
-            selectedFileText.Text = path;
-            recognitionStatusText.Text = "Файл выбран. Реальное распознавание пока не подключено.";
-            footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
-            logger.Info($"IsoField source file selected: {Path.GetFileName(path)}.");
+            string selectedPath = path!;
+            selectedFilePath = selectedPath;
+            selectedFileText.Text = selectedPath;
+            logger.Info($"IsoField source file selected: {Path.GetFileName(selectedPath)}.");
+            if (IsJsonFile(selectedPath))
+            {
+                ReadJsonSource(selectedPath);
+            }
+            else
+            {
+                recognitionStatusText.Text = "Файл выбран. Реальное распознавание пока не подключено.";
+                footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
+            }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException)
         {
             logger.Error("Failed to select IsoField source file.", exception);
             TaskDialog.Show(
@@ -229,6 +240,14 @@ public sealed class IsoFieldRebarWindow : Window
                 "Не удалось выбрать файл изополей. Используйте логи для диагностики.");
             footerStatusText.Text = "Не удалось выбрать файл.";
         }
+    }
+
+    private void ReadJsonSource(string path)
+    {
+        IsoFieldRecognitionResult result = jsonReader.Read(path);
+        recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+        footerStatusText.Text = "JSON-контракт изополей прочитан. Модель Revit не изменялась.";
+        logger.Info($"IsoField recognition JSON read. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
     }
 
     private void RunRecognitionStub()
@@ -299,5 +318,10 @@ public sealed class IsoFieldRebarWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 6, 0, 0)
         };
+    }
+
+    private static bool IsJsonFile(string path)
+    {
+        return string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
     }
 }
