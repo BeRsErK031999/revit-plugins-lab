@@ -1,8 +1,8 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using TrueBIM.App.Modules.IsoFieldRebar.Models;
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
+using TrueBIM.App.Modules.IsoFieldRebar.UI;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -16,16 +16,20 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
 
         try
         {
-            logger.Info("Opening IsoField Rebar module scaffold.");
+            logger.Info("Opening IsoField Rebar window.");
+            string? documentTitle = commandData.Application.ActiveUIDocument?.Document?.Title;
+            IsoFieldRebarWindow window = new(
+                documentTitle,
+                new IsoFieldFilePicker(),
+                new StubIsoFieldRecognitionRunner(),
+                logger);
+            System.Windows.Interop.WindowInteropHelper helper = new(window)
+            {
+                Owner = commandData.Application.MainWindowHandle
+            };
 
-            IIsoFieldRecognitionRunner recognitionRunner = new StubIsoFieldRecognitionRunner();
-            IsoFieldRecognitionResult recognitionResult = recognitionRunner.Run(sourcePath: null);
-
-            TaskDialog.Show(
-                "Армирование по изополям",
-                "Модуль \"Армирование по изополям\" подключен. Следующий этап - выбор файла изополей и предпросмотр распознавания.");
-
-            logger.Info($"IsoField Rebar scaffold opened. Recognized polylines: {recognitionResult.Polylines.Count}.");
+            window.ShowDialog();
+            logger.Info("IsoField Rebar window closed.");
             return Result.Succeeded;
         }
         catch (Exception exception)

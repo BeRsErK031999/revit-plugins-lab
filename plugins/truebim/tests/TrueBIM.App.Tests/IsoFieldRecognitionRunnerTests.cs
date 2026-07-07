@@ -15,4 +15,10 @@ public sealed class IsoFieldRecognitionRunnerTests
         Assert.Empty(result.Polylines);
         Assert.Empty(result.Diagnostics);
     }
+
+    [Fact]
+    public void IsoFieldFilePicker_ImplementsPickerContract()
+    {
+        Assert.IsAssignableFrom<IIsoFieldFilePicker>(new IsoFieldFilePicker());
+    }
 }
