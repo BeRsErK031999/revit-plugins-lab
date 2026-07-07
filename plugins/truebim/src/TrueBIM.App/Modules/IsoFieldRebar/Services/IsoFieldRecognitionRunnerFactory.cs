@@ -30,7 +30,7 @@ public static class IsoFieldRecognitionRunnerFactory
             Timeout = ResolveTimeout(logger)
         };
         logger.Info($"IsoField CLI worker configured: {Path.GetFileName(workerPath)}.");
-        return new IsoFieldCliRecognitionRunner(options, new IsoFieldJsonReader());
+        return new IsoFieldCliRecognitionRunner(options, new IsoFieldJsonReader(), logger);
     }
 
     private static string ResolveArgumentsTemplate()

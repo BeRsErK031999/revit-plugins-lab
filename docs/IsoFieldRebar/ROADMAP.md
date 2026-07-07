@@ -34,7 +34,8 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 - Этап 12 выполнен: добавлен slab-specific placement для простых плит, который строит параллельные тестовые Rebar-линии по валидным зонам внутри bounding box плиты.
 - Этап 13 выполнен: добавлен wall-specific placement для простых прямых стен с локальной осью/нормалью, несколькими зонами и направлениями `AlongHost`/`Vertical`.
 - Этап 14 выполнен: добавлен CLI runner для внешнего worker-а с timeout, temp request/output files и строгой валидацией output JSON.
-- Следующий рекомендуемый этап: расширить логирование и диагностику вокруг file selection, recognition, preview и write-flow.
+- Этап 15 выполнен: расширено логирование диагностики вокруг file selection, recognition, preview, правил и controlled write-flow.
+- Следующий рекомендуемый этап: добавить manual QA checklist и sample-сценарии для проверки на воспроизводимых Revit-моделях.
 
 ## Этапы
 
@@ -167,11 +168,11 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 ### 15. Логирование и диагностика
 
 - Цель: сделать ошибки понятными для пользователя и разработчика.
-- Код: расширить logging around file selection, recognition, preview and write-flow.
+- Код: расширить logging around file selection, recognition, preview and write-flow; добавить diagnostic metadata для активного recognition runner-а.
 - Файлы: `Commands/IsoFieldRebarCommand.cs`, `Services/*`, `Revit/*`.
-- Проверка: сценарии ошибки файла, ошибки JSON, ошибки worker timeout.
+- Проверка: сценарии ошибки файла, ошибки JSON, ошибки worker timeout; unit-тесты diagnostic metadata для stub/CLI runner-а.
 - Риски: лог может раскрывать лишние локальные пути при передаче отчетов.
-- Готово: все failures имеют user-friendly dialog и запись в `%APPDATA%\TrueBIM\Logs\truebim.log`.
+- Готово: key failures и early-return сценарии имеют user-friendly dialog/status и запись в `%APPDATA%\TrueBIM\Logs\truebim.log`.
 
 ### 16. Тестирование на sample-моделях
 

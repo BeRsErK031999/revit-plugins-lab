@@ -22,6 +22,7 @@
 - Slab-specific placement для простых плит: валидные зоны превращаются в параллельные тестовые Rebar-линии внутри bounding box плиты.
 - Wall-specific placement для простых прямых стен: валидные зоны превращаются в тестовые Rebar-линии вдоль локальной оси стены или вертикально.
 - CLI worker runner для внешнего распознавания: Revit запускает настроенный процесс с timeout/temp files и валидирует `schemaVersion: "1.0"` output JSON.
+- Расширенное логирование диагностики вокруг выбора файла, recognition runner-а, preview, правил и controlled write-flow.
 
 ## Пока не реализовано
 
@@ -30,4 +31,4 @@
 
 ## Следующие шаги
 
-1. Расширить логирование и диагностику вокруг file selection, recognition, preview и write-flow.
+1. Добавить manual QA checklist и sample-сценарии для проверки на воспроизводимых Revit-моделях.

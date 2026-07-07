@@ -41,9 +41,11 @@ public sealed class IsoFieldRevitPreviewService
         EnsureViewSupportsDetailPreview(activeView);
 
         IReadOnlyList<ElementId> idsToDelete = CollectPreviewIds(document, activeView, currentPreviewIds);
+        logger.Info($"IsoField Revit preview service started. View='{activeView.Name}'; Polylines={recognitionResult.Polylines.Count}; ExistingPreviewIds={idsToDelete.Count}; MillimetersPerPixel={calibration.MillimetersPerPixel}.");
         if (recognitionResult.Polylines.Count == 0)
         {
             int deletedOnly = DeletePreviewElements(document, activeView, idsToDelete);
+            logger.Info($"IsoField Revit preview service finished without polylines. Deleted={deletedOnly}; View='{activeView.Name}'.");
             return new IsoFieldRevitPreviewResult(
                 0,
                 deletedOnly,
@@ -80,9 +82,10 @@ public sealed class IsoFieldRevitPreviewService
 
             transaction.Commit();
         }
-        catch
+        catch (Exception exception)
         {
             transaction.RollBack();
+            logger.Error($"IsoField Revit preview transaction rolled back. View='{activeView.Name}'.", exception);
             throw;
         }
 
@@ -108,6 +111,7 @@ public sealed class IsoFieldRevitPreviewService
         Document document = uiDocument.Document;
         View activeView = uiDocument.ActiveView;
         IReadOnlyList<ElementId> idsToDelete = CollectPreviewIds(document, activeView, currentPreviewIds);
+        logger.Info($"IsoField Revit preview clear service started. View='{activeView.Name}'; ExistingPreviewIds={idsToDelete.Count}.");
         int deletedCount = DeletePreviewElements(document, activeView, idsToDelete);
 
         logger.Info($"IsoField Revit preview cleared. Deleted={deletedCount}; View='{activeView.Name}'.");

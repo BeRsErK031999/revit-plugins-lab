@@ -51,6 +51,7 @@ public sealed class IsoFieldRebarCreationService
         EnsureHostMatchesSelection(host, hostElement);
 
         List<long> createdIds = new();
+        logger.Info($"IsoField test rebar transaction starting. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}; ValidRules={previewItems.Count}.");
 
         using Transaction transaction = new(document, "TrueBIM: тестовая арматура по изополям");
         transaction.Start();
@@ -66,9 +67,10 @@ public sealed class IsoFieldRebarCreationService
 
             transaction.Commit();
         }
-        catch
+        catch (Exception exception)
         {
             transaction.RollBack();
+            logger.Error($"IsoField test rebar transaction rolled back. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}.", exception);
             throw;
         }
 
@@ -167,6 +169,7 @@ public sealed class IsoFieldRebarCreationService
                 BuildWallPlacementFrame(wall),
                 previewItems))
             {
+                logger.Info($"IsoField wall rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
                 yield return new RebarCreationRequest(
                     previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
                     ResolveBarType(document, placement.Rule.BarTypeName),
@@ -184,6 +187,7 @@ public sealed class IsoFieldRebarCreationService
                 BuildPlacementBounds(host),
                 previewItems))
             {
+                logger.Info($"IsoField slab rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
                 yield return new RebarCreationRequest(
                     previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
                     ResolveBarType(document, placement.Rule.BarTypeName),

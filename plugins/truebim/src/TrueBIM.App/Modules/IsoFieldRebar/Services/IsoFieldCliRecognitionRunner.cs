@@ -4,21 +4,25 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
+using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 
-public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
+public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, IIsoFieldRecognitionRunnerDiagnostics
 {
     private const string RequestSchemaVersion = "1.0";
     private readonly IsoFieldCliRecognitionRunnerOptions options;
     private readonly IIsoFieldJsonReader jsonReader;
+    private readonly ITrueBimLogger? logger;
 
     public IsoFieldCliRecognitionRunner(
         IsoFieldCliRecognitionRunnerOptions options,
-        IIsoFieldJsonReader jsonReader)
+        IIsoFieldJsonReader jsonReader,
+        ITrueBimLogger? logger = null)
     {
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         this.jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
+        this.logger = logger;
 
         if (string.IsNullOrWhiteSpace(options.ExecutablePath))
         {
@@ -30,6 +34,8 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
             throw new ArgumentOutOfRangeException(nameof(options), "IsoField CLI worker timeout must be positive.");
         }
     }
+
+    public string RunnerName => "CLI";
 
     public IsoFieldRecognitionResult Run(string? sourcePath)
     {
@@ -50,14 +56,17 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
             throw new FileNotFoundException("IsoField CLI worker executable was not found.", workerPath);
         }
 
+        logger?.Info($"IsoField CLI recognition starting. Worker='{Path.GetFileName(workerPath)}'; Source='{Path.GetFileName(normalizedSourcePath)}'; TimeoutSeconds={options.Timeout.TotalSeconds:0.#}.");
         string workDirectory = CreateWorkDirectory();
         try
         {
             string requestPath = Path.Combine(workDirectory, "request.json");
             string outputPath = Path.Combine(workDirectory, "recognition-result.json");
             WriteRequest(requestPath, normalizedSourcePath, outputPath);
+            logger?.Info($"IsoField CLI worker request prepared. WorkId='{Path.GetFileName(workDirectory)}'.");
 
             ProcessResult processResult = RunProcess(workerPath, workDirectory, requestPath, normalizedSourcePath, outputPath);
+            logger?.Info($"IsoField CLI worker exited. ExitCode={processResult.ExitCode}; StdOutLength={processResult.StandardOutput.Length}; StdErrLength={processResult.StandardError.Length}.");
             if (processResult.ExitCode != 0)
             {
                 throw new InvalidOperationException(
@@ -66,14 +75,17 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
 
             if (!File.Exists(outputPath))
             {
+                logger?.Warning("IsoField CLI worker finished without recognition-result JSON.");
                 throw new InvalidDataException("IsoField CLI worker did not create recognition-result JSON.");
             }
 
-            return jsonReader.Read(outputPath);
+            IsoFieldRecognitionResult result = jsonReader.Read(outputPath);
+            logger?.Info($"IsoField CLI recognition JSON validated. Polylines={result.Polylines.Count}; Diagnostics={result.Diagnostics.Count}.");
+            return result;
         }
         finally
         {
-            TryDeleteDirectory(workDirectory);
+            TryDeleteDirectory(workDirectory, logger);
         }
     }
 
@@ -155,6 +167,7 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
 
         if (!process.WaitForExit(ToTimeoutMilliseconds(options.Timeout)))
         {
+            logger?.Warning($"IsoField CLI worker timeout. TimeoutSeconds={options.Timeout.TotalSeconds:0.#}; Worker='{Path.GetFileName(workerPath)}'.");
             TryKill(process);
             throw new TimeoutException($"IsoField CLI worker timed out after {options.Timeout.TotalSeconds:0.#} seconds.");
         }
@@ -219,7 +232,7 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
         }
     }
 
-    private static void TryDeleteDirectory(string directoryPath)
+    private static void TryDeleteDirectory(string directoryPath, ITrueBimLogger? logger)
     {
         try
         {
@@ -228,11 +241,13 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner
                 Directory.Delete(directoryPath, recursive: true);
             }
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            logger?.Warning($"IsoField CLI temp cleanup failed for WorkId='{Path.GetFileName(directoryPath)}'. {exception.Message}");
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException exception)
         {
+            logger?.Warning($"IsoField CLI temp cleanup was denied for WorkId='{Path.GetFileName(directoryPath)}'. {exception.Message}");
         }
     }
 

@@ -453,6 +453,7 @@ public sealed class IsoFieldRebarWindow : Window
                 recognitionStatusText.Text = "Файл выбран. Нажмите «Распознать файл», чтобы запустить настроенный runner.";
                 ClearPreview("Выбран файл изображения. Контуры появятся после JSON или распознавания.");
                 footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
+                logger.Info($"IsoField image source is ready for recognition. Extension='{Path.GetExtension(selectedPath)}'.");
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException)
@@ -469,6 +470,7 @@ public sealed class IsoFieldRebarWindow : Window
 
     private void ReadJsonSource(string path)
     {
+        logger.Info($"IsoField JSON source read started: {Path.GetFileName(path)}.");
         IsoFieldRecognitionResult result = jsonReader.Read(path);
         currentRecognitionResult = result;
         recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
@@ -484,11 +486,13 @@ public sealed class IsoFieldRebarWindow : Window
         {
             if (string.IsNullOrWhiteSpace(selectedFilePath))
             {
+                logger.Warning("IsoField recognition was requested without selected source file.");
                 TaskDialog.Show("Армирование по изополям", "Сначала выберите файл изополей.");
                 footerStatusText.Text = "Распознавание не запущено: файл не выбран.";
                 return;
             }
 
+            logger.Info($"IsoField recognition started. Runner={ResolveRecognitionRunnerName()}; Source={Path.GetFileName(selectedFilePath)}.");
             IsoFieldRecognitionResult result = recognitionRunner.Run(selectedFilePath);
             currentRecognitionResult = result;
             recognitionStatusText.Text = $"Распознавание выполнено. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
@@ -513,12 +517,14 @@ public sealed class IsoFieldRebarWindow : Window
     {
         if (uiDocument is null)
         {
+            logger.Warning("IsoField Revit preview was requested without an open Revit document.");
             TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием линий предпросмотра.");
             return;
         }
 
         if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
         {
+            logger.Warning("IsoField Revit preview was requested without recognition polylines.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
             return;
         }
@@ -530,6 +536,7 @@ public sealed class IsoFieldRebarWindow : Window
                 return;
             }
 
+            logger.Info($"IsoField Revit preview requested. Polylines={currentRecognitionResult.Polylines.Count}; ExistingPreviewIds={activeRevitPreviewIds.Count}; CalibrationScale={currentCalibration.MillimetersPerPixel}.");
             IsoFieldRevitPreviewResult result = revitPreviewService.Show(
                 uiDocument,
                 currentRecognitionResult,
@@ -537,6 +544,7 @@ public sealed class IsoFieldRebarWindow : Window
                 currentCalibration);
             activeRevitPreviewIds = result.CreatedElementIds;
             footerStatusText.Text = result.Message;
+            logger.Info($"IsoField Revit preview command completed. Created={result.CreatedCount}; Deleted={result.DeletedCount}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
         {
@@ -552,15 +560,18 @@ public sealed class IsoFieldRebarWindow : Window
     {
         if (uiDocument is null)
         {
+            logger.Warning("IsoField Revit preview clear was requested without an open Revit document.");
             TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед очисткой линий предпросмотра.");
             return;
         }
 
         try
         {
+            logger.Info($"IsoField Revit preview clear requested. ExistingPreviewIds={activeRevitPreviewIds.Count}.");
             IsoFieldRevitPreviewResult result = revitPreviewService.Clear(uiDocument, activeRevitPreviewIds);
             activeRevitPreviewIds = Array.Empty<ElementId>();
             footerStatusText.Text = result.Message;
+            logger.Info($"IsoField Revit preview clear completed. Deleted={result.DeletedCount}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
         {
@@ -576,6 +587,7 @@ public sealed class IsoFieldRebarWindow : Window
     {
         if (uiDocument is null)
         {
+            logger.Warning("IsoField host selection was requested without an open Revit document.");
             TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед выбором host-элемента.");
             return;
         }
@@ -631,6 +643,7 @@ public sealed class IsoFieldRebarWindow : Window
     {
         if (!TryBuildCalibration(out IsoFieldCalibration calibration, out string errorMessage))
         {
+            logger.Warning($"IsoField calibration validation failed: {errorMessage}");
             if (showDialogOnError)
             {
                 TaskDialog.Show("Армирование по изополям", errorMessage);
@@ -686,11 +699,13 @@ public sealed class IsoFieldRebarWindow : Window
     {
         if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
         {
+            logger.Warning("IsoField rebar rules preview was requested without recognition polylines.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
             ClearRulePreview("Правила не рассчитаны: нет контуров изополей.");
             return;
         }
 
+        logger.Info($"IsoField rebar rules preview requested. Polylines={currentRecognitionResult.Polylines.Count}; HostSelected={selectedHostElement is not null}.");
         RebarRulePreviewResult preview = rebarRuleValidationService.BuildPreview(
             currentRecognitionResult,
             selectedHostElement);
@@ -709,12 +724,14 @@ public sealed class IsoFieldRebarWindow : Window
     {
         if (uiDocument is null)
         {
+            logger.Warning("IsoField test rebar creation was requested without an open Revit document.");
             TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием тестовой арматуры.");
             return;
         }
 
         if (selectedHostElement is null)
         {
+            logger.Warning("IsoField test rebar creation was requested without selected host element.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите стену или плиту как host-элемент.");
             rebarCreationStatusText.Text = "Тестовая арматура не создана: host-элемент не выбран.";
             return;
@@ -722,6 +739,7 @@ public sealed class IsoFieldRebarWindow : Window
 
         if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
         {
+            logger.Warning("IsoField test rebar creation was requested without recognition polylines.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
             rebarCreationStatusText.Text = "Тестовая арматура не создана: нет контуров изополей.";
             return;
@@ -736,6 +754,7 @@ public sealed class IsoFieldRebarWindow : Window
 
         if (preview is null || !preview.CanCreateRebar)
         {
+            logger.Warning("IsoField test rebar creation blocked by invalid rule preview.");
             TaskDialog.Show("Армирование по изополям", "Перед созданием тестовой арматуры исправьте диагностику правил.");
             rebarCreationStatusText.Text = "Тестовая арматура не создана: правила не готовы.";
             return;
@@ -751,12 +770,14 @@ public sealed class IsoFieldRebarWindow : Window
 
         try
         {
+            logger.Info($"IsoField test rebar creation requested. HostKind={selectedHostElement.HostKind}; HostId={selectedHostElement.ElementId}; Rules={preview.Items.Count}.");
             IsoFieldRebarCreationResult result = rebarCreationService.CreateTestRebar(
                 uiDocument,
                 selectedHostElement,
                 preview);
             rebarCreationStatusText.Text = result.Message;
             footerStatusText.Text = result.Message;
+            logger.Info($"IsoField test rebar creation completed. Count={result.CreatedCount}; HostId={selectedHostElement.ElementId}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
         {
@@ -1011,6 +1032,13 @@ public sealed class IsoFieldRebarWindow : Window
             ? $"{Environment.NewLine}Еще зон: {preview.Items.Count - lines.Length}."
             : string.Empty;
         return $"Правил: {preview.Items.Count}.{Environment.NewLine}{string.Join(Environment.NewLine, lines)}{suffix}";
+    }
+
+    private string ResolveRecognitionRunnerName()
+    {
+        return recognitionRunner is IIsoFieldRecognitionRunnerDiagnostics diagnostics
+            ? diagnostics.RunnerName
+            : recognitionRunner.GetType().Name;
     }
 
     private static string FormatNumber(double value)

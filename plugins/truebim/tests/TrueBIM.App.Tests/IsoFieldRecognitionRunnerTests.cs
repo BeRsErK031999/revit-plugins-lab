@@ -14,6 +14,7 @@ public sealed class IsoFieldRecognitionRunnerTests
 
         Assert.Empty(result.Polylines);
         Assert.Empty(result.Diagnostics);
+        Assert.Equal("Stub", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
     }
 
     [Fact]
@@ -27,10 +28,36 @@ public sealed class IsoFieldRecognitionRunnerTests
             IIsoFieldRecognitionRunner runner = IsoFieldRecognitionRunnerFactory.Create(new TestLogger());
 
             Assert.IsType<StubIsoFieldRecognitionRunner>(runner);
+            Assert.Equal("Stub", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
         }
         finally
         {
             Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable, previousWorker);
+        }
+    }
+
+    [Fact]
+    public void IsoFieldRecognitionRunnerFactory_UsesCliWhenWorkerIsConfigured()
+    {
+        string? previousWorker = Environment.GetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable);
+        string? previousArguments = Environment.GetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerArgumentsEnvironmentVariable);
+        string? previousTimeout = Environment.GetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerTimeoutEnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable, ResolvePowerShellPath());
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerArgumentsEnvironmentVariable, null);
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerTimeoutEnvironmentVariable, "2");
+
+            IIsoFieldRecognitionRunner runner = IsoFieldRecognitionRunnerFactory.Create(new TestLogger());
+
+            Assert.IsType<IsoFieldCliRecognitionRunner>(runner);
+            Assert.Equal("CLI", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable, previousWorker);
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerArgumentsEnvironmentVariable, previousArguments);
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerTimeoutEnvironmentVariable, previousTimeout);
         }
     }
 
