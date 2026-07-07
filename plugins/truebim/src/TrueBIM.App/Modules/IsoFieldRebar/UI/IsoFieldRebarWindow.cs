@@ -766,7 +766,7 @@ public sealed class IsoFieldRebarWindow : Window
         TaskDialog dialog = new("Армирование по изополям")
         {
             MainInstruction = "Создать тестовую арматуру в модели Revit?",
-            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Для плиты будет создано по одному тестовому элементу на валидную зону. Это действие изменит модель, но его можно отменить через Undo.",
+            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Для поддержанной стены или плиты будет создано по одному тестовому элементу на валидную зону. Это действие изменит модель, но его можно отменить через Undo.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };

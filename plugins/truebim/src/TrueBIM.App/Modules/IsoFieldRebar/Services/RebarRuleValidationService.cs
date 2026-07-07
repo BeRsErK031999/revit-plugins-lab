@@ -82,7 +82,7 @@ public sealed class RebarRuleValidationService
 
         if (!IsSupportedPlacementDirection(rule.PlacementDirection))
         {
-            diagnostics.Add($"Направление армирования '{rule.PlacementDirection}' не поддерживается. Ожидается Auto, X, Y или AlongHost.");
+            diagnostics.Add($"Направление армирования '{rule.PlacementDirection}' не поддерживается. Ожидается Auto, X, Y, AlongHost или Vertical.");
         }
 
         return diagnostics;
@@ -153,7 +153,8 @@ public sealed class RebarRuleValidationService
         return string.Equals(placementDirection, "Auto", StringComparison.OrdinalIgnoreCase)
             || string.Equals(placementDirection, "X", StringComparison.OrdinalIgnoreCase)
             || string.Equals(placementDirection, "Y", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(placementDirection, "AlongHost", StringComparison.OrdinalIgnoreCase);
+            || string.Equals(placementDirection, "AlongHost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(placementDirection, "Vertical", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsFinite(double value)

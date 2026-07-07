@@ -14,8 +14,9 @@ public sealed class IsoFieldRebarCreationService
     private const string SlabHostKind = "Slab";
     private const string OwnedCommentPrefix = "TrueBIM IsoFieldRebar Test";
     private const double MinimumTestLengthFeet = 0.5;
-    private const double MaximumTestLengthFeet = 4.0;
+    private const double MinimumDirectionLengthFeet = 1e-9;
     private readonly SlabRebarPlacementService slabPlacementService = new();
+    private readonly WallRebarPlacementService wallPlacementService = new();
     private readonly ITrueBimLogger logger;
 
     public IsoFieldRebarCreationService(ITrueBimLogger logger)
@@ -95,9 +96,7 @@ public sealed class IsoFieldRebarCreationService
             throw new InvalidOperationException("Нет валидной зоны для создания тестовой арматуры.");
         }
 
-        return string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
-            ? validItems
-            : [validItems[0]];
+        return validItems;
     }
 
     private static void EnsureHostMatchesSelection(Element host, IsoFieldHostElement selectedHost)
@@ -164,11 +163,18 @@ public sealed class IsoFieldRebarCreationService
     {
         if (string.Equals(hostElement.HostKind, WallHostKind, StringComparison.Ordinal) && host is Wall wall)
         {
-            RebarRulePreviewItem item = previewItems[0];
-            yield return new RebarCreationRequest(
-                item,
-                ResolveBarType(document, item.Rule.BarTypeName),
-                BuildWallTestGeometry(wall));
+            foreach (IsoFieldRebarPlacement placement in wallPlacementService.BuildPlacements(
+                BuildWallPlacementFrame(wall),
+                previewItems))
+            {
+                yield return new RebarCreationRequest(
+                    previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
+                    ResolveBarType(document, placement.Rule.BarTypeName),
+                    new TestRebarGeometry(
+                        [Line.CreateBound(ToXyz(placement.Start), ToXyz(placement.End))],
+                        ToXyz(placement.Normal)));
+            }
+
             yield break;
         }
 
@@ -192,34 +198,46 @@ public sealed class IsoFieldRebarCreationService
         throw new InvalidOperationException("MVP создания тестовой арматуры поддерживает только простые стены и плиты.");
     }
 
-    private static TestRebarGeometry BuildWallTestGeometry(Wall wall)
+    private static IsoFieldWallPlacementFrame BuildWallPlacementFrame(Wall wall)
     {
         if (wall.Location is not LocationCurve locationCurve)
         {
             throw new InvalidOperationException("Для тестовой арматуры стены нужна LocationCurve.");
         }
 
-        Curve location = locationCurve.Curve;
+        if (locationCurve.Curve is not Line location)
+        {
+            throw new InvalidOperationException("MVP создания тестовой арматуры поддерживает только прямые стены.");
+        }
+
         XYZ start = location.GetEndPoint(0);
         XYZ end = location.GetEndPoint(1);
         XYZ direction = end - start;
-        if (direction.GetLength() < MinimumTestLengthFeet)
+        double lengthFeet = new XYZ(direction.X, direction.Y, 0).GetLength();
+        if (lengthFeet < MinimumTestLengthFeet)
         {
             throw new InvalidOperationException("LocationCurve стены слишком короткая для тестовой арматуры.");
         }
 
-        direction = NormalizeHorizontalDirection(direction);
+        XYZ axis = NormalizeHorizontalDirection(direction);
         BoundingBoxXYZ boundingBox = wall.get_BoundingBox(null)
             ?? throw new InvalidOperationException("У выбранной стены нет bounding box.");
+        double heightFeet = boundingBox.Max.Z - boundingBox.Min.Z;
+        if (heightFeet < MinimumTestLengthFeet)
+        {
+            throw new InvalidOperationException("Bounding box стены слишком мал для тестовой арматуры.");
+        }
 
         XYZ centerOnCurve = location.Evaluate(0.5, true);
         XYZ center = new(centerOnCurve.X, centerOnCurve.Y, (boundingBox.Min.Z + boundingBox.Max.Z) / 2);
-        double halfLength = ResolveHalfLengthFeet(start.DistanceTo(end));
-        XYZ normal = ResolveWallNormal(wall, direction);
+        XYZ normal = ResolveWallNormal(wall, axis);
 
-        return new TestRebarGeometry(
-            [Line.CreateBound(center - (direction * halfLength), center + (direction * halfLength))],
-            normal);
+        return new IsoFieldWallPlacementFrame(
+            ToPoint3D(center),
+            ToPoint3D(axis),
+            ToPoint3D(normal),
+            lengthFeet,
+            heightFeet);
     }
 
     private static IsoFieldRebarPlacementBounds BuildPlacementBounds(Element slab)
@@ -239,9 +257,12 @@ public sealed class IsoFieldRebarCreationService
     private static XYZ NormalizeHorizontalDirection(XYZ direction)
     {
         XYZ horizontal = new(direction.X, direction.Y, 0);
-        return horizontal.GetLength() >= MinimumTestLengthFeet
-            ? horizontal.Normalize()
-            : direction.Normalize();
+        if (horizontal.GetLength() < MinimumDirectionLengthFeet)
+        {
+            throw new InvalidOperationException("LocationCurve стены должна иметь ненулевое горизонтальное направление.");
+        }
+
+        return horizontal.Normalize();
     }
 
     private static XYZ ResolveWallNormal(Wall wall, XYZ direction)
@@ -253,13 +274,6 @@ public sealed class IsoFieldRebarCreationService
         }
 
         return normal.Normalize();
-    }
-
-    private static double ResolveHalfLengthFeet(double availableLengthFeet)
-    {
-        double targetLength = Math.Min(MaximumTestLengthFeet, availableLengthFeet * 0.5);
-        targetLength = Math.Max(MinimumTestLengthFeet, targetLength);
-        return targetLength / 2;
     }
 
     private static void MarkCreatedRebar(Rebar rebar, RebarRulePreviewItem previewItem)
@@ -310,6 +324,11 @@ public sealed class IsoFieldRebarCreationService
     private static XYZ ToXyz(IsoFieldRebarPoint3D point)
     {
         return new XYZ(point.XFeet, point.YFeet, point.ZFeet);
+    }
+
+    private static IsoFieldRebarPoint3D ToPoint3D(XYZ point)
+    {
+        return new IsoFieldRebarPoint3D(point.X, point.Y, point.Z);
     }
 
     private sealed record RebarCreationRequest(
