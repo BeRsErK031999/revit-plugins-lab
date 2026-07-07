@@ -8,6 +8,7 @@ using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using WpfGrid = System.Windows.Controls.Grid;
+using WpfPolyline = System.Windows.Shapes.Polyline;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.UI;
 
@@ -17,11 +18,16 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly IIsoFieldFilePicker filePicker;
     private readonly IIsoFieldJsonReader jsonReader;
     private readonly IIsoFieldRecognitionRunner recognitionRunner;
+    private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly ITrueBimLogger logger;
     private readonly TextBlock selectedFileText;
     private readonly TextBlock recognitionStatusText;
+    private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
+    private readonly Canvas previewCanvas;
     private string? selectedFilePath;
+    private const double PreviewCanvasWidth = 430;
+    private const double PreviewCanvasHeight = 180;
 
     public IsoFieldRebarWindow(
         string? documentTitle,
@@ -40,6 +46,8 @@ public sealed class IsoFieldRebarWindow : Window
 
         selectedFileText = CreateMutedText("Файл не выбран.");
         recognitionStatusText = CreateMutedText("Распознавание пока не запускалось.");
+        previewStatusText = CreateMutedText("Контуры пока не загружены.");
+        previewCanvas = CreatePreviewCanvas();
         footerStatusText = CreateMutedText("Модель Revit в этом срезе не изменяется.");
 
         Title = "Армирование по изополям";
@@ -51,6 +59,7 @@ public sealed class IsoFieldRebarWindow : Window
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
+        ClearPreview("Контуры пока не загружены.");
 
         this.logger.Info("IsoField Rebar window opened.");
     }
@@ -74,6 +83,7 @@ public sealed class IsoFieldRebarWindow : Window
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         Border filePanel = CreateFilePanel();
@@ -82,7 +92,7 @@ public sealed class IsoFieldRebarWindow : Window
 
         Border nextStepsPanel = CreateNextStepsPanel();
         WpfGrid.SetColumn(nextStepsPanel, 1);
-        WpfGrid.SetRowSpan(nextStepsPanel, 2);
+        WpfGrid.SetRowSpan(nextStepsPanel, 3);
         nextStepsPanel.Margin = new Thickness(14, 0, 0, 0);
         body.Children.Add(nextStepsPanel);
 
@@ -90,6 +100,11 @@ public sealed class IsoFieldRebarWindow : Window
         WpfGrid.SetRow(recognitionPanel, 1);
         recognitionPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(recognitionPanel);
+
+        Border previewPanel = CreatePreviewPanel();
+        WpfGrid.SetRow(previewPanel, 2);
+        previewPanel.Margin = new Thickness(0, 14, 0, 0);
+        body.Children.Add(previewPanel);
 
         root.Children.Add(body);
         return root;
@@ -118,7 +133,7 @@ public sealed class IsoFieldRebarWindow : Window
         header.Children.Add(titleRow);
 
         header.Children.Add(CreateMutedText(
-            "Выберите изображение или JSON-файл изополей. На этом этапе модуль только хранит выбранный путь и показывает безопасный stub-статус."));
+            "Выберите изображение или JSON-файл изополей. JSON-контуры можно просмотреть в окне без изменения модели Revit."));
         header.Children.Add(CreateMutedText($"Активный документ: {documentTitle}."));
 
         return header;
@@ -141,6 +156,25 @@ public sealed class IsoFieldRebarWindow : Window
 
         selectedFileText.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(selectedFileText);
+
+        return CreatePanel(content);
+    }
+
+    private Border CreatePreviewPanel()
+    {
+        StackPanel content = CreatePanelContent("Предпросмотр контуров");
+
+        Border canvasBorder = new()
+        {
+            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 224, 232)),
+            BorderThickness = new Thickness(1),
+            Background = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
+            Child = previewCanvas
+        };
+        content.Children.Add(canvasBorder);
+
+        previewStatusText.Margin = new Thickness(0, 10, 0, 0);
+        content.Children.Add(previewStatusText);
 
         return CreatePanel(content);
     }
@@ -170,12 +204,12 @@ public sealed class IsoFieldRebarWindow : Window
     {
         StackPanel content = CreatePanelContent("Будущие шаги");
 
-        content.Children.Add(CreateStep("Предпросмотр контуров", false));
+        content.Children.Add(CreateStep("Экранный preview контуров", false, true));
+        content.Children.Add(CreateStep("Линии предпросмотра в Revit", false));
         content.Children.Add(CreateStep("Выбор стены или плиты", false));
-        content.Children.Add(CreateStep("Калибровка координат", false));
         content.Children.Add(CreateStep("Создание арматуры", false));
 
-        TextBlock note = CreateMutedText("Эти действия появятся отдельными безопасными срезами после фиксации JSON-контракта и preview-логики.");
+        TextBlock note = CreateMutedText("Экранный preview уже доступен для JSON. Линии в Revit, выбор host-элемента и создание арматуры будут отдельными срезами.");
         note.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(note);
 
@@ -229,6 +263,7 @@ public sealed class IsoFieldRebarWindow : Window
             else
             {
                 recognitionStatusText.Text = "Файл выбран. Реальное распознавание пока не подключено.";
+                ClearPreview("Выбран файл изображения. Контуры появятся после JSON или будущего распознавания.");
                 footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
             }
         }
@@ -246,6 +281,7 @@ public sealed class IsoFieldRebarWindow : Window
     {
         IsoFieldRecognitionResult result = jsonReader.Read(path);
         recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+        RenderPreview(result);
         footerStatusText.Text = "JSON-контракт изополей прочитан. Модель Revit не изменялась.";
         logger.Info($"IsoField recognition JSON read. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
     }
@@ -256,6 +292,7 @@ public sealed class IsoFieldRebarWindow : Window
         {
             IsoFieldRecognitionResult result = recognitionRunner.Run(selectedFilePath);
             recognitionStatusText.Text = $"Заглушка выполнена. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+            RenderPreview(result);
             footerStatusText.Text = "Stub-распознавание завершено. OpenCV/Python не запускались, модель Revit не изменялась.";
             logger.Info($"IsoField recognition stub completed. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
         }
@@ -267,6 +304,59 @@ public sealed class IsoFieldRebarWindow : Window
                 "Не удалось выполнить заглушку распознавания. Используйте логи для диагностики.");
             footerStatusText.Text = "Не удалось выполнить заглушку распознавания.";
         }
+    }
+
+    private void RenderPreview(IsoFieldRecognitionResult result)
+    {
+        previewCanvas.Children.Clear();
+        IsoFieldPreviewLayout layout = previewLayoutService.Build(result, PreviewCanvasWidth, PreviewCanvasHeight);
+        if (layout.Polylines.Count == 0)
+        {
+            ClearPreview("Нет контуров для предпросмотра.");
+            return;
+        }
+
+        Brush[] strokes =
+        [
+            new SolidColorBrush(Color.FromRgb(28, 103, 176)),
+            new SolidColorBrush(Color.FromRgb(35, 132, 93)),
+            new SolidColorBrush(Color.FromRgb(168, 92, 42)),
+            new SolidColorBrush(Color.FromRgb(128, 77, 156))
+        ];
+
+        for (int index = 0; index < layout.Polylines.Count; index++)
+        {
+            IsoFieldPreviewPolyline source = layout.Polylines[index];
+            WpfPolyline line = new()
+            {
+                Stroke = strokes[index % strokes.Length],
+                StrokeThickness = 2,
+                StrokeLineJoin = PenLineJoin.Round
+            };
+
+            foreach (IsoFieldPoint point in source.Points)
+            {
+                line.Points.Add(new Point(point.X, point.Y));
+            }
+
+            previewCanvas.Children.Add(line);
+        }
+
+        previewStatusText.Text = $"Показано контуров: {layout.Polylines.Count}. Предпросмотр выполнен только в окне, модель Revit не изменялась.";
+    }
+
+    private void ClearPreview(string message)
+    {
+        previewCanvas.Children.Clear();
+        previewCanvas.Children.Add(new TextBlock
+        {
+            Text = "Нет данных",
+            Foreground = Brushes.Gray,
+            FontWeight = FontWeights.SemiBold
+        });
+        Canvas.SetLeft(previewCanvas.Children[0], 16);
+        Canvas.SetTop(previewCanvas.Children[0], 16);
+        previewStatusText.Text = message;
     }
 
     private static StackPanel CreatePanelContent(string title)
@@ -297,12 +387,12 @@ public sealed class IsoFieldRebarWindow : Window
         };
     }
 
-    private static CheckBox CreateStep(string text, bool isEnabled)
+    private static CheckBox CreateStep(string text, bool isEnabled, bool isChecked = false)
     {
         return new CheckBox
         {
             Content = text,
-            IsChecked = false,
+            IsChecked = isChecked,
             IsEnabled = isEnabled,
             Margin = new Thickness(0, 0, 0, 10)
         };
@@ -317,6 +407,16 @@ public sealed class IsoFieldRebarWindow : Window
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 6, 0, 0)
+        };
+    }
+
+    private static Canvas CreatePreviewCanvas()
+    {
+        return new Canvas
+        {
+            Width = PreviewCanvasWidth,
+            Height = PreviewCanvasHeight,
+            ClipToBounds = true
         };
     }
 
