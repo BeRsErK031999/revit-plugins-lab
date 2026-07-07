@@ -12,6 +12,10 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 - Runtime module enable/disable settings.
 - Shared infrastructure for logging, Revit context access, UI shell, and future licensing/update logic.
 
+## IsoField Rebar workflow guide
+
+- [Методичка: армирование по изополям](docs/isofield-rebar-workflow-guide.md) - short visual workflow for the current IsoField Rebar skeleton: source file, preview, host selection, rule preview, and confirmed test rebar.
+
 ## Initial modules
 
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).

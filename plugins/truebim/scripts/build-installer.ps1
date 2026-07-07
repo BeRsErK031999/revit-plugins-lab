@@ -253,6 +253,10 @@ foreach ($year in $revitYears) {
     Copy-Item -Path (Join-Path $trueBimRoot "README.md") -Destination $docsDir -Force
     Copy-Item -Path (Join-Path $trueBimRoot "docs\*.md") -Destination $docsDir -Force
     Copy-Item -Path (Join-Path $trueBimRoot "installer\README.md") -Destination (Join-Path $docsDir "installer-README.md") -Force
+    $docsAssetsDir = Join-Path $trueBimRoot "docs\assets"
+    if (Test-Path -LiteralPath $docsAssetsDir) {
+        Copy-DirectoryContents -Source $docsAssetsDir -Destination (Join-Path $docsDir "assets")
+    }
 
     $manifestPath = Join-Path $distYearRoot "TrueBIM.addin"
     $defaultAssemblyPath = Join-Path (Join-Path $defaultInstallRoot $year) "TrueBIM.App.dll"

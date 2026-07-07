@@ -36,7 +36,8 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 - Этап 14 выполнен: добавлен CLI runner для внешнего worker-а с timeout, temp request/output files и строгой валидацией output JSON.
 - Этап 15 выполнен: расширено логирование диагностики вокруг file selection, recognition, preview, правил и controlled write-flow.
 - Этап 16 выполнен: добавлены manual QA checklist, sample JSON inputs и тест, который валидирует documented examples.
-- Следующий рекомендуемый этап: включить модуль в существующий build/deploy/installer flow и проверить установку.
+- Этап 17 выполнен: методичка по текущему модулю `Армирование по изополям` с визуальной SVG-карточкой попадает в installer/artifact `Docs` payload, а установочный validator проверяет наличие IsoField guide assets.
+- Следующий рекомендуемый этап: провести ручной runtime smoke в Revit 2022/2025 после установки свежего `TrueBIM-Setup.exe`.
 
 ## Этапы
 
@@ -187,7 +188,7 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 ### 17. Упаковка и установка
 
 - Цель: включить модуль в существующий build/deploy/installer flow.
-- Код: при необходимости обновить installer payload или manifests, если появятся новые assets.
+- Код: при необходимости обновить installer payload или manifests, если появятся новые assets; IsoField doc assets копируются в `Docs/assets`.
 - Файлы: `plugins/truebim/scripts/*`, `plugins/truebim/installer/*`, manifests.
 - Проверка: `build-installer.ps1`, `test-installation.ps1`, local deploy for supported Revit versions.
 - Риски: installer matrix строже обычной сборки и может выявить legacy API issues.

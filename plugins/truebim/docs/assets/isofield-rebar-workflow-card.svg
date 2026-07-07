@@ -1,0 +1,51 @@
+<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Армирование по изополям: порядок работы</title>
+  <desc id="desc">Схема работы с модулем армирования по изополям: выбрать JSON или изображение, проверить контуры, выбрать стену или плиту, рассчитать правила и подтвердить тестовую арматуру.</desc>
+  <rect width="960" height="540" rx="24" fill="#F7F9FB"/>
+  <rect x="32" y="32" width="896" height="476" rx="18" fill="#FFFFFF" stroke="#D7DEE8" stroke-width="2"/>
+
+  <g transform="translate(64 62)">
+    <rect x="0" y="0" width="168" height="168" rx="20" fill="#12263A"/>
+    <rect x="34" y="38" width="100" height="72" rx="10" fill="#F6F8FB"/>
+    <path d="M52 86c22-42 42-42 64 0" fill="none" stroke="#1F8A70" stroke-width="9" stroke-linecap="round"/>
+    <path d="M46 124h76M52 140h64" stroke="#F5B84B" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="129" cy="43" r="19" fill="#1F8A70"/>
+    <path d="M120 43l7 7 14-18" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="260" y="92" fill="#12263A" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700">Армирование по изополям</text>
+  <text x="260" y="138" fill="#4A5A6A" font-family="Segoe UI, Arial, sans-serif" font-size="24">Рабочий порядок для текущего каркаса модуля</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <g transform="translate(70 250)">
+      <circle cx="34" cy="34" r="34" fill="#E8F3F0"/>
+      <text x="34" y="45" text-anchor="middle" fill="#1F8A70" font-size="28" font-weight="700">1</text>
+      <text x="86" y="24" fill="#12263A" font-size="23" font-weight="700">Выбери входной файл</text>
+      <text x="86" y="58" fill="#4A5A6A" font-size="18">JSON fixture или изображение изополей</text>
+    </g>
+
+    <g transform="translate(520 250)">
+      <circle cx="34" cy="34" r="34" fill="#EAF0FA"/>
+      <text x="34" y="45" text-anchor="middle" fill="#3564A8" font-size="28" font-weight="700">2</text>
+      <text x="86" y="24" fill="#12263A" font-size="23" font-weight="700">Проверь preview</text>
+      <text x="86" y="58" fill="#4A5A6A" font-size="18">контуры и линии не должны менять модель</text>
+    </g>
+
+    <g transform="translate(70 354)">
+      <circle cx="34" cy="34" r="34" fill="#FFF3DB"/>
+      <text x="34" y="45" text-anchor="middle" fill="#B06F00" font-size="28" font-weight="700">3</text>
+      <text x="86" y="24" fill="#12263A" font-size="23" font-weight="700">Выбери host</text>
+      <text x="86" y="58" fill="#4A5A6A" font-size="18">стену или плиту для расчета правил</text>
+    </g>
+
+    <g transform="translate(520 354)">
+      <circle cx="34" cy="34" r="34" fill="#FCEBEB"/>
+      <text x="34" y="45" text-anchor="middle" fill="#B23A48" font-size="28" font-weight="700">4</text>
+      <text x="86" y="24" fill="#12263A" font-size="23" font-weight="700">Подтверди тестовую запись</text>
+      <text x="86" y="58" fill="#4A5A6A" font-size="18">Undo должен вернуть созданную арматуру</text>
+    </g>
+  </g>
+
+  <rect x="70" y="470" width="820" height="1" fill="#D7DEE8"/>
+  <text x="70" y="500" fill="#4A5A6A" font-family="Segoe UI, Arial, sans-serif" font-size="18">Лог модуля: %APPDATA%\TrueBIM\Logs\truebim.log</text>
+</svg>

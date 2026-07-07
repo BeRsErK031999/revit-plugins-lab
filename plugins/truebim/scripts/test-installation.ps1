@@ -72,11 +72,15 @@ $report = foreach ($year in $Years) {
     $payloadDllFound = Test-Path -LiteralPath $expectedDllPath
     $depsPath = Join-Path $versionInstallRoot "TrueBIM.App.deps.json"
     $runtimeConfigPath = Join-Path $versionInstallRoot "TrueBIM.App.runtimeconfig.json"
+    $isoFieldGuidePath = Join-Path $versionInstallRoot "Docs\isofield-rebar-workflow-guide.md"
+    $isoFieldGuideIconPath = Join-Path $versionInstallRoot "Docs\assets\isofield-rebar-workflow-card.svg"
     $depsFound = Test-Path -LiteralPath $depsPath
     $runtimeConfigFound = Test-Path -LiteralPath $runtimeConfigPath
+    $isoFieldGuideFound = Test-Path -LiteralPath $isoFieldGuidePath
+    $isoFieldGuideIconFound = Test-Path -LiteralPath $isoFieldGuideIconPath
     $revit2025PayloadOk = $year -ne "2025" -or $depsFound
     $smokeTested = $SmokeTestedYears -contains $year
-    $successful = $manifestInstalled -and $xmlValid -and $assemblyFound -and $payloadDllFound -and $revit2025PayloadOk
+    $successful = $manifestInstalled -and $xmlValid -and $assemblyFound -and $payloadDllFound -and $revit2025PayloadOk -and $isoFieldGuideFound -and $isoFieldGuideIconFound
 
     [pscustomobject]@{
         RevitVersion = $year
@@ -91,6 +95,8 @@ $report = foreach ($year in $Years) {
         AssemblyFound = $assemblyFound
         Revit2025DepsFound = if ($year -eq "2025") { $depsFound } else { $null }
         Revit2025RuntimeConfigFound = if ($year -eq "2025") { $runtimeConfigFound } else { $null }
+        IsoFieldGuideFound = $isoFieldGuideFound
+        IsoFieldGuideIconFound = $isoFieldGuideIconFound
         RuntimeSmokeTested = $smokeTested
         SuccessfulFileValidation = $successful
         Error = $errorMessage
@@ -100,6 +106,6 @@ $report = foreach ($year in $Years) {
 $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
 
 Write-Host "TrueBIM installed file validation:"
-$report | Format-Table RevitVersion, RevitInstalledOnPc, PayloadDllFound, ManifestInstalled, XmlValid, ManifestPathEncodingValid, AssemblyFound, RuntimeSmokeTested, SuccessfulFileValidation -AutoSize
+$report | Format-Table RevitVersion, RevitInstalledOnPc, PayloadDllFound, ManifestInstalled, XmlValid, ManifestPathEncodingValid, AssemblyFound, IsoFieldGuideFound, IsoFieldGuideIconFound, RuntimeSmokeTested, SuccessfulFileValidation -AutoSize
 Write-Host "Report: $ReportPath"
 Write-Host "Runtime smoke-test is marked only for years passed in -SmokeTestedYears."

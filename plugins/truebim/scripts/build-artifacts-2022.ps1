@@ -16,6 +16,7 @@ $sheetNumberingArtifactsDir = Join-Path $artifactsDir "Modules\SheetNumbering"
 $scheduleColumnCollapseArtifactsDir = Join-Path $artifactsDir "Modules\ScheduleColumnCollapse"
 $docsArtifactsDir = Join-Path $artifactsDir "Docs"
 $assetsArtifactsDir = Join-Path $artifactsDir "Assets"
+$docsAssetsSourceDir = Join-Path $trueBimRoot "docs\assets"
 
 . (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
 $dotnetPath = Resolve-DotNetSdk
@@ -50,6 +51,9 @@ Copy-Item -Path (Join-Path $trueBimRoot "modules\schedule-column-collapse\README
 Copy-Item -Path (Join-Path $trueBimRoot "README.md") -Destination $docsArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "docs\*.md") -Destination $docsArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "installer\README.md") -Destination (Join-Path $docsArtifactsDir "installer-README.md") -Force
+if (Test-Path -LiteralPath $docsAssetsSourceDir) {
+    Copy-Item -Path $docsAssetsSourceDir -Destination $docsArtifactsDir -Recurse -Force
+}
 
 Copy-Item -Path (Join-Path $trueBimRoot "assets\icons") -Destination $assetsArtifactsDir -Recurse -Force
 

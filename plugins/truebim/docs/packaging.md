@@ -24,6 +24,7 @@ The script:
 - builds the Revit 2025 payload with `net8.0-windows`;
 - writes versioned outputs to `dist/revit/<year>`;
 - generates one `TrueBIM.addin` per year;
+- copies documentation Markdown and `plugins/truebim/docs/assets` into each versioned `Docs` payload;
 - validates manifest XML and per-year `Assembly` paths;
 - fails if `RevitAPI.dll` or `RevitAPIUI.dll` are copied into the installer payload;
 - compiles `plugins/truebim/installer/TrueBIM.iss` with Inno Setup.
@@ -47,6 +48,7 @@ dist/
       Modules/
       Assets/
       Docs/
+        assets/
     2025/
       TrueBIM.App.dll
       TrueBIM.App.deps.json
@@ -54,6 +56,7 @@ dist/
       Modules/
       Assets/
       Docs/
+        assets/
 ```
 
 ## Installer Layout
