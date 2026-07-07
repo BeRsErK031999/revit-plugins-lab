@@ -80,6 +80,11 @@ public sealed class RebarRuleValidationService
             diagnostics.Add("Шаг армирования должен быть в диапазоне 50-400 мм.");
         }
 
+        if (!IsSupportedPlacementDirection(rule.PlacementDirection))
+        {
+            diagnostics.Add($"Направление армирования '{rule.PlacementDirection}' не поддерживается. Ожидается Auto, X, Y или AlongHost.");
+        }
+
         return diagnostics;
     }
 
@@ -96,7 +101,8 @@ public sealed class RebarRuleValidationService
             hostElement.HostKind,
             barTypeName,
             spacing,
-            $"Preview rule. Confidence={FormatConfidence(polyline.Confidence)}; Host={hostElement.DisplayName}.");
+            $"Preview rule. Confidence={FormatConfidence(polyline.Confidence)}; Host={hostElement.DisplayName}.",
+            ResolvePlacementDirection(hostElement.HostKind));
     }
 
     private static string ResolveZoneName(IsoFieldPolyline polyline)
@@ -133,6 +139,21 @@ public sealed class RebarRuleValidationService
     {
         return string.Equals(hostKind, WallHostKind, StringComparison.Ordinal)
             || string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal);
+    }
+
+    private static string ResolvePlacementDirection(string hostKind)
+    {
+        return string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
+            ? "Auto"
+            : "AlongHost";
+    }
+
+    private static bool IsSupportedPlacementDirection(string placementDirection)
+    {
+        return string.Equals(placementDirection, "Auto", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(placementDirection, "X", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(placementDirection, "Y", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(placementDirection, "AlongHost", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsFinite(double value)

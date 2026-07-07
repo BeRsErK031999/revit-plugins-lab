@@ -350,7 +350,7 @@ public sealed class IsoFieldRebarWindow : Window
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Создать один тестовый Rebar на выбранном host-элементе после явного подтверждения."
+            ToolTip = "Создать тестовую арматуру на выбранном host-элементе после явного подтверждения."
         };
         createTestRebarButton.Click += (_, _) => CreateTestRebar();
         buttonRow.Children.Add(createTestRebarButton);
@@ -688,7 +688,7 @@ public sealed class IsoFieldRebarWindow : Window
         currentRulePreview = preview;
         ruleStatusText.Text = FormatRulePreview(preview);
         rebarCreationStatusText.Text = preview.CanCreateRebar
-            ? "Готово к созданию одной тестовой арматуры после подтверждения."
+            ? "Готово к созданию тестовой арматуры после подтверждения."
             : "Тестовая арматура недоступна: проверьте диагностику правил.";
         footerStatusText.Text = preview.CanCreateRebar
             ? $"Правила армирования рассчитаны: {preview.Items.Count}. Модель Revit не изменялась."
@@ -765,8 +765,8 @@ public sealed class IsoFieldRebarWindow : Window
         RebarRulePreviewItem firstItem = preview.Items.First();
         TaskDialog dialog = new("Армирование по изополям")
         {
-            MainInstruction = "Создать одну тестовую арматуру в модели Revit?",
-            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зона: {firstItem.ZoneName}{Environment.NewLine}Правило: {firstItem.DisplayName}{Environment.NewLine}Это действие изменит модель, но его можно отменить через Undo.",
+            MainInstruction = "Создать тестовую арматуру в модели Revit?",
+            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Для плиты будет создано по одному тестовому элементу на валидную зону. Это действие изменит модель, но его можно отменить через Undo.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };

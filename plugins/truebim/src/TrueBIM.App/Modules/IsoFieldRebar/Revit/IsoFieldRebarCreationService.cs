@@ -15,6 +15,7 @@ public sealed class IsoFieldRebarCreationService
     private const string OwnedCommentPrefix = "TrueBIM IsoFieldRebar Test";
     private const double MinimumTestLengthFeet = 0.5;
     private const double MaximumTestLengthFeet = 4.0;
+    private readonly SlabRebarPlacementService slabPlacementService = new();
     private readonly ITrueBimLogger logger;
 
     public IsoFieldRebarCreationService(ITrueBimLogger logger)
@@ -42,14 +43,12 @@ public sealed class IsoFieldRebarCreationService
             throw new ArgumentNullException(nameof(rulePreview));
         }
 
-        RebarRulePreviewItem previewItem = ResolvePreviewItem(rulePreview);
+        IReadOnlyList<RebarRulePreviewItem> previewItems = ResolvePreviewItems(rulePreview, hostElement.HostKind);
         Document document = uiDocument.Document;
         Element host = document.GetElement(RevitElementIds.Create(hostElement.ElementId))
             ?? throw new InvalidOperationException("Выбранный host-элемент не найден в текущем документе Revit.");
         EnsureHostMatchesSelection(host, hostElement);
 
-        RebarBarType barType = ResolveBarType(document, previewItem.Rule.BarTypeName);
-        TestRebarGeometry geometry = BuildTestGeometry(host, hostElement.HostKind);
         List<long> createdIds = new();
 
         using Transaction transaction = new(document, "TrueBIM: тестовая арматура по изополям");
@@ -57,23 +56,12 @@ public sealed class IsoFieldRebarCreationService
 
         try
         {
-            Rebar rebar = Rebar.CreateFromCurves(
-                document,
-                RebarStyle.Standard,
-                barType,
-                null,
-                null,
-                host,
-                geometry.Normal,
-                geometry.Curves,
-                RebarHookOrientation.Left,
-                RebarHookOrientation.Right,
-                true,
-                true);
-
-            rebar.GetShapeDrivenAccessor().SetLayoutAsSingle();
-            MarkCreatedRebar(rebar, previewItem);
-            createdIds.Add(RevitElementIds.GetValue(rebar.Id));
+            foreach (RebarCreationRequest request in BuildCreationRequests(document, host, hostElement, previewItems))
+            {
+                Rebar rebar = CreateRebar(document, host, request);
+                MarkCreatedRebar(rebar, request.PreviewItem);
+                createdIds.Add(RevitElementIds.GetValue(rebar.Id));
+            }
 
             transaction.Commit();
         }
@@ -83,22 +71,33 @@ public sealed class IsoFieldRebarCreationService
             throw;
         }
 
-        logger.Info($"IsoField test rebar created. Count={createdIds.Count}; HostId={hostElement.ElementId}; Zone='{previewItem.ZoneName}'; BarType='{barType.Name}'.");
+        logger.Info($"IsoField test rebar created. Count={createdIds.Count}; HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}.");
         return new IsoFieldRebarCreationResult(
             createdIds.Count,
             createdIds,
-            $"Создана тестовая арматура: {createdIds.Count}. Host: {hostElement.DisplayName}. Зона: {previewItem.ZoneName}.");
+            $"Создана тестовая арматура: {createdIds.Count}. Host: {hostElement.DisplayName}.");
     }
 
-    private static RebarRulePreviewItem ResolvePreviewItem(RebarRulePreviewResult rulePreview)
+    private static IReadOnlyList<RebarRulePreviewItem> ResolvePreviewItems(
+        RebarRulePreviewResult rulePreview,
+        string hostKind)
     {
         if (!rulePreview.CanCreateRebar)
         {
             throw new InvalidOperationException("Перед созданием тестовой арматуры рассчитайте валидные правила армирования.");
         }
 
-        return rulePreview.Items.FirstOrDefault(item => item.IsValid)
-            ?? throw new InvalidOperationException("Нет валидной зоны для создания тестовой арматуры.");
+        RebarRulePreviewItem[] validItems = rulePreview.Items
+            .Where(item => item.IsValid && string.Equals(item.Rule.HostKind, hostKind, StringComparison.Ordinal))
+            .ToArray();
+        if (validItems.Length == 0)
+        {
+            throw new InvalidOperationException("Нет валидной зоны для создания тестовой арматуры.");
+        }
+
+        return string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
+            ? validItems
+            : [validItems[0]];
     }
 
     private static void EnsureHostMatchesSelection(Element host, IsoFieldHostElement selectedHost)
@@ -157,16 +156,37 @@ public sealed class IsoFieldRebarCreationService
         return barTypes[0];
     }
 
-    private static TestRebarGeometry BuildTestGeometry(Element host, string hostKind)
+    private IEnumerable<RebarCreationRequest> BuildCreationRequests(
+        Document document,
+        Element host,
+        IsoFieldHostElement hostElement,
+        IReadOnlyList<RebarRulePreviewItem> previewItems)
     {
-        if (string.Equals(hostKind, WallHostKind, StringComparison.Ordinal) && host is Wall wall)
+        if (string.Equals(hostElement.HostKind, WallHostKind, StringComparison.Ordinal) && host is Wall wall)
         {
-            return BuildWallTestGeometry(wall);
+            RebarRulePreviewItem item = previewItems[0];
+            yield return new RebarCreationRequest(
+                item,
+                ResolveBarType(document, item.Rule.BarTypeName),
+                BuildWallTestGeometry(wall));
+            yield break;
         }
 
-        if (string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal))
+        if (string.Equals(hostElement.HostKind, SlabHostKind, StringComparison.Ordinal))
         {
-            return BuildSlabTestGeometry(host);
+            foreach (IsoFieldRebarPlacement placement in slabPlacementService.BuildPlacements(
+                BuildPlacementBounds(host),
+                previewItems))
+            {
+                yield return new RebarCreationRequest(
+                    previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
+                    ResolveBarType(document, placement.Rule.BarTypeName),
+                    new TestRebarGeometry(
+                        [Line.CreateBound(ToXyz(placement.Start), ToXyz(placement.End))],
+                        ToXyz(placement.Normal)));
+            }
+
+            yield break;
         }
 
         throw new InvalidOperationException("MVP создания тестовой арматуры поддерживает только простые стены и плиты.");
@@ -202,28 +222,18 @@ public sealed class IsoFieldRebarCreationService
             normal);
     }
 
-    private static TestRebarGeometry BuildSlabTestGeometry(Element slab)
+    private static IsoFieldRebarPlacementBounds BuildPlacementBounds(Element slab)
     {
         BoundingBoxXYZ boundingBox = slab.get_BoundingBox(null)
             ?? throw new InvalidOperationException("У выбранной плиты нет bounding box.");
-        double widthX = boundingBox.Max.X - boundingBox.Min.X;
-        double widthY = boundingBox.Max.Y - boundingBox.Min.Y;
-        double availableLength = Math.Max(widthX, widthY);
-        if (availableLength < MinimumTestLengthFeet)
-        {
-            throw new InvalidOperationException("Bounding box плиты слишком мал для тестовой арматуры.");
-        }
 
-        XYZ direction = widthX >= widthY ? XYZ.BasisX : XYZ.BasisY;
-        XYZ center = new(
-            (boundingBox.Min.X + boundingBox.Max.X) / 2,
-            (boundingBox.Min.Y + boundingBox.Max.Y) / 2,
-            (boundingBox.Min.Z + boundingBox.Max.Z) / 2);
-        double halfLength = ResolveHalfLengthFeet(availableLength);
-
-        return new TestRebarGeometry(
-            [Line.CreateBound(center - (direction * halfLength), center + (direction * halfLength))],
-            XYZ.BasisZ);
+        return new IsoFieldRebarPlacementBounds(
+            boundingBox.Min.X,
+            boundingBox.Min.Y,
+            boundingBox.Min.Z,
+            boundingBox.Max.X,
+            boundingBox.Max.Y,
+            boundingBox.Max.Z);
     }
 
     private static XYZ NormalizeHorizontalDirection(XYZ direction)
@@ -273,6 +283,39 @@ public sealed class IsoFieldRebarCreationService
     {
         return value.IndexOf(search, StringComparison.Ordinal) >= 0;
     }
+
+    private static Rebar CreateRebar(
+        Document document,
+        Element host,
+        RebarCreationRequest request)
+    {
+        Rebar rebar = Rebar.CreateFromCurves(
+            document,
+            RebarStyle.Standard,
+            request.BarType,
+            null,
+            null,
+            host,
+            request.Geometry.Normal,
+            request.Geometry.Curves,
+            RebarHookOrientation.Left,
+            RebarHookOrientation.Right,
+            true,
+            true);
+
+        rebar.GetShapeDrivenAccessor().SetLayoutAsSingle();
+        return rebar;
+    }
+
+    private static XYZ ToXyz(IsoFieldRebarPoint3D point)
+    {
+        return new XYZ(point.XFeet, point.YFeet, point.ZFeet);
+    }
+
+    private sealed record RebarCreationRequest(
+        RebarRulePreviewItem PreviewItem,
+        RebarBarType BarType,
+        TestRebarGeometry Geometry);
 
     private sealed record TestRebarGeometry(IList<Curve> Curves, XYZ Normal);
 }

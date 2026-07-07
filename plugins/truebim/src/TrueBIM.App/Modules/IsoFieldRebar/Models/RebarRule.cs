@@ -5,4 +5,5 @@ public sealed record RebarRule(
     string HostKind,
     string BarTypeName,
     double SpacingMillimeters,
-    string? Note = null);
+    string? Note = null,
+    string PlacementDirection = "Auto");

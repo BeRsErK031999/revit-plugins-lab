@@ -8,5 +8,5 @@ public sealed record RebarRulePreviewItem(
 {
     public bool IsValid => Diagnostics.Count == 0;
 
-    public string DisplayName => $"{ZoneName}: {Rule.BarTypeName}, шаг {Rule.SpacingMillimeters:0} мм";
+    public string DisplayName => $"{ZoneName}: {Rule.BarTypeName}, шаг {Rule.SpacingMillimeters:0} мм, направление {Rule.PlacementDirection}";
 }
