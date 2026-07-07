@@ -4,20 +4,24 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
+using TrueBIM.App.Modules.IsoFieldRebar.Revit;
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfPolyline = System.Windows.Shapes.Polyline;
+using ElementId = Autodesk.Revit.DB.ElementId;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.UI;
 
 public sealed class IsoFieldRebarWindow : Window
 {
     private readonly string documentTitle;
+    private readonly UIDocument? uiDocument;
     private readonly IIsoFieldFilePicker filePicker;
     private readonly IIsoFieldJsonReader jsonReader;
     private readonly IIsoFieldRecognitionRunner recognitionRunner;
+    private readonly IsoFieldRevitPreviewService revitPreviewService;
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly ITrueBimLogger logger;
     private readonly TextBlock selectedFileText;
@@ -25,30 +29,40 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
+    private readonly Button showRevitPreviewButton;
+    private readonly Button clearRevitPreviewButton;
     private string? selectedFilePath;
+    private IsoFieldRecognitionResult? currentRecognitionResult;
+    private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
 
     public IsoFieldRebarWindow(
         string? documentTitle,
+        UIDocument? uiDocument,
         IIsoFieldFilePicker filePicker,
         IIsoFieldJsonReader jsonReader,
         IIsoFieldRecognitionRunner recognitionRunner,
+        IsoFieldRevitPreviewService revitPreviewService,
         ITrueBimLogger logger)
     {
         this.documentTitle = string.IsNullOrWhiteSpace(documentTitle)
             ? "документ не открыт"
             : documentTitle!;
+        this.uiDocument = uiDocument;
         this.filePicker = filePicker ?? throw new ArgumentNullException(nameof(filePicker));
         this.jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
         this.recognitionRunner = recognitionRunner ?? throw new ArgumentNullException(nameof(recognitionRunner));
+        this.revitPreviewService = revitPreviewService ?? throw new ArgumentNullException(nameof(revitPreviewService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         selectedFileText = CreateMutedText("Файл не выбран.");
         recognitionStatusText = CreateMutedText("Распознавание пока не запускалось.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
         previewCanvas = CreatePreviewCanvas();
-        footerStatusText = CreateMutedText("Модель Revit в этом срезе не изменяется.");
+        showRevitPreviewButton = CreateRevitPreviewButton();
+        clearRevitPreviewButton = CreateClearRevitPreviewButton();
+        footerStatusText = CreateMutedText("Линии предпросмотра создаются только по явной кнопке.");
 
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
@@ -173,6 +187,15 @@ public sealed class IsoFieldRebarWindow : Window
         };
         content.Children.Add(canvasBorder);
 
+        StackPanel buttonRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        buttonRow.Children.Add(showRevitPreviewButton);
+        buttonRow.Children.Add(clearRevitPreviewButton);
+        content.Children.Add(buttonRow);
+
         previewStatusText.Margin = new Thickness(0, 10, 0, 0);
         content.Children.Add(previewStatusText);
 
@@ -205,11 +228,11 @@ public sealed class IsoFieldRebarWindow : Window
         StackPanel content = CreatePanelContent("Будущие шаги");
 
         content.Children.Add(CreateStep("Экранный preview контуров", false, true));
-        content.Children.Add(CreateStep("Линии предпросмотра в Revit", false));
+        content.Children.Add(CreateStep("Линии предпросмотра в Revit", false, true));
         content.Children.Add(CreateStep("Выбор стены или плиты", false));
         content.Children.Add(CreateStep("Создание арматуры", false));
 
-        TextBlock note = CreateMutedText("Экранный preview уже доступен для JSON. Линии в Revit, выбор host-элемента и создание арматуры будут отдельными срезами.");
+        TextBlock note = CreateMutedText("Линии предпросмотра создаются только по кнопке и могут быть очищены модулем. Выбор host-элемента и создание арматуры будут отдельными срезами.");
         note.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(note);
 
@@ -270,6 +293,7 @@ public sealed class IsoFieldRebarWindow : Window
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException)
         {
             logger.Error("Failed to select IsoField source file.", exception);
+            ClearPreview("Контуры не загружены из выбранного файла.");
             TaskDialog.Show(
                 "Армирование по изополям",
                 "Не удалось выбрать файл изополей. Используйте логи для диагностики.");
@@ -280,6 +304,7 @@ public sealed class IsoFieldRebarWindow : Window
     private void ReadJsonSource(string path)
     {
         IsoFieldRecognitionResult result = jsonReader.Read(path);
+        currentRecognitionResult = result;
         recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
         RenderPreview(result);
         footerStatusText.Text = "JSON-контракт изополей прочитан. Модель Revit не изменялась.";
@@ -291,6 +316,7 @@ public sealed class IsoFieldRebarWindow : Window
         try
         {
             IsoFieldRecognitionResult result = recognitionRunner.Run(selectedFilePath);
+            currentRecognitionResult = result;
             recognitionStatusText.Text = $"Заглушка выполнена. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
             RenderPreview(result);
             footerStatusText.Text = "Stub-распознавание завершено. OpenCV/Python не запускались, модель Revit не изменялась.";
@@ -303,6 +329,63 @@ public sealed class IsoFieldRebarWindow : Window
                 "Армирование по изополям",
                 "Не удалось выполнить заглушку распознавания. Используйте логи для диагностики.");
             footerStatusText.Text = "Не удалось выполнить заглушку распознавания.";
+        }
+    }
+
+    private void ShowRevitPreview()
+    {
+        if (uiDocument is null)
+        {
+            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием линий предпросмотра.");
+            return;
+        }
+
+        if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
+        {
+            TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
+            return;
+        }
+
+        try
+        {
+            IsoFieldRevitPreviewResult result = revitPreviewService.Show(
+                uiDocument,
+                currentRecognitionResult,
+                activeRevitPreviewIds);
+            activeRevitPreviewIds = result.CreatedElementIds;
+            footerStatusText.Text = result.Message;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            logger.Error("Failed to create IsoField Revit preview lines.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось создать линии предпросмотра в Revit. Используйте 2D-вид и логи для диагностики.");
+            footerStatusText.Text = "Не удалось создать линии предпросмотра в Revit.";
+        }
+    }
+
+    private void ClearRevitPreview()
+    {
+        if (uiDocument is null)
+        {
+            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед очисткой линий предпросмотра.");
+            return;
+        }
+
+        try
+        {
+            IsoFieldRevitPreviewResult result = revitPreviewService.Clear(uiDocument, activeRevitPreviewIds);
+            activeRevitPreviewIds = Array.Empty<ElementId>();
+            footerStatusText.Text = result.Message;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            logger.Error("Failed to clear IsoField Revit preview lines.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось очистить линии предпросмотра в Revit. Используйте логи для диагностики.");
+            footerStatusText.Text = "Не удалось очистить линии предпросмотра в Revit.";
         }
     }
 
@@ -347,6 +430,7 @@ public sealed class IsoFieldRebarWindow : Window
 
     private void ClearPreview(string message)
     {
+        currentRecognitionResult = null;
         previewCanvas.Children.Clear();
         previewCanvas.Children.Add(new TextBlock
         {
@@ -418,6 +502,33 @@ public sealed class IsoFieldRebarWindow : Window
             Height = PreviewCanvasHeight,
             ClipToBounds = true
         };
+    }
+
+    private Button CreateRevitPreviewButton()
+    {
+        Button button = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Показать в Revit"),
+            MinWidth = 150,
+            Height = 32,
+            ToolTip = "Создать управляемые линии предпросмотра на активном 2D-виде."
+        };
+        button.Click += (_, _) => ShowRevitPreview();
+        return button;
+    }
+
+    private Button CreateClearRevitPreviewButton()
+    {
+        Button button = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Очистить"),
+            MinWidth = 110,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Удалить линии предпросмотра изополей на активном виде."
+        };
+        button.Click += (_, _) => ClearRevitPreview();
+        return button;
     }
 
     private static bool IsJsonFile(string path)

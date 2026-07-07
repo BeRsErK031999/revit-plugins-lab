@@ -1,6 +1,7 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using TrueBIM.App.Modules.IsoFieldRebar.Revit;
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Modules.IsoFieldRebar.UI;
 using TrueBIM.App.Services.Logging;
@@ -17,12 +18,15 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
         try
         {
             logger.Info("Opening IsoField Rebar window.");
-            string? documentTitle = commandData.Application.ActiveUIDocument?.Document?.Title;
+            UIDocument? activeUiDocument = commandData.Application.ActiveUIDocument;
+            string? documentTitle = activeUiDocument?.Document?.Title;
             IsoFieldRebarWindow window = new(
                 documentTitle,
+                activeUiDocument,
                 new IsoFieldFilePicker(),
                 new IsoFieldJsonReader(),
                 new StubIsoFieldRecognitionRunner(),
+                new IsoFieldRevitPreviewService(logger),
                 logger);
             System.Windows.Interop.WindowInteropHelper helper = new(window)
             {
