@@ -27,11 +27,13 @@ public sealed class IsoFieldRebarWindow : Window
     private readonly IsoFieldHostSelectionService hostSelectionService;
     private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
+    private readonly RebarRuleValidationService rebarRuleValidationService = new();
     private readonly ITrueBimLogger logger;
     private readonly TextBlock selectedFileText;
     private readonly TextBlock recognitionStatusText;
     private readonly TextBlock hostStatusText;
     private readonly TextBlock calibrationStatusText;
+    private readonly TextBlock ruleStatusText;
     private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
@@ -45,6 +47,7 @@ public sealed class IsoFieldRebarWindow : Window
     private IsoFieldRecognitionResult? currentRecognitionResult;
     private IsoFieldHostElement? selectedHostElement;
     private IsoFieldCalibration currentCalibration = IsoFieldCalibration.Default;
+    private RebarRulePreviewResult? currentRulePreview;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -84,6 +87,7 @@ public sealed class IsoFieldRebarWindow : Window
             ToolTip = "Инвертировать ось Y изображения относительно направления вверх на виде."
         };
         calibrationStatusText = CreateMutedText(FormatCalibration(currentCalibration));
+        ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
         previewCanvas = CreatePreviewCanvas();
         showRevitPreviewButton = CreateRevitPreviewButton();
@@ -93,9 +97,9 @@ public sealed class IsoFieldRebarWindow : Window
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
         Width = 840;
-        Height = 740;
+        Height = 820;
         MinWidth = 760;
-        MinHeight = 660;
+        MinHeight = 740;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
@@ -126,6 +130,7 @@ public sealed class IsoFieldRebarWindow : Window
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         Border filePanel = CreateFilePanel();
@@ -134,7 +139,7 @@ public sealed class IsoFieldRebarWindow : Window
 
         Border nextStepsPanel = CreateNextStepsPanel();
         WpfGrid.SetColumn(nextStepsPanel, 1);
-        WpfGrid.SetRowSpan(nextStepsPanel, 5);
+        WpfGrid.SetRowSpan(nextStepsPanel, 6);
         nextStepsPanel.Margin = new Thickness(14, 0, 0, 0);
         body.Children.Add(nextStepsPanel);
 
@@ -153,8 +158,13 @@ public sealed class IsoFieldRebarWindow : Window
         calibrationPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(calibrationPanel);
 
+        Border rulePanel = CreateRulePanel();
+        WpfGrid.SetRow(rulePanel, 4);
+        rulePanel.Margin = new Thickness(0, 14, 0, 0);
+        body.Children.Add(rulePanel);
+
         Border previewPanel = CreatePreviewPanel();
-        WpfGrid.SetRow(previewPanel, 4);
+        WpfGrid.SetRow(previewPanel, 5);
         previewPanel.Margin = new Thickness(0, 14, 0, 0);
         body.Children.Add(previewPanel);
 
@@ -308,6 +318,27 @@ public sealed class IsoFieldRebarWindow : Window
         return CreatePanel(content);
     }
 
+    private Border CreateRulePanel()
+    {
+        StackPanel content = CreatePanelContent("Правила армирования");
+
+        Button previewRulesButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Рассчитать правила"),
+            MinWidth = 170,
+            Height = 32,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = "Сформировать read-only preview правил армирования для распознанных зон."
+        };
+        previewRulesButton.Click += (_, _) => PreviewRebarRules();
+        content.Children.Add(previewRulesButton);
+
+        ruleStatusText.Margin = new Thickness(0, 10, 0, 0);
+        content.Children.Add(ruleStatusText);
+
+        return CreatePanel(content);
+    }
+
     private Border CreateRecognitionPanel()
     {
         StackPanel content = CreatePanelContent("Распознавание");
@@ -337,9 +368,10 @@ public sealed class IsoFieldRebarWindow : Window
         content.Children.Add(CreateStep("Линии предпросмотра в Revit", false, true));
         content.Children.Add(CreateStep("Выбор стены или плиты", false, true));
         content.Children.Add(CreateStep("Калибровка координат", false, true));
+        content.Children.Add(CreateStep("Правила армирования", false, true));
         content.Children.Add(CreateStep("Создание арматуры", false));
 
-        TextBlock note = CreateMutedText("Калибровка управляет Revit preview без создания арматуры. Правила армирования и write-flow будут отдельными срезами.");
+        TextBlock note = CreateMutedText("Правила армирования рассчитываются как read-only preview. Создание арматуры будет отдельным write-flow.");
         note.Margin = new Thickness(0, 12, 0, 0);
         content.Children.Add(note);
 
@@ -401,6 +433,7 @@ public sealed class IsoFieldRebarWindow : Window
         {
             logger.Error("Failed to select IsoField source file.", exception);
             ClearPreview("Контуры не загружены из выбранного файла.");
+            ClearRulePreview("Правила не рассчитаны: контуры не загружены.");
             TaskDialog.Show(
                 "Армирование по изополям",
                 "Не удалось выбрать файл изополей. Используйте логи для диагностики.");
@@ -414,6 +447,7 @@ public sealed class IsoFieldRebarWindow : Window
         currentRecognitionResult = result;
         recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
         RenderPreview(result);
+        ClearRulePreview("Нажмите «Рассчитать правила» после выбора host-элемента.");
         footerStatusText.Text = "JSON-контракт изополей прочитан. Модель Revit не изменялась.";
         logger.Info($"IsoField recognition JSON read. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
     }
@@ -426,6 +460,7 @@ public sealed class IsoFieldRebarWindow : Window
             currentRecognitionResult = result;
             recognitionStatusText.Text = $"Заглушка выполнена. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
             RenderPreview(result);
+            ClearRulePreview("Правила не рассчитаны: stub-result не содержит зон.");
             footerStatusText.Text = "Stub-распознавание завершено. OpenCV/Python не запускались, модель Revit не изменялась.";
             logger.Info($"IsoField recognition stub completed. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
         }
@@ -544,6 +579,7 @@ public sealed class IsoFieldRebarWindow : Window
     {
         selectedHostElement = null;
         RefreshHostStatus();
+        ClearRulePreview("Правила не рассчитаны: host-элемент сброшен.");
         footerStatusText.Text = "Host-элемент сброшен. Модель Revit не изменялась.";
         logger.Info("IsoField host selection cleared.");
     }
@@ -610,6 +646,26 @@ public sealed class IsoFieldRebarWindow : Window
         calibrationStatusText.Text = FormatCalibration(currentCalibration);
     }
 
+    private void PreviewRebarRules()
+    {
+        if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
+        {
+            TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
+            ClearRulePreview("Правила не рассчитаны: нет контуров изополей.");
+            return;
+        }
+
+        RebarRulePreviewResult preview = rebarRuleValidationService.BuildPreview(
+            currentRecognitionResult,
+            selectedHostElement);
+        currentRulePreview = preview;
+        ruleStatusText.Text = FormatRulePreview(preview);
+        footerStatusText.Text = preview.CanCreateRebar
+            ? $"Правила армирования рассчитаны: {preview.Items.Count}. Модель Revit не изменялась."
+            : "Правила армирования требуют проверки.";
+        logger.Info($"IsoField rebar rules preview calculated. Items={preview.Items.Count}; Diagnostics={preview.Diagnostics.Count}; CanCreateRebar={preview.CanCreateRebar}.");
+    }
+
     private void RenderPreview(IsoFieldRecognitionResult result)
     {
         previewCanvas.Children.Clear();
@@ -652,6 +708,7 @@ public sealed class IsoFieldRebarWindow : Window
     private void ClearPreview(string message)
     {
         currentRecognitionResult = null;
+        ClearRulePreview("Правила пока не рассчитаны.");
         previewCanvas.Children.Clear();
         previewCanvas.Children.Add(new TextBlock
         {
@@ -662,6 +719,12 @@ public sealed class IsoFieldRebarWindow : Window
         Canvas.SetLeft(previewCanvas.Children[0], 16);
         Canvas.SetTop(previewCanvas.Children[0], 16);
         previewStatusText.Text = message;
+    }
+
+    private void ClearRulePreview(string message)
+    {
+        currentRulePreview = null;
+        ruleStatusText.Text = message;
     }
 
     private static StackPanel CreatePanelContent(string title)
@@ -806,6 +869,30 @@ public sealed class IsoFieldRebarWindow : Window
     private static string FormatCalibration(IsoFieldCalibration calibration)
     {
         return $"Якорь: {FormatNumber(calibration.ImageAnchor.X)}; {FormatNumber(calibration.ImageAnchor.Y)}. Масштаб: {FormatNumber(calibration.MillimetersPerPixel)} мм/пикс.";
+    }
+
+    private static string FormatRulePreview(RebarRulePreviewResult preview)
+    {
+        if (preview.Diagnostics.Count > 0)
+        {
+            return string.Join(Environment.NewLine, preview.Diagnostics);
+        }
+
+        if (preview.Items.Count == 0)
+        {
+            return "Правила не рассчитаны.";
+        }
+
+        string[] lines = preview.Items
+            .Take(4)
+            .Select(item => item.IsValid
+                ? item.DisplayName
+                : $"{item.ZoneName}: {string.Join("; ", item.Diagnostics)}")
+            .ToArray();
+        string suffix = preview.Items.Count > lines.Length
+            ? $"{Environment.NewLine}Еще зон: {preview.Items.Count - lines.Length}."
+            : string.Empty;
+        return $"Правил: {preview.Items.Count}.{Environment.NewLine}{string.Join(Environment.NewLine, lines)}{suffix}";
     }
 
     private static string FormatNumber(double value)
