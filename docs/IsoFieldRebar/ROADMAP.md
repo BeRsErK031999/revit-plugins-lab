@@ -33,7 +33,8 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 - Этап 11 выполнен: добавлен controlled write-flow, который создает одну тестовую арматуру на выбранном host-элементе только после явного подтверждения пользователя.
 - Этап 12 выполнен: добавлен slab-specific placement для простых плит, который строит параллельные тестовые Rebar-линии по валидным зонам внутри bounding box плиты.
 - Этап 13 выполнен: добавлен wall-specific placement для простых прямых стен с локальной осью/нормалью, несколькими зонами и направлениями `AlongHost`/`Vertical`.
-- Следующий рекомендуемый этап: подключить внешний Python/CLI worker для OpenCV с timeout, temp files и строгим JSON-контрактом.
+- Этап 14 выполнен: добавлен CLI runner для внешнего worker-а с timeout, temp request/output files и строгой валидацией output JSON.
+- Следующий рекомендуемый этап: расширить логирование и диагностику вокруг file selection, recognition, preview и write-flow.
 
 ## Этапы
 
@@ -157,11 +158,11 @@ TrueBIM подключается к Revit через `TrueBIM.App.App`, кото
 ### 14. Поддержка внешнего Python/CLI worker для OpenCV
 
 - Цель: вынести тяжелое распознавание из Revit-процесса.
-- Код: добавить CLI runner с timeout, temp files и строгим JSON-контрактом.
+- Код: добавить CLI runner с timeout, temp files и строгим JSON-контрактом; включать его через env-настройки без добавления OpenCV/Python зависимостей в Revit.
 - Файлы: `Services/IsoFieldCliRecognitionRunner.cs`, `docs/IsoFieldRebar/worker-contract.md`.
-- Проверка: fake CLI в тестах, ручной запуск worker на sample-файле.
+- Проверка: fake CLI в тестах для успешного output JSON, non-zero exit code и timeout; ручной запуск worker на sample-файле остается для интеграционного QA.
 - Риски: зависания, несовместимые Python environments, большие изображения.
-- Готово: Revit вызывает внешний worker безопасно и получает валидированный JSON.
+- Готово: Revit вызывает настроенный внешний worker безопасно, получает валидированный JSON и без настройки остается на `StubIsoFieldRecognitionRunner`.
 
 ### 15. Логирование и диагностика
 

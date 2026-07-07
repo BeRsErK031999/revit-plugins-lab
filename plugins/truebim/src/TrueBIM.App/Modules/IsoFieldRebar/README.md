@@ -21,6 +21,7 @@
 - Controlled write-flow для создания одной тестовой арматуры на выбранном host-элементе только после явного подтверждения пользователя.
 - Slab-specific placement для простых плит: валидные зоны превращаются в параллельные тестовые Rebar-линии внутри bounding box плиты.
 - Wall-specific placement для простых прямых стен: валидные зоны превращаются в тестовые Rebar-линии вдоль локальной оси стены или вертикально.
+- CLI worker runner для внешнего распознавания: Revit запускает настроенный процесс с timeout/temp files и валидирует `schemaVersion: "1.0"` output JSON.
 
 ## Пока не реализовано
 
@@ -29,4 +30,4 @@
 
 ## Следующие шаги
 
-1. Подключить внешний Python/CLI worker для OpenCV с timeout, temp files и строгим JSON-контрактом.
+1. Расширить логирование и диагностику вокруг file selection, recognition, preview и write-flow.

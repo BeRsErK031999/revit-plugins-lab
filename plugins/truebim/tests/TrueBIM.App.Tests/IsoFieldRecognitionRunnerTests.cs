@@ -17,6 +17,132 @@ public sealed class IsoFieldRecognitionRunnerTests
     }
 
     [Fact]
+    public void IsoFieldRecognitionRunnerFactory_UsesStubWhenCliWorkerIsNotConfigured()
+    {
+        string? previousWorker = Environment.GetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable, null);
+
+            IIsoFieldRecognitionRunner runner = IsoFieldRecognitionRunnerFactory.Create(new TestLogger());
+
+            Assert.IsType<StubIsoFieldRecognitionRunner>(runner);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable, previousWorker);
+        }
+    }
+
+    [Fact]
+    public void IsoFieldCliRecognitionRunner_ReadsWorkerOutputJson()
+    {
+        string tempDirectory = CreateTempDirectory();
+        string sourcePath = Path.Combine(tempDirectory, "source.png");
+        string scriptPath = Path.Combine(tempDirectory, "worker.ps1");
+        File.WriteAllText(sourcePath, "fake image");
+        File.WriteAllText(
+            scriptPath,
+            """
+            param([string]$Request, [string]$Output)
+            if (-not (Test-Path -LiteralPath $Request)) { exit 3 }
+            Set-Content -LiteralPath $Output -Encoding UTF8 -Value @'
+            {
+              "schemaVersion": "1.0",
+              "polylines": [
+                {
+                  "id": "zone-cli",
+                  "zoneName": "CLI Zone",
+                  "confidence": 0.88,
+                  "points": [
+                    { "x": 1.0, "y": 2.0 },
+                    { "x": 3.0, "y": 4.0 }
+                  ]
+                }
+              ],
+              "diagnostics": [ "fake worker" ]
+            }
+            '@
+            """);
+
+        try
+        {
+            IsoFieldCliRecognitionRunner runner = CreateCliRunner(scriptPath, tempDirectory);
+
+            var result = runner.Run(sourcePath);
+
+            var polyline = Assert.Single(result.Polylines);
+            Assert.Equal("zone-cli", polyline.Id);
+            Assert.Equal("CLI Zone", polyline.ZoneName);
+            Assert.Equal(0.88, polyline.Confidence);
+            Assert.Equal("fake worker", Assert.Single(result.Diagnostics));
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IsoFieldCliRecognitionRunner_ThrowsWhenWorkerFails()
+    {
+        string tempDirectory = CreateTempDirectory();
+        string sourcePath = Path.Combine(tempDirectory, "source.png");
+        string scriptPath = Path.Combine(tempDirectory, "worker-fail.ps1");
+        File.WriteAllText(sourcePath, "fake image");
+        File.WriteAllText(
+            scriptPath,
+            """
+            param([string]$Request, [string]$Output)
+            Write-Error "fake failure"
+            exit 7
+            """);
+
+        try
+        {
+            IsoFieldCliRecognitionRunner runner = CreateCliRunner(scriptPath, tempDirectory);
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+                () => runner.Run(sourcePath));
+
+            Assert.Contains("ExitCode=7", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void IsoFieldCliRecognitionRunner_TimesOutWorker()
+    {
+        string tempDirectory = CreateTempDirectory();
+        string sourcePath = Path.Combine(tempDirectory, "source.png");
+        string scriptPath = Path.Combine(tempDirectory, "worker-timeout.ps1");
+        File.WriteAllText(sourcePath, "fake image");
+        File.WriteAllText(
+            scriptPath,
+            """
+            param([string]$Request, [string]$Output)
+            Start-Sleep -Seconds 5
+            """);
+
+        try
+        {
+            IsoFieldCliRecognitionRunner runner = CreateCliRunner(
+                scriptPath,
+                tempDirectory,
+                TimeSpan.FromMilliseconds(200));
+
+            Assert.Throws<TimeoutException>(() => runner.Run(sourcePath));
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void IsoFieldFilePicker_ImplementsPickerContract()
     {
         Assert.IsAssignableFrom<IIsoFieldFilePicker>(new IsoFieldFilePicker());
@@ -94,6 +220,56 @@ public sealed class IsoFieldRecognitionRunnerTests
         finally
         {
             File.Delete(filePath);
+        }
+    }
+
+    private static IsoFieldCliRecognitionRunner CreateCliRunner(
+        string scriptPath,
+        string tempDirectory,
+        TimeSpan? timeout = null)
+    {
+        return new IsoFieldCliRecognitionRunner(
+            new IsoFieldCliRecognitionRunnerOptions
+            {
+                ExecutablePath = ResolvePowerShellPath(),
+                ArgumentsTemplate = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -Request \"{{request}}\" -Output \"{{output}}\"",
+                Timeout = timeout ?? TimeSpan.FromSeconds(10),
+                TempRootDirectory = tempDirectory
+            },
+            new IsoFieldJsonReader());
+    }
+
+    private static string CreateTempDirectory()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"TrueBIM-IsoField-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static string ResolvePowerShellPath()
+    {
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe");
+        return File.Exists(path)
+            ? path
+            : "powershell.exe";
+    }
+
+    private sealed class TestLogger : TrueBIM.App.Services.Logging.ITrueBimLogger
+    {
+        public void Info(string message)
+        {
+        }
+
+        public void Warning(string message)
+        {
+        }
+
+        public void Error(string message, Exception? exception = null)
+        {
         }
     }
 }

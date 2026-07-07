@@ -25,7 +25,7 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
                 activeUiDocument,
                 new IsoFieldFilePicker(),
                 new IsoFieldJsonReader(),
-                new StubIsoFieldRecognitionRunner(),
+                IsoFieldRecognitionRunnerFactory.Create(logger),
                 new IsoFieldRevitPreviewService(logger),
                 new IsoFieldHostSelectionService(),
                 new IsoFieldRebarCreationService(logger),

@@ -371,13 +371,13 @@ public sealed class IsoFieldRebarWindow : Window
 
         Button stubButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Проверить заглушку"),
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Распознать файл"),
             MinWidth = 170,
             Height = 32,
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Запустить только stub-runner без OpenCV, Python и изменения модели."
+            ToolTip = "Запустить настроенный CLI-worker или безопасную заглушку без изменения модели."
         };
-        stubButton.Click += (_, _) => RunRecognitionStub();
+        stubButton.Click += (_, _) => RunRecognition();
         content.Children.Add(stubButton);
 
         recognitionStatusText.Margin = new Thickness(0, 12, 0, 0);
@@ -450,8 +450,8 @@ public sealed class IsoFieldRebarWindow : Window
             }
             else
             {
-                recognitionStatusText.Text = "Файл выбран. Реальное распознавание пока не подключено.";
-                ClearPreview("Выбран файл изображения. Контуры появятся после JSON или будущего распознавания.");
+                recognitionStatusText.Text = "Файл выбран. Нажмите «Распознать файл», чтобы запустить настроенный runner.";
+                ClearPreview("Выбран файл изображения. Контуры появятся после JSON или распознавания.");
                 footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
             }
         }
@@ -478,25 +478,34 @@ public sealed class IsoFieldRebarWindow : Window
         logger.Info($"IsoField recognition JSON read. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
     }
 
-    private void RunRecognitionStub()
+    private void RunRecognition()
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(selectedFilePath))
+            {
+                TaskDialog.Show("Армирование по изополям", "Сначала выберите файл изополей.");
+                footerStatusText.Text = "Распознавание не запущено: файл не выбран.";
+                return;
+            }
+
             IsoFieldRecognitionResult result = recognitionRunner.Run(selectedFilePath);
             currentRecognitionResult = result;
-            recognitionStatusText.Text = $"Заглушка выполнена. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+            recognitionStatusText.Text = $"Распознавание выполнено. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
             RenderPreview(result);
-            ClearRulePreview("Правила не рассчитаны: stub-result не содержит зон.");
-            footerStatusText.Text = "Stub-распознавание завершено. OpenCV/Python не запускались, модель Revit не изменялась.";
-            logger.Info($"IsoField recognition stub completed. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
+            ClearRulePreview(result.Polylines.Count == 0
+                ? "Правила не рассчитаны: результат распознавания не содержит зон."
+                : "Нажмите «Рассчитать правила» после выбора host-элемента.");
+            footerStatusText.Text = "Распознавание завершено. Модель Revit не изменялась.";
+            logger.Info($"IsoField recognition completed. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to run IsoField recognition stub.", exception);
+            logger.Error("Failed to run IsoField recognition.", exception);
             TaskDialog.Show(
                 "Армирование по изополям",
-                "Не удалось выполнить заглушку распознавания. Используйте логи для диагностики.");
-            footerStatusText.Text = "Не удалось выполнить заглушку распознавания.";
+                "Не удалось выполнить распознавание. Используйте логи для диагностики.");
+            footerStatusText.Text = "Не удалось выполнить распознавание.";
         }
     }
 
