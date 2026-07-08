@@ -1,6 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using TrueBIM.App.Modules.BimTools.Common.Models;
+using TrueBIM.App.Modules.BimTools.Common.Services.Export;
+using TrueBIM.App.Modules.BimTools.Common.Services.Reports;
+using TrueBIM.App.Modules.BimTools.Common.Services.Storage;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using WpfGrid = System.Windows.Controls.Grid;
@@ -12,6 +16,12 @@ public sealed class BimToolPlaceholderWindow : Window
     private readonly BimToolPlaceholderDefinition definition;
     private readonly string documentTitle;
     private readonly ITrueBimLogger logger;
+    private readonly JsonSettingsStorage settingsStorage;
+    private readonly ReportService reportService = new();
+    private readonly CsvExportService csvExportService = new();
+    private readonly string settingsPath;
+    private BimToolShellState state;
+    private TextBlock? statusText;
 
     public BimToolPlaceholderWindow(
         BimToolPlaceholderDefinition definition,
@@ -23,6 +33,10 @@ public sealed class BimToolPlaceholderWindow : Window
             ? "документ не открыт"
             : documentTitle!;
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        settingsStorage = new JsonSettingsStorage(this.logger);
+        settingsPath = JsonSettingsStorage.CreateDefaultSettingsPath(definition.SettingsKey);
+        state = settingsStorage.LoadOrDefault(settingsPath, CreateDefaultState);
+        MarkOpened();
 
         Title = definition.Title;
         Icon = IconFactory.CreateImage(definition.Icon, 32);
@@ -178,33 +192,108 @@ public sealed class BimToolPlaceholderWindow : Window
 
     private UIElement CreateFooter()
     {
-        DockPanel footer = new()
+        WpfGrid footer = new()
         {
-            LastChildFill = false,
             Margin = new Thickness(0, 16, 0, 0)
         };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        TextBlock status = new()
+        statusText = new TextBlock
         {
-            Text = "Каркас команды готов. Изменения модели в этом срезе не выполняются.",
+            Text = $"Каркас команды готов. Настройки сохранены: {settingsPath}",
             Foreground = Brushes.DimGray,
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap
         };
-        footer.Children.Add(status);
+        footer.Children.Add(statusText);
+
+        Button previewButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Предпросмотр"),
+            MinWidth = 140,
+            Height = 32,
+            Margin = new Thickness(10, 0, 0, 0),
+            ToolTip = "Зафиксировать безопасный preview-запрос каркаса."
+        };
+        previewButton.Click += (_, _) => RecordScaffoldAction("Предпросмотр", isExecute: false);
+        WpfGrid.SetColumn(previewButton, 1);
+        footer.Children.Add(previewButton);
+
+        Button executeButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выполнить"),
+            MinWidth = 120,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Зафиксировать безопасный execute-запрос каркаса без изменений модели."
+        };
+        executeButton.Click += (_, _) => RecordScaffoldAction("Выполнить", isExecute: true);
+        WpfGrid.SetColumn(executeButton, 2);
+        footer.Children.Add(executeButton);
 
         Button closeButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
             MinWidth = 120,
             Height = 32,
+            Margin = new Thickness(8, 0, 0, 0),
             IsCancel = true,
             ToolTip = "Закрыть окно."
         };
         closeButton.Click += (_, _) => Close();
-        DockPanel.SetDock(closeButton, Dock.Right);
+        WpfGrid.SetColumn(closeButton, 3);
         footer.Children.Add(closeButton);
 
         return footer;
+    }
+
+    private BimToolShellState CreateDefaultState()
+    {
+        return new BimToolShellState
+        {
+            ToolTitle = definition.Title,
+            DocumentTitle = documentTitle
+        };
+    }
+
+    private void MarkOpened()
+    {
+        state.ToolTitle = definition.Title;
+        state.DocumentTitle = documentTitle;
+        state.LastOpenedAtUtc = DateTimeOffset.UtcNow;
+        settingsStorage.Save(settingsPath, state);
+    }
+
+    private void RecordScaffoldAction(string actionName, bool isExecute)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (isExecute)
+        {
+            state.ExecuteRequestCount++;
+            state.LastExecuteAtUtc = now;
+        }
+        else
+        {
+            state.PreviewRequestCount++;
+            state.LastPreviewAtUtc = now;
+        }
+
+        state.ToolTitle = definition.Title;
+        state.DocumentTitle = documentTitle;
+        settingsStorage.Save(settingsPath, state);
+
+        BimReport report = reportService.CreateScaffoldReport(definition.Title, documentTitle, actionName);
+        string csv = reportService.FormatCsv(report, csvExportService);
+        logger.Info($"BIM tool scaffold action recorded: {definition.Title}, action={actionName}, csvLength={csv.Length}.");
+
+        if (statusText is not null)
+        {
+            statusText.Text = isExecute
+                ? $"Команда '{actionName}' зафиксирована. Модель не изменялась. Настройки: {settingsPath}"
+                : $"Предпросмотр каркаса зафиксирован. Модель не изменялась. Настройки: {settingsPath}";
+        }
     }
 }

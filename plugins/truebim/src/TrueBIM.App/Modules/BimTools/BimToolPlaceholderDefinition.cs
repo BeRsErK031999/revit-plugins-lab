@@ -7,4 +7,5 @@ public sealed record BimToolPlaceholderDefinition(
     TrueBimIcon Icon,
     string Description,
     IReadOnlyList<string> WorkflowSteps,
-    IReadOnlyList<string> ImplementationScope);
+    IReadOnlyList<string> ImplementationScope,
+    string SettingsKey = "general");

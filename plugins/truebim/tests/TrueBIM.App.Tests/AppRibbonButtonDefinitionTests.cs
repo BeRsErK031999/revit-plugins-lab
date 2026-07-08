@@ -55,6 +55,70 @@ public sealed class AppRibbonButtonDefinitionTests
             $"TrueBIM.App.Commands.{nameof(CreateWorksetsCommand)}",
             TrueBimIcon.Worksets,
             "рабочих наборов"
+        },
+        {
+            "TrueBIM_AutoMepDimensions",
+            "Оформление",
+            "Авторазмеры\nMEP",
+            $"TrueBIM.App.Commands.{nameof(AutoMepDimensionsCommand)}",
+            TrueBimIcon.AutoDimensions,
+            "авторазмеров"
+        },
+        {
+            "TrueBIM_AutoTags",
+            "Оформление",
+            "Автомарки",
+            $"TrueBIM.App.Commands.{nameof(AutoTagCommand)}",
+            TrueBimIcon.AutoTags,
+            "марок"
+        },
+        {
+            "TrueBIM_TitleBlockFill",
+            "Оформление",
+            "Оформить\nштамп",
+            $"TrueBIM.App.Commands.{nameof(TitleBlockFillCommand)}",
+            TrueBimIcon.TitleBlock,
+            "штампа"
+        },
+        {
+            "TrueBIM_DatumExtents",
+            "Виды",
+            "Оси\n2D/3D",
+            $"TrueBIM.App.Commands.{nameof(DatumExtentCommand)}",
+            TrueBimIcon.DatumExtents,
+            "экстентами"
+        },
+        {
+            "TrueBIM_OpeningViews",
+            "Виды",
+            "Виды дверей\n/ окон",
+            $"TrueBIM.App.Commands.{nameof(OpeningViewsCommand)}",
+            TrueBimIcon.OpeningViews,
+            "дверей"
+        },
+        {
+            "TrueBIM_BatchExport",
+            "Выпуск",
+            "Экспорт\nPDF/DWG",
+            $"TrueBIM.App.Commands.{nameof(BatchExportCommand)}",
+            TrueBimIcon.Export,
+            "PDF/DWG"
+        },
+        {
+            "TrueBIM_ClashReport",
+            "Координация",
+            "Отчёт\nколлизий",
+            $"TrueBIM.App.Commands.{nameof(ClashReportCommand)}",
+            TrueBimIcon.ClashReport,
+            "коллизий"
+        },
+        {
+            "TrueBIM_FamilyManager",
+            "Библиотека",
+            "Диспетчер\nсемейств",
+            $"TrueBIM.App.Commands.{nameof(FamilyManagerCommand)}",
+            TrueBimIcon.FamilyManager,
+            "семейств"
         }
     };
 
@@ -111,6 +175,11 @@ public sealed class AppRibbonButtonDefinitionTests
     [Fact]
     public void RibbonPanelNames_IncludeBimToolPanels()
     {
+        Assert.Contains("Оформление", TrueBimRibbon.PanelNames);
+        Assert.Contains("Виды", TrueBimRibbon.PanelNames);
+        Assert.Contains("Выпуск", TrueBimRibbon.PanelNames);
+        Assert.Contains("Координация", TrueBimRibbon.PanelNames);
+        Assert.Contains("Библиотека", TrueBimRibbon.PanelNames);
         Assert.Contains("Проверка модели", TrueBimRibbon.PanelNames);
         Assert.Contains("Геометрия", TrueBimRibbon.PanelNames);
         Assert.Contains("Параметры", TrueBimRibbon.PanelNames);
