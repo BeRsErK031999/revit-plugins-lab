@@ -116,8 +116,8 @@ public static class TrueBimRibbon
             "Виды дверей\n/ окон",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
-            "Открывает каркас инструмента создания видов дверей и окон.",
-            "Каркас будущего инструмента для проемов: выбор элементов, имена видов, шаблоны, crop box и отчет без создания видов в первом срезе."),
+            "Создает elevation-виды дверей и окон с предпросмотром.",
+            "MVP инструмента для проемов: сбор дверей и окон активного плана, имена видов BIM_Opening_*, проверка дублей, шаблон вида, crop box и CSV-отчет."),
         new(
             BimReleasePanelName,
             "TrueBIM_BatchExport",
