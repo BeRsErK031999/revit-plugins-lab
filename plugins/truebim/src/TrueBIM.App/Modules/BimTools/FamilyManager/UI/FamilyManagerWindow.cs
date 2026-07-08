@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Win32;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -13,7 +16,9 @@ using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using WpfBinding = System.Windows.Data.Binding;
 using WpfComboBox = System.Windows.Controls.ComboBox;
+using WpfContextMenu = System.Windows.Controls.ContextMenu;
 using WpfGrid = System.Windows.Controls.Grid;
+using WpfMenuItem = System.Windows.Controls.MenuItem;
 using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
@@ -25,6 +30,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Document document;
     private readonly FamilyManagerProfileStorage profileStorage;
     private readonly FamilyLibraryScanner scanner;
+    private readonly FamilyLibraryTreeBuilder treeBuilder = new();
     private readonly FamilyLoadService loadService;
     private readonly FamilyMetadataService metadataService;
     private readonly ITrueBimLogger logger;
@@ -33,8 +39,10 @@ public sealed class FamilyManagerWindow : Window
     private readonly ObservableCollection<FamilyLoadHistoryItem> historyItems = new();
     private readonly ObservableCollection<FamilyTypeInfo> familyTypes = new();
     private readonly ObservableCollection<FamilyTypeParameterInfo> typeParameters = new();
+    private readonly ObservableCollection<FamilyLibraryTreeNode> libraryTreeNodes = new();
     private readonly List<FamilyFileItem> allFamilies = new();
     private readonly ListBox folderList = new();
+    private readonly TreeView libraryTree = new();
     private readonly DataGrid familyGrid = new();
     private readonly DataGrid parameterGrid = new();
     private readonly ListBox historyList = new();
@@ -164,7 +172,21 @@ public sealed class FamilyManagerWindow : Window
         folderList.ItemsSource = folders;
         folderList.DisplayMemberPath = nameof(FamilyLibraryFolder.Path);
         folderList.BorderThickness = new Thickness(1);
+        folderList.Height = 150;
+        folderList.Margin = new Thickness(0, 0, 0, 12);
+        DockPanel.SetDock(folderList, Dock.Top);
         panel.Children.Add(folderList);
+
+        TextBlock treeTitle = CreateSubTitle("Структура");
+        DockPanel.SetDock(treeTitle, Dock.Top);
+        panel.Children.Add(treeTitle);
+
+        libraryTree.ItemsSource = libraryTreeNodes;
+        libraryTree.ItemTemplate = CreateTreeTemplate();
+        libraryTree.ContextMenu = CreateTreeContextMenu();
+        libraryTree.PreviewMouseRightButtonDown += (_, args) => SelectTreeItemUnderPointer(args.OriginalSource as DependencyObject);
+        libraryTree.SelectedItemChanged += (_, args) => SelectTreeNode(args.NewValue as FamilyLibraryTreeNode);
+        panel.Children.Add(libraryTree);
         return panel;
     }
 
@@ -215,6 +237,8 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.IsReadOnly = true;
         familyGrid.SelectionMode = DataGridSelectionMode.Single;
         familyGrid.ItemsSource = visibleFamilies;
+        familyGrid.ContextMenu = CreateFamilyContextMenu();
+        familyGrid.PreviewMouseRightButtonDown += (_, args) => SelectFamilyRowUnderPointer(args.OriginalSource as DependencyObject);
         familyGrid.SelectionChanged += (_, _) => SelectFamily(familyGrid.SelectedItem as FamilyFileItem);
         familyGrid.Columns.Add(CreateTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
@@ -499,6 +523,7 @@ public sealed class FamilyManagerWindow : Window
             visibleFamilies.Add(family);
         }
 
+        RefreshLibraryTree();
         if (selectedFamily is not null && visibleFamilies.Contains(selectedFamily))
         {
             familyGrid.SelectedItem = selectedFamily;
@@ -509,6 +534,16 @@ public sealed class FamilyManagerWindow : Window
         }
 
         UpdateStatus();
+    }
+
+    private void RefreshLibraryTree()
+    {
+        IReadOnlyList<FamilyLibraryTreeNode> nodes = treeBuilder.Build(folders.ToList(), visibleFamilies.ToList());
+        libraryTreeNodes.Clear();
+        foreach (FamilyLibraryTreeNode node in nodes)
+        {
+            libraryTreeNodes.Add(node);
+        }
     }
 
     private void RefreshHistory()
@@ -598,6 +633,99 @@ public sealed class FamilyManagerWindow : Window
         {
             typeParameters.Add(parameter);
         }
+    }
+
+    private void SelectTreeNode(FamilyLibraryTreeNode? node)
+    {
+        if (node is null)
+        {
+            return;
+        }
+
+        if (node.Kind is FamilyLibraryTreeNodeKind.Category)
+        {
+            categoryInput.SelectedItem = categoryInput.Items
+                .Cast<object>()
+                .FirstOrDefault(item => string.Equals(item.ToString(), node.Title, StringComparison.CurrentCultureIgnoreCase))
+                ?? categoryInput.SelectedItem;
+            return;
+        }
+
+        if (node.Kind is not (FamilyLibraryTreeNodeKind.Family or FamilyLibraryTreeNodeKind.Type))
+        {
+            return;
+        }
+
+        SelectFamilyByPath(node.FamilyPath, node.TypeName);
+    }
+
+    private void SelectTreeItemUnderPointer(DependencyObject? source)
+    {
+        TreeViewItem? item = FindVisualParent<TreeViewItem>(source);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.IsSelected = true;
+        item.Focus();
+    }
+
+    private void SelectFamilyRowUnderPointer(DependencyObject? source)
+    {
+        DataGridRow? row = FindVisualParent<DataGridRow>(source);
+        if (row?.Item is not FamilyFileItem family)
+        {
+            return;
+        }
+
+        familyGrid.SelectedItem = family;
+        SelectFamily(family);
+    }
+
+    private void SelectFamilyByPath(string familyPath, string typeName)
+    {
+        string normalizedPath = FamilyPathNormalizer.Normalize(familyPath);
+        FamilyFileItem? family = visibleFamilies.FirstOrDefault(item =>
+            string.Equals(FamilyPathNormalizer.Normalize(item.FilePath), normalizedPath, StringComparison.CurrentCultureIgnoreCase));
+        if (family is null)
+        {
+            statusText.Text = "Семейство из структуры не найдено в текущем списке.";
+            return;
+        }
+
+        familyGrid.SelectedItem = family;
+        familyGrid.ScrollIntoView(family);
+        SelectFamily(family);
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return;
+        }
+
+        FamilyTypeInfo? type = familyTypes.FirstOrDefault(item =>
+            string.Equals(item.Name, typeName, StringComparison.CurrentCultureIgnoreCase));
+        if (type is not null)
+        {
+            typeList.SelectedItem = type;
+            SelectType(type);
+        }
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? source)
+        where T : DependencyObject
+    {
+        DependencyObject? current = source;
+        while (current is not null)
+        {
+            if (current is T typed)
+            {
+                return typed;
+            }
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
     }
 
     private void ToggleFavorite()
@@ -790,6 +918,149 @@ public sealed class FamilyManagerWindow : Window
         statusText.Text = $"Папок: {folders.Count}. Семейств в кэше: {allFamilies.Count}. Показано: {visibleFamilies.Count}. Избранных: {favoritesCount}. Метаданные: {metadataCount}. {cacheText}";
     }
 
+    private WpfContextMenu CreateTreeContextMenu()
+    {
+        WpfContextMenu menu = new();
+        WpfMenuItem openItem = new()
+        {
+            Header = "Открыть в Explorer"
+        };
+        openItem.Click += (_, _) => OpenTreeNodeInExplorer();
+        menu.Items.Add(openItem);
+
+        WpfMenuItem copyItem = new()
+        {
+            Header = "Скопировать путь"
+        };
+        copyItem.Click += (_, _) => CopyTreeNodePath();
+        menu.Items.Add(copyItem);
+        return menu;
+    }
+
+    private WpfContextMenu CreateFamilyContextMenu()
+    {
+        WpfContextMenu menu = new();
+        WpfMenuItem openItem = new()
+        {
+            Header = "Открыть в Explorer"
+        };
+        openItem.Click += (_, _) => OpenSelectedFamilyInExplorer();
+        menu.Items.Add(openItem);
+
+        WpfMenuItem copyItem = new()
+        {
+            Header = "Скопировать путь"
+        };
+        copyItem.Click += (_, _) => CopySelectedFamilyPath();
+        menu.Items.Add(copyItem);
+        return menu;
+    }
+
+    private void OpenTreeNodeInExplorer()
+    {
+        if (libraryTree.SelectedItem is not FamilyLibraryTreeNode node)
+        {
+            statusText.Text = "Выберите узел структуры.";
+            return;
+        }
+
+        OpenPathInExplorer(node.ExplorerPath);
+    }
+
+    private void CopyTreeNodePath()
+    {
+        if (libraryTree.SelectedItem is not FamilyLibraryTreeNode node)
+        {
+            statusText.Text = "Выберите узел структуры.";
+            return;
+        }
+
+        CopyPath(node.ExplorerPath);
+    }
+
+    private void OpenSelectedFamilyInExplorer()
+    {
+        if (selectedFamily is null)
+        {
+            statusText.Text = "Выберите семейство.";
+            return;
+        }
+
+        OpenPathInExplorer(selectedFamily.FilePath);
+    }
+
+    private void CopySelectedFamilyPath()
+    {
+        if (selectedFamily is null)
+        {
+            statusText.Text = "Выберите семейство.";
+            return;
+        }
+
+        CopyPath(selectedFamily.FilePath);
+    }
+
+    private void OpenPathInExplorer(string path)
+    {
+        string normalizedPath = FamilyPathNormalizer.Normalize(path);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            statusText.Text = "Путь не задан.";
+            return;
+        }
+
+        try
+        {
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = "explorer.exe",
+                UseShellExecute = true
+            };
+            if (File.Exists(normalizedPath))
+            {
+                startInfo.Arguments = $"/select,\"{normalizedPath}\"";
+            }
+            else if (Directory.Exists(normalizedPath))
+            {
+                startInfo.Arguments = $"\"{normalizedPath}\"";
+            }
+            else
+            {
+                statusText.Text = $"Путь не найден: {normalizedPath}";
+                return;
+            }
+
+            Process.Start(startInfo);
+            statusText.Text = $"Открыто в Explorer: {normalizedPath}";
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Failed to open path in Explorer '{normalizedPath}': {exception.Message}");
+            statusText.Text = "Не удалось открыть путь в Explorer. Используйте логи для диагностики.";
+        }
+    }
+
+    private void CopyPath(string path)
+    {
+        string normalizedPath = FamilyPathNormalizer.Normalize(path);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            statusText.Text = "Путь не задан.";
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(normalizedPath);
+            statusText.Text = $"Путь скопирован: {normalizedPath}";
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Failed to copy path '{normalizedPath}': {exception.Message}");
+            statusText.Text = "Не удалось скопировать путь в буфер обмена.";
+        }
+    }
+
     private static TextBlock CreatePanelTitle(string text)
     {
         return new TextBlock
@@ -809,6 +1080,20 @@ public sealed class FamilyManagerWindow : Window
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 6)
         };
+    }
+
+    private static HierarchicalDataTemplate CreateTreeTemplate()
+    {
+        HierarchicalDataTemplate template = new(typeof(FamilyLibraryTreeNode))
+        {
+            ItemsSource = new WpfBinding(nameof(FamilyLibraryTreeNode.Children))
+        };
+        FrameworkElementFactory text = new(typeof(TextBlock));
+        text.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(FamilyLibraryTreeNode.Title)));
+        text.SetBinding(FrameworkElement.ToolTipProperty, new WpfBinding(nameof(FamilyLibraryTreeNode.ExplorerPath)));
+        text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        template.VisualTree = text;
+        return template;
     }
 
     private static Button CreateButton(string text, TrueBimIcon icon, double minWidth)
