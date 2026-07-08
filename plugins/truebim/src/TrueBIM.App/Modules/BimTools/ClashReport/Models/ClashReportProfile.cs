@@ -10,6 +10,12 @@ public sealed class ClashReportProfile
 
     public double MinimumOverlapMm { get; set; }
 
+    public ClashType ClashType { get; set; } = ClashType.Hard;
+
+    public ClashGroupingStrategy GroupingStrategy { get; set; } = ClashGroupingStrategy.SourceCategoryPair;
+
+    public string DefaultAssignee { get; set; } = string.Empty;
+
     public bool HighlightOnNavigate { get; set; } = true;
 
     public bool ScanCurrentModel { get; set; } = true;

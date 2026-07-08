@@ -16,7 +16,13 @@ public sealed class ClashReportCsvService
             [
                 "Source",
                 "ClashId",
+                "Fingerprint",
                 "ClashName",
+                "Type",
+                "Priority",
+                "SeverityScore",
+                "Group",
+                "AssignedTo",
                 "Element1Source",
                 "ElementId1",
                 "Element1Resolved",
@@ -28,6 +34,7 @@ public sealed class ClashReportCsvService
                 "X",
                 "Y",
                 "Z",
+                "ApproximateVolumeMm3",
                 "Status",
                 "Comment",
                 "Message"
@@ -36,7 +43,13 @@ public sealed class ClashReportCsvService
             [
                 item.Source,
                 item.ClashId,
+                item.Fingerprint,
                 item.Name,
+                item.ClashTypeDisplay,
+                item.PriorityDisplay,
+                item.SeverityDisplay,
+                item.GroupKey,
+                item.AssignedTo,
                 item.Element1SourceName,
                 item.ElementId1Text,
                 item.IsElement1Resolved ? "yes" : "no",
@@ -48,6 +61,7 @@ public sealed class ClashReportCsvService
                 FormatDouble(item.X),
                 FormatDouble(item.Y),
                 FormatDouble(item.Z),
+                FormatDouble(item.ApproximateVolumeMm3),
                 ClashStatuses.ToDisplayName(item.Status),
                 item.Comment,
                 item.Message

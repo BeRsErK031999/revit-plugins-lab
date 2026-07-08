@@ -14,7 +14,8 @@ public static class ClashStatuses
         return normalized switch
         {
             "open" or "new" or "открыто" or "новая" => ClashStatus.Open,
-            "inprogress" or "progress" or "work" or "вработе" => ClashStatus.InProgress,
+            "inprogress" or "progress" or "work" or "active" or "вработе" or "активная" => ClashStatus.InProgress,
+            "approved" or "approve" or "согласовано" or "согласована" => ClashStatus.Approved,
             "resolved" or "closed" or "done" or "решено" or "закрыто" => ClashStatus.Resolved,
             "ignored" or "ignore" or "пропущено" or "игнор" => ClashStatus.Ignored,
             _ when Enum.TryParse(trimmed, ignoreCase: true, out ClashStatus status) => status,
@@ -26,11 +27,12 @@ public static class ClashStatuses
     {
         return status switch
         {
-            ClashStatus.Open => "Open",
-            ClashStatus.InProgress => "In Progress",
+            ClashStatus.Open => "New",
+            ClashStatus.InProgress => "Active",
+            ClashStatus.Approved => "Approved",
             ClashStatus.Resolved => "Resolved",
             ClashStatus.Ignored => "Ignored",
-            _ => "Open"
+            _ => "New"
         };
     }
 

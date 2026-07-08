@@ -4,6 +4,7 @@ public enum ClashStatus
 {
     Open,
     InProgress,
+    Approved,
     Resolved,
     Ignored
 }

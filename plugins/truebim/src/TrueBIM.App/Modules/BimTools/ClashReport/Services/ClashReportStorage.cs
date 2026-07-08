@@ -42,13 +42,14 @@ public sealed class ClashReportStorage
         Guard.NotNullOrWhiteSpace(modelKey, nameof(modelKey));
         Guard.NotNull(item, nameof(item));
 
-        if (!settings.States.TryGetValue(BuildStateKey(modelKey, item.ClashId), out ClashStateRecord? record))
+        if (!TryGetState(modelKey, item, out ClashStateRecord? record) || record is null)
         {
             return;
         }
 
         item.Status = record.Status;
         item.Comment = record.Comment;
+        item.AssignedTo = record.AssignedTo;
     }
 
     public void SaveStates(string modelKey, IEnumerable<ClashItem> items, ClashReportProfile profile)
@@ -59,10 +60,11 @@ public sealed class ClashReportStorage
         settings.Profile = NormalizeProfile(profile);
         foreach (ClashItem item in items)
         {
-            settings.States[BuildStateKey(modelKey, item.ClashId)] = new ClashStateRecord
+            settings.States[BuildStateKey(modelKey, item.StableId)] = new ClashStateRecord
             {
                 Status = item.Status,
                 Comment = item.Comment,
+                AssignedTo = item.AssignedTo,
                 UpdatedAtUtc = DateTime.UtcNow
             };
         }
@@ -112,6 +114,7 @@ public sealed class ClashReportStorage
         foreach (ClashStateRecord record in settings.States.Values)
         {
             record.Comment = record.Comment?.Trim() ?? string.Empty;
+            record.AssignedTo = record.AssignedTo?.Trim() ?? string.Empty;
         }
 
         return settings;
@@ -126,6 +129,11 @@ public sealed class ClashReportStorage
             LastCsvPath = source.LastCsvPath?.Trim() ?? string.Empty,
             SectionBoxPaddingMm = ClampNumeric(source.SectionBoxPaddingMm, 100, 10000, 1500),
             MinimumOverlapMm = ClampNumeric(source.MinimumOverlapMm, 0, 1000, 0),
+            ClashType = Enum.IsDefined(typeof(ClashType), source.ClashType) ? source.ClashType : ClashType.Hard,
+            GroupingStrategy = Enum.IsDefined(typeof(ClashGroupingStrategy), source.GroupingStrategy)
+                ? source.GroupingStrategy
+                : ClashGroupingStrategy.SourceCategoryPair,
+            DefaultAssignee = source.DefaultAssignee?.Trim() ?? string.Empty,
             HighlightOnNavigate = source.HighlightOnNavigate,
             ScanCurrentModel = source.ScanCurrentModel,
             ScanRvtLinks = source.ScanRvtLinks,
@@ -138,6 +146,23 @@ public sealed class ClashReportStorage
         storage.Save(settingsPath, settings);
     }
 
+    private bool TryGetState(string modelKey, ClashItem item, out ClashStateRecord? record)
+    {
+        if (settings.States.TryGetValue(BuildStateKey(modelKey, item.StableId), out record))
+        {
+            return true;
+        }
+
+        if (!item.StableId.Equals(item.ClashId, StringComparison.OrdinalIgnoreCase)
+            && settings.States.TryGetValue(BuildStateKey(modelKey, item.ClashId), out record))
+        {
+            return true;
+        }
+
+        record = null;
+        return false;
+    }
+
     private static ClashReportProfile Clone(ClashReportProfile profile)
     {
         return new ClashReportProfile
@@ -146,6 +171,9 @@ public sealed class ClashReportStorage
             LastCsvPath = profile.LastCsvPath,
             SectionBoxPaddingMm = profile.SectionBoxPaddingMm,
             MinimumOverlapMm = profile.MinimumOverlapMm,
+            ClashType = profile.ClashType,
+            GroupingStrategy = profile.GroupingStrategy,
+            DefaultAssignee = profile.DefaultAssignee,
             HighlightOnNavigate = profile.HighlightOnNavigate,
             ScanCurrentModel = profile.ScanCurrentModel,
             ScanRvtLinks = profile.ScanRvtLinks,

@@ -1,6 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -24,6 +28,15 @@ public sealed class ClashReportWindow : Window
     private static readonly IReadOnlyList<ClashStatus> StatusOptions =
         Enum.GetValues(typeof(ClashStatus)).Cast<ClashStatus>().ToList();
 
+    private static readonly JsonSerializerOptions ProfileSerializerOptions = new()
+    {
+        WriteIndented = true,
+        Converters =
+        {
+            new JsonStringEnumConverter()
+        }
+    };
+
     private readonly RevitUIDocument uiDocument;
     private readonly RevitDocument document;
     private readonly ClashLinkScanner linkScanner;
@@ -39,6 +52,15 @@ public sealed class ClashReportWindow : Window
     private readonly TextBox filterInput = new();
     private readonly TextBox paddingInput = new();
     private readonly TextBox minimumOverlapInput = new();
+    private readonly TextBox defaultAssigneeInput = new();
+    private readonly ComboBox clashTypeInput = new()
+    {
+        ItemsSource = new[] { ClashType.Hard }
+    };
+    private readonly ComboBox groupingStrategyInput = new()
+    {
+        ItemsSource = Enum.GetValues(typeof(ClashGroupingStrategy)).Cast<ClashGroupingStrategy>().ToList()
+    };
     private readonly CheckBox scanCurrentModelInput = new()
     {
         Content = "Текущая модель",
@@ -115,6 +137,9 @@ public sealed class ClashReportWindow : Window
         profileNameInput.Text = profile.Name;
         paddingInput.Text = profile.SectionBoxPaddingMm.ToString("0.##", CultureInfo.InvariantCulture);
         minimumOverlapInput.Text = profile.MinimumOverlapMm.ToString("0.##", CultureInfo.InvariantCulture);
+        defaultAssigneeInput.Text = profile.DefaultAssignee;
+        clashTypeInput.SelectedItem = profile.ClashType == ClashType.Hard ? profile.ClashType : ClashType.Hard;
+        groupingStrategyInput.SelectedItem = profile.GroupingStrategy;
         scanCurrentModelInput.IsChecked = profile.ScanCurrentModel;
         scanRvtLinksInput.IsChecked = profile.ScanRvtLinks;
         scanLinksAgainstEachOtherInput.IsChecked = profile.ScanLinksAgainstEachOther;
@@ -166,6 +191,7 @@ public sealed class ClashReportWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         AddLabel(root, $"Модель: {document.Title}", 0, 0);
         profileNameInput.Height = 32;
@@ -182,6 +208,14 @@ public sealed class ClashReportWindow : Window
         Button scanButton = CreateButton("Сканировать", TrueBimIcon.Preview, 135);
         scanButton.Click += (_, _) => ScanLinks();
         actions.Children.Add(scanButton);
+
+        Button importProfileButton = CreateButton("Импорт", TrueBimIcon.Open, 105);
+        importProfileButton.Click += (_, _) => ImportProfile();
+        actions.Children.Add(importProfileButton);
+
+        Button exportProfileButton = CreateButton("Экспорт", TrueBimIcon.Export, 105);
+        exportProfileButton.Click += (_, _) => ExportProfile();
+        actions.Children.Add(exportProfileButton);
 
         Button refreshButton = CreateButton("Проверить", TrueBimIcon.Preview, 115);
         refreshButton.Click += (_, _) => ResolveRows();
@@ -265,6 +299,33 @@ public sealed class ClashReportWindow : Window
         WpfGrid.SetColumn(options, 1);
         root.Children.Add(options);
 
+        AddLabel(root, "Triage", 0, 4);
+        StackPanel triage = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        triage.Children.Add(CreateOptionLabel("Тип"));
+        clashTypeInput.Width = 110;
+        clashTypeInput.Height = 32;
+        clashTypeInput.Margin = new Thickness(8, 0, 18, 8);
+        triage.Children.Add(clashTypeInput);
+        triage.Children.Add(CreateOptionLabel("Группировка"));
+        groupingStrategyInput.Width = 160;
+        groupingStrategyInput.Height = 32;
+        groupingStrategyInput.Margin = new Thickness(8, 0, 18, 8);
+        triage.Children.Add(groupingStrategyInput);
+        triage.Children.Add(CreateOptionLabel("Ответственный"));
+        defaultAssigneeInput.Width = 180;
+        defaultAssigneeInput.Height = 32;
+        defaultAssigneeInput.Margin = new Thickness(8, 0, 18, 8);
+        defaultAssigneeInput.ToolTip = "Ответственный по умолчанию для новых результатов без сохранённого состояния.";
+        triage.Children.Add(defaultAssigneeInput);
+
+        WpfGrid.SetRow(triage, 4);
+        WpfGrid.SetColumn(triage, 1);
+        root.Children.Add(triage);
+
         return root;
     }
 
@@ -302,6 +363,9 @@ public sealed class ClashReportWindow : Window
         clashGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
         clashGrid.ItemsSource = clashRows;
         clashGrid.Columns.Add(CreateTextColumn("Источник", nameof(ClashItem.Source), 145));
+        clashGrid.Columns.Add(CreateTextColumn("Тип", nameof(ClashItem.ClashTypeDisplay), 85));
+        clashGrid.Columns.Add(CreateTextColumn("Приоритет", nameof(ClashItem.PriorityDisplay), 95));
+        clashGrid.Columns.Add(CreateTextColumn("Группа", nameof(ClashItem.GroupKey), 170));
         clashGrid.Columns.Add(CreateTextColumn("ID", nameof(ClashItem.ClashId), 110));
         clashGrid.Columns.Add(CreateTextColumn("Имя", nameof(ClashItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         clashGrid.Columns.Add(CreateTextColumn("ElementId 1", nameof(ClashItem.ElementId1Text), 105));
@@ -309,7 +373,9 @@ public sealed class ClashReportWindow : Window
         clashGrid.Columns.Add(CreateTextColumn("ElementId 2", nameof(ClashItem.ElementId2Text), 105));
         clashGrid.Columns.Add(CreateTextColumn("Element 2", nameof(ClashItem.Element2Name), 170));
         clashGrid.Columns.Add(CreateTextColumn("Точка", nameof(ClashItem.PointText), 150));
+        clashGrid.Columns.Add(CreateTextColumn("Severity", nameof(ClashItem.SeverityDisplay), 80));
         clashGrid.Columns.Add(CreateStatusColumn());
+        clashGrid.Columns.Add(CreateEditableTextColumn("Ответственный", nameof(ClashItem.AssignedTo), 150));
         clashGrid.Columns.Add(CreateEditableTextColumn("Комментарий", nameof(ClashItem.Comment), 220));
         clashGrid.Columns.Add(CreateTextColumn("Resolve", nameof(ClashItem.ResolvedDisplay), 85));
         clashGrid.Columns.Add(CreateTextColumn("Сообщение", nameof(ClashItem.Message), 220));
@@ -345,6 +411,7 @@ public sealed class ClashReportWindow : Window
 
         foreach (ClashItem item in result.Items)
         {
+            ApplyDefaultAssignee(profile, item);
             storage.ApplyState(modelKey, item);
             elementResolver.Resolve(document, item);
             clashRows.Add(item);
@@ -508,6 +575,11 @@ public sealed class ClashReportWindow : Window
             LastCsvPath = string.Empty,
             SectionBoxPaddingMm = ParseDouble(paddingInput.Text, 1500),
             MinimumOverlapMm = ParseDouble(minimumOverlapInput.Text, 0),
+            ClashType = clashTypeInput.SelectedItem is ClashType clashType ? clashType : ClashType.Hard,
+            GroupingStrategy = groupingStrategyInput.SelectedItem is ClashGroupingStrategy groupingStrategy
+                ? groupingStrategy
+                : ClashGroupingStrategy.SourceCategoryPair,
+            DefaultAssignee = defaultAssigneeInput.Text,
             HighlightOnNavigate = highlightInput.IsChecked == true,
             ScanCurrentModel = scanCurrentModelInput.IsChecked == true,
             ScanRvtLinks = scanRvtLinksInput.IsChecked == true,
@@ -522,8 +594,86 @@ public sealed class ClashReportWindow : Window
             ScanCurrentModel = profile.ScanCurrentModel,
             ScanRvtLinks = profile.ScanRvtLinks,
             ScanLinksAgainstEachOther = profile.ScanLinksAgainstEachOther,
-            MinimumOverlapMm = profile.MinimumOverlapMm
+            MinimumOverlapMm = profile.MinimumOverlapMm,
+            ClashType = profile.ClashType,
+            GroupingStrategy = profile.GroupingStrategy
         };
+    }
+
+    private void ImportProfile()
+    {
+        OpenFileDialog dialog = new()
+        {
+            Title = "Импорт профиля проверки коллизий",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            string json = File.ReadAllText(dialog.FileName, Encoding.UTF8);
+            ClashReportProfile? imported = JsonSerializer.Deserialize<ClashReportProfile>(json, ProfileSerializerOptions);
+            ClashReportProfile profile = ClashReportStorage.NormalizeProfile(imported);
+            ApplyProfile(profile);
+            storage.SaveProfile(profile);
+            UpdateStatus($"Профиль импортирован: {Path.GetFileName(dialog.FileName)}.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            string message = $"Не удалось импортировать профиль: {exception.Message}";
+            AddReport("Импорт", string.Empty, string.Empty, "Error", message);
+            UpdateStatus();
+            logger.Warning(message);
+            TaskDialog("Отчёт коллизий", message);
+        }
+    }
+
+    private void ExportProfile()
+    {
+        ClashReportProfile profile = ReadProfile();
+        SaveFileDialog dialog = new()
+        {
+            Title = "Экспорт профиля проверки коллизий",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            FileName = "truebim-clash-profile.json",
+            DefaultExt = ".json",
+            OverwritePrompt = true
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            storage.SaveProfile(profile);
+            string json = JsonSerializer.Serialize(profile, ProfileSerializerOptions);
+            File.WriteAllText(dialog.FileName, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            AddReport("Экспорт", string.Empty, string.Empty, "OK", $"Профиль сохранён: {dialog.FileName}");
+            UpdateStatus();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            string message = $"Не удалось экспортировать профиль: {exception.Message}";
+            AddReport("Экспорт", string.Empty, string.Empty, "Error", message);
+            UpdateStatus();
+            logger.Warning(message);
+            TaskDialog("Отчёт коллизий", message);
+        }
+    }
+
+    private static void ApplyDefaultAssignee(ClashReportProfile profile, ClashItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.AssignedTo) && !string.IsNullOrWhiteSpace(profile.DefaultAssignee))
+        {
+            item.AssignedTo = profile.DefaultAssignee;
+        }
     }
 
     private void RefreshFilter()
@@ -547,12 +697,17 @@ public sealed class ClashReportWindow : Window
 
         return Contains(item.ClashId, filter)
             || Contains(item.Source, filter)
+            || Contains(item.ClashTypeDisplay, filter)
+            || Contains(item.PriorityDisplay, filter)
+            || Contains(item.GroupKey, filter)
+            || Contains(item.Fingerprint, filter)
             || Contains(item.Name, filter)
             || Contains(item.ElementId1Text, filter)
             || Contains(item.ElementId2Text, filter)
             || Contains(item.Element1Name, filter)
             || Contains(item.Element2Name, filter)
             || Contains(item.StatusDisplay, filter)
+            || Contains(item.AssignedTo, filter)
             || Contains(item.Comment, filter)
             || Contains(item.Message, filter);
     }
@@ -561,8 +716,9 @@ public sealed class ClashReportWindow : Window
     {
         int resolved = clashRows.Count(item => item.GetResolvedElementIds().Count > 0);
         int open = clashRows.Count(item => item.Status == ClashStatus.Open);
+        int urgent = clashRows.Count(item => item.Priority is ClashPriority.High or ClashPriority.Critical);
         int filtered = CollectionViewSource.GetDefaultView(clashGrid.ItemsSource)?.Cast<object>().Count() ?? clashRows.Count;
-        string text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; Open: {open}; отчётных событий: {reportRows.Count}.";
+        string text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; New: {open}; High/Critical: {urgent}; отчётных событий: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         bool hasRows = clashRows.Count > 0;
         selectButton.IsEnabled = hasRows;

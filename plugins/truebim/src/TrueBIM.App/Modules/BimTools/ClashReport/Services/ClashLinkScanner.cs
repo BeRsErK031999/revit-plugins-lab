@@ -10,6 +10,7 @@ public sealed class ClashLinkScanner
     private const int MaxLinkedElementsPerLink = 900;
     private const int MaxClashes = 1000;
     private const double FeetPerMillimeter = 1.0 / 304.8;
+    private const double CubicMillimetersPerCubicFoot = 304.8 * 304.8 * 304.8;
 
     public ClashLinkScanResult Scan(Document document, View activeView)
     {
@@ -60,33 +61,39 @@ public sealed class ClashLinkScanner
 
         if (normalized.ScanCurrentModel)
         {
-            ScanCurrentModel(document.Title, hostBoxes, clashes, messages, minimumOverlap);
+            ScanCurrentModel(document.Title, hostBoxes, clashes, messages, minimumOverlap, normalized.ClashType, normalized.GroupingStrategy);
             if (clashes.Count >= MaxClashes)
             {
-                return new ClashLinkScanResult(clashes, messages);
+                return FinishScan(clashes, messages);
             }
         }
 
         if (normalized.ScanRvtLinks)
         {
-            ScanHostAgainstLinks(document.Title, hostBoxes, links, clashes, messages, minimumOverlap);
+            ScanHostAgainstLinks(document.Title, hostBoxes, links, clashes, messages, minimumOverlap, normalized.ClashType, normalized.GroupingStrategy);
             if (clashes.Count >= MaxClashes)
             {
-                return new ClashLinkScanResult(clashes, messages);
+                return FinishScan(clashes, messages);
             }
         }
 
         if (normalized.ScanLinksAgainstEachOther)
         {
-            ScanLinksAgainstLinks(links, clashes, messages, minimumOverlap);
+            ScanLinksAgainstLinks(links, clashes, messages, minimumOverlap, normalized.ClashType, normalized.GroupingStrategy);
         }
 
-        if (clashes.Count == 0)
+        return FinishScan(clashes, messages);
+    }
+
+    private static ClashLinkScanResult FinishScan(List<ClashItem> clashes, List<string> messages)
+    {
+        List<ClashItem> finalClashes = DeduplicateAndSort(clashes, messages);
+        if (finalClashes.Count == 0)
         {
             messages.Add("Пересечения по выбранным режимам проверки не найдены.");
         }
 
-        return new ClashLinkScanResult(clashes, messages);
+        return new ClashLinkScanResult(finalClashes, messages);
     }
 
     private static ClashScanOptions NormalizeOptions(ClashScanOptions options)
@@ -96,7 +103,11 @@ public sealed class ClashLinkScanner
             ScanCurrentModel = options.ScanCurrentModel,
             ScanRvtLinks = options.ScanRvtLinks,
             ScanLinksAgainstEachOther = options.ScanLinksAgainstEachOther,
-            MinimumOverlapMm = Clamp(options.MinimumOverlapMm, 0, 1000)
+            MinimumOverlapMm = Clamp(options.MinimumOverlapMm, 0, 1000),
+            ClashType = Enum.IsDefined(typeof(ClashType), options.ClashType) ? options.ClashType : ClashType.Hard,
+            GroupingStrategy = Enum.IsDefined(typeof(ClashGroupingStrategy), options.GroupingStrategy)
+                ? options.GroupingStrategy
+                : ClashGroupingStrategy.SourceCategoryPair
         };
     }
 
@@ -151,7 +162,9 @@ public sealed class ClashLinkScanner
         IReadOnlyList<ModelElementBox> hostBoxes,
         ICollection<ClashItem> clashes,
         ICollection<string> messages,
-        double minimumOverlap)
+        double minimumOverlap,
+        ClashType clashType,
+        ClashGroupingStrategy groupingStrategy)
     {
         int initialCount = clashes.Count;
         for (int firstIndex = 0; firstIndex < hostBoxes.Count; firstIndex++)
@@ -171,7 +184,9 @@ public sealed class ClashLinkScanner
                     $"{first.CategoryName} x {second.CategoryName}",
                     first,
                     second,
-                    $"Коллизия найдена внутри текущей модели '{documentTitle}'."));
+                    $"Коллизия найдена внутри текущей модели '{documentTitle}'.",
+                    clashType,
+                    groupingStrategy));
 
                 if (StopIfLimitReached(clashes, messages))
                 {
@@ -189,7 +204,9 @@ public sealed class ClashLinkScanner
         IReadOnlyList<LinkedModelBoxes> links,
         ICollection<ClashItem> clashes,
         ICollection<string> messages,
-        double minimumOverlap)
+        double minimumOverlap,
+        ClashType clashType,
+        ClashGroupingStrategy groupingStrategy)
     {
         int initialCount = clashes.Count;
         foreach (LinkedModelBoxes link in links)
@@ -209,7 +226,9 @@ public sealed class ClashLinkScanner
                         $"{host.CategoryName} x {link.DocumentTitle}",
                         host,
                         linked,
-                        $"Коллизия найдена между текущей моделью '{documentTitle}' и RVT-связью '{link.LinkName}'."));
+                        $"Коллизия найдена между текущей моделью '{documentTitle}' и RVT-связью '{link.LinkName}'.",
+                        clashType,
+                        groupingStrategy));
 
                     if (StopIfLimitReached(clashes, messages))
                     {
@@ -226,7 +245,9 @@ public sealed class ClashLinkScanner
         IReadOnlyList<LinkedModelBoxes> links,
         ICollection<ClashItem> clashes,
         ICollection<string> messages,
-        double minimumOverlap)
+        double minimumOverlap,
+        ClashType clashType,
+        ClashGroupingStrategy groupingStrategy)
     {
         int initialCount = clashes.Count;
         for (int firstLinkIndex = 0; firstLinkIndex < links.Count; firstLinkIndex++)
@@ -250,7 +271,9 @@ public sealed class ClashLinkScanner
                             $"{firstLink.DocumentTitle} x {secondLink.DocumentTitle}",
                             first,
                             second,
-                            $"Коллизия найдена между RVT-связями '{firstLink.LinkName}' и '{secondLink.LinkName}'."));
+                            $"Коллизия найдена между RVT-связями '{firstLink.LinkName}' и '{secondLink.LinkName}'.",
+                            clashType,
+                            groupingStrategy));
 
                         if (StopIfLimitReached(clashes, messages))
                         {
@@ -320,10 +343,27 @@ public sealed class ClashLinkScanner
         string name,
         ModelElementBox first,
         ModelElementBox second,
-        string message)
+        string message,
+        ClashType clashType,
+        ClashGroupingStrategy groupingStrategy)
     {
         ModelElementBox intersection = first.Intersection(second);
         XYZ center = intersection.Center;
+        double approximateVolumeMm3 = CalculateApproximateVolumeMm3(intersection);
+        ClashTriageResult triage = new ClashTriageService().Create(new ClashTriageInput(
+            source,
+            first.ElementId,
+            second.ElementId,
+            first.LinkedElementId,
+            second.LinkedElementId,
+            first.CategoryName,
+            second.CategoryName,
+            center.X,
+            center.Y,
+            center.Z,
+            approximateVolumeMm3,
+            clashType,
+            groupingStrategy));
         ClashItem item = new(
             clashId,
             name,
@@ -338,7 +378,13 @@ public sealed class ClashLinkScanner
             second.SourceName,
             second.LinkedElementId,
             first.LinkedElementId,
-            source)
+            source,
+            clashType,
+            triage.Priority,
+            triage.SeverityScore,
+            triage.GroupKey,
+            triage.Fingerprint,
+            approximateVolumeMm3)
         {
             IsElement1Resolved = true,
             IsElement2Resolved = true,
@@ -354,6 +400,49 @@ public sealed class ClashLinkScanner
             intersection.MaxY,
             intersection.MaxZ);
         return item;
+    }
+
+    private static double CalculateApproximateVolumeMm3(ModelElementBox intersection)
+    {
+        double width = Math.Max(0, intersection.MaxX - intersection.MinX);
+        double depth = Math.Max(0, intersection.MaxY - intersection.MinY);
+        double height = Math.Max(0, intersection.MaxZ - intersection.MinZ);
+        return width * depth * height * CubicMillimetersPerCubicFoot;
+    }
+
+    private static List<ClashItem> DeduplicateAndSort(IReadOnlyList<ClashItem> clashes, ICollection<string> messages)
+    {
+        List<ClashItem> result = clashes
+            .GroupBy(item => item.StableId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderByDescending(item => GetPriorityRank(item.Priority))
+                .ThenByDescending(item => item.SeverityScore)
+                .First())
+            .OrderByDescending(item => GetPriorityRank(item.Priority))
+            .ThenByDescending(item => item.SeverityScore)
+            .ThenBy(item => item.GroupKey, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.ClashId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        int removed = clashes.Count - result.Count;
+        if (removed > 0)
+        {
+            messages.Add($"Удалено дублей по stable fingerprint: {removed}.");
+        }
+
+        return result;
+    }
+
+    private static int GetPriorityRank(ClashPriority priority)
+    {
+        return priority switch
+        {
+            ClashPriority.Critical => 4,
+            ClashPriority.High => 3,
+            ClashPriority.Medium => 2,
+            ClashPriority.Low => 1,
+            _ => 0
+        };
     }
 
     private static bool StopIfLimitReached(ICollection<ClashItem> clashes, ICollection<string> messages)
