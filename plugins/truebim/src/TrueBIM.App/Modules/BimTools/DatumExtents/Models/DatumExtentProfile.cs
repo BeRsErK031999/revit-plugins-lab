@@ -13,4 +13,6 @@ public sealed class DatumExtentProfile
     public bool IncludeGrids { get; set; } = true;
 
     public bool IncludeLevels { get; set; } = true;
+
+    public bool PropagateToViews { get; set; }
 }

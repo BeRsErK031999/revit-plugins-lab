@@ -56,6 +56,11 @@ public sealed class DatumExtentWindow : Window
         IsChecked = true,
         ToolTip = "Показывать Level на активном виде."
     };
+    private readonly CheckBox propagateToViewsInput = new()
+    {
+        Content = "Распространить",
+        ToolTip = "После изменения активного вида распространить текущие экстенты выбранных datum-элементов на совместимые виды."
+    };
     private readonly DataGrid datumGrid = new();
     private readonly DataGrid reportGrid = new();
     private readonly TextBlock statusText = new();
@@ -107,6 +112,7 @@ public sealed class DatumExtentWindow : Window
         includeEnd1Input.IsChecked = profile.IncludeEnd1;
         includeGridsInput.IsChecked = profile.IncludeGrids;
         includeLevelsInput.IsChecked = profile.IncludeLevels;
+        propagateToViewsInput.IsChecked = profile.PropagateToViews;
 
         targetTypeInput.ItemsSource = DatumExtentTargets.Options;
         targetTypeInput.DisplayMemberPath = nameof(DatumExtentTargetOption.DisplayName);
@@ -222,6 +228,11 @@ public sealed class DatumExtentWindow : Window
         includeLevelsInput.Unchecked += (_, _) => UpdateStatus();
         options.Children.Add(includeLevelsInput);
 
+        propagateToViewsInput.Margin = new Thickness(0, 0, 12, 0);
+        propagateToViewsInput.Checked += (_, _) => UpdateStatus();
+        propagateToViewsInput.Unchecked += (_, _) => UpdateStatus();
+        options.Children.Add(propagateToViewsInput);
+
         WpfGrid.SetRow(options, 1);
         WpfGrid.SetColumn(options, 2);
         root.Children.Add(options);
@@ -273,6 +284,7 @@ public sealed class DatumExtentWindow : Window
         datumGrid.Columns.Add(CreateTextColumn("End1", nameof(DatumExtentRow.End1Type), 150));
         datumGrid.Columns.Add(CreateTextColumn("Model кривые", nameof(DatumExtentRow.ModelCurveCount), 110));
         datumGrid.Columns.Add(CreateTextColumn("2D кривые", nameof(DatumExtentRow.ViewSpecificCurveCount), 100));
+        datumGrid.Columns.Add(CreateTextColumn("Видов", nameof(DatumExtentRow.PropagationViewCount), 80));
         datumGrid.Columns.Add(CreateTextColumn("Статус", nameof(DatumExtentRow.Status), 120));
         datumGrid.Columns.Add(CreateTextColumn("Сообщение", nameof(DatumExtentRow.Message), 260));
         panel.Children.Add(datumGrid);
@@ -422,7 +434,8 @@ public sealed class DatumExtentWindow : Window
             IncludeEnd0 = includeEnd0Input.IsChecked == true,
             IncludeEnd1 = includeEnd1Input.IsChecked == true,
             IncludeGrids = includeGridsInput.IsChecked == true,
-            IncludeLevels = includeLevelsInput.IsChecked == true
+            IncludeLevels = includeLevelsInput.IsChecked == true,
+            PropagateToViews = propagateToViewsInput.IsChecked == true
         });
     }
 
@@ -479,6 +492,12 @@ public sealed class DatumExtentWindow : Window
         string target = (targetTypeInput.SelectedItem as DatumExtentTargetOption)?.DisplayName
             ?? DatumExtentTargets.Options[0].DisplayName;
         string text = $"Datum: {rows.Count}. Готово к изменению: {readyRows}. Выбрано: {selectedRows}. Режим: {target}. Отчётных строк: {reportRows.Count}.";
+        if (propagateToViewsInput.IsChecked == true)
+        {
+            int targetViews = rows.Where(row => row.IsSelected && row.CanApply).Sum(row => row.PropagationViewCount);
+            text += $" Распространение: {targetViews} совместимых видов.";
+        }
+
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         applyButton.IsEnabled = selectedRows > 0 || rows.Count == 0;
     }

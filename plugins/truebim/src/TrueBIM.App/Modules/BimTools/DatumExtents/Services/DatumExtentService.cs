@@ -64,6 +64,7 @@ public sealed class DatumExtentService
     {
         int changed = 0;
         int unchanged = 0;
+        int propagatedViews = 0;
         List<string> failures = [];
 
         DatumExtentType end0Type = GetCurrentType(datum, activeView, DatumEnds.End0);
@@ -79,29 +80,42 @@ public sealed class DatumExtentService
             ApplyEnd(datum, activeView, DatumEnds.End1, targetType, ref end1Type, ref changed, ref unchanged, failures);
         }
 
+        if (profile.PropagateToViews && failures.Count == 0)
+        {
+            propagatedViews = PropagateToCompatibleViews(datum, activeView, failures);
+        }
+
         if (failures.Count > 0)
         {
             return new RowApplyState(
                 DatumExtentTargets.GetDisplayName(end0Type),
                 DatumExtentTargets.GetDisplayName(end1Type),
                 DatumExtentStatuses.Error,
-                $"Изменено концов: {changed}. Ошибки: {string.Join(" ", failures)}");
+                $"Изменено концов: {changed}. Распространено видов: {propagatedViews}. Ошибки: {string.Join(" ", failures)}");
         }
 
-        if (changed == 0)
+        if (changed == 0 && propagatedViews == 0)
         {
+            string unchangedMessage = profile.PropagateToViews
+                ? $"Выбранные концы уже в целевом режиме. Без изменений: {unchanged}. Совместимых видов для распространения нет."
+                : $"Выбранные концы уже в целевом режиме. Без изменений: {unchanged}.";
+
             return new RowApplyState(
                 DatumExtentTargets.GetDisplayName(end0Type),
                 DatumExtentTargets.GetDisplayName(end1Type),
                 DatumExtentStatuses.Unchanged,
-                $"Выбранные концы уже в целевом режиме. Без изменений: {unchanged}.");
+                unchangedMessage);
         }
+
+        string propagationMessage = profile.PropagateToViews
+            ? $" Распространено видов: {propagatedViews}."
+            : string.Empty;
 
         return new RowApplyState(
             DatumExtentTargets.GetDisplayName(end0Type),
             DatumExtentTargets.GetDisplayName(end1Type),
             DatumExtentStatuses.Done,
-            $"Изменено концов: {changed}. Без изменений: {unchanged}.");
+            $"Изменено концов: {changed}. Без изменений: {unchanged}.{propagationMessage}");
     }
 
     private static void ApplyEnd(
@@ -142,6 +156,26 @@ public sealed class DatumExtentService
         catch (Exception)
         {
             return DatumExtentType.Model;
+        }
+    }
+
+    private static int PropagateToCompatibleViews(DatumPlane datum, View activeView, List<string> failures)
+    {
+        try
+        {
+            ISet<ElementId> targetViewIds = datum.GetPropagationViews(activeView);
+            if (targetViewIds.Count == 0)
+            {
+                return 0;
+            }
+
+            datum.PropagateToViews(activeView, targetViewIds);
+            return targetViewIds.Count;
+        }
+        catch (Exception exception)
+        {
+            failures.Add($"Распространение: {exception.Message}");
+            return 0;
         }
     }
 

@@ -42,7 +42,8 @@ public sealed class DatumExtentProfileStorageTests
             IncludeEnd0 = true,
             IncludeEnd1 = false,
             IncludeGrids = true,
-            IncludeLevels = false
+            IncludeLevels = false,
+            PropagateToViews = true
         });
 
         DatumExtentProfile loaded = storage.Load();
@@ -53,6 +54,7 @@ public sealed class DatumExtentProfileStorageTests
         Assert.False(loaded.IncludeEnd1);
         Assert.True(loaded.IncludeGrids);
         Assert.False(loaded.IncludeLevels);
+        Assert.True(loaded.PropagateToViews);
     }
 
     private sealed class TempDirectory : IDisposable

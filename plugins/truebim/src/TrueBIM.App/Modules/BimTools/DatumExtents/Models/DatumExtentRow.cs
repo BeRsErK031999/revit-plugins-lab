@@ -18,6 +18,7 @@ public sealed class DatumExtentRow : INotifyPropertyChanged
         string end1Type,
         int modelCurveCount,
         int viewSpecificCurveCount,
+        int propagationViewCount,
         string status,
         string message,
         bool canApply)
@@ -29,6 +30,7 @@ public sealed class DatumExtentRow : INotifyPropertyChanged
         this.end1Type = end1Type;
         ModelCurveCount = modelCurveCount;
         ViewSpecificCurveCount = viewSpecificCurveCount;
+        PropagationViewCount = propagationViewCount;
         this.status = status;
         this.message = message;
         CanApply = canApply;
@@ -93,6 +95,8 @@ public sealed class DatumExtentRow : INotifyPropertyChanged
     public int ModelCurveCount { get; }
 
     public int ViewSpecificCurveCount { get; }
+
+    public int PropagationViewCount { get; }
 
     public string Status
     {

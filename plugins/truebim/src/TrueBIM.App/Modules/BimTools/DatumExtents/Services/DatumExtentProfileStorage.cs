@@ -65,7 +65,8 @@ public sealed class DatumExtentProfileStorage
             IncludeEnd0 = includeEnd0,
             IncludeEnd1 = includeEnd1,
             IncludeGrids = includeGrids,
-            IncludeLevels = includeLevels
+            IncludeLevels = includeLevels,
+            PropagateToViews = profile.PropagateToViews
         };
     }
 }

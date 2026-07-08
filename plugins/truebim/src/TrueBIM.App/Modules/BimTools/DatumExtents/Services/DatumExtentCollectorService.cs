@@ -68,7 +68,7 @@ public sealed class DatumExtentCollectorService
         return datums.Values
             .OrderBy(GetDatumKind, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(datum => datum.Name, StringComparer.CurrentCultureIgnoreCase)
-            .Select(datum => CreateRow(datum, activeView, targetType, profile.IncludeEnd0, profile.IncludeEnd1))
+            .Select(datum => CreateRow(datum, activeView, targetType, profile.IncludeEnd0, profile.IncludeEnd1, profile.PropagateToViews))
             .ToList();
     }
 
@@ -77,19 +77,22 @@ public sealed class DatumExtentCollectorService
         View activeView,
         DatumExtentType targetType,
         bool includeEnd0,
-        bool includeEnd1)
+        bool includeEnd1,
+        bool propagateToViews)
     {
         bool canReadEnd0 = TryGetExtentType(datum, activeView, DatumEnds.End0, out DatumExtentType end0Type, out string end0Message);
         bool canReadEnd1 = TryGetExtentType(datum, activeView, DatumEnds.End1, out DatumExtentType end1Type, out string end1Message);
         int modelCurveCount = GetCurveCount(datum, activeView, DatumExtentType.Model);
         int viewSpecificCurveCount = GetCurveCount(datum, activeView, DatumExtentType.ViewSpecific);
+        int propagationViewCount = GetPropagationViewCount(datum, activeView);
 
         List<string> messages = [];
         bool needsEnd0 = includeEnd0 && canReadEnd0 && end0Type != targetType;
         bool needsEnd1 = includeEnd1 && canReadEnd1 && end1Type != targetType;
         bool hasReadableEnd = (includeEnd0 && canReadEnd0) || (includeEnd1 && canReadEnd1);
+        bool canPropagate = propagateToViews && propagationViewCount > 0;
         string status = DatumExtentStatuses.Ready;
-        bool canApply = needsEnd0 || needsEnd1;
+        bool canApply = needsEnd0 || needsEnd1 || canPropagate;
 
         if (!hasReadableEnd)
         {
@@ -102,9 +105,18 @@ public sealed class DatumExtentCollectorService
             status = DatumExtentStatuses.Unchanged;
             messages.Add("Выбранные концы уже в целевом режиме.");
         }
+        else if (!needsEnd0 && !needsEnd1 && canPropagate)
+        {
+            messages.Add("Готово к распространению текущих экстентов на совместимые виды.");
+        }
         else
         {
             messages.Add("Готово к переключению выбранных концов.");
+        }
+
+        if (propagateToViews)
+        {
+            messages.Add($"Совместимых видов для распространения: {propagationViewCount}.");
         }
 
         if (!canReadEnd0 && includeEnd0)
@@ -125,6 +137,7 @@ public sealed class DatumExtentCollectorService
             canReadEnd1 ? DatumExtentTargets.GetDisplayName(end1Type) : "Недоступно",
             modelCurveCount,
             viewSpecificCurveCount,
+            propagationViewCount,
             status,
             string.Join(" ", messages),
             canApply);
@@ -156,6 +169,18 @@ public sealed class DatumExtentCollectorService
         try
         {
             return datum.GetCurvesInView(extentType, activeView).Count;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    private static int GetPropagationViewCount(DatumPlane datum, View activeView)
+    {
+        try
+        {
+            return datum.GetPropagationViews(activeView).Count;
         }
         catch (Exception)
         {
