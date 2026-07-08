@@ -18,5 +18,7 @@ public sealed class OpeningViewProfile
 
     public double DepthMarginMm { get; set; } = 600;
 
+    public string OrientationSource { get; set; } = OpeningViewOrientationSources.ElementFacing;
+
     public string ViewNameTemplate { get; set; } = "BIM_Opening_{CategoryKey}_{ElementId}_{Family}_{Type}";
 }

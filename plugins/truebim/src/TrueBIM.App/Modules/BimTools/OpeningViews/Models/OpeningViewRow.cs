@@ -15,6 +15,7 @@ public sealed class OpeningViewRow : INotifyPropertyChanged
         string typeName,
         string levelName,
         string viewName,
+        string orientationSource,
         string status,
         string message,
         bool canApply)
@@ -25,6 +26,7 @@ public sealed class OpeningViewRow : INotifyPropertyChanged
         TypeName = typeName;
         LevelName = levelName;
         ViewName = viewName;
+        OrientationSource = orientationSource;
         this.status = status;
         this.message = message;
         CanApply = canApply;
@@ -44,6 +46,8 @@ public sealed class OpeningViewRow : INotifyPropertyChanged
     public string LevelName { get; }
 
     public string ViewName { get; }
+
+    public string OrientationSource { get; }
 
     public bool CanApply { get; }
 

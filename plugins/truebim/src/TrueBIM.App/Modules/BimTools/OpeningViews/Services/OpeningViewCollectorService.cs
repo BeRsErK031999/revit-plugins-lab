@@ -138,9 +138,14 @@ public sealed class OpeningViewCollectorService
 
         BoundingBoxXYZ? boundingBox = familyInstance.get_BoundingBox(activePlan) ?? familyInstance.get_BoundingBox(null);
         XYZ origin = GetOrigin(familyInstance, boundingBox);
-        XYZ facingDirection = NormalizeHorizontal(familyInstance.FacingOrientation, activePlan.UpDirection);
+        OpeningViewOrientationResult orientation = OpeningViewOrientationResolver.Resolve(familyInstance, activePlan, profile);
 
-        string message = "Готово к созданию elevation-вида.";
+        string message = $"Готово к созданию elevation-вида. Ориентация: {OpeningViewOrientationSources.GetDisplayName(orientation.Source).ToLowerInvariant()}.";
+        if (orientation.UsedFallback)
+        {
+            message += " Стена-основа не найдена, используется ориентация элемента.";
+        }
+
         bool canApply = true;
         if (profile.ElevationViewTypeId is null)
         {
@@ -167,7 +172,9 @@ public sealed class OpeningViewCollectorService
             levelName,
             viewName,
             origin,
-            facingDirection,
+            orientation.Direction,
+            orientation.Source,
+            orientation.UsedFallback,
             boundingBox?.Min ?? XYZ.Zero,
             boundingBox?.Max ?? XYZ.Zero,
             profile.ElevationViewTypeId,
@@ -204,19 +211,6 @@ public sealed class OpeningViewCollectorService
         Element? level = levelId == ElementId.InvalidElementId ? null : document.GetElement(levelId);
         string? levelName = level?.Name;
         return string.IsNullOrWhiteSpace(levelName) ? "Без уровня" : levelName!;
-    }
-
-    private static XYZ NormalizeHorizontal(XYZ value, XYZ fallback)
-    {
-        XYZ horizontal = new(value.X, value.Y, 0);
-        if (horizontal.GetLength() < 1e-6)
-        {
-            horizontal = new(fallback.X, fallback.Y, 0);
-        }
-
-        return horizontal.GetLength() < 1e-6
-            ? XYZ.BasisY
-            : horizontal.Normalize();
     }
 
     private static IEnumerable<CategoryDefinition> GetEnabledCategories(OpeningViewProfile profile)

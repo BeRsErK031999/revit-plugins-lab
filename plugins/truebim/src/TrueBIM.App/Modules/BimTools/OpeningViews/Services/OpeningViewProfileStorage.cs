@@ -60,6 +60,7 @@ public sealed class OpeningViewProfileStorage
             Scale = Clamp(profile.Scale, 1, 500),
             CropMarginMm = Clamp(profile.CropMarginMm, 0, 5000),
             DepthMarginMm = Clamp(profile.DepthMarginMm, 0, 5000),
+            OrientationSource = OpeningViewOrientationSources.NormalizeKey(profile.OrientationSource),
             ViewNameTemplate = string.IsNullOrWhiteSpace(profile.ViewNameTemplate)
                 ? DefaultViewNameTemplate
                 : profile.ViewNameTemplate.Trim()

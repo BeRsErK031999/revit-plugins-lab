@@ -20,6 +20,7 @@ public sealed class OpeningViewProfileStorageTests
             Scale = 900,
             CropMarginMm = 9000,
             DepthMarginMm = double.NaN,
+            OrientationSource = "Unknown",
             ViewNameTemplate = "  "
         });
 
@@ -31,6 +32,7 @@ public sealed class OpeningViewProfileStorageTests
         Assert.Equal(500, profile.Scale);
         Assert.Equal(5000, profile.CropMarginMm);
         Assert.Equal(0, profile.DepthMarginMm);
+        Assert.Equal(OpeningViewOrientationSources.ElementFacing, profile.OrientationSource);
         Assert.Equal("BIM_Opening_{CategoryKey}_{ElementId}_{Family}_{Type}", profile.ViewNameTemplate);
     }
 
@@ -51,6 +53,7 @@ public sealed class OpeningViewProfileStorageTests
             Scale = 25,
             CropMarginMm = 750,
             DepthMarginMm = 1200,
+            OrientationSource = OpeningViewOrientationSources.HostWall,
             ViewNameTemplate = "  BIM_{ElementId}  "
         });
 
@@ -64,6 +67,7 @@ public sealed class OpeningViewProfileStorageTests
         Assert.Equal(25, loaded.Scale);
         Assert.Equal(750, loaded.CropMarginMm);
         Assert.Equal(1200, loaded.DepthMarginMm);
+        Assert.Equal(OpeningViewOrientationSources.HostWall, loaded.OrientationSource);
         Assert.Equal("BIM_{ElementId}", loaded.ViewNameTemplate);
     }
 

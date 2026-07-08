@@ -15,6 +15,8 @@ public sealed class OpeningViewCandidate
         string viewName,
         XYZ origin,
         XYZ facingDirection,
+        string orientationSource,
+        bool orientationFallback,
         XYZ boundingBoxMin,
         XYZ boundingBoxMax,
         long? elevationViewTypeId,
@@ -31,6 +33,8 @@ public sealed class OpeningViewCandidate
         ViewName = viewName;
         Origin = origin;
         FacingDirection = facingDirection;
+        OrientationSource = OpeningViewOrientationSources.NormalizeKey(orientationSource);
+        OrientationFallback = orientationFallback;
         BoundingBoxMin = boundingBoxMin;
         BoundingBoxMax = boundingBoxMax;
         ElevationViewTypeId = elevationViewTypeId;
@@ -57,6 +61,14 @@ public sealed class OpeningViewCandidate
 
     public XYZ FacingDirection { get; }
 
+    public string OrientationSource { get; }
+
+    public bool OrientationFallback { get; }
+
+    public string OrientationSourceDisplay => OrientationFallback
+        ? $"{OpeningViewOrientationSources.GetDisplayName(OpeningViewOrientationSources.HostWall)} -> {OpeningViewOrientationSources.GetDisplayName(OpeningViewOrientationSources.ElementFacing)}"
+        : OpeningViewOrientationSources.GetDisplayName(OrientationSource);
+
     public XYZ BoundingBoxMin { get; }
 
     public XYZ BoundingBoxMax { get; }
@@ -78,6 +90,7 @@ public sealed class OpeningViewCandidate
             TypeName,
             LevelName,
             ViewName,
+            OrientationSourceDisplay,
             CanApply ? OpeningViewStatuses.Ready : OpeningViewStatuses.Skipped,
             Message,
             CanApply);

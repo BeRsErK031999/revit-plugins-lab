@@ -69,7 +69,7 @@ public sealed class OpeningViewCreationService
                     candidate,
                     activePlan,
                     OpeningViewStatuses.Created,
-                    $"Создан вид: {candidate.ViewName}."));
+                    $"Создан вид: {candidate.ViewName}. Ориентация: {candidate.OrientationSourceDisplay}."));
             }
             catch (Exception exception)
             {

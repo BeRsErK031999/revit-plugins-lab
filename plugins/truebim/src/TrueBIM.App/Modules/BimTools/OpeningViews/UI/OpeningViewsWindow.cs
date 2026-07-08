@@ -41,6 +41,12 @@ public sealed class OpeningViewsWindow : Window
     private readonly TextBox viewNameTemplateInput = new();
     private readonly ComboBox elevationTypeInput = new();
     private readonly ComboBox viewTemplateInput = new();
+    private readonly ComboBox orientationSourceInput = new()
+    {
+        ItemsSource = OpeningViewOrientationSources.Options,
+        DisplayMemberPath = nameof(OpeningViewOrientationSourceOption.DisplayName),
+        SelectedValuePath = nameof(OpeningViewOrientationSourceOption.Key)
+    };
     private readonly CheckBox includeDoorsInput = new()
     {
         Content = "Двери",
@@ -131,6 +137,7 @@ public sealed class OpeningViewsWindow : Window
         scaleInput.Text = profile.Scale.ToString(CultureInfo.InvariantCulture);
         cropMarginInput.Text = profile.CropMarginMm.ToString("0.##", CultureInfo.InvariantCulture);
         depthMarginInput.Text = profile.DepthMarginMm.ToString("0.##", CultureInfo.InvariantCulture);
+        orientationSourceInput.SelectedValue = profile.OrientationSource;
         viewNameTemplateInput.Text = profile.ViewNameTemplate;
     }
 
@@ -224,6 +231,14 @@ public sealed class OpeningViewsWindow : Window
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
+        AddInlineLabel(categories, "Ориентация");
+        orientationSourceInput.Width = 130;
+        orientationSourceInput.Height = 32;
+        orientationSourceInput.Margin = new Thickness(0, 0, 16, 0);
+        orientationSourceInput.ToolTip = "По элементу использует FacingOrientation. По стене берёт направление стены-основы и сторону, ближайшую к FacingOrientation.";
+        orientationSourceInput.SelectionChanged += (_, _) => UpdateStatus();
+        categories.Children.Add(orientationSourceInput);
+
         includeDoorsInput.Margin = new Thickness(0, 0, 12, 0);
         includeWindowsInput.Margin = new Thickness(0, 0, 18, 0);
         includeDoorsInput.Checked += (_, _) => UpdateStatus();
@@ -328,6 +343,7 @@ public sealed class OpeningViewsWindow : Window
         openingGrid.Columns.Add(CreateTextColumn("Тип", nameof(OpeningViewRow.TypeName), 170));
         openingGrid.Columns.Add(CreateTextColumn("Уровень", nameof(OpeningViewRow.LevelName), 120));
         openingGrid.Columns.Add(CreateTextColumn("Имя вида", nameof(OpeningViewRow.ViewName), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        openingGrid.Columns.Add(CreateTextColumn("Ориентация", nameof(OpeningViewRow.OrientationSource), 130));
         openingGrid.Columns.Add(CreateTextColumn("Статус", nameof(OpeningViewRow.Status), 100));
         openingGrid.Columns.Add(CreateTextColumn("Сообщение", nameof(OpeningViewRow.Message), 250));
         panel.Children.Add(openingGrid);
@@ -489,6 +505,7 @@ public sealed class OpeningViewsWindow : Window
             Scale = ParseInt(scaleInput.Text, 50),
             CropMarginMm = ParseDouble(cropMarginInput.Text, 600),
             DepthMarginMm = ParseDouble(depthMarginInput.Text, 600),
+            OrientationSource = orientationSourceInput.SelectedValue as string ?? OpeningViewOrientationSources.ElementFacing,
             ViewNameTemplate = viewNameTemplateInput.Text
         });
     }
@@ -553,7 +570,8 @@ public sealed class OpeningViewsWindow : Window
             : includeWindowsInput.IsChecked == true
                 ? "окна"
                 : "двери";
-        string text = $"Проёмов: {openingRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Тип фасада: {elevationType}. Отчётных строк: {reportRows.Count}.";
+        string orientation = OpeningViewOrientationSources.GetDisplayName(orientationSourceInput.SelectedValue as string).ToLowerInvariant();
+        string text = $"Проёмов: {openingRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Ориентация: {orientation}. Тип фасада: {elevationType}. Отчётных строк: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         applyButton.IsEnabled = selectedRows > 0 || openingRows.Count == 0;
     }
