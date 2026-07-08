@@ -100,6 +100,8 @@ public sealed class FamilyManagerProfileStorage
                     SizeBytes = file.SizeBytes,
                     LastWriteTimeUtc = file.LastWriteTimeUtc,
                     LastLoadedAtUtc = lastLoadedAtUtc == default ? file.LastLoadedAtUtc : lastLoadedAtUtc,
+                    MetadataUpdatedAtUtc = file.MetadataUpdatedAtUtc,
+                    CachedTypes = NormalizeTypes(file.CachedTypes),
                     IsFavorite = favorites.Contains(filePath),
                     Status = file.Status ?? string.Empty
                 };
@@ -118,5 +120,16 @@ public sealed class FamilyManagerProfileStorage
             CachedFiles = cachedFiles,
             CacheUpdatedAtUtc = profile.CacheUpdatedAtUtc
         };
+    }
+
+    private static List<FamilyTypeInfo> NormalizeTypes(IEnumerable<FamilyTypeInfo>? types)
+    {
+        return (types ?? [])
+            .Where(type => !string.IsNullOrWhiteSpace(type.Name))
+            .Select(type => new FamilyTypeInfo(type.ElementId, type.Name.Trim()))
+            .GroupBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 }

@@ -30,6 +30,7 @@ public sealed class FamilyManagerCommand : IExternalCommand
                 new FamilyManagerProfileStorage(logger),
                 new FamilyLibraryScanner(),
                 new FamilyLoadService(),
+                new FamilyMetadataService(),
                 logger);
             System.Windows.Interop.WindowInteropHelper helper = new(window)
             {

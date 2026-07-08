@@ -26,6 +26,14 @@ public sealed class FamilyManagerProfileStorageTests
                     Name = "Door",
                     DirectoryPath = @"C:\Lib\Doors",
                     Category = "Двери",
+                    MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 6, 0, 0, TimeSpan.Zero),
+                    CachedTypes =
+                    [
+                        new FamilyTypeInfo(0, "  900x2100  "),
+                        new FamilyTypeInfo(0, "900x2100"),
+                        new FamilyTypeInfo(0, "1000x2100"),
+                        new FamilyTypeInfo(0, " ")
+                    ],
                     IsFavorite = true
                 }
             ]
@@ -37,6 +45,8 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Single(normalized.FavoritePaths);
         Assert.Single(normalized.CachedFiles);
         Assert.True(normalized.CachedFiles[0].IsFavorite);
+        Assert.Equal(["1000x2100", "900x2100"], normalized.CachedFiles[0].CachedTypes.Select(type => type.Name));
+        Assert.NotNull(normalized.CachedFiles[0].MetadataUpdatedAtUtc);
     }
 
     [Fact]
@@ -57,6 +67,8 @@ public sealed class FamilyManagerProfileStorageTests
                     Name = "Chair",
                     DirectoryPath = temp.Path,
                     Category = "Мебель",
+                    MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 7, 0, 0, TimeSpan.Zero),
+                    CachedTypes = [new FamilyTypeInfo(0, "Default")],
                     IsFavorite = true
                 }
             ]
@@ -68,6 +80,8 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Single(loaded.CachedFiles);
         Assert.Single(loaded.FavoritePaths);
         Assert.Equal("Chair", loaded.CachedFiles[0].Name);
+        Assert.Equal("Default", Assert.Single(loaded.CachedFiles[0].CachedTypes).Name);
+        Assert.NotNull(loaded.CachedFiles[0].MetadataUpdatedAtUtc);
     }
 
     private sealed class TempDirectory : IDisposable

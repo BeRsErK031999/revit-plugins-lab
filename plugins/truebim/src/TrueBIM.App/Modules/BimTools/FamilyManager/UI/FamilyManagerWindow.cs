@@ -20,11 +20,13 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
 public sealed class FamilyManagerWindow : Window
 {
+    private readonly UIApplication uiApplication;
     private readonly UIDocument uiDocument;
     private readonly Document document;
     private readonly FamilyManagerProfileStorage profileStorage;
     private readonly FamilyLibraryScanner scanner;
     private readonly FamilyLoadService loadService;
+    private readonly FamilyMetadataService metadataService;
     private readonly ITrueBimLogger logger;
     private readonly ObservableCollection<FamilyLibraryFolder> folders = new();
     private readonly ObservableCollection<FamilyFileItem> visibleFamilies = new();
@@ -46,6 +48,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Button favoriteButton = CreateButton("В избранное", TrueBimIcon.Apply, 130);
     private readonly Button loadButton = CreateButton("Загрузить", TrueBimIcon.Apply, 130);
     private readonly Button loadAndPlaceButton = CreateButton("Загрузить и разместить", TrueBimIcon.FamilyManager, 190);
+    private readonly Button refreshMetadataButton = CreateButton("Обновить метаданные", TrueBimIcon.Preview, 220);
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private bool isRefreshing;
@@ -56,14 +59,16 @@ public sealed class FamilyManagerWindow : Window
         FamilyManagerProfileStorage profileStorage,
         FamilyLibraryScanner scanner,
         FamilyLoadService loadService,
+        FamilyMetadataService metadataService,
         ITrueBimLogger logger)
     {
-        _ = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
+        this.uiApplication = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
         document = uiDocument.Document;
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
         this.loadService = loadService ?? throw new ArgumentNullException(nameof(loadService));
+        this.metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         profile = this.profileStorage.Load();
 
@@ -211,6 +216,7 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.SelectionChanged += (_, _) => SelectFamily(familyGrid.SelectedItem as FamilyFileItem);
         familyGrid.Columns.Add(CreateTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
+        familyGrid.Columns.Add(CreateTextColumn("Типов", nameof(FamilyFileItem.CachedTypeCountDisplay), 60));
         familyGrid.Columns.Add(CreateTextColumn("Избр.", nameof(FamilyFileItem.FavoriteDisplay), 70));
         familyGrid.Columns.Add(CreateTextColumn("Размер", nameof(FamilyFileItem.SizeDisplay), 80));
         familyGrid.Columns.Add(CreateTextColumn("Статус", nameof(FamilyFileItem.Status), 150));
@@ -252,7 +258,12 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(loadAndPlaceButton, Dock.Top);
         panel.Children.Add(loadAndPlaceButton);
 
-        TextBlock typesTitle = CreateSubTitle("Типы в проекте");
+        refreshMetadataButton.Margin = new Thickness(0, 0, 0, 12);
+        refreshMetadataButton.Click += (_, _) => RefreshSelectedMetadata();
+        DockPanel.SetDock(refreshMetadataButton, Dock.Top);
+        panel.Children.Add(refreshMetadataButton);
+
+        TextBlock typesTitle = CreateSubTitle("Типы в файле/проекте");
         DockPanel.SetDock(typesTitle, Dock.Top);
         panel.Children.Add(typesTitle);
 
@@ -353,11 +364,15 @@ public sealed class FamilyManagerWindow : Window
         Dictionary<string, DateTimeOffset> lastLoadedByPath = profile.History
             .GroupBy(item => FamilyPathNormalizer.Normalize(item.FilePath), FamilyPathNormalizer.Comparer)
             .ToDictionary(group => group.Key, group => group.Max(item => item.LoadedAtUtc), FamilyPathNormalizer.Comparer);
+        Dictionary<string, FamilyFileItem> previousFamilies = allFamilies
+            .GroupBy(family => FamilyPathNormalizer.Normalize(family.FilePath), FamilyPathNormalizer.Comparer)
+            .ToDictionary(group => group.Key, group => group.First(), FamilyPathNormalizer.Comparer);
 
         FamilyLibraryScanResult result = scanner.Scan(profile.LibraryFolders, favoritePaths, lastLoadedByPath);
         allFamilies.Clear();
         foreach (FamilyFileItem family in result.Files)
         {
+            PreserveCachedMetadata(family, previousFamilies);
             SubscribeFamily(family);
             allFamilies.Add(family);
         }
@@ -372,6 +387,25 @@ public sealed class FamilyManagerWindow : Window
             ? string.Empty
             : $" Предупреждения: {string.Join(" ", result.Warnings.Take(2))}";
         statusText.Text = $"Просканировано папок: {result.ScannedFolderCount}. Не найдено папок: {result.MissingFolderCount}. Найдено семейств: {allFamilies.Count}.{warningText}";
+    }
+
+    private static void PreserveCachedMetadata(
+        FamilyFileItem family,
+        IReadOnlyDictionary<string, FamilyFileItem> previousFamilies)
+    {
+        if (!previousFamilies.TryGetValue(FamilyPathNormalizer.Normalize(family.FilePath), out FamilyFileItem? previous)
+            || previous.MetadataUpdatedAtUtc is null
+            || previous.SizeBytes != family.SizeBytes
+            || previous.LastWriteTimeUtc != family.LastWriteTimeUtc)
+        {
+            return;
+        }
+
+        family.Category = previous.Category;
+        family.MetadataUpdatedAtUtc = previous.MetadataUpdatedAtUtc;
+        family.CachedTypes = previous.CachedTypes
+            .Select(type => new FamilyTypeInfo(type.ElementId, type.Name))
+            .ToList();
     }
 
     private void RefreshCategories()
@@ -421,6 +455,7 @@ public sealed class FamilyManagerWindow : Window
             families = families.Where(family =>
                 family.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                 || family.Category.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
+                || family.CachedTypes.Any(type => type.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0)
                 || family.FilePath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0);
         }
 
@@ -463,6 +498,7 @@ public sealed class FamilyManagerWindow : Window
             favoriteButton.IsEnabled = false;
             loadButton.IsEnabled = false;
             loadAndPlaceButton.IsEnabled = false;
+            refreshMetadataButton.IsEnabled = false;
             UpdateStatus();
             return;
         }
@@ -470,6 +506,7 @@ public sealed class FamilyManagerWindow : Window
         favoriteButton.IsEnabled = true;
         loadButton.IsEnabled = true;
         loadAndPlaceButton.IsEnabled = true;
+        refreshMetadataButton.IsEnabled = true;
         favoriteButton.Content = IconFactory.CreateButtonContent(
             family.IsFavorite ? TrueBimIcon.Close : TrueBimIcon.Apply,
             family.IsFavorite ? "Убрать" : "В избранное");
@@ -477,15 +514,29 @@ public sealed class FamilyManagerWindow : Window
         detailsText.Text =
             $"Имя: {family.Name}\n" +
             $"Категория: {family.Category}\n" +
+            $"Метаданные: {family.MetadataDisplay}\n" +
+            $"Типов в файле: {family.CachedTypes.Count}\n" +
             $"Файл: {family.FilePath}\n" +
             $"Размер: {family.SizeDisplay}\n" +
             $"Изменён: {family.LastWriteDisplay}";
+
+        HashSet<string> typeNames = new(StringComparer.CurrentCultureIgnoreCase);
+        foreach (FamilyTypeInfo type in family.CachedTypes)
+        {
+            if (typeNames.Add(type.Name))
+            {
+                familyTypes.Add(type);
+            }
+        }
 
         try
         {
             foreach (FamilyTypeInfo type in loadService.CollectLoadedTypes(document, family.Name))
             {
-                familyTypes.Add(type);
+                if (typeNames.Add(type.Name))
+                {
+                    familyTypes.Add(type);
+                }
             }
         }
         catch (Exception exception)
@@ -509,6 +560,53 @@ public sealed class FamilyManagerWindow : Window
         RefreshVisibleFamilies();
     }
 
+    private void RefreshSelectedMetadata()
+    {
+        if (selectedFamily is null)
+        {
+            statusText.Text = "Выберите семейство для обновления метаданных.";
+            return;
+        }
+
+        if (!File.Exists(selectedFamily.FilePath))
+        {
+            selectedFamily.Status = "Файл не найден";
+            statusText.Text = "Файл семейства не найден. Пересканируйте библиотеку.";
+            return;
+        }
+
+        refreshMetadataButton.IsEnabled = false;
+        statusText.Text = $"Чтение метаданных: {selectedFamily.Name}...";
+        FamilyMetadataResult result = metadataService.Read(uiApplication.Application, selectedFamily.FilePath, logger);
+        selectedFamily.Status = result.Message;
+
+        if (result.Succeeded)
+        {
+            selectedFamily.Category = result.Category;
+            selectedFamily.CachedTypes = result.Types.ToList();
+            selectedFamily.MetadataUpdatedAtUtc = DateTimeOffset.UtcNow;
+            SaveProfile();
+            RefreshCategories();
+            RefreshVisibleFamilies();
+            if (visibleFamilies.Contains(selectedFamily))
+            {
+                SelectFamily(selectedFamily);
+            }
+            else
+            {
+                SelectFamily(visibleFamilies.FirstOrDefault());
+            }
+        }
+        else
+        {
+            SaveProfile();
+            SelectFamily(selectedFamily);
+        }
+
+        refreshMetadataButton.IsEnabled = selectedFamily is not null;
+        statusText.Text = result.Message;
+    }
+
     private void LoadSelectedFamily(bool placeAfterLoad)
     {
         if (selectedFamily is null)
@@ -524,6 +622,9 @@ public sealed class FamilyManagerWindow : Window
             return;
         }
 
+        string? requestedTypeName = typeList.SelectedItem is FamilyTypeInfo selectedType
+            ? selectedType.Name
+            : null;
         bool overwrite = false;
         if (loadService.FamilyExists(document, selectedFamily.Name))
         {
@@ -558,20 +659,17 @@ public sealed class FamilyManagerWindow : Window
 
         if (placeAfterLoad)
         {
-            RequestPlacement(selectedFamily);
+            RequestPlacement(selectedFamily, requestedTypeName);
         }
 
         Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", result.Message);
     }
 
-    private void RequestPlacement(FamilyFileItem family)
+    private void RequestPlacement(FamilyFileItem family, string? requestedTypeName)
     {
         try
         {
-            string? selectedTypeName = typeList.SelectedItem is FamilyTypeInfo type
-                ? type.Name
-                : null;
-            FamilySymbol? symbol = loadService.ResolveSymbol(document, family.Name, selectedTypeName);
+            FamilySymbol? symbol = loadService.ResolveSymbol(document, family.Name, requestedTypeName);
             if (symbol is null)
             {
                 statusText.Text = "Семейство загружено, но подходящий тип для размещения не найден.";
@@ -635,7 +733,8 @@ public sealed class FamilyManagerWindow : Window
             ? "Кэш ещё не создан."
             : $"Кэш: {profile.CacheUpdatedAtUtc.Value.ToLocalTime():dd.MM.yyyy HH:mm}.";
         int favoritesCount = allFamilies.Count(family => family.IsFavorite);
-        statusText.Text = $"Папок: {folders.Count}. Семейств в кэше: {allFamilies.Count}. Показано: {visibleFamilies.Count}. Избранных: {favoritesCount}. {cacheText}";
+        int metadataCount = allFamilies.Count(family => family.MetadataUpdatedAtUtc is not null);
+        statusText.Text = $"Папок: {folders.Count}. Семейств в кэше: {allFamilies.Count}. Показано: {visibleFamilies.Count}. Избранных: {favoritesCount}. Метаданные: {metadataCount}. {cacheText}";
     }
 
     private static TextBlock CreatePanelTitle(string text)

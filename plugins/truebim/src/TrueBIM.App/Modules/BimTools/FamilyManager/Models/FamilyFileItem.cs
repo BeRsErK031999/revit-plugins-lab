@@ -24,6 +24,10 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
 
     public DateTimeOffset? LastLoadedAtUtc { get; set; }
 
+    public DateTimeOffset? MetadataUpdatedAtUtc { get; set; }
+
+    public List<FamilyTypeInfo> CachedTypes { get; set; } = [];
+
     public bool IsFavorite
     {
         get => isFavorite;
@@ -45,6 +49,14 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         : LastWriteTimeUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
     public string FavoriteDisplay => IsFavorite ? "Да" : "Нет";
+
+    public string CachedTypeCountDisplay => CachedTypes.Count == 0
+        ? "-"
+        : CachedTypes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    public string MetadataDisplay => MetadataUpdatedAtUtc is null
+        ? "Не обновлялись"
+        : MetadataUpdatedAtUtc.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
     private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
