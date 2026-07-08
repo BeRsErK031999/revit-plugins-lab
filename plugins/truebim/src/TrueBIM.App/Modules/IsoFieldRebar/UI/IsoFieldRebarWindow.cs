@@ -184,19 +184,30 @@ public sealed class IsoFieldRebarWindow : Window
             Margin = new Thickness(0, 0, 0, 16)
         };
 
-        StackPanel titleRow = new()
+        DockPanel titleRow = new()
+        {
+            LastChildFill = true,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Button guideButton = CreateGuideButton();
+        DockPanel.SetDock(guideButton, Dock.Right);
+        titleRow.Children.Add(guideButton);
+
+        StackPanel titleContent = new()
         {
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center
         };
-        titleRow.Children.Add(IconFactory.Create(TrueBimIcon.IsoFieldRebar, 28));
-        titleRow.Children.Add(new TextBlock
+        titleContent.Children.Add(IconFactory.Create(TrueBimIcon.IsoFieldRebar, 28));
+        titleContent.Children.Add(new TextBlock
         {
             Text = "Армирование по изополям",
             FontSize = 22,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         });
+        titleRow.Children.Add(titleContent);
         header.Children.Add(titleRow);
 
         header.Children.Add(CreateMutedText(
@@ -204,6 +215,59 @@ public sealed class IsoFieldRebarWindow : Window
         header.Children.Add(CreateMutedText($"Активный документ: {documentTitle}."));
 
         return header;
+    }
+
+    private Button CreateGuideButton()
+    {
+        Button guideButton = new()
+        {
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(TrueBimIcon.Help, 18),
+                Width = 18,
+                Height = 18,
+                Stretch = Stretch.Uniform
+            },
+            Width = 34,
+            Height = 32,
+            Padding = new Thickness(4),
+            ToolTip = CreateGuideToolTip(),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        guideButton.Click += (_, _) => ShowGuide();
+        return guideButton;
+    }
+
+    private static ToolTip CreateGuideToolTip()
+    {
+        StackPanel content = new()
+        {
+            Width = 330,
+            Margin = new Thickness(2)
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Методичка каркаса изополей",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+        content.Children.Add(CreateMutedText("Нажмите, чтобы открыть справку с картинками: входной файл, preview, выбор host, расчет правил и пример тестовой арматуры."));
+        content.Children.Add(CreateMutedText("До кнопки «Создать тестовую» модуль работает в безопасном режиме без записи арматуры в модель."));
+
+        return new ToolTip
+        {
+            Content = content
+        };
+    }
+
+    private void ShowGuide()
+    {
+        logger.Info("IsoField Rebar guide requested from the window header.");
+        IsoFieldRebarGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
     }
 
     private Border CreateFilePanel()

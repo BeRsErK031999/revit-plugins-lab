@@ -94,6 +94,7 @@ The script reports, per Revit year:
 - whether the manifest XML is valid;
 - whether the manifest `Assembly` path exists;
 - whether the Revit 2025 `.deps.json` file exists;
+- whether the IsoField Rebar guide and its SVG illustrations exist in `Docs`;
 - whether a runtime smoke-test was explicitly marked.
 
 Runtime smoke-tests are not automated by this script. Pass `-SmokeTestedYears 2022,2025` only after those Revit versions were actually launched and the add-in loaded successfully.

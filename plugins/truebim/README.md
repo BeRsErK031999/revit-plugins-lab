@@ -14,7 +14,7 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 
 ## IsoField Rebar workflow guide
 
-- [Методичка: армирование по изополям](docs/isofield-rebar-workflow-guide.md) - short visual workflow for the current IsoField Rebar skeleton: source file, preview, host selection, rule preview, and confirmed test rebar.
+- [Методичка: армирование по изополям](docs/isofield-rebar-workflow-guide.md) - visual workflow for the current IsoField Rebar skeleton and the in-window `?` help: source file, preview, host selection, rule preview, and confirmed test rebar.
 
 ## Initial modules
 
