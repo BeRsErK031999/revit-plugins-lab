@@ -34,6 +34,13 @@ public sealed class MepDimensionWindow : Window
     private readonly TextBox profileNameInput = new();
     private readonly TextBox filterInput = new();
     private readonly TextBox angleToleranceInput = new();
+    private readonly ComboBox linePlacementInput = new()
+    {
+        ItemsSource = MepDimensionLinePlacements.Options,
+        DisplayMemberPath = nameof(MepDimensionLinePlacementOption.DisplayName),
+        SelectedValuePath = nameof(MepDimensionLinePlacementOption.Key)
+    };
+    private readonly TextBox dimensionOffsetInput = new();
     private readonly CheckBox includePipesInput = new()
     {
         Content = "Трубы",
@@ -118,6 +125,8 @@ public sealed class MepDimensionWindow : Window
         includeConduitsInput.IsChecked = profile.IncludeConduits;
         allowFallbackInput.IsChecked = profile.AllowElementReferenceFallback;
         angleToleranceInput.Text = profile.AngleToleranceDegrees.ToString("0.##", CultureInfo.InvariantCulture);
+        linePlacementInput.SelectedValue = profile.DimensionLinePlacement;
+        dimensionOffsetInput.Text = MepDimensionLinePlacements.FormatMillimeters(profile.DimensionOffsetMm);
     }
 
     private UIElement CreateContent()
@@ -160,6 +169,7 @@ public sealed class MepDimensionWindow : Window
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
@@ -238,6 +248,45 @@ public sealed class MepDimensionWindow : Window
         WpfGrid.SetColumn(settings, 1);
         WpfGrid.SetColumnSpan(settings, 2);
         root.Children.Add(settings);
+
+        AddLabel(root, "Линия размера", 0, 2);
+        StackPanel lineSettings = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(8, 6, 0, 0)
+        };
+        linePlacementInput.Width = 130;
+        linePlacementInput.Height = 32;
+        linePlacementInput.Margin = new Thickness(0, 0, 12, 0);
+        linePlacementInput.ToolTip = "Где ставить размерную линию относительно общего участка MEP-трасс.";
+        linePlacementInput.SelectionChanged += (_, _) => UpdateStatus();
+        lineSettings.Children.Add(linePlacementInput);
+
+        TextBlock offsetLabel = new()
+        {
+            Text = "Вынос",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        lineSettings.Children.Add(offsetLabel);
+
+        dimensionOffsetInput.Width = 70;
+        dimensionOffsetInput.Height = 32;
+        dimensionOffsetInput.Margin = new Thickness(0, 0, 6, 0);
+        dimensionOffsetInput.ToolTip = "Отступ размерной линии от общего участка трасс в миллиметрах. Используется для режимов До трасс и После трасс.";
+        dimensionOffsetInput.TextChanged += (_, _) => UpdateStatus();
+        lineSettings.Children.Add(dimensionOffsetInput);
+
+        TextBlock offsetUnitLabel = new()
+        {
+            Text = "мм",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        lineSettings.Children.Add(offsetUnitLabel);
+        WpfGrid.SetRow(lineSettings, 2);
+        WpfGrid.SetColumn(lineSettings, 1);
+        WpfGrid.SetColumnSpan(lineSettings, 2);
+        root.Children.Add(lineSettings);
 
         return root;
     }
@@ -447,7 +496,9 @@ public sealed class MepDimensionWindow : Window
             IncludeCableTrays = includeCableTraysInput.IsChecked == true,
             IncludeConduits = includeConduitsInput.IsChecked == true,
             AllowElementReferenceFallback = allowFallbackInput.IsChecked == true,
-            AngleToleranceDegrees = ParseAngleTolerance()
+            AngleToleranceDegrees = ParseAngleTolerance(),
+            DimensionLinePlacement = linePlacementInput.SelectedValue as string ?? MepDimensionLinePlacements.Center,
+            DimensionOffsetMm = ParseDimensionOffset()
         });
     }
 
@@ -462,6 +513,19 @@ public sealed class MepDimensionWindow : Window
         return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double invariantValue)
             ? invariantValue
             : 10;
+    }
+
+    private double ParseDimensionOffset()
+    {
+        string text = dimensionOffsetInput.Text.Trim();
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out double currentCultureValue))
+        {
+            return MepDimensionLinePlacements.NormalizeOffsetMillimeters(currentCultureValue);
+        }
+
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double invariantValue)
+            ? MepDimensionLinePlacements.NormalizeOffsetMillimeters(invariantValue)
+            : 0;
     }
 
     private void SetVisibleRowsSelected(bool isSelected)
@@ -517,7 +581,8 @@ public sealed class MepDimensionWindow : Window
         int readyRows = candidateRows.Count(row => row.CanApply);
         int selectedRows = candidateRows.Count(row => row.IsSelected && row.CanApply);
         string categories = CreateCategorySummary();
-        string text = $"Цепочек: {candidateRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Допуск: {ParseAngleTolerance():0.##}°. Отчётных строк: {reportRows.Count}.";
+        string linePlacement = MepDimensionLinePlacements.FormatForDisplay(linePlacementInput.SelectedValue as string, ParseDimensionOffset());
+        string text = $"Цепочек: {candidateRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Допуск: {ParseAngleTolerance():0.##}°. Линия: {linePlacement}. Отчётных строк: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         applyButton.IsEnabled = selectedRows > 0 || candidateRows.Count == 0;
     }

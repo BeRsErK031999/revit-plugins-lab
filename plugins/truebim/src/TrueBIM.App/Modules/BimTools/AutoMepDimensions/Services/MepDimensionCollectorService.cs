@@ -68,7 +68,7 @@ public sealed class MepDimensionCollectorService
             .GroupBy(line => (line.CategoryKey, line.IsHorizontal)))
         {
             MepLineInfo first = group.First();
-            MepDimensionCandidate? candidate = CreateCandidate(first.CategoryName, group.Key.IsHorizontal, group.ToList(), frame);
+            MepDimensionCandidate? candidate = CreateCandidate(first.CategoryName, group.Key.IsHorizontal, group.ToList(), frame, profile);
             if (candidate is not null)
             {
                 candidates.Add(candidate);
@@ -132,7 +132,8 @@ public sealed class MepDimensionCollectorService
         string categoryName,
         bool isHorizontal,
         IReadOnlyList<MepLineInfo> lines,
-        ViewFrame frame)
+        ViewFrame frame,
+        MepDimensionProfile profile)
     {
         List<MepLineInfo> readyLines = lines.Where(line => line.HasReference).OrderBy(line => line.Offset).ToList();
         int missingReferenceCount = lines.Count - readyLines.Count;
@@ -149,6 +150,8 @@ public sealed class MepDimensionCollectorService
                 missingReferenceCount,
                 XYZ.Zero,
                 XYZ.Zero,
+                profile.DimensionLinePlacement,
+                profile.DimensionOffsetMm,
                 "Нужно минимум два элемента с доступными геометрическими Reference.");
         }
 
@@ -167,10 +170,16 @@ public sealed class MepDimensionCollectorService
                 missingReferenceCount,
                 XYZ.Zero,
                 XYZ.Zero,
+                profile.DimensionLinePlacement,
+                profile.DimensionOffsetMm,
                 "У параллельных трасс нет общего участка для размерной линии.");
         }
 
-        double along = (commonStart + commonEnd) * 0.5;
+        double along = MepDimensionLinePlacements.ResolveAlongCoordinate(
+            commonStart,
+            commonEnd,
+            profile.DimensionLinePlacement,
+            profile.DimensionOffsetMm);
         double minOffset = readyLines.Min(line => line.Offset);
         double maxOffset = readyLines.Max(line => line.Offset);
         double normal = readyLines.Average(line => line.Normal);
@@ -183,6 +192,7 @@ public sealed class MepDimensionCollectorService
         string message = missingReferenceCount > 0
             ? $"Готово. Без Reference: {missingReferenceCount}."
             : "Готово к созданию размерной цепочки.";
+        message += " " + MepDimensionLinePlacements.FormatForMessage(profile.DimensionLinePlacement, profile.DimensionOffsetMm);
 
         return new MepDimensionCandidate(
             CreateCandidateId(categoryName, isHorizontal),
@@ -195,6 +205,8 @@ public sealed class MepDimensionCollectorService
             missingReferenceCount,
             dimensionStart,
             dimensionEnd,
+            profile.DimensionLinePlacement,
+            profile.DimensionOffsetMm,
             message);
     }
 

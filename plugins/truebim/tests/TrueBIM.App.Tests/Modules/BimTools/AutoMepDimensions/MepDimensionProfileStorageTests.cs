@@ -18,7 +18,9 @@ public sealed class MepDimensionProfileStorageTests
             IncludeCableTrays = false,
             IncludeConduits = false,
             AllowElementReferenceFallback = false,
-            AngleToleranceDegrees = 90
+            AngleToleranceDegrees = 90,
+            DimensionLinePlacement = "Unknown",
+            DimensionOffsetMm = 6200
         });
 
         Assert.Equal("Активный план", profile.Name);
@@ -28,6 +30,8 @@ public sealed class MepDimensionProfileStorageTests
         Assert.False(profile.IncludeConduits);
         Assert.False(profile.AllowElementReferenceFallback);
         Assert.Equal(30, profile.AngleToleranceDegrees);
+        Assert.Equal(MepDimensionLinePlacements.Center, profile.DimensionLinePlacement);
+        Assert.Equal(5000, profile.DimensionOffsetMm);
     }
 
     [Fact]
@@ -45,7 +49,9 @@ public sealed class MepDimensionProfileStorageTests
             IncludeCableTrays = true,
             IncludeConduits = false,
             AllowElementReferenceFallback = true,
-            AngleToleranceDegrees = double.NaN
+            AngleToleranceDegrees = double.NaN,
+            DimensionLinePlacement = MepDimensionLinePlacements.After,
+            DimensionOffsetMm = 750.5
         });
 
         MepDimensionProfile loaded = storage.Load();
@@ -57,6 +63,8 @@ public sealed class MepDimensionProfileStorageTests
         Assert.False(loaded.IncludeConduits);
         Assert.True(loaded.AllowElementReferenceFallback);
         Assert.Equal(10, loaded.AngleToleranceDegrees);
+        Assert.Equal(MepDimensionLinePlacements.After, loaded.DimensionLinePlacement);
+        Assert.Equal(750.5, loaded.DimensionOffsetMm);
     }
 
     private sealed class TempDirectory : IDisposable

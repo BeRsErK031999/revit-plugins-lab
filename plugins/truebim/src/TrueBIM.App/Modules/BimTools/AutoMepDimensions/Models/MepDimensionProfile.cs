@@ -15,4 +15,8 @@ public sealed class MepDimensionProfile
     public bool AllowElementReferenceFallback { get; set; } = true;
 
     public double AngleToleranceDegrees { get; set; } = 10;
+
+    public string DimensionLinePlacement { get; set; } = MepDimensionLinePlacements.Center;
+
+    public double DimensionOffsetMm { get; set; } = 500;
 }

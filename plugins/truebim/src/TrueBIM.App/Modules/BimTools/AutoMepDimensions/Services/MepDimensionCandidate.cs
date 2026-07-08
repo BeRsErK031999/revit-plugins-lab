@@ -16,6 +16,8 @@ public sealed class MepDimensionCandidate
         int missingReferenceCount,
         XYZ dimensionStart,
         XYZ dimensionEnd,
+        string dimensionLinePlacement,
+        double dimensionOffsetMm,
         string message)
     {
         CandidateId = candidateId;
@@ -28,6 +30,8 @@ public sealed class MepDimensionCandidate
         MissingReferenceCount = missingReferenceCount;
         DimensionStart = dimensionStart;
         DimensionEnd = dimensionEnd;
+        DimensionLinePlacement = MepDimensionLinePlacements.NormalizeKey(dimensionLinePlacement);
+        DimensionOffsetMm = MepDimensionLinePlacements.NormalizeOffsetMillimeters(dimensionOffsetMm);
         Message = message;
     }
 
@@ -51,11 +55,23 @@ public sealed class MepDimensionCandidate
 
     public XYZ DimensionEnd { get; }
 
+    public string DimensionLinePlacement { get; }
+
+    public double DimensionOffsetMm { get; }
+
     public string Message { get; }
 
     public bool CanApply => ReadyReferenceCount >= 2;
 
-    public string DimensionLineDisplay => IsHorizontal ? "Вертикальная размерная линия" : "Горизонтальная размерная линия";
+    public string DimensionLineDisplay
+    {
+        get
+        {
+            string orientation = IsHorizontal ? "Вертикальная размерная линия" : "Горизонтальная размерная линия";
+            string placement = MepDimensionLinePlacements.FormatForDisplay(DimensionLinePlacement, DimensionOffsetMm);
+            return $"{orientation}; {placement}";
+        }
+    }
 
     public MepDimensionCandidateRow ToRow()
     {

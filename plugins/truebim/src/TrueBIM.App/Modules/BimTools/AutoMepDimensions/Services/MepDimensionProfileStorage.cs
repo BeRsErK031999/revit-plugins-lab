@@ -59,7 +59,9 @@ public sealed class MepDimensionProfileStorage
             IncludeCableTrays = includeCableTrays,
             IncludeConduits = includeConduits,
             AllowElementReferenceFallback = profile.AllowElementReferenceFallback,
-            AngleToleranceDegrees = Clamp(profile.AngleToleranceDegrees, 1, 30)
+            AngleToleranceDegrees = Clamp(profile.AngleToleranceDegrees, 1, 30),
+            DimensionLinePlacement = MepDimensionLinePlacements.NormalizeKey(profile.DimensionLinePlacement),
+            DimensionOffsetMm = MepDimensionLinePlacements.NormalizeOffsetMillimeters(profile.DimensionOffsetMm)
         };
     }
 
