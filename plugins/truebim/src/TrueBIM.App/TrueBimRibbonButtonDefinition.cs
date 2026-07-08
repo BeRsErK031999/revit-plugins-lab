@@ -132,8 +132,8 @@ public static class TrueBimRibbon
             "Отчёт\nколлизий",
             $"{CommandNamespace}.{nameof(ClashReportCommand)}",
             TrueBimIcon.ClashReport,
-            "Открывает каркас инструмента отчета коллизий.",
-            "Каркас будущего инструмента координации: импорт CSV, статусы, комментарии, переход в 3D и отчет без подсветки элементов в первом срезе."),
+            "Импортирует CSV отчёта коллизий и открывает их в 3D.",
+            "MVP инструмента координации: импорт CSV с ElementId/XYZ, статусы и комментарии, локальное JSON-состояние, section box, подсветка найденных элементов и CSV-отчёт."),
         new(
             BimLibraryPanelName,
             "TrueBIM_FamilyManager",
