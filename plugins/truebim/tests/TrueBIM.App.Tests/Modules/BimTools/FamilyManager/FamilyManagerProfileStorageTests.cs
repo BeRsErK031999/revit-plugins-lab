@@ -29,7 +29,14 @@ public sealed class FamilyManagerProfileStorageTests
                     MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 6, 0, 0, TimeSpan.Zero),
                     CachedTypes =
                     [
-                        new FamilyTypeInfo(0, "  900x2100  "),
+                        new FamilyTypeInfo(
+                            0,
+                            "  900x2100  ",
+                            [
+                                new FamilyTypeParameterInfo("  Width  ", " 900 ", "Double", "Тип", string.Empty),
+                                new FamilyTypeParameterInfo("Width", "900", "Double", "Тип", string.Empty),
+                                new FamilyTypeParameterInfo("Height", "2100", "Double", "Тип", "BaseHeight")
+                            ]),
                         new FamilyTypeInfo(0, "900x2100"),
                         new FamilyTypeInfo(0, "1000x2100"),
                         new FamilyTypeInfo(0, " ")
@@ -46,6 +53,9 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Single(normalized.CachedFiles);
         Assert.True(normalized.CachedFiles[0].IsFavorite);
         Assert.Equal(["1000x2100", "900x2100"], normalized.CachedFiles[0].CachedTypes.Select(type => type.Name));
+        FamilyTypeInfo cachedType = normalized.CachedFiles[0].CachedTypes.Single(type => type.Name == "900x2100");
+        Assert.Equal(["Height", "Width"], cachedType.Parameters.Select(parameter => parameter.Name));
+        Assert.Equal("BaseHeight", cachedType.Parameters.Single(parameter => parameter.Name == "Height").Formula);
         Assert.NotNull(normalized.CachedFiles[0].MetadataUpdatedAtUtc);
     }
 
@@ -68,7 +78,13 @@ public sealed class FamilyManagerProfileStorageTests
                     DirectoryPath = temp.Path,
                     Category = "Мебель",
                     MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 7, 0, 0, TimeSpan.Zero),
-                    CachedTypes = [new FamilyTypeInfo(0, "Default")],
+                    CachedTypes =
+                    [
+                        new FamilyTypeInfo(
+                            0,
+                            "Default",
+                            [new FamilyTypeParameterInfo("Manufacturer", "TrueBIM", "String", "Тип", string.Empty)])
+                    ],
                     IsFavorite = true
                 }
             ]
@@ -80,7 +96,9 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Single(loaded.CachedFiles);
         Assert.Single(loaded.FavoritePaths);
         Assert.Equal("Chair", loaded.CachedFiles[0].Name);
-        Assert.Equal("Default", Assert.Single(loaded.CachedFiles[0].CachedTypes).Name);
+        FamilyTypeInfo loadedType = Assert.Single(loaded.CachedFiles[0].CachedTypes);
+        Assert.Equal("Default", loadedType.Name);
+        Assert.Equal("Manufacturer", Assert.Single(loadedType.Parameters).Name);
         Assert.NotNull(loaded.CachedFiles[0].MetadataUpdatedAtUtc);
     }
 

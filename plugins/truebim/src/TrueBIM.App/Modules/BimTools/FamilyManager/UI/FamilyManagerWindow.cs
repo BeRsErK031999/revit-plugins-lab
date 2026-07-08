@@ -32,9 +32,11 @@ public sealed class FamilyManagerWindow : Window
     private readonly ObservableCollection<FamilyFileItem> visibleFamilies = new();
     private readonly ObservableCollection<FamilyLoadHistoryItem> historyItems = new();
     private readonly ObservableCollection<FamilyTypeInfo> familyTypes = new();
+    private readonly ObservableCollection<FamilyTypeParameterInfo> typeParameters = new();
     private readonly List<FamilyFileItem> allFamilies = new();
     private readonly ListBox folderList = new();
     private readonly DataGrid familyGrid = new();
+    private readonly DataGrid parameterGrid = new();
     private readonly ListBox historyList = new();
     private readonly ListBox typeList = new();
     private readonly WpfTextBox searchInput = new();
@@ -271,8 +273,28 @@ public sealed class FamilyManagerWindow : Window
         typeList.DisplayMemberPath = nameof(FamilyTypeInfo.Name);
         typeList.Height = 120;
         typeList.Margin = new Thickness(0, 0, 0, 12);
+        typeList.SelectionChanged += (_, _) => SelectType(typeList.SelectedItem as FamilyTypeInfo);
         DockPanel.SetDock(typeList, Dock.Top);
         panel.Children.Add(typeList);
+
+        TextBlock parametersTitle = CreateSubTitle("Параметры выбранного типа");
+        DockPanel.SetDock(parametersTitle, Dock.Top);
+        panel.Children.Add(parametersTitle);
+
+        parameterGrid.AutoGenerateColumns = false;
+        parameterGrid.CanUserAddRows = false;
+        parameterGrid.CanUserDeleteRows = false;
+        parameterGrid.IsReadOnly = true;
+        parameterGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
+        parameterGrid.ItemsSource = typeParameters;
+        parameterGrid.Height = 170;
+        parameterGrid.Margin = new Thickness(0, 0, 0, 12);
+        parameterGrid.Columns.Add(CreateTextColumn("Параметр", nameof(FamilyTypeParameterInfo.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        parameterGrid.Columns.Add(CreateTextColumn("Значение", nameof(FamilyTypeParameterInfo.ValueDisplay), 95));
+        parameterGrid.Columns.Add(CreateTextColumn("Область", nameof(FamilyTypeParameterInfo.Scope), 80));
+        parameterGrid.Columns.Add(CreateTextColumn("Тип", nameof(FamilyTypeParameterInfo.StorageType), 70));
+        DockPanel.SetDock(parameterGrid, Dock.Top);
+        panel.Children.Add(parameterGrid);
 
         TextBlock historyTitle = CreateSubTitle("История");
         DockPanel.SetDock(historyTitle, Dock.Top);
@@ -404,7 +426,15 @@ public sealed class FamilyManagerWindow : Window
         family.Category = previous.Category;
         family.MetadataUpdatedAtUtc = previous.MetadataUpdatedAtUtc;
         family.CachedTypes = previous.CachedTypes
-            .Select(type => new FamilyTypeInfo(type.ElementId, type.Name))
+            .Select(type => new FamilyTypeInfo(
+                type.ElementId,
+                type.Name,
+                type.Parameters.Select(parameter => new FamilyTypeParameterInfo(
+                    parameter.Name,
+                    parameter.Value,
+                    parameter.StorageType,
+                    parameter.Scope,
+                    parameter.Formula))))
             .ToList();
     }
 
@@ -456,6 +486,10 @@ public sealed class FamilyManagerWindow : Window
                 family.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                 || family.Category.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                 || family.CachedTypes.Any(type => type.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                || family.CachedTypes.Any(type => type.Parameters.Any(parameter =>
+                    parameter.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
+                    || parameter.Value.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
+                    || parameter.Formula.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0))
                 || family.FilePath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0);
         }
 
@@ -491,6 +525,7 @@ public sealed class FamilyManagerWindow : Window
         selectedFamily = family;
         familyGrid.SelectedItem = family;
         familyTypes.Clear();
+        typeParameters.Clear();
 
         if (family is null)
         {
@@ -544,7 +579,25 @@ public sealed class FamilyManagerWindow : Window
             logger.Warning($"Failed to collect loaded family types for '{family.Name}': {exception.Message}");
         }
 
+        FamilyTypeInfo? preferredType = familyTypes.FirstOrDefault(type => type.Parameters.Count > 0)
+            ?? familyTypes.FirstOrDefault();
+        typeList.SelectedItem = preferredType;
+        SelectType(preferredType);
         UpdateStatus();
+    }
+
+    private void SelectType(FamilyTypeInfo? type)
+    {
+        typeParameters.Clear();
+        if (type is null)
+        {
+            return;
+        }
+
+        foreach (FamilyTypeParameterInfo parameter in type.Parameters)
+        {
+            typeParameters.Add(parameter);
+        }
     }
 
     private void ToggleFavorite()

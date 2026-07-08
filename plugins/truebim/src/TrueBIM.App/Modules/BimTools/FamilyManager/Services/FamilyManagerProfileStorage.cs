@@ -126,10 +126,30 @@ public sealed class FamilyManagerProfileStorage
     {
         return (types ?? [])
             .Where(type => !string.IsNullOrWhiteSpace(type.Name))
-            .Select(type => new FamilyTypeInfo(type.ElementId, type.Name.Trim()))
+            .Select(type => new FamilyTypeInfo(
+                type.ElementId,
+                type.Name.Trim(),
+                NormalizeTypeParameters(type.Parameters)))
             .GroupBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(group => group.First())
             .OrderBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private static List<FamilyTypeParameterInfo> NormalizeTypeParameters(IEnumerable<FamilyTypeParameterInfo>? parameters)
+    {
+        return (parameters ?? [])
+            .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Name))
+            .Select(parameter => new FamilyTypeParameterInfo(
+                parameter.Name.Trim(),
+                parameter.Value?.Trim() ?? string.Empty,
+                parameter.StorageType?.Trim() ?? string.Empty,
+                parameter.Scope?.Trim() ?? string.Empty,
+                parameter.Formula?.Trim() ?? string.Empty))
+            .GroupBy(parameter => $"{parameter.Scope}:{parameter.Name}", StringComparer.CurrentCultureIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(parameter => parameter.Scope, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(parameter => parameter.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
 }

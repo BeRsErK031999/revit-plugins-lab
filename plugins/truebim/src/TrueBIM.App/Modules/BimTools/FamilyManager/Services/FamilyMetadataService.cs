@@ -2,6 +2,7 @@ using System.IO;
 using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Models;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.BimTools.FamilyManager.Services;
@@ -66,6 +67,7 @@ public sealed class FamilyMetadataService
     {
         List<FamilyTypeInfo> types = [];
         FamilyTypeSet familyTypes = familyDocument.FamilyManager.Types;
+        List<FamilyParameter> parameters = CollectParameters(familyDocument.FamilyManager);
         foreach (FamilyType familyType in familyTypes)
         {
             if (string.IsNullOrWhiteSpace(familyType.Name))
@@ -73,7 +75,10 @@ public sealed class FamilyMetadataService
                 continue;
             }
 
-            types.Add(new FamilyTypeInfo(0, familyType.Name.Trim()));
+            types.Add(new FamilyTypeInfo(
+                0,
+                familyType.Name.Trim(),
+                CollectTypeParameters(familyType, parameters)));
         }
 
         return types
@@ -81,6 +86,101 @@ public sealed class FamilyMetadataService
             .Select(group => group.First())
             .OrderBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+    }
+
+    private static List<FamilyParameter> CollectParameters(Autodesk.Revit.DB.FamilyManager familyManager)
+    {
+        List<FamilyParameter> parameters = [];
+        foreach (FamilyParameter parameter in familyManager.Parameters)
+        {
+            string? name = parameter.Definition?.Name;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            parameters.Add(parameter);
+        }
+
+        return parameters
+            .OrderBy(parameter => parameter.IsInstance ? 1 : 0)
+            .ThenBy(parameter => parameter.Definition?.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private static List<FamilyTypeParameterInfo> CollectTypeParameters(
+        FamilyType familyType,
+        IReadOnlyList<FamilyParameter> parameters)
+    {
+        List<FamilyTypeParameterInfo> result = [];
+        foreach (FamilyParameter parameter in parameters)
+        {
+            string? name = parameter.Definition?.Name?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            string parameterName = name!;
+            result.Add(new FamilyTypeParameterInfo(
+                parameterName,
+                ReadParameterValue(familyType, parameter),
+                parameter.StorageType.ToString(),
+                parameter.IsInstance ? "Экземпляр" : "Тип",
+                parameter.Formula ?? string.Empty));
+        }
+
+        return result
+            .GroupBy(parameter => $"{parameter.Scope}:{parameter.Name}", StringComparer.CurrentCultureIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(parameter => parameter.Scope, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(parameter => parameter.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private static string ReadParameterValue(FamilyType familyType, FamilyParameter parameter)
+    {
+        try
+        {
+            return parameter.StorageType switch
+            {
+                StorageType.String => familyType.AsString(parameter) ?? string.Empty,
+                StorageType.Integer => FormatNullableInteger(familyType.AsInteger(parameter)),
+                StorageType.Double => FormatNullableDouble(familyType.AsDouble(parameter)),
+                StorageType.ElementId => FormatElementId(familyType.AsElementId(parameter)),
+                _ => string.Empty
+            };
+        }
+        catch (Exception exception) when (exception is Autodesk.Revit.Exceptions.ArgumentException
+            or Autodesk.Revit.Exceptions.InvalidOperationException
+            or InvalidOperationException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string FormatNullableInteger(int? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+    }
+
+    private static string FormatNullableDouble(double? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+    }
+
+    private static string FormatElementId(ElementId? value)
+    {
+        if (value is null || value == ElementId.InvalidElementId)
+        {
+            return string.Empty;
+        }
+
+        return RevitElementIds.GetValue(value).ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static void CloseWithoutSaving(Document? familyDocument, string normalizedPath, ITrueBimLogger logger)
