@@ -42,11 +42,6 @@ public sealed class JoinCutCommand : IExternalCommand
             }
 
             JoinCutWindow window = new(uiDocument, loadResult, storage, logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

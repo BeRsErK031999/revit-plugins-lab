@@ -28,8 +28,14 @@ public sealed class App : IExternalApplication
             panels[panelName] = application.CreateRibbonPanel(TabName, panelName);
         }
 
+        string revitVersion = application.ControlledApplication.VersionNumber;
         foreach (TrueBimRibbonButtonDefinition button in TrueBimRibbon.Buttons)
         {
+            if (!TrueBimRibbon.IsButtonAvailableForRevitVersion(button, revitVersion))
+            {
+                continue;
+            }
+
             AddButton(panels[button.PanelName], button);
         }
 

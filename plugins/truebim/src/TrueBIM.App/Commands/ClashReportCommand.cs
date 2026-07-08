@@ -26,16 +26,11 @@ public sealed class ClashReportCommand : IExternalCommand
 
             ClashReportWindow window = new(
                 uiDocument,
-                new ClashCsvImporter(),
+                new ClashLinkScanner(),
                 new ClashElementResolver(),
                 new ClashViewNavigator(logger),
                 new ClashReportStorage(logger),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

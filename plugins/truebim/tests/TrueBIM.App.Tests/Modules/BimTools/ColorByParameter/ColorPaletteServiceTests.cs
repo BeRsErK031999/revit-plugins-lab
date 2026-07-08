@@ -24,4 +24,14 @@ public sealed class ColorPaletteServiceTests
 
         Assert.Empty(service.Generate(0));
     }
+
+    [Fact]
+    public void TryParseHexSupportsManualColorInput()
+    {
+        Assert.True(ColorSwatch.TryParseHex("#0A7BFF", out ColorSwatch color));
+        Assert.Equal((byte)10, color.Red);
+        Assert.Equal((byte)123, color.Green);
+        Assert.Equal((byte)255, color.Blue);
+        Assert.False(ColorSwatch.TryParseHex("wrong", out _));
+    }
 }

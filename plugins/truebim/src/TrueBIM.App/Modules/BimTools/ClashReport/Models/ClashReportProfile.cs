@@ -2,7 +2,7 @@ namespace TrueBIM.App.Modules.BimTools.ClashReport.Models;
 
 public sealed class ClashReportProfile
 {
-    public string Name { get; set; } = "CSV коллизии";
+    public string Name { get; set; } = "RVT-связи";
 
     public string LastCsvPath { get; set; } = string.Empty;
 

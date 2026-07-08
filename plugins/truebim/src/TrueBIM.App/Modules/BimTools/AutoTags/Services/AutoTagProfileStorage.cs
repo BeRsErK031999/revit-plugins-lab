@@ -46,6 +46,7 @@ public sealed class AutoTagProfileStorage
             OffsetUpMm = 0,
             MaxPreviewCount = DefaultMaxPreviewCount,
             SelectedTagTypeId = null,
+            SelectedTagTypeIdsByCategory = [],
             SelectedCategoryIds = []
         };
     }
@@ -63,6 +64,10 @@ public sealed class AutoTagProfileStorage
             OffsetUpMm = AutoTagPlacementOffset.NormalizeMillimeters(profile.OffsetUpMm),
             MaxPreviewCount = Clamp(profile.MaxPreviewCount <= 0 ? DefaultMaxPreviewCount : profile.MaxPreviewCount, 50, 5000),
             SelectedTagTypeId = profile.SelectedTagTypeId is > 0 ? profile.SelectedTagTypeId : null,
+            SelectedTagTypeIdsByCategory = (profile.SelectedTagTypeIdsByCategory ?? [])
+                .Where(pair => pair.Value > 0)
+                .GroupBy(pair => pair.Key)
+                .ToDictionary(group => group.Key, group => group.Last().Value),
             SelectedCategoryIds = (profile.SelectedCategoryIds ?? [])
                 .Distinct()
                 .ToList()

@@ -38,11 +38,6 @@ public sealed class CopyParametersCommand : IExternalCommand
             }
 
             CopyParametersWindow window = new(ParameterCopyService.BuildElementLabel(sourceElement), parameters);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             bool? dialogResult = window.ShowDialog();
             if (dialogResult != true)
             {

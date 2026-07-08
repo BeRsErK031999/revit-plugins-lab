@@ -32,11 +32,6 @@ public sealed class FamilyManagerCommand : IExternalCommand
                 new FamilyLoadService(),
                 new FamilyMetadataService(),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

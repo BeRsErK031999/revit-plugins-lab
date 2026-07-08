@@ -33,11 +33,6 @@ public sealed class TitleBlockFillCommand : IExternalCommand
                 new TitleBlockFinderService(),
                 new TitleBlockFillService(new TitleBlockValueResolver(), new TitleBlockParameterWriter()),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

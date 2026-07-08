@@ -39,8 +39,15 @@ public enum TrueBimIcon
 
 internal static class IconFactory
 {
+    private static readonly Dictionary<(TrueBimIcon Icon, double Size), ImageSource> ImageCache = [];
+
     public static ImageSource CreateImage(TrueBimIcon icon, double size = 16)
     {
+        if (ImageCache.TryGetValue((icon, size), out ImageSource? cached))
+        {
+            return cached;
+        }
+
         Geometry geometry = Geometry.Parse(GetGeometry(icon));
         Brush brush = icon == TrueBimIcon.App
             ? new SolidColorBrush(Color.FromRgb(30, 69, 148))
@@ -48,6 +55,7 @@ internal static class IconFactory
         GeometryDrawing drawing = new(brush, null, geometry);
         DrawingImage image = new(drawing);
         image.Freeze();
+        ImageCache[(icon, size)] = image;
         return image;
     }
 

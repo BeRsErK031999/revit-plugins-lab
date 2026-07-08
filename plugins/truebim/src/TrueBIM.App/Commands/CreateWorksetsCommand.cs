@@ -31,11 +31,6 @@ public sealed class CreateWorksetsCommand : IExternalCommand
                 new WorksharingService(logger),
                 new WorksetCreationService(logger),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
         }
         catch (Exception exception)

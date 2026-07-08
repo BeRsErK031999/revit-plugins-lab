@@ -43,11 +43,6 @@ public sealed class OpenViewVisibilityCommand : IExternalCommand
             }
 
             ViewVisibilityWindow window = new(uiDocument.Document, activeView, categories, service, logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

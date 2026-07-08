@@ -7,6 +7,7 @@ namespace TrueBIM.App.Modules.BimTools.AutoTags.Models;
 public sealed class AutoTagCategoryOption : INotifyPropertyChanged
 {
     private bool isSelected;
+    private long selectedTagTypeId = AutoTagTypeOption.Automatic.ElementId;
 
     public AutoTagCategoryOption(ElementId categoryId, string name, int elementCount)
     {
@@ -38,6 +39,21 @@ public sealed class AutoTagCategoryOption : INotifyPropertyChanged
 
             isSelected = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public long SelectedTagTypeId
+    {
+        get => selectedTagTypeId;
+        set
+        {
+            if (selectedTagTypeId == value)
+            {
+                return;
+            }
+
+            selectedTagTypeId = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedTagTypeId)));
         }
     }
 

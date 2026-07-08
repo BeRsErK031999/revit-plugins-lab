@@ -100,6 +100,25 @@ public sealed class ClashViewNavigator
 
     private static BoundingBoxXYZ? BuildSectionBox(IReadOnlyList<Element> elements, ClashItem item, double padding)
     {
+        if (item.Bounds is { } bounds)
+        {
+            double boundsMinX = bounds.MinX - padding;
+            double boundsMinY = bounds.MinY - padding;
+            double boundsMinZ = bounds.MinZ - padding;
+            double boundsMaxX = bounds.MaxX + padding;
+            double boundsMaxY = bounds.MaxY + padding;
+            double boundsMaxZ = bounds.MaxZ + padding;
+            EnsureMinimumSize(ref boundsMinX, ref boundsMaxX, 1.0);
+            EnsureMinimumSize(ref boundsMinY, ref boundsMaxY, 1.0);
+            EnsureMinimumSize(ref boundsMinZ, ref boundsMaxZ, 1.0);
+
+            return new BoundingBoxXYZ
+            {
+                Min = new XYZ(boundsMinX, boundsMinY, boundsMinZ),
+                Max = new XYZ(boundsMaxX, boundsMaxY, boundsMaxZ)
+            };
+        }
+
         List<XYZ> points = [];
         foreach (Element element in elements)
         {

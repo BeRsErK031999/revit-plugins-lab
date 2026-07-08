@@ -128,6 +128,13 @@ public sealed class AutoTagWindow : Window
         tagTypeInput.SelectedItem = tagTypes.FirstOrDefault(tagType => tagType.ElementId == profile.SelectedTagTypeId)
             ?? tagTypes.FirstOrDefault()
             ?? AutoTagTypeOption.Automatic;
+
+        foreach (AutoTagCategoryOption category in categories)
+        {
+            category.SelectedTagTypeId = profile.SelectedTagTypeIdsByCategory.TryGetValue(category.CategoryIdValue, out long categoryTagTypeId)
+                ? categoryTagTypeId
+                : AutoTagTypeOption.Automatic.ElementId;
+        }
     }
 
     private UIElement CreateContent()
@@ -210,7 +217,7 @@ public sealed class AutoTagWindow : Window
         WpfGrid.SetColumn(actions, 2);
         root.Children.Add(actions);
 
-        AddLabel(root, "Тип марки", 0, 1);
+        AddLabel(root, "Тип по умолчанию", 0, 1);
         tagTypeInput.Height = 32;
         tagTypeInput.MinWidth = 300;
         tagTypeInput.Margin = new Thickness(8, 0, 12, 0);
@@ -308,6 +315,7 @@ public sealed class AutoTagWindow : Window
         categoryGrid.Columns.Add(CreateSelectionColumn(nameof(AutoTagCategoryOption.IsSelected), "Вкл."));
         categoryGrid.Columns.Add(CreateTextColumn("Категория", nameof(AutoTagCategoryOption.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         categoryGrid.Columns.Add(CreateTextColumn("Элементов", nameof(AutoTagCategoryOption.ElementCount), 120));
+        categoryGrid.Columns.Add(CreateTagTypeColumn());
         panel.Children.Add(categoryGrid);
         return panel;
     }
@@ -382,11 +390,16 @@ public sealed class AutoTagWindow : Window
             .Where(category => category.IsSelected)
             .Select(category => category.CategoryIdValue)
             .ToHashSet();
+        Dictionary<long, long> selectedTagTypeIds = categories
+            .ToDictionary(category => category.CategoryIdValue, category => category.SelectedTagTypeId);
         categories.Clear();
 
         foreach (AutoTagCategoryOption category in collectorService.CollectCategories(document, activeView))
         {
             category.IsSelected = selectedCategoryIds.Count == 0 || selectedCategoryIds.Contains(category.CategoryIdValue);
+            category.SelectedTagTypeId = selectedTagTypeIds.TryGetValue(category.CategoryIdValue, out long tagTypeId)
+                ? tagTypeId
+                : AutoTagTypeOption.Automatic.ElementId;
             category.PropertyChanged += OnCategoryPropertyChanged;
             categories.Add(category);
         }
@@ -429,7 +442,7 @@ public sealed class AutoTagWindow : Window
                 row.ElementId,
                 row.CategoryName,
                 row.ElementName,
-                GetSelectedTagType().DisplayName,
+                GetTagTypeForCategory(row.CategoryId).DisplayName,
                 row.Status,
                 AppendOffsetText(row.Message)));
         }
@@ -467,12 +480,12 @@ public sealed class AutoTagWindow : Window
             return;
         }
 
-        AutoTagTypeOption tagType = GetSelectedTagType();
         AutoTagApplyResult result = placementService.Apply(
             document,
             activeView,
             selectedRows,
-            tagType,
+            GetSelectedTagType(),
+            CreateTagTypesByCategory(),
             onlyUntaggedInput.IsChecked == true,
             leaderInput.IsChecked == true,
             GetOffsetRightMm(),
@@ -539,6 +552,9 @@ public sealed class AutoTagWindow : Window
             OffsetUpMm = GetOffsetUpMm(),
             MaxPreviewCount = GetMaxPreviewCount(),
             SelectedTagTypeId = selectedTagType.IsAutomatic ? null : selectedTagType.ElementId,
+            SelectedTagTypeIdsByCategory = categories
+                .Where(category => category.SelectedTagTypeId > 0)
+                .ToDictionary(category => category.CategoryIdValue, category => category.SelectedTagTypeId),
             SelectedCategoryIds = categories
                 .Where(category => category.IsSelected)
                 .Select(category => category.CategoryIdValue)
@@ -551,6 +567,39 @@ public sealed class AutoTagWindow : Window
         return tagTypeInput.SelectedItem as AutoTagTypeOption
             ?? tagTypes.FirstOrDefault()
             ?? AutoTagTypeOption.Automatic;
+    }
+
+    private AutoTagTypeOption GetTagTypeForCategory(long categoryId)
+    {
+        long selectedTypeId = categories.FirstOrDefault(category => category.CategoryIdValue == categoryId)?.SelectedTagTypeId
+            ?? AutoTagTypeOption.Automatic.ElementId;
+        if (selectedTypeId == AutoTagTypeOption.Automatic.ElementId)
+        {
+            return GetSelectedTagType();
+        }
+
+        return tagTypes.FirstOrDefault(tagType => tagType.ElementId == selectedTypeId)
+            ?? GetSelectedTagType();
+    }
+
+    private IReadOnlyDictionary<long, AutoTagTypeOption> CreateTagTypesByCategory()
+    {
+        Dictionary<long, AutoTagTypeOption> result = [];
+        foreach (AutoTagCategoryOption category in categories)
+        {
+            if (category.SelectedTagTypeId <= 0)
+            {
+                continue;
+            }
+
+            AutoTagTypeOption? tagType = tagTypes.FirstOrDefault(option => option.ElementId == category.SelectedTagTypeId);
+            if (tagType is not null)
+            {
+                result[category.CategoryIdValue] = tagType;
+            }
+        }
+
+        return result;
     }
 
     private int GetMaxPreviewCount()
@@ -636,7 +685,7 @@ public sealed class AutoTagWindow : Window
 
     private void OnCategoryPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(AutoTagCategoryOption.IsSelected))
+        if (args.PropertyName is nameof(AutoTagCategoryOption.IsSelected) or nameof(AutoTagCategoryOption.SelectedTagTypeId))
         {
             UpdateStatus();
         }
@@ -656,7 +705,8 @@ public sealed class AutoTagWindow : Window
         int readyRows = elementRows.Count(row => row.CanApply);
         int selectedRows = elementRows.Count(row => row.IsSelected && row.CanApply);
         string tagTypeText = GetSelectedTagType().DisplayName;
-        string text = $"Категорий: {categories.Count}. Выбрано категорий: {selectedCategories}. Элементов в preview: {elementRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Тип: {tagTypeText}.";
+        int customTagTypeCategories = categories.Count(category => category.SelectedTagTypeId > 0);
+        string text = $"Категорий: {categories.Count}. Выбрано категорий: {selectedCategories}. Индивидуальных типов: {customTagTypeCategories}. Элементов в preview: {elementRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Тип по умолчанию: {tagTypeText}.";
         string offsetText = AutoTagPlacementOffset.FormatForReport(GetOffsetRightMm(), GetOffsetUpMm());
         if (!string.IsNullOrWhiteSpace(offsetText))
         {
@@ -740,6 +790,23 @@ public sealed class AutoTagWindow : Window
                 VisualTree = checkBox
             },
             Width = 78
+        };
+    }
+
+    private DataGridComboBoxColumn CreateTagTypeColumn()
+    {
+        return new DataGridComboBoxColumn
+        {
+            Header = "Тип марки",
+            ItemsSource = tagTypes,
+            DisplayMemberPath = nameof(AutoTagTypeOption.DisplayName),
+            SelectedValuePath = nameof(AutoTagTypeOption.ElementId),
+            SelectedValueBinding = new WpfBinding(nameof(AutoTagCategoryOption.SelectedTagTypeId))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            },
+            Width = new DataGridLength(260)
         };
     }
 

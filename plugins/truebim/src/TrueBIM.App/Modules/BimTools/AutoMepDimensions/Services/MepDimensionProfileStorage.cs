@@ -49,6 +49,9 @@ public sealed class MepDimensionProfileStorage
         if (!includePipes && !includeDucts && !includeCableTrays && !includeConduits)
         {
             includePipes = true;
+            includeDucts = true;
+            includeCableTrays = true;
+            includeConduits = true;
         }
 
         return new MepDimensionProfile

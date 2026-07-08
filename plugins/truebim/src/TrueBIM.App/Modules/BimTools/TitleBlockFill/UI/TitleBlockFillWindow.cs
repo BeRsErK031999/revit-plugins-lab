@@ -30,6 +30,7 @@ public sealed class TitleBlockFillWindow : Window
     private readonly ObservableCollection<TitleBlockSheetRow> sheets = new();
     private readonly ObservableCollection<TitleBlockParameterRule> rules = new();
     private readonly ObservableCollection<TitleBlockPreviewRow> reportRows = new();
+    private readonly ObservableCollection<string> parameterNameOptions = new();
     private readonly WpfTextBox profileNameInput = new();
     private readonly WpfTextBox sheetFilterInput = new();
     private readonly ObservableCollection<TitleBlockSheetRow> visibleSheets = new();
@@ -67,6 +68,7 @@ public sealed class TitleBlockFillWindow : Window
         {
             rules.Add(rule);
         }
+        RefreshParameterNameOptions();
 
         Title = "Оформить штамп";
         Icon = IconFactory.CreateImage(TrueBimIcon.TitleBlock, 32);
@@ -254,6 +256,14 @@ public sealed class TitleBlockFillWindow : Window
             UpdateStatus("Профиль сохранён.");
         };
         toolbar.Children.Add(saveButton);
+
+        Button refreshParametersButton = CreateButton("Параметры", TrueBimIcon.Preview, 120);
+        refreshParametersButton.Click += (_, _) =>
+        {
+            RefreshParameterNameOptions();
+            UpdateStatus("Список параметров обновлён.");
+        };
+        toolbar.Children.Add(refreshParametersButton);
         DockPanel.SetDock(toolbar, Dock.Top);
         panel.Children.Add(toolbar);
 
@@ -264,7 +274,7 @@ public sealed class TitleBlockFillWindow : Window
         ruleGrid.ItemsSource = rules;
         ruleGrid.Columns.Add(CreateSelectionColumn(nameof(TitleBlockParameterRule.IsEnabled), "Вкл."));
         ruleGrid.Columns.Add(CreateComboColumn("Куда", nameof(TitleBlockParameterRule.Target), TitleBlockRuleTargets.All, 120));
-        ruleGrid.Columns.Add(CreateEditableTextColumn("Параметр", nameof(TitleBlockParameterRule.ParameterName), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        ruleGrid.Columns.Add(CreateParameterNameColumn());
         ruleGrid.Columns.Add(CreateComboColumn("Источник", nameof(TitleBlockParameterRule.Source), TitleBlockValueSources.All, 170));
         ruleGrid.Columns.Add(CreateEditableTextColumn("Значение / параметр / формула", nameof(TitleBlockParameterRule.Value), new DataGridLength(260)));
         panel.Children.Add(ruleGrid);
@@ -511,6 +521,61 @@ public sealed class TitleBlockFillWindow : Window
         });
     }
 
+    private void RefreshParameterNameOptions()
+    {
+        SortedSet<string> names = new(StringComparer.CurrentCultureIgnoreCase);
+        foreach (TitleBlockParameterRule rule in rules)
+        {
+            if (!string.IsNullOrWhiteSpace(rule.ParameterName))
+            {
+                names.Add(rule.ParameterName.Trim());
+            }
+        }
+
+        foreach (TitleBlockSheetRow sheetRow in sheets.Where(row => !row.IsPlaceholder))
+        {
+            try
+            {
+                if (document.GetElement(TrueBIM.App.Services.RevitElementIds.Create(sheetRow.ElementId)) is not ViewSheet sheet)
+                {
+                    continue;
+                }
+
+                AddWritableParameterNames(sheet, names);
+                foreach (FamilyInstance titleBlock in titleBlockFinder.Find(document, sheet))
+                {
+                    AddWritableParameterNames(titleBlock, names);
+                }
+            }
+            catch (Exception exception)
+            {
+                logger.Warning($"Failed to collect title block parameters for sheet '{sheetRow.SheetNumber}': {exception.Message}");
+            }
+        }
+
+        parameterNameOptions.Clear();
+        foreach (string name in names)
+        {
+            parameterNameOptions.Add(name);
+        }
+    }
+
+    private static void AddWritableParameterNames(Element element, ISet<string> names)
+    {
+        foreach (Parameter parameter in element.Parameters)
+        {
+            string name = parameter.Definition?.Name ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(name)
+                || parameter.IsReadOnly
+                || parameter.StorageType is StorageType.ElementId or StorageType.None)
+            {
+                continue;
+            }
+
+            names.Add(name.Trim());
+        }
+    }
+
     private void OnSheetRowPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName == nameof(TitleBlockSheetRow.IsSelected))
@@ -586,6 +651,21 @@ public sealed class TitleBlockFillWindow : Window
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
             },
             Width = width
+        };
+    }
+
+    private DataGridComboBoxColumn CreateParameterNameColumn()
+    {
+        return new DataGridComboBoxColumn
+        {
+            Header = "Параметр",
+            ItemsSource = parameterNameOptions,
+            SelectedItemBinding = new WpfBinding(nameof(TitleBlockParameterRule.ParameterName))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            },
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
         };
     }
 

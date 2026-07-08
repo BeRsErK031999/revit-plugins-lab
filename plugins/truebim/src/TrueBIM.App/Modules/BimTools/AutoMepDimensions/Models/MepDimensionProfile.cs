@@ -6,11 +6,11 @@ public sealed class MepDimensionProfile
 
     public bool IncludePipes { get; set; } = true;
 
-    public bool IncludeDucts { get; set; }
+    public bool IncludeDucts { get; set; } = true;
 
-    public bool IncludeCableTrays { get; set; }
+    public bool IncludeCableTrays { get; set; } = true;
 
-    public bool IncludeConduits { get; set; }
+    public bool IncludeConduits { get; set; } = true;
 
     public bool AllowElementReferenceFallback { get; set; } = true;
 

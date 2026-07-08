@@ -55,7 +55,7 @@ internal static class TrueBimCommandActions
                 logger);
             PrintWindow printWindow = new(activeDocument, sheetSources, settingsService, logger)
             {
-                Owner = owner
+                ShowInTaskbar = true
             };
             activePrintWindow = printWindow;
             printWindow.Closed += (_, _) => activePrintWindow = null;
@@ -93,7 +93,7 @@ internal static class TrueBimCommandActions
                 new SheetNumberApplyService(),
                 logger)
             {
-                Owner = owner
+                ShowInTaskbar = true
             };
             sheetNumberingWindow.ShowDialog();
         }
@@ -111,7 +111,7 @@ internal static class TrueBimCommandActions
             logger.Info("Opening Voltage Drop Calculation window.");
             VoltageDropWindow window = new(logger)
             {
-                Owner = owner
+                ShowInTaskbar = true
             };
             window.ShowDialog();
         }
@@ -134,7 +134,7 @@ internal static class TrueBimCommandActions
             string? documentTitle = commandData.Application.ActiveUIDocument?.Document?.Title;
             BimToolPlaceholderWindow window = new(definition, documentTitle, logger)
             {
-                Owner = owner
+                ShowInTaskbar = true
             };
             window.ShowDialog();
         }

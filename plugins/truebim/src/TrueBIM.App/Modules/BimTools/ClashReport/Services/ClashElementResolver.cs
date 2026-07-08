@@ -11,6 +11,12 @@ public sealed class ClashElementResolver
         Guard.NotNull(document, nameof(document));
         Guard.NotNull(item, nameof(item));
 
+        if (item.IsLinkDriven)
+        {
+            ResolveLinkDriven(document, item);
+            return;
+        }
+
         Element? element1 = GetElement(document, item.ElementId1);
         Element? element2 = GetElement(document, item.ElementId2);
 
@@ -19,6 +25,30 @@ public sealed class ClashElementResolver
         item.Element1Name = CreateElementLabel(element1);
         item.Element2Name = CreateElementLabel(element2);
         item.Message = CreateMessage(item);
+    }
+
+    private static void ResolveLinkDriven(Document document, ClashItem item)
+    {
+        Element? element1 = GetElement(document, item.ElementId1);
+        RevitLinkInstance? linkInstance = GetElement(document, item.ElementId2) as RevitLinkInstance;
+        Element? linkedElement = null;
+        Document? linkedDocument = null;
+
+        if (linkInstance is not null && item.LinkedElementId2.HasValue)
+        {
+            linkedDocument = linkInstance.GetLinkDocument();
+            linkedElement = linkedDocument?.GetElement(RevitElementIds.Create(item.LinkedElementId2.Value));
+        }
+
+        item.IsElement1Resolved = element1 is not null;
+        item.IsElement2Resolved = linkedElement is not null;
+        item.Element1Name = PrefixSource(item.Element1SourceName, CreateElementLabel(element1));
+        item.Element2Name = PrefixSource(
+            string.IsNullOrWhiteSpace(item.Element2SourceName) ? linkedDocument?.Title ?? string.Empty : item.Element2SourceName,
+            CreateElementLabel(linkedElement));
+        item.Message = linkedElement is not null
+            ? "Элементы найдены через RVT-связь."
+            : "Связанный элемент не найден. Проверьте, что RVT-связь загружена и не была обновлена.";
     }
 
     private static Element? GetElement(Document document, long? elementId)
@@ -78,5 +108,17 @@ public sealed class ClashElementResolver
         return resolved == expected
             ? "Элементы найдены."
             : $"Найдено элементов: {resolved}/{expected}.";
+    }
+
+    private static string PrefixSource(string source, string label)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return label;
+        }
+
+        return string.IsNullOrWhiteSpace(label)
+            ? source
+            : $"{source}: {label}";
     }
 }

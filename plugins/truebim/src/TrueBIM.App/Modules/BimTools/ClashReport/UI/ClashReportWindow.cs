@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -25,7 +24,7 @@ public sealed class ClashReportWindow : Window
 
     private readonly RevitUIDocument uiDocument;
     private readonly RevitDocument document;
-    private readonly ClashCsvImporter csvImporter;
+    private readonly ClashLinkScanner linkScanner;
     private readonly ClashElementResolver elementResolver;
     private readonly ClashViewNavigator viewNavigator;
     private readonly ClashReportStorage storage;
@@ -35,7 +34,6 @@ public sealed class ClashReportWindow : Window
     private readonly ObservableCollection<ClashItem> clashRows = new();
     private readonly ObservableCollection<ClashReportRow> reportRows = new();
     private readonly TextBox profileNameInput = new();
-    private readonly TextBox csvPathInput = new();
     private readonly TextBox filterInput = new();
     private readonly TextBox paddingInput = new();
     private readonly CheckBox highlightInput = new()
@@ -54,7 +52,7 @@ public sealed class ClashReportWindow : Window
 
     public ClashReportWindow(
         RevitUIDocument uiDocument,
-        ClashCsvImporter csvImporter,
+        ClashLinkScanner linkScanner,
         ClashElementResolver elementResolver,
         ClashViewNavigator viewNavigator,
         ClashReportStorage storage,
@@ -62,7 +60,7 @@ public sealed class ClashReportWindow : Window
     {
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
         document = uiDocument.Document;
-        this.csvImporter = csvImporter ?? throw new ArgumentNullException(nameof(csvImporter));
+        this.linkScanner = linkScanner ?? throw new ArgumentNullException(nameof(linkScanner));
         this.elementResolver = elementResolver ?? throw new ArgumentNullException(nameof(elementResolver));
         this.viewNavigator = viewNavigator ?? throw new ArgumentNullException(nameof(viewNavigator));
         this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
@@ -81,8 +79,7 @@ public sealed class ClashReportWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        TryLoadLastCsv();
-        UpdateStatus();
+        UpdateStatus("Нажмите «Сканировать связи», чтобы найти пересечения через загруженные RVT-файлы.");
         logger.Info($"Clash Report window opened for '{document.Title}'.");
     }
 
@@ -95,7 +92,6 @@ public sealed class ClashReportWindow : Window
     private void ApplyProfile(ClashReportProfile profile)
     {
         profileNameInput.Text = profile.Name;
-        csvPathInput.Text = profile.LastCsvPath;
         paddingInput.Text = profile.SectionBoxPaddingMm.ToString("0.##", CultureInfo.InvariantCulture);
         highlightInput.IsChecked = profile.HighlightOnNavigate;
     }
@@ -157,11 +153,11 @@ public sealed class ClashReportWindow : Window
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        Button importButton = CreateButton("Импорт CSV", TrueBimIcon.Open, 120);
-        importButton.Click += (_, _) => SelectCsv();
-        actions.Children.Add(importButton);
+        Button scanButton = CreateButton("Сканировать связи", TrueBimIcon.Preview, 160);
+        scanButton.Click += (_, _) => ScanLinks();
+        actions.Children.Add(scanButton);
 
-        Button refreshButton = CreateButton("Обновить", TrueBimIcon.Preview, 115);
+        Button refreshButton = CreateButton("Проверить", TrueBimIcon.Preview, 115);
         refreshButton.Click += (_, _) => ResolveRows();
         actions.Children.Add(refreshButton);
 
@@ -182,13 +178,17 @@ public sealed class ClashReportWindow : Window
         WpfGrid.SetColumn(actions, 2);
         root.Children.Add(actions);
 
-        AddLabel(root, "CSV", 0, 1);
-        csvPathInput.Height = 32;
-        csvPathInput.Margin = new Thickness(8, 0, 12, 8);
-        csvPathInput.ToolTip = "Путь к CSV с колонками ClashName, ElementId1, ElementId2, X, Y, Z, Status, Comment.";
-        WpfGrid.SetRow(csvPathInput, 1);
-        WpfGrid.SetColumn(csvPathInput, 1);
-        root.Children.Add(csvPathInput);
+        AddLabel(root, "Источник", 0, 1);
+        TextBlock sourceText = new()
+        {
+            Text = "RVT-связи активного проекта. CSV используется только для экспорта отчёта.",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 12, 8),
+            Foreground = System.Windows.Media.Brushes.DimGray
+        };
+        WpfGrid.SetRow(sourceText, 1);
+        WpfGrid.SetColumn(sourceText, 1);
+        root.Children.Add(sourceText);
 
         StackPanel options = new()
         {
@@ -199,7 +199,7 @@ public sealed class ClashReportWindow : Window
         paddingInput.Width = 90;
         paddingInput.Height = 32;
         paddingInput.Margin = new Thickness(8, 0, 18, 8);
-        paddingInput.ToolTip = "Запас вокруг bounding box найденных элементов или точки CSV.";
+        paddingInput.ToolTip = "Запас вокруг bounding box найденного пересечения.";
         options.Children.Add(paddingInput);
         options.Children.Add(highlightInput);
 
@@ -276,39 +276,9 @@ public sealed class ClashReportWindow : Window
         return reportGrid;
     }
 
-    private void SelectCsv()
+    private void ScanLinks()
     {
-        OpenFileDialog dialog = new()
-        {
-            Title = "Выберите CSV отчёта коллизий",
-            Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
-            CheckFileExists = true,
-            Multiselect = false
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        csvPathInput.Text = dialog.FileName;
-        ImportCsv(dialog.FileName);
-    }
-
-    private void TryLoadLastCsv()
-    {
-        string path = csvPathInput.Text.Trim();
-        if (!File.Exists(path))
-        {
-            return;
-        }
-
-        ImportCsv(path);
-    }
-
-    private void ImportCsv(string path)
-    {
-        ClashImportResult result = csvImporter.Import(path);
+        ClashLinkScanResult result = linkScanner.Scan(document, uiDocument.ActiveView);
         clashRows.Clear();
         reportRows.Clear();
 
@@ -319,16 +289,15 @@ public sealed class ClashReportWindow : Window
             clashRows.Add(item);
         }
 
-        foreach (string error in result.Errors)
+        foreach (string message in result.Messages)
         {
-            reportRows.Add(new ClashReportRow("Импорт", string.Empty, string.Empty, "Warning", error));
+            reportRows.Add(new ClashReportRow("Сканирование", string.Empty, string.Empty, "Info", message));
         }
 
-        csvPathInput.Text = path;
         SaveProfileOnly();
         RefreshFilter();
-        UpdateStatus();
-        logger.Info($"Clash Report imported {result.Items.Count} rows from '{path}' with {result.Errors.Count} warnings.");
+        UpdateStatus($"Сканирование RVT-связей: найдено {result.Items.Count} коллизий.");
+        logger.Info($"Clash Report scanned RVT links and found {result.Items.Count} rows with {result.Messages.Count} messages.");
     }
 
     private void ResolveRows()
@@ -393,7 +362,7 @@ public sealed class ClashReportWindow : Window
         SaveState(showDialog: false);
         if (clashRows.Count == 0)
         {
-            TaskDialog("Отчёт коллизий", "Нет импортированных коллизий для экспорта.");
+            TaskDialog("Отчёт коллизий", "Нет найденных коллизий для экспорта.");
             return;
         }
 
@@ -421,7 +390,7 @@ public sealed class ClashReportWindow : Window
         return ClashReportStorage.NormalizeProfile(new ClashReportProfile
         {
             Name = profileNameInput.Text,
-            LastCsvPath = csvPathInput.Text,
+            LastCsvPath = string.Empty,
             SectionBoxPaddingMm = ParseDouble(paddingInput.Text, 1500),
             HighlightOnNavigate = highlightInput.IsChecked == true
         });
@@ -457,12 +426,13 @@ public sealed class ClashReportWindow : Window
             || Contains(item.Message, filter);
     }
 
-    private void UpdateStatus()
+    private void UpdateStatus(string? prefix = null)
     {
         int resolved = clashRows.Count(item => item.GetResolvedElementIds().Count > 0);
         int open = clashRows.Count(item => item.Status == ClashStatus.Open);
         int filtered = CollectionViewSource.GetDefaultView(clashGrid.ItemsSource)?.Cast<object>().Count() ?? clashRows.Count;
-        statusText.Text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; Open: {open}; отчётных событий: {reportRows.Count}.";
+        string text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; Open: {open}; отчётных событий: {reportRows.Count}.";
+        statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         bool hasRows = clashRows.Count > 0;
         navigateButton.IsEnabled = hasRows;
         saveStateButton.IsEnabled = hasRows;

@@ -25,7 +25,7 @@ public sealed class AutoTagCommand : IExternalCommand
             }
 
             Document document = uiDocument.Document;
-            View activeView = document.ActiveView;
+            View activeView = uiDocument.ActiveView;
             if (!AutoTagCollectorService.CanUseActiveView(activeView, out string viewMessage))
             {
                 logger.Warning($"Auto Tags requested for unsupported view '{activeView?.Name}': {viewMessage}");
@@ -41,11 +41,6 @@ public sealed class AutoTagCommand : IExternalCommand
                 new AutoTagProfileStorage(logger),
                 placementService,
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

@@ -35,11 +35,6 @@ public sealed class ParaManagerCommand : IExternalCommand
                 new ParaManagerValidationService(),
                 bindingService,
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

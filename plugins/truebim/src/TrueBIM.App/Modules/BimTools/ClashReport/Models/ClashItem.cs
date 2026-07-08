@@ -13,6 +13,7 @@ public sealed class ClashItem : INotifyPropertyChanged
     private string element1Name = string.Empty;
     private string element2Name = string.Empty;
     private string message = string.Empty;
+    private NavigationBounds? navigationBounds;
 
     public ClashItem(
         string clashId,
@@ -23,7 +24,10 @@ public sealed class ClashItem : INotifyPropertyChanged
         double? y,
         double? z,
         ClashStatus status,
-        string comment)
+        string comment,
+        string element1SourceName = "",
+        string element2SourceName = "",
+        long? linkedElementId2 = null)
     {
         ClashId = string.IsNullOrWhiteSpace(clashId) ? "Clash" : clashId.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? ClashId : name.Trim();
@@ -34,6 +38,9 @@ public sealed class ClashItem : INotifyPropertyChanged
         Z = z;
         this.status = status;
         this.comment = comment?.Trim() ?? string.Empty;
+        Element1SourceName = element1SourceName?.Trim() ?? string.Empty;
+        Element2SourceName = element2SourceName?.Trim() ?? string.Empty;
+        LinkedElementId2 = linkedElementId2;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -45,6 +52,14 @@ public sealed class ClashItem : INotifyPropertyChanged
     public long? ElementId1 { get; }
 
     public long? ElementId2 { get; }
+
+    public long? LinkedElementId2 { get; }
+
+    public bool IsLinkDriven => LinkedElementId2.HasValue;
+
+    public string Element1SourceName { get; }
+
+    public string Element2SourceName { get; }
 
     public double? X { get; }
 
@@ -152,7 +167,7 @@ public sealed class ClashItem : INotifyPropertyChanged
 
     public string ElementId1Text => ElementId1?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
-    public string ElementId2Text => ElementId2?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    public string ElementId2Text => (LinkedElementId2 ?? ElementId2)?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
     public string PointText => HasPoint
         ? string.Format(CultureInfo.InvariantCulture, "{0:0.###}; {1:0.###}; {2:0.###}", X, Y, Z)
@@ -168,6 +183,21 @@ public sealed class ClashItem : INotifyPropertyChanged
                 ? "Нет ElementId"
                 : $"{resolved}/{total}";
         }
+    }
+
+    public bool HasNavigationBounds => navigationBounds is not null;
+
+    public NavigationBounds? Bounds => navigationBounds;
+
+    public void SetNavigationBounds(
+        double minX,
+        double minY,
+        double minZ,
+        double maxX,
+        double maxY,
+        double maxZ)
+    {
+        navigationBounds = new NavigationBounds(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     public IReadOnlyList<long> GetResolvedElementIds()
@@ -190,4 +220,12 @@ public sealed class ClashItem : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+
+    public sealed record NavigationBounds(
+        double MinX,
+        double MinY,
+        double MinZ,
+        double MaxX,
+        double MaxY,
+        double MaxZ);
 }

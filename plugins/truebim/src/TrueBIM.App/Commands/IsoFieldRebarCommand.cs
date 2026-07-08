@@ -30,11 +30,6 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
                 new IsoFieldHostSelectionService(),
                 new IsoFieldRebarCreationService(logger),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             logger.Info("IsoField Rebar window closed.");
             return Result.Succeeded;

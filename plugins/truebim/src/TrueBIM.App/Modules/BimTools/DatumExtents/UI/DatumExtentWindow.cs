@@ -94,7 +94,7 @@ public sealed class DatumExtentWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        Preview();
+        UpdateStatus("Нажмите «Предпросмотр», чтобы собрать оси и уровни на активном виде.");
         logger.Info($"Datum Extents window opened for '{document.Title}' and view '{activeView.Name}'.");
     }
 
@@ -499,7 +499,7 @@ public sealed class DatumExtentWindow : Window
         }
 
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
-        applyButton.IsEnabled = selectedRows > 0 || rows.Count == 0;
+        applyButton.IsEnabled = selectedRows > 0;
     }
 
     private static void AddLabel(WpfGrid grid, string text, int column, int row)

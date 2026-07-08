@@ -25,6 +25,7 @@ public sealed class SheetNumberingWindow : Window
     private readonly SheetPreviewOrderService orderService = new();
     private readonly Button applyButton = CreateActionButton("Применить", TrueBimIcon.Apply, isEnabled: false);
     private readonly Button exportPreviewButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
+    private readonly Button invisibleDuplicateButton = CreateActionButton("Скрытый символ", TrueBimIcon.Move, isEnabled: false, minWidth: 150);
     private readonly Button moveUpButton = CreateActionButton("Вверх", TrueBimIcon.Up, isEnabled: false);
     private readonly Button moveDownButton = CreateActionButton("Вниз", TrueBimIcon.Down, isEnabled: false);
     private readonly Button moveToPositionButton = CreateActionButton("К позиции", TrueBimIcon.Move, isEnabled: false, minWidth: 128);
@@ -279,6 +280,10 @@ public sealed class SheetNumberingWindow : Window
         exportPreviewButton.ToolTip = "Экспорт доступен после предпросмотра.";
         exportPreviewButton.Click += (_, _) => ExportPreview();
         actions.Children.Add(exportPreviewButton);
+
+        invisibleDuplicateButton.ToolTip = "Добавить невидимые символы к дублирующимся номерам, чтобы Revit считал их уникальными.";
+        invisibleDuplicateButton.Click += (_, _) => ApplyInvisibleDuplicateSuffixes();
+        actions.Children.Add(invisibleDuplicateButton);
 
         applyButton.ToolTip = "Сначала выполните предпросмотр.";
         applyButton.Click += (_, _) => ApplyPreview();
@@ -610,8 +615,8 @@ public sealed class SheetNumberingWindow : Window
         foreach (DuplicateSheetNumberIssue issue in duplicateIssues)
         {
             string message = issue.Kind == DuplicateSheetNumberIssueKind.Preview
-                ? $"Дубль в предпросмотре: {issue.SheetNumber}"
-                : $"Конфликт с существующим номером: {issue.SheetNumber}";
+                ? $"Дубль в предпросмотре: {issue.SheetNumber}. Можно применить «Скрытый символ»."
+                : $"Конфликт с существующим номером: {issue.SheetNumber}. Можно применить «Скрытый символ».";
 
             foreach (SheetInfo sheet in issue.Sheets)
             {
@@ -620,6 +625,111 @@ public sealed class SheetNumberingWindow : Window
         }
 
         return issuesBySheetId;
+    }
+
+    private void ApplyInvisibleDuplicateSuffixes()
+    {
+        if (!isPreviewCurrent || previewRowCount == 0 || duplicateIssueCount == 0)
+        {
+            UpdateStatusSummary("Нет актуальных дублей для скрытого символа.");
+            return;
+        }
+
+        if (MessageBox.Show(
+                this,
+                "К дублирующимся номерам будут добавлены невидимые Unicode-символы. В Revit номера станут технически уникальными, но на листах будут выглядеть одинаково. Продолжить?",
+                "Нумератор листов",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        HashSet<long> previewSheetIds = previewRows
+            .Where(row => row.IsSelected && !string.IsNullOrWhiteSpace(row.PreviewNumber))
+            .Select(row => row.Sheet.ElementId)
+            .ToHashSet();
+        HashSet<string> usedNumbers = sheets
+            .Where(sheet => !previewSheetIds.Contains(sheet.ElementId))
+            .Select(sheet => sheet.CurrentNumber)
+            .Where(number => !string.IsNullOrWhiteSpace(number))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        int changed = 0;
+        foreach (PreviewRow row in previewRows.Where(row => row.IsSelected && !string.IsNullOrWhiteSpace(row.PreviewNumber)))
+        {
+            string baseNumber = StripInvisibleDuplicateMarkers(row.PreviewNumber);
+            string candidate = baseNumber;
+            int suffixLength = 0;
+            while (usedNumbers.Contains(candidate))
+            {
+                suffixLength++;
+                candidate = baseNumber + CreateInvisibleSuffix(row.Sheet.ElementId, suffixLength);
+            }
+
+            usedNumbers.Add(candidate);
+            if (!string.Equals(row.PreviewNumber, candidate, StringComparison.Ordinal))
+            {
+                row.PreviewNumber = candidate;
+                row.Status = "Скрытый символ добавлен для уникальности.";
+                changed++;
+            }
+        }
+
+        RevalidatePreviewDuplicates();
+        UpdateStatusSummary(changed == 0
+            ? "Скрытые символы не понадобились: конфликтов в текущем предпросмотре больше нет."
+            : $"Скрытые символы добавлены: {changed}. Проверьте предпросмотр перед применением.");
+    }
+
+    private void RevalidatePreviewDuplicates()
+    {
+        List<SheetNumberPreview> previews = previewRows
+            .Where(row => row.IsSelected && !string.IsNullOrWhiteSpace(row.PreviewNumber))
+            .Select(row => new SheetNumberPreview(row.Sheet, row.PreviewNumber))
+            .ToList();
+        IReadOnlyList<DuplicateSheetNumberIssue> issues = new DuplicateSheetNumberDetector().Detect(previews, sheets);
+        IReadOnlyDictionary<long, string> issuesBySheetId = CreateIssueLookup(issues);
+        duplicateIssueCount = issues.Count;
+
+        foreach (PreviewRow row in previewRows.Where(row => row.IsSelected && !string.IsNullOrWhiteSpace(row.PreviewNumber)))
+        {
+            if (issuesBySheetId.TryGetValue(row.Sheet.ElementId, out string? issue))
+            {
+                row.Status = issue;
+            }
+            else if (ContainsInvisibleDuplicateMarker(row.PreviewNumber))
+            {
+                row.Status = "Скрытый символ добавлен для уникальности.";
+            }
+            else
+            {
+                row.Status = row.CurrentNumber == row.PreviewNumber ? "Без изменений" : "Будет изменено";
+            }
+        }
+    }
+
+    private static string CreateInvisibleSuffix(long elementId, int suffixLength)
+    {
+        char[] markers = ['\u200B', '\u200C', '\u2060'];
+        int markerIndex = (int)((Math.Abs(elementId) + suffixLength) % markers.Length);
+        char marker = markers[markerIndex];
+        return new string(marker, suffixLength);
+    }
+
+    private static string StripInvisibleDuplicateMarkers(string value)
+    {
+        return value
+            .Replace("\u200B", string.Empty)
+            .Replace("\u200C", string.Empty)
+            .Replace("\u2060", string.Empty);
+    }
+
+    private static bool ContainsInvisibleDuplicateMarker(string value)
+    {
+        return value.IndexOf('\u200B') >= 0
+            || value.IndexOf('\u200C') >= 0
+            || value.IndexOf('\u2060') >= 0;
     }
 
     private static string GetStatus(
@@ -774,6 +884,10 @@ public sealed class SheetNumberingWindow : Window
         exportPreviewButton.ToolTip = exportPreviewButton.IsEnabled
             ? "Экспортировать текущий предпросмотр в CSV."
             : "Перед экспортом выполните предпросмотр.";
+        invisibleDuplicateButton.IsEnabled = isPreviewCurrent && duplicateIssueCount > 0;
+        invisibleDuplicateButton.ToolTip = invisibleDuplicateButton.IsEnabled
+            ? "Добавить невидимые символы к конфликтующим номерам листов."
+            : "Доступно после предпросмотра с дублями номеров.";
 
         if (!validation.CanApply && validation.Reason != lastApplyDisabledReason)
         {

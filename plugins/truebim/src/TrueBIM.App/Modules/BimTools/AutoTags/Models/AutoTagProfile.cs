@@ -16,5 +16,7 @@ public sealed class AutoTagProfile
 
     public long? SelectedTagTypeId { get; set; }
 
+    public Dictionary<long, long> SelectedTagTypeIdsByCategory { get; set; } = [];
+
     public List<long> SelectedCategoryIds { get; set; } = [];
 }

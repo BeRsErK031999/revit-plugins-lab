@@ -25,7 +25,7 @@ public sealed class OpeningViewsCommand : IExternalCommand
             }
 
             Document document = uiDocument.Document;
-            View activeView = document.ActiveView;
+            View activeView = uiDocument.ActiveView;
             if (!OpeningViewCollectorService.CanUseActiveView(activeView, out string viewMessage)
                 || activeView is not ViewPlan activePlan)
             {
@@ -41,11 +41,6 @@ public sealed class OpeningViewsCommand : IExternalCommand
                 new OpeningViewCreationService(),
                 new OpeningViewProfileStorage(logger),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

@@ -19,6 +19,11 @@ public sealed class AutoTagProfileStorageTests
             OffsetUpMm = double.NaN,
             MaxPreviewCount = 9000,
             SelectedTagTypeId = -1,
+            SelectedTagTypeIdsByCategory = new Dictionary<long, long>
+            {
+                [-2000011] = 101,
+                [-2000014] = -1
+            },
             SelectedCategoryIds = [42, 42, -2000011]
         });
 
@@ -29,6 +34,8 @@ public sealed class AutoTagProfileStorageTests
         Assert.Equal(0, profile.OffsetUpMm);
         Assert.Equal(5000, profile.MaxPreviewCount);
         Assert.Null(profile.SelectedTagTypeId);
+        Assert.Equal(101, profile.SelectedTagTypeIdsByCategory[-2000011]);
+        Assert.False(profile.SelectedTagTypeIdsByCategory.ContainsKey(-2000014));
         Assert.Equal([42, -2000011], profile.SelectedCategoryIds);
     }
 
@@ -48,6 +55,10 @@ public sealed class AutoTagProfileStorageTests
             OffsetUpMm = -80,
             MaxPreviewCount = 10,
             SelectedTagTypeId = 123,
+            SelectedTagTypeIdsByCategory = new Dictionary<long, long>
+            {
+                [-2000011] = 456
+            },
             SelectedCategoryIds = [-2000011, -2000014]
         });
 
@@ -60,6 +71,7 @@ public sealed class AutoTagProfileStorageTests
         Assert.Equal(-80, loaded.OffsetUpMm);
         Assert.Equal(50, loaded.MaxPreviewCount);
         Assert.Equal(123, loaded.SelectedTagTypeId);
+        Assert.Equal(456, loaded.SelectedTagTypeIdsByCategory[-2000011]);
         Assert.Equal([-2000011, -2000014], loaded.SelectedCategoryIds);
     }
 

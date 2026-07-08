@@ -132,8 +132,8 @@ public static class TrueBimRibbon
             "Отчёт\nколлизий",
             $"{CommandNamespace}.{nameof(ClashReportCommand)}",
             TrueBimIcon.ClashReport,
-            "Импортирует CSV отчёта коллизий и открывает их в 3D.",
-            "MVP инструмента координации: импорт CSV с ElementId/XYZ, статусы и комментарии, локальное JSON-состояние, section box, подсветка найденных элементов и CSV-отчёт."),
+            "Сканирует RVT-связи активной модели и открывает отчёт коллизий в 3D.",
+            "Инструмент координации: поиск пересечений по загруженным Revit-связям, статусы и комментарии, локальное JSON-состояние, section box, подсветка найденных элементов и экспорт отчёта."),
         new(
             BimLibraryPanelName,
             "TrueBIM_FamilyManager",
@@ -197,4 +197,25 @@ public static class TrueBimRibbon
             TrueBimIcon.VoltageDrop,
             "Открывает расчет потери напряжения и нагрузок по данным первого листа Excel.")
     ];
+
+    public static bool IsButtonAvailableForRevitVersion(TrueBimRibbonButtonDefinition button, string revitVersion)
+    {
+        Guard.NotNull(button, nameof(button));
+
+        return IsButtonAvailableForRevitVersion(button.CommandClassName, revitVersion);
+    }
+
+    public static bool IsButtonAvailableForRevitVersion(string commandClassName, string revitVersion)
+    {
+        if (!string.Equals(
+                commandClassName,
+                $"{CommandNamespace}.{nameof(DatumExtentCommand)}",
+                StringComparison.Ordinal)
+            && !string.Equals(commandClassName, nameof(DatumExtentCommand), StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return int.TryParse(revitVersion, out int version) && version > 2022;
+    }
 }

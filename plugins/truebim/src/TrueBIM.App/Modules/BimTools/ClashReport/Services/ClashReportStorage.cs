@@ -122,7 +122,7 @@ public sealed class ClashReportStorage
         ClashReportProfile source = profile ?? new ClashReportProfile();
         return new ClashReportProfile
         {
-            Name = string.IsNullOrWhiteSpace(source.Name) ? "CSV коллизии" : source.Name.Trim(),
+            Name = string.IsNullOrWhiteSpace(source.Name) ? "RVT-связи" : source.Name.Trim(),
             LastCsvPath = source.LastCsvPath?.Trim() ?? string.Empty,
             SectionBoxPaddingMm = ClampNumeric(source.SectionBoxPaddingMm, 100, 10000, 1500),
             HighlightOnNavigate = source.HighlightOnNavigate

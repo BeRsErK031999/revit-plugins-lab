@@ -18,7 +18,7 @@ public sealed class ClashReportStorageTests
             HighlightOnNavigate = false
         });
 
-        Assert.Equal("CSV коллизии", profile.Name);
+        Assert.Equal("RVT-связи", profile.Name);
         Assert.Equal("C:/tmp/clashes.csv", profile.LastCsvPath);
         Assert.Equal(1500, profile.SectionBoxPaddingMm);
         Assert.False(profile.HighlightOnNavigate);

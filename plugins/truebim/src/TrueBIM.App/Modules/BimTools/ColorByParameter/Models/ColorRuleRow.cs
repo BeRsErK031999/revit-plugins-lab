@@ -29,4 +29,15 @@ public sealed class ColorRuleRow
         Green = color.Green;
         Blue = color.Blue;
     }
+
+    public bool TrySetColorHex(string? value)
+    {
+        if (!ColorSwatch.TryParseHex(value, out ColorSwatch color))
+        {
+            return false;
+        }
+
+        SetColor(color);
+        return true;
+    }
 }

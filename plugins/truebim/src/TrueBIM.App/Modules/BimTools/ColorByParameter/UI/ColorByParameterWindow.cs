@@ -348,15 +348,17 @@ public sealed class ColorByParameterWindow : Window
             Margin = new Thickness(8, 6, 8, 6)
         };
 
-        TextBlock hexText = new()
+        System.Windows.Controls.TextBox hexInput = new()
         {
             Text = row.ColorHex,
             Width = 80,
+            Height = 24,
             Foreground = Brushes.DimGray,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "Введите цвет вручную в формате #RRGGBB."
         };
-        DockPanel.SetDock(hexText, Dock.Right);
-        panel.Children.Add(hexText);
+        DockPanel.SetDock(hexInput, Dock.Right);
+        panel.Children.Add(hexInput);
 
         Border swatch = new()
         {
@@ -371,6 +373,16 @@ public sealed class ColorByParameterWindow : Window
         DockPanel.SetDock(swatch, Dock.Left);
         panel.Children.Add(swatch);
 
+        hexInput.LostFocus += (_, _) => ApplyManualColor(row, hexInput, swatch);
+        hexInput.KeyDown += (_, args) =>
+        {
+            if (args.Key == System.Windows.Input.Key.Enter)
+            {
+                ApplyManualColor(row, hexInput, swatch);
+                args.Handled = true;
+            }
+        };
+
         CheckBox checkBox = new()
         {
             Content = row.DisplayValue,
@@ -383,6 +395,18 @@ public sealed class ColorByParameterWindow : Window
         panel.Children.Add(checkBox);
 
         return panel;
+    }
+
+    private static void ApplyManualColor(ColorRuleRow row, System.Windows.Controls.TextBox input, Border swatch)
+    {
+        if (!row.TrySetColorHex(input.Text))
+        {
+            input.Text = row.ColorHex;
+            return;
+        }
+
+        input.Text = row.ColorHex;
+        swatch.Background = new SolidColorBrush(WpfColor.FromRgb(row.Red, row.Green, row.Blue));
     }
 
     private void SelectCategories(bool isSelected)

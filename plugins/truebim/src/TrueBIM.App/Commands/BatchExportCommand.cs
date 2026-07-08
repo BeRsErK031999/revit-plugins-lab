@@ -33,11 +33,6 @@ public sealed class BatchExportCommand : IExternalCommand
                 sheets,
                 new BatchExportProfileStorage(logger),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

@@ -91,7 +91,7 @@ public sealed class OpeningViewsWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        Preview();
+        UpdateStatus("Нажмите «Предпросмотр», чтобы собрать двери и окна на активном плане.");
         logger.Info($"Opening Views window opened for '{document.Title}' and plan '{activePlan.Name}'.");
     }
 
@@ -573,7 +573,7 @@ public sealed class OpeningViewsWindow : Window
         string orientation = OpeningViewOrientationSources.GetDisplayName(orientationSourceInput.SelectedValue as string).ToLowerInvariant();
         string text = $"Проёмов: {openingRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Ориентация: {orientation}. Тип фасада: {elevationType}. Отчётных строк: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
-        applyButton.IsEnabled = selectedRows > 0 || openingRows.Count == 0;
+        applyButton.IsEnabled = selectedRows > 0;
     }
 
     private static int ParseInt(string text, int fallback)

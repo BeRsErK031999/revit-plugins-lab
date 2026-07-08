@@ -52,11 +52,6 @@ public sealed class OpenTrueBimCommand : IExternalCommand
                 }
             });
 
-        System.Windows.Interop.WindowInteropHelper helper = new(window)
-        {
-            Owner = commandData.Application.MainWindowHandle
-        };
-
         window.ShowDialog();
 
         return Result.Succeeded;

@@ -8,7 +8,7 @@ namespace TrueBIM.App.Tests.Modules.BimTools.AutoMepDimensions;
 public sealed class MepDimensionProfileStorageTests
 {
     [Fact]
-    public void Normalize_DefaultsToPipesAndClampsAngleTolerance()
+    public void Normalize_DefaultsToAllMepCategoriesAndClampsAngleTolerance()
     {
         MepDimensionProfile profile = MepDimensionProfileStorage.Normalize(new MepDimensionProfile
         {
@@ -25,9 +25,9 @@ public sealed class MepDimensionProfileStorageTests
 
         Assert.Equal("Активный план", profile.Name);
         Assert.True(profile.IncludePipes);
-        Assert.False(profile.IncludeDucts);
-        Assert.False(profile.IncludeCableTrays);
-        Assert.False(profile.IncludeConduits);
+        Assert.True(profile.IncludeDucts);
+        Assert.True(profile.IncludeCableTrays);
+        Assert.True(profile.IncludeConduits);
         Assert.False(profile.AllowElementReferenceFallback);
         Assert.Equal(30, profile.AngleToleranceDegrees);
         Assert.Equal(MepDimensionLinePlacements.Center, profile.DimensionLinePlacement);

@@ -25,7 +25,7 @@ public sealed class AutoMepDimensionsCommand : IExternalCommand
             }
 
             Document document = uiDocument.Document;
-            View activeView = document.ActiveView;
+            View activeView = uiDocument.ActiveView;
             if (!MepDimensionCollectorService.CanUseActiveView(activeView, out string viewMessage))
             {
                 logger.Warning($"Auto MEP Dimensions requested for unsupported view '{activeView?.Name}': {viewMessage}");
@@ -40,11 +40,6 @@ public sealed class AutoMepDimensionsCommand : IExternalCommand
                 new MepDimensionCreationService(),
                 new MepDimensionProfileStorage(logger),
                 logger);
-            System.Windows.Interop.WindowInteropHelper helper = new(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             window.ShowDialog();
             return Result.Succeeded;
         }

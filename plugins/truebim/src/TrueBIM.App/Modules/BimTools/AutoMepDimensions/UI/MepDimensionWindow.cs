@@ -101,7 +101,7 @@ public sealed class MepDimensionWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        Preview();
+        UpdateStatus("Нажмите «Предпросмотр», чтобы собрать кандидаты на активном виде.");
         logger.Info($"Auto MEP Dimensions window opened for '{document.Title}' and view '{activeView.Name}'.");
     }
 
@@ -391,7 +391,9 @@ public sealed class MepDimensionWindow : Window
 
         exportReportButton.IsEnabled = reportRows.Count > 0;
         RefreshVisibleRows();
-        UpdateStatus($"Предпросмотр: {candidateRows.Count} размерных цепочек.");
+        UpdateStatus(candidateRows.Count == 0
+            ? "Кандидаты не найдены. Проверьте, что на активном 2D-виде видны трубы, воздуховоды, лотки или кабель-каналы и включены нужные категории."
+            : $"Предпросмотр: {candidateRows.Count} размерных цепочек.");
     }
 
     private void Apply()
@@ -584,7 +586,7 @@ public sealed class MepDimensionWindow : Window
         string linePlacement = MepDimensionLinePlacements.FormatForDisplay(linePlacementInput.SelectedValue as string, ParseDimensionOffset());
         string text = $"Цепочек: {candidateRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Допуск: {ParseAngleTolerance():0.##}°. Линия: {linePlacement}. Отчётных строк: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
-        applyButton.IsEnabled = selectedRows > 0 || candidateRows.Count == 0;
+        applyButton.IsEnabled = selectedRows > 0;
     }
 
     private string CreateCategorySummary()

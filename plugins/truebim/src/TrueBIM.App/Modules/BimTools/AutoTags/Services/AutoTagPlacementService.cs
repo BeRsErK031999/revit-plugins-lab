@@ -57,7 +57,8 @@ public sealed class AutoTagPlacementService
         Document document,
         View activeView,
         IReadOnlyList<AutoTagElementRow> rows,
-        AutoTagTypeOption tagType,
+        AutoTagTypeOption defaultTagType,
+        IReadOnlyDictionary<long, AutoTagTypeOption> tagTypesByCategory,
         bool onlyUntagged,
         bool useLeader,
         double offsetRightMm,
@@ -67,7 +68,8 @@ public sealed class AutoTagPlacementService
         Guard.NotNull(document, nameof(document));
         Guard.NotNull(activeView, nameof(activeView));
         Guard.NotNull(rows, nameof(rows));
-        Guard.NotNull(tagType, nameof(tagType));
+        Guard.NotNull(defaultTagType, nameof(defaultTagType));
+        Guard.NotNull(tagTypesByCategory, nameof(tagTypesByCategory));
         Guard.NotNull(logger, nameof(logger));
 
         List<AutoTagReportRow> reportRows = [];
@@ -77,6 +79,10 @@ public sealed class AutoTagPlacementService
 
         foreach (AutoTagElementRow row in rows.Where(row => row.IsSelected && row.CanApply))
         {
+            AutoTagTypeOption tagType = tagTypesByCategory.TryGetValue(row.CategoryId, out AutoTagTypeOption? categoryTagType)
+                ? categoryTagType
+                : defaultTagType;
+
             try
             {
                 ElementId elementId = RevitElementIds.Create(row.ElementId);
