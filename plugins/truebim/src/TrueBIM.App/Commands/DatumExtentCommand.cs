@@ -1,7 +1,8 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using TrueBIM.App.Modules.BimTools;
+using TrueBIM.App.Modules.BimTools.DatumExtents.Services;
+using TrueBIM.App.Modules.BimTools.DatumExtents.UI;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -12,7 +13,47 @@ public sealed class DatumExtentCommand : IExternalCommand
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         FileTrueBimLogger logger = new(new TrueBimLogPaths());
-        TrueBimCommandActions.OpenBimToolPlaceholder(commandData, BimToolPlaceholders.DatumExtents, null, logger);
-        return Result.Succeeded;
+
+        try
+        {
+            UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
+            if (uiDocument is null)
+            {
+                logger.Warning("Datum Extents requested without an active document.");
+                TaskDialog.Show("Оси 2D/3D", "Откройте документ Revit перед запуском управления осями.");
+                return Result.Succeeded;
+            }
+
+            Document document = uiDocument.Document;
+            View activeView = document.ActiveView;
+            if (!DatumExtentCollectorService.CanUseActiveView(activeView, out string viewMessage))
+            {
+                logger.Warning($"Datum Extents requested for unsupported view '{activeView?.Name}': {viewMessage}");
+                TaskDialog.Show("Оси 2D/3D", viewMessage);
+                return Result.Succeeded;
+            }
+
+            DatumExtentService datumExtentService = new();
+            DatumExtentWindow window = new(
+                document,
+                activeView,
+                new DatumExtentCollectorService(),
+                datumExtentService,
+                new DatumExtentProfileStorage(logger),
+                logger);
+            System.Windows.Interop.WindowInteropHelper helper = new(window)
+            {
+                Owner = commandData.Application.MainWindowHandle
+            };
+
+            window.ShowDialog();
+            return Result.Succeeded;
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to open Datum Extents window.", exception);
+            TaskDialog.Show("Оси 2D/3D", "Не удалось открыть управление осями. Используйте логи для диагностики.");
+            return Result.Failed;
+        }
     }
 }
