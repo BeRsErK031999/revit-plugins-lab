@@ -4,10 +4,12 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using Autodesk.Revit.DB;
 using Microsoft.Win32;
 using TrueBIM.App.Modules.BimTools.ClashReport.Models;
 using TrueBIM.App.Modules.BimTools.ClashReport.Services;
 using TrueBIM.App.Modules.BimTools.Common.Services.Export;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using RevitDocument = Autodesk.Revit.DB.Document;
@@ -63,6 +65,7 @@ public sealed class ClashReportWindow : Window
     private readonly DataGrid clashGrid = new();
     private readonly DataGrid reportGrid = new();
     private readonly TextBlock statusText = new();
+    private readonly Button selectButton = CreateButton("Выбрать", TrueBimIcon.Apply, 105);
     private readonly Button navigateButton = CreateButton("Показать в 3D", TrueBimIcon.ClashReport, 140);
     private readonly Button saveStateButton = CreateButton("Сохранить", TrueBimIcon.Apply, 110);
     private readonly Button exportReportButton = CreateButton("Отчёт CSV", TrueBimIcon.Export, 120);
@@ -183,6 +186,9 @@ public sealed class ClashReportWindow : Window
         Button refreshButton = CreateButton("Проверить", TrueBimIcon.Preview, 115);
         refreshButton.Click += (_, _) => ResolveRows();
         actions.Children.Add(refreshButton);
+
+        selectButton.Click += (_, _) => SelectSelectedClashElements(showDialogWhenMissing: true);
+        actions.Children.Add(selectButton);
 
         navigateButton.Click += (_, _) => NavigateToSelectedClash();
         actions.Children.Add(navigateButton);
@@ -307,6 +313,7 @@ public sealed class ClashReportWindow : Window
         clashGrid.Columns.Add(CreateEditableTextColumn("Комментарий", nameof(ClashItem.Comment), 220));
         clashGrid.Columns.Add(CreateTextColumn("Resolve", nameof(ClashItem.ResolvedDisplay), 85));
         clashGrid.Columns.Add(CreateTextColumn("Сообщение", nameof(ClashItem.Message), 220));
+        clashGrid.MouseDoubleClick += (_, _) => SelectSelectedClashElements(showDialogWhenMissing: true);
 
         ICollectionView view = CollectionViewSource.GetDefaultView(clashGrid.ItemsSource);
         view.Filter = MatchesFilter;
@@ -364,6 +371,65 @@ public sealed class ClashReportWindow : Window
 
         AddReport("Проверка", string.Empty, string.Empty, "OK", $"Обновлено строк: {clashRows.Count}.");
         UpdateStatus();
+    }
+
+    private bool SelectSelectedClashElements(bool showDialogWhenMissing)
+    {
+        CommitGridEdits();
+        if (clashGrid.SelectedItem is not ClashItem item)
+        {
+            if (showDialogWhenMissing)
+            {
+                TaskDialog("Отчёт коллизий", "Выберите строку коллизии для выбора элементов.");
+            }
+
+            return false;
+        }
+
+        elementResolver.Resolve(document, item);
+        List<ElementId> elementIds = item
+            .GetResolvedElementIds()
+            .Distinct()
+            .Select(RevitElementIds.Create)
+            .ToList();
+        if (elementIds.Count == 0)
+        {
+            string message = "Нет найденных ElementId для выбора. Нажмите «Проверить» или пересканируйте модель.";
+            AddReport("Выбор", item.ClashId, item.Name, "Error", message);
+            UpdateStatus();
+            if (showDialogWhenMissing)
+            {
+                TaskDialog("Отчёт коллизий", message);
+            }
+
+            return false;
+        }
+
+        try
+        {
+            uiDocument.Selection.SetElementIds(elementIds);
+            string linkedNote = item.IsLinkDriven
+                ? " Для RVT-связей выбирается экземпляр связи; вложенный элемент доступен в отчёте по ElementId."
+                : string.Empty;
+            string message = $"Выбрано элементов: {elementIds.Count}.{linkedNote}";
+            AddReport("Выбор", item.ClashId, item.Name, "OK", message);
+            UpdateStatus(message);
+            logger.Info($"Clash '{item.ClashId}' selected {elementIds.Count} Revit elements.");
+            return true;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.InvalidOperationException or ArgumentException)
+        {
+            string message = $"Не удалось выбрать элементы: {exception.Message}";
+            AddReport("Выбор", item.ClashId, item.Name, "Error", message);
+            UpdateStatus();
+            logger.Warning($"Failed to select clash '{item.ClashId}': {exception.Message}");
+            if (showDialogWhenMissing)
+            {
+                TaskDialog("Отчёт коллизий", message);
+            }
+
+            return false;
+        }
     }
 
     private void NavigateToSelectedClash()
@@ -499,6 +565,7 @@ public sealed class ClashReportWindow : Window
         string text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; Open: {open}; отчётных событий: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         bool hasRows = clashRows.Count > 0;
+        selectButton.IsEnabled = hasRows;
         navigateButton.IsEnabled = hasRows;
         saveStateButton.IsEnabled = hasRows;
         exportReportButton.IsEnabled = hasRows;
