@@ -53,7 +53,66 @@ public sealed class BatchExportProfileStorage
                 ? BatchExportNamingService.DefaultTemplate
                 : profile.FileNameTemplate.Trim(),
             ExportPdf = profile.ExportPdf,
-            ExportDwg = profile.ExportDwg
+            ExportDwg = profile.ExportDwg,
+            ActiveSheetSetName = NormalizeActiveSheetSetName(profile.ActiveSheetSetName, profile.SheetSets),
+            SheetSets = NormalizeSheetSets(profile.SheetSets)
         };
+    }
+
+    private static string? NormalizeActiveSheetSetName(string? activeSheetSetName, IEnumerable<BatchExportSheetSet>? sheetSets)
+    {
+        if (string.IsNullOrWhiteSpace(activeSheetSetName))
+        {
+            return null;
+        }
+
+        string normalizedName = (activeSheetSetName ?? string.Empty).Trim();
+        return NormalizeSheetSets(sheetSets).Any(sheetSet => string.Equals(sheetSet.Name, normalizedName, StringComparison.CurrentCultureIgnoreCase))
+            ? normalizedName
+            : null;
+    }
+
+    private static List<BatchExportSheetSet> NormalizeSheetSets(IEnumerable<BatchExportSheetSet>? sheetSets)
+    {
+        Dictionary<string, BatchExportSheetSet> normalized = new(StringComparer.CurrentCultureIgnoreCase);
+        foreach (BatchExportSheetSet sheetSet in sheetSets ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(sheetSet.Name))
+            {
+                continue;
+            }
+
+            string name = sheetSet.Name.Trim();
+            List<string> sheetNumbers = (sheetSet.SheetNumbers ?? [])
+                .Where(sheetNumber => !string.IsNullOrWhiteSpace(sheetNumber))
+                .Select(sheetNumber => sheetNumber.Trim())
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(sheetNumber => sheetNumber, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+            if (sheetNumbers.Count == 0)
+            {
+                continue;
+            }
+
+            if (!normalized.TryGetValue(name, out BatchExportSheetSet? existing))
+            {
+                normalized[name] = new BatchExportSheetSet
+                {
+                    Name = name,
+                    SheetNumbers = sheetNumbers
+                };
+                continue;
+            }
+
+            existing.SheetNumbers = existing.SheetNumbers
+                .Concat(sheetNumbers)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(sheetNumber => sheetNumber, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        return normalized.Values
+            .OrderBy(sheetSet => sheetSet.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 }

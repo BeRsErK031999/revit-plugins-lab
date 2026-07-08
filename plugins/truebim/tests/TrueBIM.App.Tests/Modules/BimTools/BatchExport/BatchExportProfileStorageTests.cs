@@ -19,6 +19,8 @@ public sealed class BatchExportProfileStorageTests
         Assert.Equal(BatchExportNamingService.DefaultTemplate, profile.FileNameTemplate);
         Assert.True(profile.ExportPdf);
         Assert.False(profile.ExportDwg);
+        Assert.Null(profile.ActiveSheetSetName);
+        Assert.Empty(profile.SheetSets);
     }
 
     [Fact]
@@ -34,7 +36,26 @@ public sealed class BatchExportProfileStorageTests
             ExportFolder = @"  C:\Exports  ",
             FileNameTemplate = "  {SheetNumber}  ",
             ExportPdf = false,
-            ExportDwg = true
+            ExportDwg = true,
+            ActiveSheetSetName = "  Архитектура  ",
+            SheetSets =
+            [
+                new BatchExportSheetSet
+                {
+                    Name = "  Архитектура  ",
+                    SheetNumbers = [" A-102 ", "A-101", "A-101", " "]
+                },
+                new BatchExportSheetSet
+                {
+                    Name = "Архитектура",
+                    SheetNumbers = ["A-103"]
+                },
+                new BatchExportSheetSet
+                {
+                    Name = "  ",
+                    SheetNumbers = ["X-001"]
+                }
+            ]
         });
 
         BatchExportProfile profile = storage.Load();
@@ -43,6 +64,30 @@ public sealed class BatchExportProfileStorageTests
         Assert.Equal("{SheetNumber}", profile.FileNameTemplate);
         Assert.False(profile.ExportPdf);
         Assert.True(profile.ExportDwg);
+        Assert.Equal("Архитектура", profile.ActiveSheetSetName);
+        BatchExportSheetSet sheetSet = Assert.Single(profile.SheetSets);
+        Assert.Equal("Архитектура", sheetSet.Name);
+        Assert.Equal(["A-101", "A-102", "A-103"], sheetSet.SheetNumbers);
+    }
+
+    [Fact]
+    public void Normalize_DropsActiveSheetSetWhenSetDoesNotExist()
+    {
+        BatchExportProfile profile = BatchExportProfileStorage.Normalize(new BatchExportProfile
+        {
+            ActiveSheetSetName = "Не существует",
+            SheetSets =
+            [
+                new BatchExportSheetSet
+                {
+                    Name = "Комплект",
+                    SheetNumbers = ["A-001"]
+                }
+            ]
+        });
+
+        Assert.Null(profile.ActiveSheetSetName);
+        Assert.Single(profile.SheetSets);
     }
 
     private sealed class TempDirectory : IDisposable

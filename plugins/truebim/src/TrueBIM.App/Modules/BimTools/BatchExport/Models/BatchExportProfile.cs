@@ -13,4 +13,8 @@ public sealed class BatchExportProfile
     public bool ExportPdf { get; set; } = true;
 
     public bool ExportDwg { get; set; }
+
+    public string? ActiveSheetSetName { get; set; }
+
+    public List<BatchExportSheetSet> SheetSets { get; set; } = [];
 }

@@ -21,6 +21,7 @@ public sealed class BatchExportWindow : Window
 {
     private readonly ObservableCollection<BatchExportSheetRow> visibleRows = new();
     private readonly ObservableCollection<BatchExportReportRow> reportRows = new();
+    private readonly ObservableCollection<BatchExportSheetSet> sheetSets = new();
     private readonly List<BatchExportSheetRow> allRows;
     private readonly RevitDocument document;
     private readonly BatchExportProfileStorage profileStorage;
@@ -34,6 +35,8 @@ public sealed class BatchExportWindow : Window
     private readonly TextBox exportFolderInput = new();
     private readonly TextBox fileNameTemplateInput = new();
     private readonly TextBox filterInput = new();
+    private readonly TextBox sheetSetNameInput = new();
+    private readonly ComboBox sheetSetInput = new();
     private readonly CheckBox pdfInput = new()
     {
         Content = "PDF",
@@ -50,6 +53,10 @@ public sealed class BatchExportWindow : Window
     private readonly TextBlock statusText = new();
     private readonly Button exportButton = CreateActionButton("Экспортировать", TrueBimIcon.Export);
     private readonly Button exportReportButton = CreateActionButton("Отчёт CSV", TrueBimIcon.Export);
+    private readonly Button loadSheetSetButton = CreateActionButton("Загрузить", TrueBimIcon.Apply);
+    private readonly Button saveSheetSetButton = CreateActionButton("Сохранить набор", TrueBimIcon.Apply);
+    private readonly Button deleteSheetSetButton = CreateActionButton("Удалить", TrueBimIcon.Close);
+    private bool isUpdatingSheetSetSelection;
 
     public BatchExportWindow(
         RevitDocument document,
@@ -139,6 +146,7 @@ public sealed class BatchExportWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         AddLabel(root, "Папка выгрузки", 0, 0);
         exportFolderInput.Height = 32;
@@ -187,12 +195,52 @@ public sealed class BatchExportWindow : Window
         WpfGrid.SetColumn(previewButton, 2);
         root.Children.Add(previewButton);
 
-        AddLabel(root, "Фильтр", 0, 2);
+        AddLabel(root, "Набор листов", 0, 2);
+        StackPanel sheetSetControls = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(8, 0, 8, 8)
+        };
+        sheetSetInput.Width = 240;
+        sheetSetInput.Height = 32;
+        sheetSetInput.DisplayMemberPath = nameof(BatchExportSheetSet.Name);
+        sheetSetInput.ItemsSource = sheetSets;
+        sheetSetInput.ToolTip = "Сохранённые наборы листов для текущего профиля экспорта.";
+        sheetSetInput.SelectionChanged += (_, _) => OnSheetSetSelectionChanged();
+        sheetSetControls.Children.Add(sheetSetInput);
+
+        sheetSetNameInput.Width = 240;
+        sheetSetNameInput.Height = 32;
+        sheetSetNameInput.Margin = new Thickness(8, 0, 0, 0);
+        sheetSetNameInput.ToolTip = "Имя нового или обновляемого набора листов.";
+        sheetSetControls.Children.Add(sheetSetNameInput);
+
+        WpfGrid.SetRow(sheetSetControls, 2);
+        WpfGrid.SetColumn(sheetSetControls, 1);
+        root.Children.Add(sheetSetControls);
+
+        StackPanel sheetSetActions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        loadSheetSetButton.Click += (_, _) => LoadSelectedSheetSet();
+        sheetSetActions.Children.Add(loadSheetSetButton);
+        saveSheetSetButton.Click += (_, _) => SaveCurrentSheetSet();
+        sheetSetActions.Children.Add(saveSheetSetButton);
+        deleteSheetSetButton.Click += (_, _) => DeleteSelectedSheetSet();
+        sheetSetActions.Children.Add(deleteSheetSetButton);
+        WpfGrid.SetRow(sheetSetActions, 2);
+        WpfGrid.SetColumn(sheetSetActions, 2);
+        WpfGrid.SetColumnSpan(sheetSetActions, 2);
+        root.Children.Add(sheetSetActions);
+
+        AddLabel(root, "Фильтр", 0, 3);
         filterInput.Height = 32;
         filterInput.Margin = new Thickness(8, 0, 8, 0);
         filterInput.ToolTip = "Фильтр по номеру или имени листа.";
         filterInput.TextChanged += (_, _) => RefreshVisibleRows();
-        WpfGrid.SetRow(filterInput, 2);
+        WpfGrid.SetRow(filterInput, 3);
         WpfGrid.SetColumn(filterInput, 1);
         root.Children.Add(filterInput);
 
@@ -221,7 +269,7 @@ public sealed class BatchExportWindow : Window
         closeButton.Click += (_, _) => Close();
         actions.Children.Add(closeButton);
 
-        WpfGrid.SetRow(actions, 2);
+        WpfGrid.SetRow(actions, 3);
         WpfGrid.SetColumn(actions, 2);
         WpfGrid.SetColumnSpan(actions, 2);
         root.Children.Add(actions);
@@ -269,6 +317,7 @@ public sealed class BatchExportWindow : Window
         fileNameTemplateInput.Text = profile.FileNameTemplate;
         pdfInput.IsChecked = profile.ExportPdf;
         dwgInput.IsChecked = profile.ExportDwg;
+        ApplySheetSets(profile.SheetSets, profile.ActiveSheetSetName);
     }
 
     private void SaveProfile()
@@ -278,7 +327,9 @@ public sealed class BatchExportWindow : Window
             ExportFolder = exportFolderInput.Text,
             FileNameTemplate = fileNameTemplateInput.Text,
             ExportPdf = pdfInput.IsChecked == true,
-            ExportDwg = dwgInput.IsChecked == true
+            ExportDwg = dwgInput.IsChecked == true,
+            ActiveSheetSetName = (sheetSetInput.SelectedItem as BatchExportSheetSet)?.Name,
+            SheetSets = CloneSheetSets(sheetSets)
         });
     }
 
@@ -300,6 +351,149 @@ public sealed class BatchExportWindow : Window
         }
 
         UpdateExportState();
+    }
+
+    private void ApplySheetSets(IReadOnlyList<BatchExportSheetSet> profileSheetSets, string? activeSheetSetName)
+    {
+        isUpdatingSheetSetSelection = true;
+        sheetSets.Clear();
+        foreach (BatchExportSheetSet sheetSet in profileSheetSets)
+        {
+            sheetSets.Add(CloneSheetSet(sheetSet));
+        }
+
+        BatchExportSheetSet? selected = sheetSets.FirstOrDefault(sheetSet =>
+            string.Equals(sheetSet.Name, activeSheetSetName, StringComparison.CurrentCultureIgnoreCase))
+            ?? sheetSets.FirstOrDefault();
+        sheetSetInput.SelectedItem = selected;
+        sheetSetNameInput.Text = selected?.Name ?? string.Empty;
+        isUpdatingSheetSetSelection = false;
+        UpdateSheetSetState();
+    }
+
+    private void OnSheetSetSelectionChanged()
+    {
+        if (isUpdatingSheetSetSelection)
+        {
+            return;
+        }
+
+        if (sheetSetInput.SelectedItem is BatchExportSheetSet sheetSet)
+        {
+            sheetSetNameInput.Text = sheetSet.Name;
+        }
+
+        UpdateSheetSetState();
+        UpdateExportState();
+    }
+
+    private void LoadSelectedSheetSet()
+    {
+        if (sheetSetInput.SelectedItem is not BatchExportSheetSet sheetSet)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show("Экспорт PDF/DWG", "Выберите сохранённый набор листов.");
+            return;
+        }
+
+        HashSet<string> sheetNumbers = new(sheetSet.SheetNumbers, StringComparer.CurrentCultureIgnoreCase);
+        int selectedCount = 0;
+        int missingCount = sheetNumbers.Count;
+        foreach (BatchExportSheetRow row in allRows)
+        {
+            bool shouldSelect = row.CanBePrinted && sheetNumbers.Contains(row.SheetNumber);
+            row.IsSelected = shouldSelect;
+            if (shouldSelect)
+            {
+                selectedCount++;
+                missingCount--;
+            }
+        }
+
+        SaveProfile();
+        RefreshVisibleRows();
+        Autodesk.Revit.UI.TaskDialog.Show(
+            "Экспорт PDF/DWG",
+            $"Загружен набор '{sheetSet.Name}'.\nВыбрано листов: {selectedCount}\nНе найдено или непечатаемых: {Math.Max(0, missingCount)}");
+    }
+
+    private void SaveCurrentSheetSet()
+    {
+        string name = sheetSetNameInput.Text.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            Autodesk.Revit.UI.TaskDialog.Show("Экспорт PDF/DWG", "Введите имя набора листов.");
+            return;
+        }
+
+        List<string> selectedSheetNumbers = allRows
+            .Where(row => row.IsSelected && row.CanBePrinted)
+            .Select(row => row.SheetNumber)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(sheetNumber => sheetNumber, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        if (selectedSheetNumbers.Count == 0)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show("Экспорт PDF/DWG", "Выберите хотя бы один печатаемый лист для набора.");
+            return;
+        }
+
+        BatchExportSheetSet saved = new()
+        {
+            Name = name,
+            SheetNumbers = selectedSheetNumbers
+        };
+        ReplaceSheetSet(saved);
+        SaveProfile();
+        UpdateSheetSetState();
+        UpdateExportState();
+        Autodesk.Revit.UI.TaskDialog.Show("Экспорт PDF/DWG", $"Набор '{saved.Name}' сохранён. Листов: {saved.SheetNumbers.Count}.");
+    }
+
+    private void DeleteSelectedSheetSet()
+    {
+        if (sheetSetInput.SelectedItem is not BatchExportSheetSet sheetSet)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show("Экспорт PDF/DWG", "Выберите набор листов для удаления.");
+            return;
+        }
+
+        sheetSets.Remove(sheetSet);
+        BatchExportSheetSet? next = sheetSets.FirstOrDefault();
+        sheetSetInput.SelectedItem = next;
+        sheetSetNameInput.Text = next?.Name ?? string.Empty;
+        SaveProfile();
+        UpdateSheetSetState();
+        UpdateExportState();
+        Autodesk.Revit.UI.TaskDialog.Show("Экспорт PDF/DWG", $"Набор '{sheetSet.Name}' удалён.");
+    }
+
+    private void ReplaceSheetSet(BatchExportSheetSet saved)
+    {
+        BatchExportSheetSet? existing = sheetSets.FirstOrDefault(sheetSet =>
+            string.Equals(sheetSet.Name, saved.Name, StringComparison.CurrentCultureIgnoreCase));
+        if (existing is not null)
+        {
+            sheetSets.Remove(existing);
+        }
+
+        int insertIndex = 0;
+        while (insertIndex < sheetSets.Count
+            && string.Compare(sheetSets[insertIndex].Name, saved.Name, StringComparison.CurrentCultureIgnoreCase) < 0)
+        {
+            insertIndex++;
+        }
+
+        sheetSets.Insert(insertIndex, saved);
+        sheetSetInput.SelectedItem = saved;
+        sheetSetNameInput.Text = saved.Name;
+    }
+
+    private void UpdateSheetSetState()
+    {
+        bool hasSet = sheetSetInput.SelectedItem is BatchExportSheetSet;
+        loadSheetSetButton.IsEnabled = hasSet;
+        deleteSheetSetButton.IsEnabled = hasSet;
+        saveSheetSetButton.IsEnabled = allRows.Any(row => row.IsSelected && row.CanBePrinted);
     }
 
     private void UpdatePreviews()
@@ -572,6 +766,7 @@ public sealed class BatchExportWindow : Window
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
         bool hasFormat = pdfInput.IsChecked == true || dwgInput.IsChecked == true;
         exportButton.IsEnabled = selectedCount > 0 && hasFolder && hasFormat && duplicateSelectedCount == 0;
+        UpdateSheetSetState();
 
         string formats = GetSelectedFormatsText();
         string duplicatesText = duplicateSelectedCount > 0
@@ -584,7 +779,7 @@ public sealed class BatchExportWindow : Window
             ? $" Пустые токены: {missingTokenCount}."
             : string.Empty;
 
-        statusText.Text = $"Листов: {allRows.Count}. Печатаемых: {printableCount}. Показано: {visibleRows.Count}. Выбрано: {selectedCount}. Форматы: {formats}.{duplicatesText}{truncatedText}{missingTokenText}";
+        statusText.Text = $"Листов: {allRows.Count}. Печатаемых: {printableCount}. Показано: {visibleRows.Count}. Выбрано: {selectedCount}. Наборов: {sheetSets.Count}. Форматы: {formats}.{duplicatesText}{truncatedText}{missingTokenText}";
     }
 
     private string GetSelectedFormatsText()
@@ -634,6 +829,20 @@ public sealed class BatchExportWindow : Window
             MinWidth = 110,
             Height = 32,
             Margin = new Thickness(0, 0, 8, 0)
+        };
+    }
+
+    private static List<BatchExportSheetSet> CloneSheetSets(IEnumerable<BatchExportSheetSet> source)
+    {
+        return source.Select(CloneSheetSet).ToList();
+    }
+
+    private static BatchExportSheetSet CloneSheetSet(BatchExportSheetSet source)
+    {
+        return new BatchExportSheetSet
+        {
+            Name = source.Name,
+            SheetNumbers = source.SheetNumbers.ToList()
         };
     }
 
