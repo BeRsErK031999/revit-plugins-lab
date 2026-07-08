@@ -55,6 +55,30 @@ public sealed class TitleBlockProfileStorageTests
         Assert.Equal("dd.MM.yyyy", rule.Value);
     }
 
+    [Fact]
+    public void Normalize_KeepsFormulaSource()
+    {
+        TitleBlockProfile profile = TitleBlockProfileStorage.Normalize(new TitleBlockProfile
+        {
+            Name = "Formula",
+            Rules =
+            [
+                new TitleBlockParameterRule
+                {
+                    Target = TitleBlockRuleTargets.TitleBlock,
+                    ParameterName = "SheetCode",
+                    Source = TitleBlockValueSources.Formula,
+                    Value = "{SheetNumber}_{Date:yyyy-MM-dd}"
+                }
+            ]
+        });
+
+        TitleBlockParameterRule rule = Assert.Single(profile.Rules);
+        Assert.Equal(TitleBlockRuleTargets.TitleBlock, rule.Target);
+        Assert.Equal(TitleBlockValueSources.Formula, rule.Source);
+        Assert.Equal("{SheetNumber}_{Date:yyyy-MM-dd}", rule.Value);
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public TempDirectory()

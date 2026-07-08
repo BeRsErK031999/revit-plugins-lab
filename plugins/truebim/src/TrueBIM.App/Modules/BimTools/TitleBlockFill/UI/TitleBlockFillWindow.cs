@@ -266,7 +266,7 @@ public sealed class TitleBlockFillWindow : Window
         ruleGrid.Columns.Add(CreateComboColumn("Куда", nameof(TitleBlockParameterRule.Target), TitleBlockRuleTargets.All, 120));
         ruleGrid.Columns.Add(CreateEditableTextColumn("Параметр", nameof(TitleBlockParameterRule.ParameterName), new DataGridLength(1, DataGridLengthUnitType.Star)));
         ruleGrid.Columns.Add(CreateComboColumn("Источник", nameof(TitleBlockParameterRule.Source), TitleBlockValueSources.All, 170));
-        ruleGrid.Columns.Add(CreateEditableTextColumn("Значение / имя параметра / формат даты", nameof(TitleBlockParameterRule.Value), new DataGridLength(260)));
+        ruleGrid.Columns.Add(CreateEditableTextColumn("Значение / параметр / формула", nameof(TitleBlockParameterRule.Value), new DataGridLength(260)));
         panel.Children.Add(ruleGrid);
         return panel;
     }

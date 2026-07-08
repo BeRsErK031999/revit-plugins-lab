@@ -14,6 +14,8 @@ public static class TitleBlockValueSources
 
     public const string SheetParameter = "Параметр листа";
 
+    public const string Formula = "Формула";
+
     public static IReadOnlyList<string> All { get; } =
     [
         StaticText,
@@ -21,6 +23,7 @@ public static class TitleBlockValueSources
         SheetNumber,
         SheetName,
         ProjectParameter,
-        SheetParameter
+        SheetParameter,
+        Formula
     ];
 }
