@@ -15,6 +15,8 @@ public sealed class AutoTagProfileStorageTests
             Name = "  ",
             OnlyUntagged = false,
             UseLeader = true,
+            OffsetRightMm = 6200,
+            OffsetUpMm = double.NaN,
             MaxPreviewCount = 9000,
             SelectedTagTypeId = -1,
             SelectedCategoryIds = [42, 42, -2000011]
@@ -23,6 +25,8 @@ public sealed class AutoTagProfileStorageTests
         Assert.Equal("Активный вид", profile.Name);
         Assert.False(profile.OnlyUntagged);
         Assert.True(profile.UseLeader);
+        Assert.Equal(5000, profile.OffsetRightMm);
+        Assert.Equal(0, profile.OffsetUpMm);
         Assert.Equal(5000, profile.MaxPreviewCount);
         Assert.Null(profile.SelectedTagTypeId);
         Assert.Equal([42, -2000011], profile.SelectedCategoryIds);
@@ -40,6 +44,8 @@ public sealed class AutoTagProfileStorageTests
             Name = "  План 1  ",
             OnlyUntagged = true,
             UseLeader = false,
+            OffsetRightMm = 125.5,
+            OffsetUpMm = -80,
             MaxPreviewCount = 10,
             SelectedTagTypeId = 123,
             SelectedCategoryIds = [-2000011, -2000014]
@@ -50,6 +56,8 @@ public sealed class AutoTagProfileStorageTests
         Assert.Equal("План 1", loaded.Name);
         Assert.True(loaded.OnlyUntagged);
         Assert.False(loaded.UseLeader);
+        Assert.Equal(125.5, loaded.OffsetRightMm);
+        Assert.Equal(-80, loaded.OffsetUpMm);
         Assert.Equal(50, loaded.MaxPreviewCount);
         Assert.Equal(123, loaded.SelectedTagTypeId);
         Assert.Equal([-2000011, -2000014], loaded.SelectedCategoryIds);

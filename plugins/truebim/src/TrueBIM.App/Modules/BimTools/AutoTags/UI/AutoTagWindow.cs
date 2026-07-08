@@ -34,6 +34,8 @@ public sealed class AutoTagWindow : Window
     private readonly TextBox profileNameInput = new();
     private readonly TextBox elementFilterInput = new();
     private readonly TextBox maxPreviewInput = new();
+    private readonly TextBox offsetRightInput = new();
+    private readonly TextBox offsetUpInput = new();
     private readonly CheckBox onlyUntaggedInput = new()
     {
         Content = "Только без марки",
@@ -97,6 +99,8 @@ public sealed class AutoTagWindow : Window
         profileNameInput.Text = profile.Name;
         onlyUntaggedInput.IsChecked = profile.OnlyUntagged;
         leaderInput.IsChecked = profile.UseLeader;
+        offsetRightInput.Text = FormatMillimeters(profile.OffsetRightMm);
+        offsetUpInput.Text = FormatMillimeters(profile.OffsetUpMm);
         maxPreviewInput.Text = profile.MaxPreviewCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         foreach (AutoTagCategoryOption category in collectorService.CollectCategories(document, activeView))
@@ -225,6 +229,34 @@ public sealed class AutoTagWindow : Window
         options.Children.Add(onlyUntaggedInput);
         leaderInput.Margin = new Thickness(0, 0, 14, 0);
         options.Children.Add(leaderInput);
+
+        TextBlock offsetRightLabel = new()
+        {
+            Text = "X, мм",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        options.Children.Add(offsetRightLabel);
+        offsetRightInput.Width = 70;
+        offsetRightInput.Height = 32;
+        offsetRightInput.Margin = new Thickness(0, 0, 10, 0);
+        offsetRightInput.ToolTip = "Смещение марки вправо по активному виду, мм. Отрицательное значение смещает влево.";
+        offsetRightInput.TextChanged += (_, _) => UpdateStatus();
+        options.Children.Add(offsetRightInput);
+
+        TextBlock offsetUpLabel = new()
+        {
+            Text = "Y, мм",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        options.Children.Add(offsetUpLabel);
+        offsetUpInput.Width = 70;
+        offsetUpInput.Height = 32;
+        offsetUpInput.Margin = new Thickness(0, 0, 14, 0);
+        offsetUpInput.ToolTip = "Смещение марки вверх по активному виду, мм. Отрицательное значение смещает вниз.";
+        offsetUpInput.TextChanged += (_, _) => UpdateStatus();
+        options.Children.Add(offsetUpInput);
 
         TextBlock limitLabel = new()
         {
@@ -399,7 +431,7 @@ public sealed class AutoTagWindow : Window
                 row.ElementName,
                 GetSelectedTagType().DisplayName,
                 row.Status,
-                row.Message));
+                AppendOffsetText(row.Message)));
         }
 
         exportReportButton.IsEnabled = reportRows.Count > 0;
@@ -443,6 +475,8 @@ public sealed class AutoTagWindow : Window
             tagType,
             onlyUntaggedInput.IsChecked == true,
             leaderInput.IsChecked == true,
+            GetOffsetRightMm(),
+            GetOffsetUpMm(),
             logger);
 
         Dictionary<long, AutoTagReportRow> resultRowsByElementId = result.Rows
@@ -501,6 +535,8 @@ public sealed class AutoTagWindow : Window
             Name = profileNameInput.Text,
             OnlyUntagged = onlyUntaggedInput.IsChecked == true,
             UseLeader = leaderInput.IsChecked == true,
+            OffsetRightMm = GetOffsetRightMm(),
+            OffsetUpMm = GetOffsetUpMm(),
             MaxPreviewCount = GetMaxPreviewCount(),
             SelectedTagTypeId = selectedTagType.IsAutomatic ? null : selectedTagType.ElementId,
             SelectedCategoryIds = categories
@@ -522,6 +558,32 @@ public sealed class AutoTagWindow : Window
         return int.TryParse(maxPreviewInput.Text.Trim(), out int value)
             ? Clamp(value, 50, 5000)
             : 500;
+    }
+
+    private double GetOffsetRightMm()
+    {
+        return GetOffsetMillimeters(offsetRightInput.Text);
+    }
+
+    private double GetOffsetUpMm()
+    {
+        return GetOffsetMillimeters(offsetUpInput.Text);
+    }
+
+    private static double GetOffsetMillimeters(string text)
+    {
+        return double.TryParse(
+            text.Trim(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.CurrentCulture,
+            out double value)
+            || double.TryParse(
+                text.Trim(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out value)
+            ? AutoTagPlacementOffset.NormalizeMillimeters(value)
+            : 0.0;
     }
 
     private void SetCategoriesSelected(bool isSelected)
@@ -595,8 +657,26 @@ public sealed class AutoTagWindow : Window
         int selectedRows = elementRows.Count(row => row.IsSelected && row.CanApply);
         string tagTypeText = GetSelectedTagType().DisplayName;
         string text = $"Категорий: {categories.Count}. Выбрано категорий: {selectedCategories}. Элементов в preview: {elementRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Тип: {tagTypeText}.";
+        string offsetText = AutoTagPlacementOffset.FormatForReport(GetOffsetRightMm(), GetOffsetUpMm());
+        if (!string.IsNullOrWhiteSpace(offsetText))
+        {
+            text += $" {offsetText}";
+        }
+
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         applyButton.IsEnabled = selectedRows > 0 || elementRows.Count == 0;
+    }
+
+    private string AppendOffsetText(string message)
+    {
+        string offsetText = AutoTagPlacementOffset.FormatForReport(GetOffsetRightMm(), GetOffsetUpMm());
+        return string.IsNullOrWhiteSpace(offsetText) ? message : $"{message} {offsetText}";
+    }
+
+    private static string FormatMillimeters(double value)
+    {
+        return AutoTagPlacementOffset.NormalizeMillimeters(value)
+            .ToString("0.#", System.Globalization.CultureInfo.CurrentCulture);
     }
 
     private static void AddLabel(WpfGrid grid, string text, int column, int row)

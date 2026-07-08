@@ -60,6 +60,8 @@ public sealed class AutoTagPlacementService
         AutoTagTypeOption tagType,
         bool onlyUntagged,
         bool useLeader,
+        double offsetRightMm,
+        double offsetUpMm,
         ITrueBimLogger logger)
     {
         Guard.NotNull(document, nameof(document));
@@ -97,6 +99,7 @@ public sealed class AutoTagPlacementService
                     continue;
                 }
 
+                XYZ tagPoint = AutoTagPlacementOffset.Apply(point, activeView.RightDirection, activeView.UpDirection, offsetRightMm, offsetUpMm);
                 IndependentTag tag = IndependentTag.Create(
                     document,
                     activeView.Id,
@@ -104,19 +107,20 @@ public sealed class AutoTagPlacementService
                     useLeader,
                     TagMode.TM_ADDBY_CATEGORY,
                     TagOrientation.Horizontal,
-                    point);
+                    tagPoint);
 
-                string message = "Марка создана.";
+                string offsetText = AutoTagPlacementOffset.FormatForReport(offsetRightMm, offsetUpMm);
+                string message = AppendOffsetText("Марка создана.", offsetText);
                 if (!tagType.IsAutomatic)
                 {
                     try
                     {
                         tag.ChangeTypeId(RevitElementIds.Create(tagType.ElementId));
-                        message = $"Марка создана, тип: {tagType.DisplayName}.";
+                        message = AppendOffsetText($"Марка создана, тип: {tagType.DisplayName}.", offsetText);
                     }
                     catch (Exception exception)
                     {
-                        message = $"Марка создана автоматически, но выбранный тип не применён: {exception.Message}";
+                        message = AppendOffsetText($"Марка создана автоматически, но выбранный тип не применён: {exception.Message}", offsetText);
                         logger.Warning($"Failed to change tag type for element {row.ElementId}: {exception.Message}");
                     }
                 }
@@ -150,6 +154,11 @@ public sealed class AutoTagPlacementService
             tagType.DisplayName,
             status,
             message);
+    }
+
+    private static string AppendOffsetText(string message, string offsetText)
+    {
+        return string.IsNullOrWhiteSpace(offsetText) ? message : $"{message} {offsetText}";
     }
 
     private static bool IsValidPoint(XYZ point)

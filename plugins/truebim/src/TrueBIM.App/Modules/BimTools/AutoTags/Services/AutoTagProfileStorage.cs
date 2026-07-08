@@ -42,6 +42,8 @@ public sealed class AutoTagProfileStorage
             Name = "Активный вид",
             OnlyUntagged = true,
             UseLeader = false,
+            OffsetRightMm = 0,
+            OffsetUpMm = 0,
             MaxPreviewCount = DefaultMaxPreviewCount,
             SelectedTagTypeId = null,
             SelectedCategoryIds = []
@@ -57,6 +59,8 @@ public sealed class AutoTagProfileStorage
             Name = string.IsNullOrWhiteSpace(profile.Name) ? "Активный вид" : profile.Name.Trim(),
             OnlyUntagged = profile.OnlyUntagged,
             UseLeader = profile.UseLeader,
+            OffsetRightMm = AutoTagPlacementOffset.NormalizeMillimeters(profile.OffsetRightMm),
+            OffsetUpMm = AutoTagPlacementOffset.NormalizeMillimeters(profile.OffsetUpMm),
             MaxPreviewCount = Clamp(profile.MaxPreviewCount <= 0 ? DefaultMaxPreviewCount : profile.MaxPreviewCount, 50, 5000),
             SelectedTagTypeId = profile.SelectedTagTypeId is > 0 ? profile.SelectedTagTypeId : null,
             SelectedCategoryIds = (profile.SelectedCategoryIds ?? [])

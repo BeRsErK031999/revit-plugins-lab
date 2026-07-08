@@ -8,6 +8,10 @@ public sealed class AutoTagProfile
 
     public bool UseLeader { get; set; }
 
+    public double OffsetRightMm { get; set; }
+
+    public double OffsetUpMm { get; set; }
+
     public int MaxPreviewCount { get; set; } = 500;
 
     public long? SelectedTagTypeId { get; set; }
