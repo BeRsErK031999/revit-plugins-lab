@@ -15,13 +15,21 @@ public sealed class ClashReportStorageTests
             Name = "  ",
             LastCsvPath = "  C:/tmp/clashes.csv  ",
             SectionBoxPaddingMm = double.NaN,
-            HighlightOnNavigate = false
+            MinimumOverlapMm = -5,
+            HighlightOnNavigate = false,
+            ScanCurrentModel = true,
+            ScanRvtLinks = false,
+            ScanLinksAgainstEachOther = true
         });
 
-        Assert.Equal("RVT-связи", profile.Name);
+        Assert.Equal("Координационная проверка", profile.Name);
         Assert.Equal("C:/tmp/clashes.csv", profile.LastCsvPath);
         Assert.Equal(1500, profile.SectionBoxPaddingMm);
+        Assert.Equal(0, profile.MinimumOverlapMm);
         Assert.False(profile.HighlightOnNavigate);
+        Assert.True(profile.ScanCurrentModel);
+        Assert.False(profile.ScanRvtLinks);
+        Assert.True(profile.ScanLinksAgainstEachOther);
     }
 
     [Fact]
@@ -46,6 +54,7 @@ public sealed class ClashReportStorageTests
         Assert.Equal("Fixed", loadedItem.Comment);
         Assert.Equal("Model A", loadedProfile.Name);
         Assert.Equal(500, loadedProfile.SectionBoxPaddingMm);
+        Assert.True(loadedProfile.ScanRvtLinks);
     }
 
     private sealed class TempDirectory : IDisposable

@@ -122,10 +122,14 @@ public sealed class ClashReportStorage
         ClashReportProfile source = profile ?? new ClashReportProfile();
         return new ClashReportProfile
         {
-            Name = string.IsNullOrWhiteSpace(source.Name) ? "RVT-связи" : source.Name.Trim(),
+            Name = string.IsNullOrWhiteSpace(source.Name) ? "Координационная проверка" : source.Name.Trim(),
             LastCsvPath = source.LastCsvPath?.Trim() ?? string.Empty,
             SectionBoxPaddingMm = ClampNumeric(source.SectionBoxPaddingMm, 100, 10000, 1500),
-            HighlightOnNavigate = source.HighlightOnNavigate
+            MinimumOverlapMm = ClampNumeric(source.MinimumOverlapMm, 0, 1000, 0),
+            HighlightOnNavigate = source.HighlightOnNavigate,
+            ScanCurrentModel = source.ScanCurrentModel,
+            ScanRvtLinks = source.ScanRvtLinks,
+            ScanLinksAgainstEachOther = source.ScanLinksAgainstEachOther
         };
     }
 
@@ -141,7 +145,11 @@ public sealed class ClashReportStorage
             Name = profile.Name,
             LastCsvPath = profile.LastCsvPath,
             SectionBoxPaddingMm = profile.SectionBoxPaddingMm,
-            HighlightOnNavigate = profile.HighlightOnNavigate
+            MinimumOverlapMm = profile.MinimumOverlapMm,
+            HighlightOnNavigate = profile.HighlightOnNavigate,
+            ScanCurrentModel = profile.ScanCurrentModel,
+            ScanRvtLinks = profile.ScanRvtLinks,
+            ScanLinksAgainstEachOther = profile.ScanLinksAgainstEachOther
         };
     }
 

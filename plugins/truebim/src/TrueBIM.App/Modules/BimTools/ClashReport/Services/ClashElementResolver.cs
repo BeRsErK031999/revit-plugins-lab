@@ -11,44 +11,58 @@ public sealed class ClashElementResolver
         Guard.NotNull(document, nameof(document));
         Guard.NotNull(item, nameof(item));
 
-        if (item.IsLinkDriven)
-        {
-            ResolveLinkDriven(document, item);
-            return;
-        }
+        ResolveEndpoint(
+            document,
+            item.ElementId1,
+            item.LinkedElementId1,
+            item.Element1SourceName,
+            out bool isElement1Resolved,
+            out string element1Name);
+        ResolveEndpoint(
+            document,
+            item.ElementId2,
+            item.LinkedElementId2,
+            item.Element2SourceName,
+            out bool isElement2Resolved,
+            out string element2Name);
 
-        Element? element1 = GetElement(document, item.ElementId1);
-        Element? element2 = GetElement(document, item.ElementId2);
-
-        item.IsElement1Resolved = element1 is not null;
-        item.IsElement2Resolved = element2 is not null;
-        item.Element1Name = CreateElementLabel(element1);
-        item.Element2Name = CreateElementLabel(element2);
+        item.IsElement1Resolved = isElement1Resolved;
+        item.IsElement2Resolved = isElement2Resolved;
+        item.Element1Name = element1Name;
+        item.Element2Name = element2Name;
         item.Message = CreateMessage(item);
     }
 
-    private static void ResolveLinkDriven(Document document, ClashItem item)
+    private static void ResolveEndpoint(
+        Document document,
+        long? elementId,
+        long? linkedElementId,
+        string sourceName,
+        out bool isResolved,
+        out string label)
     {
-        Element? element1 = GetElement(document, item.ElementId1);
-        RevitLinkInstance? linkInstance = GetElement(document, item.ElementId2) as RevitLinkInstance;
+        if (!linkedElementId.HasValue)
+        {
+            Element? element = GetElement(document, elementId);
+            isResolved = element is not null;
+            label = PrefixSource(sourceName, CreateElementLabel(element));
+            return;
+        }
+
+        RevitLinkInstance? linkInstance = GetElement(document, elementId) as RevitLinkInstance;
         Element? linkedElement = null;
         Document? linkedDocument = null;
 
-        if (linkInstance is not null && item.LinkedElementId2.HasValue)
+        if (linkInstance is not null)
         {
             linkedDocument = linkInstance.GetLinkDocument();
-            linkedElement = linkedDocument?.GetElement(RevitElementIds.Create(item.LinkedElementId2.Value));
+            linkedElement = linkedDocument?.GetElement(RevitElementIds.Create(linkedElementId.Value));
         }
 
-        item.IsElement1Resolved = element1 is not null;
-        item.IsElement2Resolved = linkedElement is not null;
-        item.Element1Name = PrefixSource(item.Element1SourceName, CreateElementLabel(element1));
-        item.Element2Name = PrefixSource(
-            string.IsNullOrWhiteSpace(item.Element2SourceName) ? linkedDocument?.Title ?? string.Empty : item.Element2SourceName,
+        isResolved = linkedElement is not null;
+        label = PrefixSource(
+            string.IsNullOrWhiteSpace(sourceName) ? linkedDocument?.Title ?? linkInstance?.Name ?? string.Empty : sourceName,
             CreateElementLabel(linkedElement));
-        item.Message = linkedElement is not null
-            ? "Элементы найдены через RVT-связь."
-            : "Связанный элемент не найден. Проверьте, что RVT-связь загружена и не была обновлена.";
     }
 
     private static Element? GetElement(Document document, long? elementId)
@@ -105,8 +119,15 @@ public sealed class ClashElementResolver
                 : "Нет ElementId и координат.";
         }
 
-        return resolved == expected
-            ? "Элементы найдены."
+        if (resolved == expected)
+        {
+            return item.IsLinkDriven
+                ? "Элементы найдены, связанные элементы доступны через RVT-связи."
+                : "Элементы найдены.";
+        }
+
+        return item.IsLinkDriven
+            ? $"Найдено элементов: {resolved}/{expected}. Проверьте, что RVT-связи загружены и не были обновлены."
             : $"Найдено элементов: {resolved}/{expected}.";
     }
 

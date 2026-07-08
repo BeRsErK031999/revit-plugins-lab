@@ -14,11 +14,14 @@ public sealed class ClashReportCsvService
 
         return csvExportService.Format(
             [
+                "Source",
                 "ClashId",
                 "ClashName",
+                "Element1Source",
                 "ElementId1",
                 "Element1Resolved",
                 "Element1Name",
+                "Element2Source",
                 "ElementId2",
                 "Element2Resolved",
                 "Element2Name",
@@ -31,11 +34,14 @@ public sealed class ClashReportCsvService
             ],
             items.Select(item => (IReadOnlyList<string?>)
             [
+                item.Source,
                 item.ClashId,
                 item.Name,
+                item.Element1SourceName,
                 item.ElementId1Text,
                 item.IsElement1Resolved ? "yes" : "no",
                 item.Element1Name,
+                item.Element2SourceName,
                 item.ElementId2Text,
                 item.IsElement2Resolved ? "yes" : "no",
                 item.Element2Name,

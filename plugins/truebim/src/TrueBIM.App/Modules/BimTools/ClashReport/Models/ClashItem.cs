@@ -27,7 +27,9 @@ public sealed class ClashItem : INotifyPropertyChanged
         string comment,
         string element1SourceName = "",
         string element2SourceName = "",
-        long? linkedElementId2 = null)
+        long? linkedElementId2 = null,
+        long? linkedElementId1 = null,
+        string source = "")
     {
         ClashId = string.IsNullOrWhiteSpace(clashId) ? "Clash" : clashId.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? ClashId : name.Trim();
@@ -40,7 +42,9 @@ public sealed class ClashItem : INotifyPropertyChanged
         this.comment = comment?.Trim() ?? string.Empty;
         Element1SourceName = element1SourceName?.Trim() ?? string.Empty;
         Element2SourceName = element2SourceName?.Trim() ?? string.Empty;
+        LinkedElementId1 = linkedElementId1;
         LinkedElementId2 = linkedElementId2;
+        Source = string.IsNullOrWhiteSpace(source) ? "Проверка" : source.Trim();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -53,9 +57,13 @@ public sealed class ClashItem : INotifyPropertyChanged
 
     public long? ElementId2 { get; }
 
+    public long? LinkedElementId1 { get; }
+
     public long? LinkedElementId2 { get; }
 
-    public bool IsLinkDriven => LinkedElementId2.HasValue;
+    public bool IsLinkDriven => LinkedElementId1.HasValue || LinkedElementId2.HasValue;
+
+    public string Source { get; }
 
     public string Element1SourceName { get; }
 
@@ -165,7 +173,7 @@ public sealed class ClashItem : INotifyPropertyChanged
 
     public bool HasPoint => X.HasValue && Y.HasValue && Z.HasValue;
 
-    public string ElementId1Text => ElementId1?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+    public string ElementId1Text => (LinkedElementId1 ?? ElementId1)?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
     public string ElementId2Text => (LinkedElementId2 ?? ElementId2)?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 

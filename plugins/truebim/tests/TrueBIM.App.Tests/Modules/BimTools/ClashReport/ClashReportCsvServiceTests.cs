@@ -19,7 +19,7 @@ public sealed class ClashReportCsvServiceTests
 
         string csv = new ClashReportCsvService().Format([item]);
 
-        Assert.Contains("ClashId;ClashName;ElementId1;Element1Resolved;Element1Name", csv);
-        Assert.Contains("C-01;Pipe vs wall;101;yes;Pipe;202;no;;1;2;3;Ignored;\"Checked; false positive\";Найдено элементов: 1/2.", csv);
+        Assert.Contains("Source;ClashId;ClashName;Element1Source;ElementId1;Element1Resolved;Element1Name", csv);
+        Assert.Contains("Проверка;C-01;Pipe vs wall;;101;yes;Pipe;;202;no;;1;2;3;Ignored;\"Checked; false positive\";Найдено элементов: 1/2.", csv);
     }
 }

@@ -36,6 +36,24 @@ public sealed class ClashReportWindow : Window
     private readonly TextBox profileNameInput = new();
     private readonly TextBox filterInput = new();
     private readonly TextBox paddingInput = new();
+    private readonly TextBox minimumOverlapInput = new();
+    private readonly CheckBox scanCurrentModelInput = new()
+    {
+        Content = "Текущая модель",
+        IsChecked = true,
+        ToolTip = "Искать пересечения между видимыми элементами активного вида текущего файла."
+    };
+    private readonly CheckBox scanRvtLinksInput = new()
+    {
+        Content = "Модель ↔ RVT-связи",
+        IsChecked = true,
+        ToolTip = "Искать пересечения между текущей моделью и загруженными RVT-связями."
+    };
+    private readonly CheckBox scanLinksAgainstEachOtherInput = new()
+    {
+        Content = "RVT-связи между собой",
+        ToolTip = "Дополнительно сравнить загруженные RVT-связи друг с другом."
+    };
     private readonly CheckBox highlightInput = new()
     {
         Content = "Подсветка в 3D",
@@ -79,7 +97,7 @@ public sealed class ClashReportWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        UpdateStatus("Нажмите «Сканировать связи», чтобы найти пересечения через загруженные RVT-файлы.");
+        UpdateStatus("Нажмите «Сканировать», чтобы проверить текущую модель и загруженные RVT-связи.");
         logger.Info($"Clash Report window opened for '{document.Title}'.");
     }
 
@@ -93,6 +111,10 @@ public sealed class ClashReportWindow : Window
     {
         profileNameInput.Text = profile.Name;
         paddingInput.Text = profile.SectionBoxPaddingMm.ToString("0.##", CultureInfo.InvariantCulture);
+        minimumOverlapInput.Text = profile.MinimumOverlapMm.ToString("0.##", CultureInfo.InvariantCulture);
+        scanCurrentModelInput.IsChecked = profile.ScanCurrentModel;
+        scanRvtLinksInput.IsChecked = profile.ScanRvtLinks;
+        scanLinksAgainstEachOtherInput.IsChecked = profile.ScanLinksAgainstEachOther;
         highlightInput.IsChecked = profile.HighlightOnNavigate;
     }
 
@@ -140,6 +162,7 @@ public sealed class ClashReportWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         AddLabel(root, $"Модель: {document.Title}", 0, 0);
         profileNameInput.Height = 32;
@@ -153,7 +176,7 @@ public sealed class ClashReportWindow : Window
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        Button scanButton = CreateButton("Сканировать связи", TrueBimIcon.Preview, 160);
+        Button scanButton = CreateButton("Сканировать", TrueBimIcon.Preview, 135);
         scanButton.Click += (_, _) => ScanLinks();
         actions.Children.Add(scanButton);
 
@@ -181,7 +204,7 @@ public sealed class ClashReportWindow : Window
         AddLabel(root, "Источник", 0, 1);
         TextBlock sourceText = new()
         {
-            Text = "RVT-связи активного проекта. CSV используется только для экспорта отчёта.",
+            Text = "Текущая модель активного вида и загруженные RVT-связи. CSV используется только для экспорта отчёта.",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(8, 0, 12, 8),
             Foreground = System.Windows.Media.Brushes.DimGray
@@ -190,6 +213,29 @@ public sealed class ClashReportWindow : Window
         WpfGrid.SetColumn(sourceText, 1);
         root.Children.Add(sourceText);
 
+        AddLabel(root, "Проверять", 0, 2);
+        StackPanel modes = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        modes.Children.Add(scanCurrentModelInput);
+        modes.Children.Add(scanRvtLinksInput);
+        modes.Children.Add(scanLinksAgainstEachOtherInput);
+        foreach (UIElement child in modes.Children)
+        {
+            if (child is CheckBox checkBox)
+            {
+                checkBox.Margin = new Thickness(8, 0, 18, 8);
+                checkBox.VerticalAlignment = VerticalAlignment.Center;
+            }
+        }
+
+        WpfGrid.SetRow(modes, 2);
+        WpfGrid.SetColumn(modes, 1);
+        root.Children.Add(modes);
+
+        AddLabel(root, "Параметры", 0, 3);
         StackPanel options = new()
         {
             Orientation = Orientation.Horizontal,
@@ -201,9 +247,15 @@ public sealed class ClashReportWindow : Window
         paddingInput.Margin = new Thickness(8, 0, 18, 8);
         paddingInput.ToolTip = "Запас вокруг bounding box найденного пересечения.";
         options.Children.Add(paddingInput);
+        options.Children.Add(CreateOptionLabel("Мин. пересечение, мм"));
+        minimumOverlapInput.Width = 90;
+        minimumOverlapInput.Height = 32;
+        minimumOverlapInput.Margin = new Thickness(8, 0, 18, 8);
+        minimumOverlapInput.ToolTip = "Минимальный размер пересечения по X/Y/Z. 0 показывает все пересекающиеся bounding box.";
+        options.Children.Add(minimumOverlapInput);
         options.Children.Add(highlightInput);
 
-        WpfGrid.SetRow(options, 2);
+        WpfGrid.SetRow(options, 3);
         WpfGrid.SetColumn(options, 1);
         root.Children.Add(options);
 
@@ -243,6 +295,7 @@ public sealed class ClashReportWindow : Window
         clashGrid.SelectionMode = DataGridSelectionMode.Single;
         clashGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
         clashGrid.ItemsSource = clashRows;
+        clashGrid.Columns.Add(CreateTextColumn("Источник", nameof(ClashItem.Source), 145));
         clashGrid.Columns.Add(CreateTextColumn("ID", nameof(ClashItem.ClashId), 110));
         clashGrid.Columns.Add(CreateTextColumn("Имя", nameof(ClashItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         clashGrid.Columns.Add(CreateTextColumn("ElementId 1", nameof(ClashItem.ElementId1Text), 105));
@@ -278,7 +331,8 @@ public sealed class ClashReportWindow : Window
 
     private void ScanLinks()
     {
-        ClashLinkScanResult result = linkScanner.Scan(document, uiDocument.ActiveView);
+        ClashReportProfile profile = ReadProfile();
+        ClashLinkScanResult result = linkScanner.Scan(document, uiDocument.ActiveView, CreateScanOptions(profile));
         clashRows.Clear();
         reportRows.Clear();
 
@@ -294,10 +348,10 @@ public sealed class ClashReportWindow : Window
             reportRows.Add(new ClashReportRow("Сканирование", string.Empty, string.Empty, "Info", message));
         }
 
-        SaveProfileOnly();
+        storage.SaveProfile(profile);
         RefreshFilter();
-        UpdateStatus($"Сканирование RVT-связей: найдено {result.Items.Count} коллизий.");
-        logger.Info($"Clash Report scanned RVT links and found {result.Items.Count} rows with {result.Messages.Count} messages.");
+        UpdateStatus($"Сканирование: найдено {result.Items.Count} коллизий.");
+        logger.Info($"Clash Report scan found {result.Items.Count} rows with {result.Messages.Count} messages.");
     }
 
     private void ResolveRows()
@@ -351,11 +405,6 @@ public sealed class ClashReportWindow : Window
         }
     }
 
-    private void SaveProfileOnly()
-    {
-        storage.SaveProfile(ReadProfile());
-    }
-
     private void ExportReport()
     {
         CommitGridEdits();
@@ -392,8 +441,23 @@ public sealed class ClashReportWindow : Window
             Name = profileNameInput.Text,
             LastCsvPath = string.Empty,
             SectionBoxPaddingMm = ParseDouble(paddingInput.Text, 1500),
-            HighlightOnNavigate = highlightInput.IsChecked == true
+            MinimumOverlapMm = ParseDouble(minimumOverlapInput.Text, 0),
+            HighlightOnNavigate = highlightInput.IsChecked == true,
+            ScanCurrentModel = scanCurrentModelInput.IsChecked == true,
+            ScanRvtLinks = scanRvtLinksInput.IsChecked == true,
+            ScanLinksAgainstEachOther = scanLinksAgainstEachOtherInput.IsChecked == true
         });
+    }
+
+    private static ClashScanOptions CreateScanOptions(ClashReportProfile profile)
+    {
+        return new ClashScanOptions
+        {
+            ScanCurrentModel = profile.ScanCurrentModel,
+            ScanRvtLinks = profile.ScanRvtLinks,
+            ScanLinksAgainstEachOther = profile.ScanLinksAgainstEachOther,
+            MinimumOverlapMm = profile.MinimumOverlapMm
+        };
     }
 
     private void RefreshFilter()
@@ -416,6 +480,7 @@ public sealed class ClashReportWindow : Window
         }
 
         return Contains(item.ClashId, filter)
+            || Contains(item.Source, filter)
             || Contains(item.Name, filter)
             || Contains(item.ElementId1Text, filter)
             || Contains(item.ElementId2Text, filter)
