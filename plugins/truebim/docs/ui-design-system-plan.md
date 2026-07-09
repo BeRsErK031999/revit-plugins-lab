@@ -37,7 +37,7 @@ Create a lightweight TrueBIM design system on top of native WPF:
 5. Done: move `VoltageDropWindow`, `VoltageDropReferenceWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
 6. Done: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
 7. Done: review ribbon grouping after the common window layer is stable; split commands into focused panels for documentation, views, coordination, library, model review, geometry, parameters, administration, discipline-specific tools, and final help access.
-8. Pending: continue migrating remaining BIM utility windows with the same local-resource pattern, starting with `ParaManagerWindow`, `ScheduleImportWindow`, and the smaller selection/helper dialogs.
+8. Done: continue migrating remaining BIM utility windows with the same local-resource pattern for `ParaManagerWindow`, `ScheduleImportWindow`, smaller ParaManager helper dialogs, and Schedule Column Collapse selection dialogs.
 
 ## Current readiness
 
@@ -54,9 +54,9 @@ Create a lightweight TrueBIM design system on top of native WPF:
 - `IsoFieldRebarWindow` and `IsoFieldRebarGuideWindow` migrations: done.
 - `JoinCutWindow.xaml` migration: done.
 - Ribbon grouping review: done.
-- Next production task: continue remaining BIM utility window migrations, starting with `ParaManagerWindow`, `ScheduleImportWindow`, and smaller selection/helper dialogs.
+- Remaining BIM utility window migration from this plan: done for `ParaManagerWindow`, `ScheduleImportWindow`, smaller ParaManager helper dialogs, and Schedule Column Collapse selection dialogs.
 - Third-party library adoption: intentionally not started.
-- Manual Revit UI smoke: pending because it requires local deploy/restart conditions.
+- Manual Revit UI smoke: pending inside Revit; local 2022/2025 deploy prerequisites are verified and Revit must be opened or restarted to load the new DLLs.
 
 ## Third-party libraries
 

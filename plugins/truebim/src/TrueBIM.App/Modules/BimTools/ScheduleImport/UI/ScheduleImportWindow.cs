@@ -9,6 +9,7 @@ using TrueBIM.App.Modules.BimTools.ScheduleImport.Models;
 using TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using WpfBinding = System.Windows.Data.Binding;
 using WpfGrid = System.Windows.Controls.Grid;
 
@@ -80,21 +81,20 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
-        {
-            Margin = new Thickness(18)
-        };
+        WpfGrid body = new();
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         UIElement top = CreateTopPanel();
-        DockPanel.SetDock(top, Dock.Top);
-        root.Children.Add(top);
+        body.Children.Add(top);
 
-        statusText.Margin = new Thickness(0, 10, 0, 0);
+        statusText.Foreground = TrueBimBrushes.TextSecondary;
         statusText.TextWrapping = TextWrapping.Wrap;
-        DockPanel.SetDock(statusText, Dock.Bottom);
-        root.Children.Add(statusText);
 
-        TabControl tabs = new();
+        TabControl tabs = new()
+        {
+            Style = TrueBimStyles.CreateTabControlStyle()
+        };
         tabs.Items.Add(new TabItem
         {
             Header = "Предпросмотр",
@@ -110,15 +110,29 @@ public sealed class ScheduleImportWindow : TrueBimWindow
             Header = "Предупреждения",
             Content = CreateWarningPanel()
         });
-        root.Children.Add(tabs);
-        return root;
+        WpfGrid.SetRow(tabs, 1);
+        body.Children.Add(tabs);
+
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close, minWidth: 110);
+        closeButton.IsCancel = true;
+        closeButton.Click += (_, _) => Close();
+
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                $"Документ: {context.DocumentTitle}. Активный вид: {context.ActiveViewName} ({context.ActiveViewKind}).",
+                TrueBimIcon.ScheduleImport),
+            commandBar: null,
+            body: body,
+            status: null,
+            footer: TrueBimUi.CreateFooter(statusText, closeButton));
     }
 
     private UIElement CreateTopPanel()
     {
         WpfGrid root = new()
         {
-            Margin = new Thickness(0, 0, 0, 12)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -132,7 +146,8 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         {
             Text = $"Активный вид: {context.ActiveViewName} ({context.ActiveViewKind})",
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 12, 8)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing12, TrueBimTheme.Spacing8)
         };
         WpfGrid.SetColumn(activeViewText, 1);
         root.Children.Add(activeViewText);
@@ -146,16 +161,13 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         topActions.Children.Add(validateButton);
         createButton.Click += (_, _) => CreateInRevit();
         topActions.Children.Add(createButton);
-        Button closeButton = CreateButton("Закрыть", TrueBimIcon.Close, 110);
-        closeButton.IsCancel = true;
-        closeButton.Click += (_, _) => Close();
-        topActions.Children.Add(closeButton);
         WpfGrid.SetColumn(topActions, 2);
         root.Children.Add(topActions);
 
         AddLabel(root, "Файл", 0, 1);
-        filePathInput.Height = 32;
-        filePathInput.Margin = new Thickness(8, 0, 12, 8);
+        filePathInput.MinHeight = TrueBimTheme.ControlHeight32;
+        filePathInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        filePathInput.Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing12, TrueBimTheme.Spacing8);
         filePathInput.IsReadOnly = true;
         filePathInput.ToolTip = "PDF распознаётся локальным worker, JSON загружает промежуточную модель таблицы. DWG пока импортируется через предварительный экспорт в PDF.";
         WpfGrid.SetRow(filePathInput, 1);
@@ -181,11 +193,12 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         {
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 12, 0)
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing12, 0)
         };
         modeInput.Width = 230;
-        modeInput.Height = 32;
-        modeInput.Margin = new Thickness(0, 0, 12, 0);
+        modeInput.MinHeight = TrueBimTheme.ControlHeight32;
+        modeInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        modeInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing12, 0);
         modeInput.SelectionChanged += (_, _) =>
         {
             if (SelectedTable is null)
@@ -197,16 +210,19 @@ public sealed class ScheduleImportWindow : TrueBimWindow
             ValidateCurrentTable(showDialog: false);
         };
         options.Children.Add(modeInput);
-        createViewInput.Margin = new Thickness(0, 0, 16, 0);
+        createViewInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
+        createViewInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         options.Children.Add(createViewInput);
         options.Children.Add(new TextBlock
         {
             Text = "Масштаб",
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 6, 0)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0)
         });
         scaleInput.Width = 70;
-        scaleInput.Height = 32;
+        scaleInput.MinHeight = TrueBimTheme.ControlHeight32;
+        scaleInput.Style = TrueBimStyles.CreateTextBoxStyle();
         scaleInput.ToolTip = "Множитель размера визуальной таблицы. 1.0 подходит для первого теста.";
         scaleInput.TextChanged += (_, _) => UpdateStatus();
         options.Children.Add(scaleInput);
@@ -214,8 +230,9 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         WpfGrid.SetColumn(options, 1);
         root.Children.Add(options);
 
-        tableInput.Height = 32;
+        tableInput.MinHeight = TrueBimTheme.ControlHeight32;
         tableInput.MinWidth = 230;
+        tableInput.Style = TrueBimStyles.CreateComboBoxStyle();
         tableInput.DisplayMemberPath = nameof(TableItem.DisplayName);
         tableInput.SelectionChanged += (_, _) => ShowSelectedTable();
         WpfGrid.SetRow(tableInput, 2);
@@ -228,6 +245,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     private UIElement CreatePreviewPanel()
     {
         DockPanel panel = new();
+        previewGrid.Style = TrueBimStyles.CreateDataGridStyle();
         previewGrid.AutoGenerateColumns = true;
         previewGrid.CanUserAddRows = false;
         previewGrid.CanUserDeleteRows = false;
@@ -242,6 +260,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         mappingGrid.CanUserAddRows = false;
         mappingGrid.CanUserDeleteRows = false;
         mappingGrid.IsReadOnly = true;
+        mappingGrid.Style = TrueBimStyles.CreateDataGridStyle();
         mappingGrid.ItemsSource = mappings;
         mappingGrid.Columns.Add(CreateTextColumn("Колонка PDF/JSON", nameof(ColumnMapping.SourceColumnName), new DataGridLength(1, DataGridLengthUnitType.Star)));
         mappingGrid.Columns.Add(CreateTextColumn("Параметр Revit", nameof(ColumnMapping.TargetRevitParameterName), new DataGridLength(220)));
@@ -254,6 +273,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     private UIElement CreateWarningPanel()
     {
         warningList.ItemsSource = warnings;
+        warningList.Style = TrueBimStyles.CreateListBoxStyle();
         return warningList;
     }
 
@@ -614,7 +634,8 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         {
             Text = text,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 8)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8)
         };
         WpfGrid.SetColumn(label, column);
         WpfGrid.SetRow(label, row);
@@ -623,13 +644,11 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
     private static Button CreateButton(string text, TrueBimIcon icon, double minWidth)
     {
-        return new Button
-        {
-            Content = IconFactory.CreateButtonContent(icon, text),
-            MinWidth = minWidth,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
+        Button button = icon == TrueBimIcon.ScheduleImport
+            ? TrueBimUi.CreatePrimaryButton(text, icon, minWidth: minWidth)
+            : TrueBimUi.CreateSecondaryButton(text, icon, minWidth: minWidth);
+        button.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
+        return button;
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)

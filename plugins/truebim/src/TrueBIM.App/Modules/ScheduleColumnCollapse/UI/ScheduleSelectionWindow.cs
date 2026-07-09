@@ -2,13 +2,13 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
-using System.Windows.Media;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.Modules.ScheduleColumnCollapse.UI;
 
-public sealed class ScheduleSelectionWindow : TrueBIM.App.UI.TrueBimWindow
+public sealed class ScheduleSelectionWindow : TrueBimWindow
 {
     private readonly IReadOnlyList<ScheduleSelectionItem> allSchedules;
     private readonly ListBox scheduleList = new();
@@ -48,7 +48,7 @@ public sealed class ScheduleSelectionWindow : TrueBIM.App.UI.TrueBimWindow
     {
         Grid root = new()
         {
-            Margin = new Thickness(16)
+            Margin = TrueBimTheme.WindowPadding
         };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -59,19 +59,21 @@ public sealed class ScheduleSelectionWindow : TrueBIM.App.UI.TrueBimWindow
         {
             Text = contextMessage,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
         Grid.SetRow(message, 0);
         root.Children.Add(message);
 
-        searchBox.Height = 28;
-        searchBox.Margin = new Thickness(0, 0, 0, 10);
+        searchBox.MinHeight = TrueBimTheme.ControlHeight32;
+        searchBox.Style = TrueBimStyles.CreateTextBoxStyle();
+        searchBox.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         searchBox.ToolTip = "Фильтр по названию спецификации.";
         searchBox.TextChanged += (_, _) => RefreshList();
         Grid.SetRow(searchBox, 1);
         root.Children.Add(searchBox);
 
-        scheduleList.BorderThickness = new Thickness(1);
+        scheduleList.Style = TrueBimStyles.CreateListBoxStyle();
         scheduleList.MouseDoubleClick += (_, _) => AcceptSelection();
         scheduleList.KeyDown += (_, args) =>
         {
@@ -88,27 +90,17 @@ public sealed class ScheduleSelectionWindow : TrueBIM.App.UI.TrueBimWindow
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 12, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
-        Button okButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выбрать"),
-            MinWidth = 110,
-            Height = 32,
-            IsDefault = true
-        };
+        Button okButton = TrueBimUi.CreatePrimaryButton("Выбрать", TrueBimIcon.Apply, minWidth: 110);
+        okButton.IsDefault = true;
         okButton.Click += (_, _) => AcceptSelection();
         footer.Children.Add(okButton);
 
-        Button cancelButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Отмена"),
-            MinWidth = 110,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
-            IsCancel = true
-        };
+        Button cancelButton = TrueBimUi.CreateSecondaryButton("Отмена", TrueBimIcon.Close, minWidth: 110);
+        cancelButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        cancelButton.IsCancel = true;
         cancelButton.Click += (_, _) => DialogResult = false;
         footer.Children.Add(cancelButton);
 
@@ -144,18 +136,19 @@ public sealed class ScheduleSelectionWindow : TrueBIM.App.UI.TrueBimWindow
     {
         StackPanel panel = new()
         {
-            Margin = new Thickness(6)
+            Margin = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4)
         };
         panel.Children.Add(new TextBlock
         {
             Text = schedule.Name,
-            FontWeight = FontWeights.SemiBold
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary
         });
         panel.Children.Add(new TextBlock
         {
             Text = schedule.Context,
-            Foreground = Brushes.DimGray,
-            Margin = new Thickness(0, 3, 0, 0)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0)
         });
 
         return new ListBoxItem

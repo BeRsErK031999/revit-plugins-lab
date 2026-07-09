@@ -11,6 +11,7 @@ using TrueBIM.App.Modules.BimTools.ParaManager.Models;
 using TrueBIM.App.Modules.BimTools.ParaManager.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfTextBox = System.Windows.Controls.TextBox;
 
@@ -82,94 +83,44 @@ public sealed class ParaManagerWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        WpfGrid root = new()
+        TabControl tabs = new()
         {
-            Margin = new Thickness(16)
+            Style = TrueBimStyles.CreateTabControlStyle()
         };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        root.Children.Add(CreateHeader());
-
-        TabControl tabs = new();
         tabs.Items.Add(CreateProjectParametersTab());
         tabs.Items.Add(CreateImportTab());
         tabs.Items.Add(CreateReportTab());
-        WpfGrid.SetRow(tabs, 1);
-        root.Children.Add(tabs);
 
-        statusText.Foreground = Brushes.DimGray;
-        statusText.Margin = new Thickness(0, 10, 0, 10);
+        statusText.Foreground = TrueBimBrushes.TextSecondary;
         statusText.TextWrapping = TextWrapping.Wrap;
-        WpfGrid.SetRow(statusText, 2);
-        root.Children.Add(statusText);
 
-        StackPanel footer = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-        Button closeButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
-            MinWidth = 110,
-            Height = 32,
-            IsCancel = true
-        };
+        Button helpButton = TrueBimUi.CreateSecondaryButton(
+            "Справка",
+            TrueBimIcon.Help,
+            (_, _) => ShowHelp(),
+            minWidth: 110);
+        helpButton.ToolTip = "Показать короткую подсказку по ручному добавлению, CSV и shared parameter file.";
+
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close, minWidth: 110);
+        closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
-        footer.Children.Add(closeButton);
-        WpfGrid.SetRow(footer, 3);
-        root.Children.Add(footer);
 
-        return root;
-    }
-
-    private UIElement CreateHeader()
-    {
-        DockPanel header = new()
-        {
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-
-        Button helpButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Help, "Справка"),
-            Height = 30,
-            MinWidth = 110,
-            ToolTip = "Показать короткую подсказку по ручному добавлению, CSV и shared parameter file."
-        };
-        helpButton.Click += (_, _) => ShowHelp();
-        DockPanel.SetDock(helpButton, Dock.Right);
-        header.Children.Add(helpButton);
-
-        StackPanel textPanel = new()
-        {
-            Margin = new Thickness(0, 0, 12, 0)
-        };
-        textPanel.Children.Add(new TextBlock
-        {
-            Text = "ParaManager",
-            FontSize = 22,
-            FontWeight = FontWeights.SemiBold
-        });
-        textPanel.Children.Add(new TextBlock
-        {
-            Text = "Создание и привязка project/shared parameters к категориям текущей модели Revit.",
-            Foreground = Brushes.DimGray,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 0)
-        });
-        header.Children.Add(textPanel);
-        return header;
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                "Создание и привязка project/shared parameters к категориям текущей модели Revit.",
+                TrueBimIcon.Parameters),
+            commandBar: TrueBimUi.CreateCommandBar(helpButton),
+            body: tabs,
+            status: null,
+            footer: TrueBimUi.CreateFooter(statusText, closeButton));
     }
 
     private TabItem CreateProjectParametersTab()
     {
         WpfGrid panel = new()
         {
-            Margin = new Thickness(10)
+            Margin = TrueBimTheme.SectionPadding
         };
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -177,32 +128,23 @@ public sealed class ParaManagerWindow : TrueBimWindow
         StackPanel toolbar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
 
-        Button refreshButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Обновить список"),
-            Height = 30,
-            MinWidth = 160,
-            ToolTip = "Снова прочитать project parameters из текущего документа Revit."
-        };
+        Button refreshButton = TrueBimUi.CreateSecondaryButton("Обновить список", TrueBimIcon.Preview, minWidth: 160);
+        refreshButton.ToolTip = "Снова прочитать project parameters из текущего документа Revit.";
         refreshButton.Click += (_, _) => RefreshProjectParameters();
         toolbar.Children.Add(refreshButton);
 
-        Button exportButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, "Экспорт списка"),
-            Height = 30,
-            MinWidth = 130,
-            Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = "Сохранить текущие project parameters в CSV для проверки или передачи BIM-координатору."
-        };
+        Button exportButton = TrueBimUi.CreateSecondaryButton("Экспорт списка", TrueBimIcon.Export, minWidth: 130);
+        exportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        exportButton.ToolTip = "Сохранить текущие project parameters в CSV для проверки или передачи BIM-координатору.";
         exportButton.Click += (_, _) => ExportProjectParameters();
         toolbar.Children.Add(exportButton);
-        projectParameterSearchInput.Height = 30;
+        projectParameterSearchInput.MinHeight = TrueBimTheme.ControlHeight32;
         projectParameterSearchInput.Width = 260;
-        projectParameterSearchInput.Margin = new Thickness(8, 0, 0, 0);
+        projectParameterSearchInput.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        projectParameterSearchInput.Style = TrueBimStyles.CreateTextBoxStyle();
         projectParameterSearchInput.VerticalContentAlignment = VerticalAlignment.Center;
         projectParameterSearchInput.ToolTip = "Search project parameters by name, category, type or group.";
         projectParameterSearchInput.TextChanged += (_, _) => RefreshProjectParameterGrid();
@@ -216,8 +158,7 @@ public sealed class ParaManagerWindow : TrueBimWindow
         projectParameterGrid.IsReadOnly = true;
         projectParameterGrid.ItemsSource = projectParameterRows;
         projectParameterGrid.SelectionMode = DataGridSelectionMode.Extended;
-        projectParameterGrid.BorderBrush = Brushes.LightGray;
-        projectParameterGrid.BorderThickness = new Thickness(1);
+        projectParameterGrid.Style = TrueBimStyles.CreateDataGridStyle();
         projectParameterGrid.ToolTip = "Project parameters already bound to categories in the current Revit document.";
         projectParameterGrid.Columns.Add(CreateTextColumn("Parameter", nameof(ProjectParameterRow.Name), 220));
         projectParameterGrid.Columns.Add(CreateTextColumn("Binding", nameof(ProjectParameterRow.BindingTypeDisplay), 90));
@@ -250,7 +191,7 @@ public sealed class ParaManagerWindow : TrueBimWindow
     {
         WpfGrid panel = new()
         {
-            Margin = new Thickness(10)
+            Margin = TrueBimTheme.SectionPadding
         };
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -285,39 +226,42 @@ public sealed class ParaManagerWindow : TrueBimWindow
         StackPanel toolbar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
         Button addButton = CreateSmallButton(
             "Добавить параметр",
+            TrueBimIcon.Parameter,
             (_, _) => AddManualParameter(),
             "Создать одну строку параметра вручную без CSV.");
         toolbar.Children.Add(addButton);
 
         Button validateButton = CreateSmallButton(
             "Проверить",
+            TrueBimIcon.Check,
             (_, _) => LoadAndValidate(),
             "Прочитать CSV и проверить имена, типы, категории и существующие параметры проекта.");
-        validateButton.Margin = new Thickness(8, 0, 0, 0);
+        validateButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(validateButton);
 
         Button templateButton = CreateSmallButton(
             "CSV-шаблон",
+            TrueBimIcon.Export,
             (_, _) => ExportTemplate(),
             "Сохранить CSV-шаблон с примерами строк. Заполните его и загрузите через «Выбрать CSV».");
-        templateButton.Margin = new Thickness(8, 0, 0, 0);
+        templateButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(templateButton);
 
         Button removeButton = CreateSmallButton(
             "Убрать выбранные",
+            TrueBimIcon.Close,
             (_, _) => RemoveSelectedRows(),
             "Удалить выделенные строки из текущего списка импорта. Модель Revit при этом не меняется.");
-        removeButton.Margin = new Thickness(8, 0, 0, 0);
+        removeButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(removeButton);
         WpfGrid.SetRow(toolbar, 3);
         panel.Children.Add(toolbar);
 
-        importRowList.BorderBrush = Brushes.LightGray;
-        importRowList.BorderThickness = new Thickness(1);
+        importRowList.Style = TrueBimStyles.CreateListBoxStyle();
         importRowList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         importRowList.SelectionMode = SelectionMode.Extended;
         importRowList.ToolTip = "Выделите строки, чтобы присвоить им выбранные категории или убрать их из списка.";
@@ -328,15 +272,10 @@ public sealed class ParaManagerWindow : TrueBimWindow
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 10, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
-        Button applyButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Применить импорт"),
-            MinWidth = 170,
-            Height = 32,
-            ToolTip = "Записать проверенные параметры в shared parameter file и привязать их к категориям текущего проекта."
-        };
+        Button applyButton = TrueBimUi.CreatePrimaryButton("Применить импорт", TrueBimIcon.Apply, minWidth: 170);
+        applyButton.ToolTip = "Записать проверенные параметры в shared parameter file и привязать их к категориям текущего проекта.";
         applyButton.Click += (_, _) => ApplyImport();
         footer.Children.Add(applyButton);
         WpfGrid.SetRow(footer, 5);
@@ -357,6 +296,7 @@ public sealed class ParaManagerWindow : TrueBimWindow
         reportText.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
         reportText.IsReadOnly = true;
         reportText.TextWrapping = TextWrapping.Wrap;
+        reportText.Style = TrueBimStyles.CreateTextBoxStyle();
         reportText.Text = "Импорт ещё не выполнялся.";
 
         return new TabItem
@@ -365,7 +305,7 @@ public sealed class ParaManagerWindow : TrueBimWindow
             ToolTip = "Итоги последнего применения импорта и ошибки по строкам.",
             Content = new WpfGrid
             {
-                Margin = new Thickness(10),
+                Margin = TrueBimTheme.SectionPadding,
                 Children = { reportText }
             }
         };
@@ -382,23 +322,19 @@ public sealed class ParaManagerWindow : TrueBimWindow
         DockPanel fileBar = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(0, 0, 0, 8),
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8),
             Tag = filter
         };
 
-        Button chooseButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, buttonText),
-            Height = 30,
-            MinWidth = 190,
-            Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = buttonToolTip
-        };
+        Button chooseButton = TrueBimUi.CreateSecondaryButton(buttonText, TrueBimIcon.Open, minWidth: 190);
+        chooseButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        chooseButton.ToolTip = buttonToolTip;
         chooseButton.Click += clickHandler;
         DockPanel.SetDock(chooseButton, Dock.Right);
         fileBar.Children.Add(chooseButton);
 
-        input.Height = 30;
+        input.MinHeight = TrueBimTheme.ControlHeight32;
+        input.Style = TrueBimStyles.CreateTextBoxStyle();
         input.VerticalContentAlignment = VerticalAlignment.Center;
         input.ToolTip = inputToolTip;
         fileBar.Children.Add(input);
@@ -411,34 +347,25 @@ public sealed class ParaManagerWindow : TrueBimWindow
         DockPanel categoryBar = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
 
-        Button applyButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Присвоить категории"),
-            Height = 30,
-            MinWidth = 195,
-            Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = "Записать выбранный набор категорий в выделенные строки импорта. Это ещё не меняет модель."
-        };
+        Button applyButton = TrueBimUi.CreateSecondaryButton("Присвоить категории", TrueBimIcon.Apply, minWidth: 195);
+        applyButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        applyButton.ToolTip = "Записать выбранный набор категорий в выделенные строки импорта. Это ещё не меняет модель.";
         applyButton.Click += (_, _) => ApplyCategoriesToSelectedRows();
         DockPanel.SetDock(applyButton, Dock.Right);
         categoryBar.Children.Add(applyButton);
 
-        Button chooseButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Категории"),
-            Height = 30,
-            MinWidth = 125,
-            Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = "Выбрать категории Revit, которым нужно добавить параметры."
-        };
+        Button chooseButton = TrueBimUi.CreateSecondaryButton("Категории", TrueBimIcon.Open, minWidth: 125);
+        chooseButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        chooseButton.ToolTip = "Выбрать категории Revit, которым нужно добавить параметры.";
         chooseButton.Click += (_, _) => ChooseCategories();
         DockPanel.SetDock(chooseButton, Dock.Right);
         categoryBar.Children.Add(chooseButton);
 
-        categoryPresetInput.Height = 30;
+        categoryPresetInput.MinHeight = TrueBimTheme.ControlHeight32;
+        categoryPresetInput.Style = TrueBimStyles.CreateTextBoxStyle();
         categoryPresetInput.VerticalContentAlignment = VerticalAlignment.Center;
         categoryPresetInput.IsReadOnly = true;
         categoryPresetInput.ToolTip = "Сохранённый набор категорий. Его можно применить к строкам CSV или использовать как стартовый набор при ручном добавлении.";
@@ -649,7 +576,7 @@ public sealed class ParaManagerWindow : TrueBimWindow
         DockPanel panel = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(8, 6, 8, 6),
+            Margin = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4),
             Tag = row,
             ToolTip = $"{source}. {row.BindingType} parameter: {row.DataType}. Категории: {row.Categories}. {row.Message}"
         };
@@ -675,8 +602,8 @@ public sealed class ParaManagerWindow : TrueBimWindow
         textPanel.Children.Add(new TextBlock
         {
             Text = $"{source}. {row.BindingType} | {row.DataType} | {row.GroupUnder} | {row.Categories}. {row.Message}",
-            Foreground = Brushes.DimGray,
-            FontSize = 12,
+            Foreground = TrueBimBrushes.TextSecondary,
+            FontSize = TrueBimTheme.FontSize,
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(textPanel);
@@ -889,14 +816,14 @@ public sealed class ParaManagerWindow : TrueBimWindow
     {
         return status switch
         {
-            ParameterImportStatus.WillCreate => new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 110, 70)),
-            ParameterImportStatus.WillUpdate => new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 90, 150)),
-            ParameterImportStatus.Created => new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 110, 70)),
-            ParameterImportStatus.Updated => new SolidColorBrush(System.Windows.Media.Color.FromRgb(30, 90, 150)),
-            ParameterImportStatus.Invalid => Brushes.DarkRed,
-            ParameterImportStatus.Failed => Brushes.DarkRed,
-            ParameterImportStatus.DuplicateInFile => new SolidColorBrush(System.Windows.Media.Color.FromRgb(150, 90, 20)),
-            _ => Brushes.DimGray
+            ParameterImportStatus.WillCreate => TrueBimBrushes.Success,
+            ParameterImportStatus.WillUpdate => TrueBimBrushes.Info,
+            ParameterImportStatus.Created => TrueBimBrushes.Success,
+            ParameterImportStatus.Updated => TrueBimBrushes.Info,
+            ParameterImportStatus.Invalid => TrueBimBrushes.Danger,
+            ParameterImportStatus.Failed => TrueBimBrushes.Danger,
+            ParameterImportStatus.DuplicateInFile => TrueBimBrushes.Warning,
+            _ => TrueBimBrushes.TextSecondary
         };
     }
 
@@ -920,15 +847,10 @@ public sealed class ParaManagerWindow : TrueBimWindow
         }
     }
 
-    private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler, string? toolTip = null)
+    private static Button CreateSmallButton(string text, TrueBimIcon icon, RoutedEventHandler clickHandler, string? toolTip = null)
     {
-        Button button = new()
-        {
-            Content = text,
-            Height = 28,
-            MinWidth = 110,
-            ToolTip = toolTip
-        };
+        Button button = TrueBimUi.CreateSecondaryButton(text, icon, minWidth: 110);
+        button.ToolTip = toolTip;
         button.Click += clickHandler;
         return button;
     }

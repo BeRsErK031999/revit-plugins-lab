@@ -1,9 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using TrueBIM.App.Modules.BimTools.ParaManager.Models;
 using TrueBIM.App.UI;
-using WpfGrid = System.Windows.Controls.Grid;
+using TrueBIM.App.UI.DesignSystem;
 using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.ParaManager.UI;
@@ -50,34 +49,7 @@ public sealed class ParameterManualAddWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        WpfGrid root = new()
-        {
-            Margin = new Thickness(16)
-        };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        StackPanel header = new();
-        header.Children.Add(new TextBlock
-        {
-            Text = "Новый project/shared parameter",
-            FontSize = 20,
-            FontWeight = FontWeights.SemiBold
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = "Параметр будет добавлен в список проверки ParaManager. Запись в модель произойдёт только после кнопки «Применить импорт».",
-            Foreground = Brushes.DimGray,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 12)
-        });
-        root.Children.Add(header);
-
         StackPanel form = new();
-        WpfGrid.SetRow(form, 1);
-        root.Children.Add(form);
 
         parameterNameInput.ToolTip = "Имя параметра, которое появится в Revit. Например: BIM_Раздел.";
         form.Children.Add(CreateLabeledControl("Имя параметра", parameterNameInput));
@@ -95,20 +67,16 @@ public sealed class ParameterManualAddWindow : TrueBimWindow
         {
             LastChildFill = true
         };
-        Button categoriesButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Категории"),
-            Height = 30,
-            MinWidth = 125,
-            Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = "Выбрать категории Revit, к которым будет привязан параметр."
-        };
+        Button categoriesButton = TrueBimUi.CreateSecondaryButton("Категории", TrueBimIcon.Open, minWidth: 125);
+        categoriesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        categoriesButton.ToolTip = "Выбрать категории Revit, к которым будет привязан параметр.";
         categoriesButton.Click += (_, _) => ChooseCategories();
         DockPanel.SetDock(categoriesButton, Dock.Right);
         categoriesPanel.Children.Add(categoriesButton);
 
         categoriesInput.IsReadOnly = true;
-        categoriesInput.Height = 30;
+        categoriesInput.MinHeight = TrueBimTheme.ControlHeight32;
+        categoriesInput.Style = TrueBimStyles.CreateTextBoxStyle();
         categoriesInput.VerticalContentAlignment = VerticalAlignment.Center;
         categoriesInput.ToolTip = "Категории, которые получат этот параметр в проекте.";
         categoriesPanel.Children.Add(categoriesInput);
@@ -133,43 +101,33 @@ public sealed class ParameterManualAddWindow : TrueBimWindow
         descriptionInput.ToolTip = "Описание попадёт в definition shared parameter и поможет отличать параметры в стандарте.";
         form.Children.Add(CreateLabeledControl("Описание", descriptionInput));
 
-        validationText.Foreground = Brushes.DarkRed;
+        validationText.Foreground = TrueBimBrushes.Danger;
         validationText.TextWrapping = TextWrapping.Wrap;
-        validationText.Margin = new Thickness(0, 8, 0, 8);
-        WpfGrid.SetRow(validationText, 2);
-        root.Children.Add(validationText);
+        validationText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
 
-        StackPanel footer = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 12, 0, 0)
-        };
-        Button addButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Добавить"),
-            MinWidth = 120,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0),
-            ToolTip = "Добавить параметр в список импорта без записи в модель."
-        };
+        Button addButton = TrueBimUi.CreatePrimaryButton("Добавить", TrueBimIcon.Apply, minWidth: 120);
+        addButton.ToolTip = "Добавить параметр в список импорта без записи в модель.";
         addButton.Click += (_, _) => AddParameter();
-        footer.Children.Add(addButton);
 
-        Button cancelButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Отмена"),
-            MinWidth = 110,
-            Height = 32,
-            IsCancel = true,
-            ToolTip = "Закрыть окно без добавления параметра."
-        };
+        Button cancelButton = TrueBimUi.CreateSecondaryButton("Отмена", TrueBimIcon.Close, minWidth: 110);
+        cancelButton.IsCancel = true;
+        cancelButton.ToolTip = "Закрыть окно без добавления параметра.";
         cancelButton.Click += (_, _) => DialogResult = false;
-        footer.Children.Add(cancelButton);
-        WpfGrid.SetRow(footer, 3);
-        root.Children.Add(footer);
 
-        return root;
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                "Новый project/shared parameter",
+                "Параметр будет добавлен в список проверки ParaManager. Запись в модель произойдёт только после кнопки «Применить импорт».",
+                TrueBimIcon.Parameter),
+            commandBar: null,
+            body: new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = form
+            },
+            status: validationText,
+            footer: TrueBimUi.CreateFooter(null, addButton, cancelButton));
     }
 
     private void ChooseCategories()
@@ -235,19 +193,28 @@ public sealed class ParameterManualAddWindow : TrueBimWindow
     {
         StackPanel panel = new()
         {
-            Margin = new Thickness(0, 0, 0, 10)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
         panel.Children.Add(new TextBlock
         {
             Text = label,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 4)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
         });
 
         if (control is Control input)
         {
-            input.Height = input.Height > 0 ? input.Height : 30;
+            input.MinHeight = input.MinHeight > 0 ? input.MinHeight : TrueBimTheme.ControlHeight32;
             input.VerticalContentAlignment = VerticalAlignment.Center;
+            if (input is WpfTextBox)
+            {
+                input.Style = TrueBimStyles.CreateTextBoxStyle();
+            }
+            else if (input is ComboBox)
+            {
+                input.Style = TrueBimStyles.CreateComboBoxStyle();
+            }
         }
 
         panel.Children.Add(control);

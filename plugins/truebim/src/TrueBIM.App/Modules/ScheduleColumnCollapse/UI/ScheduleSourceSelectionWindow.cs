@@ -1,13 +1,13 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
-using System.Windows.Media;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.Modules.ScheduleColumnCollapse.UI;
 
-public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
+public sealed class ScheduleSourceSelectionWindow : TrueBimWindow
 {
     private readonly RadioButton activeViewOption = new();
     private readonly RadioButton projectBrowserOption = new();
@@ -43,7 +43,7 @@ public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
     {
         Grid root = new()
         {
-            Margin = new Thickness(18)
+            Margin = TrueBimTheme.WindowPadding
         };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -52,9 +52,10 @@ public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
         TextBlock title = new()
         {
             Text = "Как выбрать спецификацию?",
-            FontSize = 18,
+            FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 14)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
         Grid.SetRow(title, 0);
         root.Children.Add(title);
@@ -101,27 +102,17 @@ public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 14, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
-        Button confirmButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Подтвердить"),
-            MinWidth = 128,
-            Height = 32,
-            IsDefault = true
-        };
+        Button confirmButton = TrueBimUi.CreatePrimaryButton("Подтвердить", TrueBimIcon.Apply, minWidth: 128);
+        confirmButton.IsDefault = true;
         confirmButton.Click += (_, _) => AcceptSelection();
         footer.Children.Add(confirmButton);
 
-        Button cancelButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Отмена"),
-            MinWidth = 110,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
-            IsCancel = true
-        };
+        Button cancelButton = TrueBimUi.CreateSecondaryButton("Отмена", TrueBimIcon.Close, minWidth: 110);
+        cancelButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        cancelButton.IsCancel = true;
         cancelButton.Click += (_, _) => DialogResult = false;
         footer.Children.Add(cancelButton);
 
@@ -136,7 +127,7 @@ public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
         option.Content = CreateOptionContent(title, hint);
         option.GroupName = "ScheduleSourceSelection";
         option.IsEnabled = isEnabled;
-        option.Margin = new Thickness(0, 0, 0, 10);
+        option.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         option.VerticalContentAlignment = VerticalAlignment.Top;
     }
 
@@ -144,10 +135,12 @@ public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
     {
         Border border = new()
         {
-            BorderBrush = Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(10),
-            Margin = new Thickness(0, 0, 0, 8),
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Padding = new Thickness(TrueBimTheme.Spacing12),
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8),
             Child = option
         };
 
@@ -160,14 +153,15 @@ public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
         panel.Children.Add(new TextBlock
         {
             Text = title,
-            FontWeight = FontWeights.SemiBold
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary
         });
         panel.Children.Add(new TextBlock
         {
             Text = hint,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = Brushes.DimGray,
-            Margin = new Thickness(0, 3, 0, 0)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0)
         });
 
         return panel;

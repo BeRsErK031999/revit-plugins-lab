@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.ParaManager.UI;
@@ -38,94 +38,70 @@ public sealed class ParameterCategorySelectionWindow : TrueBimWindow
     {
         WpfGrid root = new()
         {
-            Margin = new Thickness(16)
+            Margin = new Thickness(0)
         };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        StackPanel header = new();
-        header.Children.Add(new TextBlock
-        {
-            Text = "Категории параметров",
-            FontSize = 20,
-            FontWeight = FontWeights.SemiBold
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = "Выбранный список можно применить к выделенным строкам импорта ParaManager.",
-            Foreground = Brushes.DimGray,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 12)
-        });
-        root.Children.Add(header);
-
-        filterInput.Height = 30;
+        filterInput.MinHeight = TrueBimTheme.ControlHeight32;
+        filterInput.Style = TrueBimStyles.CreateTextBoxStyle();
         filterInput.VerticalContentAlignment = VerticalAlignment.Center;
-        filterInput.Margin = new Thickness(0, 0, 0, 8);
+        filterInput.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         filterInput.ToolTip = "Фильтр по названию категории Revit.";
         filterInput.TextChanged += (_, _) => RefreshList();
-        WpfGrid.SetRow(filterInput, 1);
-        root.Children.Add(filterInput);
 
         StackPanel toolbar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
         Button selectAllButton = CreateSmallButton(
             "Все видимые",
+            TrueBimIcon.Check,
             (_, _) => SetSelection(true),
             "Выбрать все категории, которые видны с текущим фильтром.");
         toolbar.Children.Add(selectAllButton);
         Button clearButton = CreateSmallButton(
             "Снять видимые",
+            TrueBimIcon.Close,
             (_, _) => SetSelection(false),
             "Снять выбор со всех категорий, которые видны с текущим фильтром.");
-        clearButton.Margin = new Thickness(8, 0, 0, 0);
+        clearButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(clearButton);
-        WpfGrid.SetRow(toolbar, 2);
-        root.Children.Add(toolbar);
 
-        categoryList.BorderBrush = Brushes.LightGray;
-        categoryList.BorderThickness = new Thickness(1);
+        categoryList.Style = TrueBimStyles.CreateListBoxStyle();
         categoryList.ToolTip = "Отмеченные категории будут записаны в строку параметра как список Categories.";
-        WpfGrid.SetRow(categoryList, 3);
+        WpfGrid.SetRow(categoryList, 1);
         root.Children.Add(categoryList);
 
-        StackPanel footer = new()
+        DockPanel topPanel = new()
         {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 12, 0, 0)
+            LastChildFill = true
         };
-        Button applyButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Сохранить"),
-            MinWidth = 130,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0),
-            ToolTip = "Сохранить выбранный набор категорий для ParaManager."
-        };
+        DockPanel.SetDock(toolbar, Dock.Bottom);
+        topPanel.Children.Add(toolbar);
+        topPanel.Children.Add(filterInput);
+        WpfGrid.SetRow(topPanel, 0);
+        root.Children.Add(topPanel);
+
+        Button applyButton = TrueBimUi.CreatePrimaryButton("Сохранить", TrueBimIcon.Apply, minWidth: 130);
+        applyButton.ToolTip = "Сохранить выбранный набор категорий для ParaManager.";
         applyButton.Click += (_, _) => DialogResult = true;
-        footer.Children.Add(applyButton);
 
-        Button cancelButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Отмена"),
-            MinWidth = 110,
-            Height = 32,
-            IsCancel = true,
-            ToolTip = "Закрыть окно без изменения выбранных категорий."
-        };
+        Button cancelButton = TrueBimUi.CreateSecondaryButton("Отмена", TrueBimIcon.Close, minWidth: 110);
+        cancelButton.IsCancel = true;
+        cancelButton.ToolTip = "Закрыть окно без изменения выбранных категорий.";
         cancelButton.Click += (_, _) => DialogResult = false;
-        footer.Children.Add(cancelButton);
-        WpfGrid.SetRow(footer, 4);
-        root.Children.Add(footer);
 
-        return root;
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                "Выбранный список можно применить к выделенным строкам импорта ParaManager.",
+                TrueBimIcon.Parameters),
+            commandBar: null,
+            body: root,
+            status: null,
+            footer: TrueBimUi.CreateFooter(null, applyButton, cancelButton));
     }
 
     private void RefreshList()
@@ -137,7 +113,8 @@ public sealed class ParameterCategorySelectionWindow : TrueBimWindow
             {
                 Content = categoryName,
                 IsChecked = selectedCategoryNames.Contains(categoryName),
-                Margin = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4),
+                Style = TrueBimStyles.CreateCheckBoxStyle(),
                 Tag = categoryName,
                 ToolTip = "Включить категорию в привязку project parameter."
             };
@@ -181,15 +158,10 @@ public sealed class ParameterCategorySelectionWindow : TrueBimWindow
             .ToList();
     }
 
-    private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler, string? toolTip = null)
+    private static Button CreateSmallButton(string text, TrueBimIcon icon, RoutedEventHandler clickHandler, string? toolTip = null)
     {
-        Button button = new()
-        {
-            Content = text,
-            Height = 28,
-            MinWidth = 90,
-            ToolTip = toolTip
-        };
+        Button button = TrueBimUi.CreateSecondaryButton(text, icon, minWidth: 90);
+        button.ToolTip = toolTip;
         button.Click += clickHandler;
         return button;
     }
