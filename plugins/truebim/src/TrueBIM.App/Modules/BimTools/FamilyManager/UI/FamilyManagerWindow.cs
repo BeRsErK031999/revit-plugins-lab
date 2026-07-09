@@ -19,6 +19,7 @@ using TrueBIM.App.Modules.BimTools.FamilyManager.Models;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using WpfBinding = System.Windows.Data.Binding;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfContextMenu = System.Windows.Controls.ContextMenu;
@@ -229,6 +230,7 @@ public sealed class FamilyManagerControl : UserControl
             RefreshVisibleFamilies();
         };
 
+        ApplySharedControlStyles();
         Content = CreateContent();
         Unloaded += (_, _) =>
         {
@@ -243,22 +245,25 @@ public sealed class FamilyManagerControl : UserControl
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
-        {
-            Margin = new Thickness(18)
-        };
+        return TrueBimUi.CreateWindowShell(
+            header: TrueBimUi.CreateHeader(
+                "Диспетчер семейств",
+                $"Библиотеки семейств для проекта: {document.Title}.",
+                TrueBimIcon.FamilyManager),
+            commandBar: null,
+            body: CreateMainPanel(),
+            status: CreateStatus(),
+            footer: null);
+    }
 
-        statusText.Margin = new Thickness(0, 10, 0, 0);
-        statusText.TextWrapping = TextWrapping.Wrap;
-        DockPanel.SetDock(statusText, Dock.Bottom);
-        root.Children.Add(statusText);
-
+    private UIElement CreateMainPanel()
+    {
         WpfGrid main = new();
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) });
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(270) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TrueBimTheme.Spacing12) });
         main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(330) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TrueBimTheme.Spacing12) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(340) });
 
         UIElement left = CreateFoldersPanel();
         WpfGrid.SetColumn(left, 0);
@@ -272,8 +277,45 @@ public sealed class FamilyManagerControl : UserControl
         WpfGrid.SetColumn(right, 4);
         main.Children.Add(right);
 
-        root.Children.Add(main);
-        return root;
+        return main;
+    }
+
+    private UIElement CreateStatus()
+    {
+        statusText.Foreground = TrueBimBrushes.TextPrimary;
+        statusText.TextWrapping = TextWrapping.Wrap;
+        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
+    }
+
+    private void ApplySharedControlStyles()
+    {
+        Style listBoxStyle = TrueBimStyles.CreateListBoxStyle();
+        folderList.Style = listBoxStyle;
+        fileList.Style = listBoxStyle;
+        historyList.Style = listBoxStyle;
+        typeList.Style = listBoxStyle;
+
+        Style dataGridStyle = TrueBimStyles.CreateDataGridStyle();
+        familyGrid.Style = dataGridStyle;
+        auditGrid.Style = dataGridStyle;
+        parameterGrid.Style = dataGridStyle;
+
+        Style textBoxStyle = TrueBimStyles.CreateTextBoxStyle();
+        searchInput.Style = textBoxStyle;
+        parameterSearchInput.Style = textBoxStyle;
+
+        Style comboBoxStyle = TrueBimStyles.CreateComboBoxStyle();
+        categoryInput.Style = comboBoxStyle;
+        parameterPresetInput.Style = comboBoxStyle;
+
+        favoritesOnlyInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+
+        libraryTree.Background = TrueBimBrushes.Surface;
+        libraryTree.BorderBrush = TrueBimBrushes.Border;
+        libraryTree.BorderThickness = new Thickness(TrueBimTheme.BorderWidth);
+        libraryTree.Foreground = TrueBimBrushes.TextPrimary;
+
+        detailsText.Foreground = TrueBimBrushes.TextSecondary;
     }
 
     private UIElement CreateFoldersPanel()
@@ -344,7 +386,7 @@ public sealed class FamilyManagerControl : UserControl
 
         folderList.ItemsSource = folders;
         folderList.DisplayMemberPath = nameof(FamilyLibraryFolder.Path);
-        folderList.BorderThickness = new Thickness(1);
+        folderList.BorderThickness = new Thickness(TrueBimTheme.BorderWidth);
         folderList.Height = 105;
         folderList.Margin = new Thickness(0, 0, 0, 8);
         folderList.SelectionChanged += (_, _) =>
@@ -365,7 +407,7 @@ public sealed class FamilyManagerControl : UserControl
 
         fileList.ItemsSource = libraryFiles;
         fileList.DisplayMemberPath = nameof(FamilyLibraryFile.Path);
-        fileList.BorderThickness = new Thickness(1);
+        fileList.BorderThickness = new Thickness(TrueBimTheme.BorderWidth);
         fileList.Height = 82;
         fileList.Margin = new Thickness(0, 0, 0, 12);
         fileList.SelectionChanged += (_, _) =>
@@ -390,7 +432,7 @@ public sealed class FamilyManagerControl : UserControl
         libraryTree.PreviewMouseRightButtonDown += (_, args) => SelectTreeItemUnderPointer(args.OriginalSource as DependencyObject);
         libraryTree.SelectedItemChanged += (_, args) => SelectTreeNode(args.NewValue as FamilyLibraryTreeNode);
         panel.Children.Add(libraryTree);
-        return panel;
+        return CreateSectionFrame(panel);
     }
 
     private UIElement CreateFamiliesPanel()
@@ -412,14 +454,14 @@ public sealed class FamilyManagerControl : UserControl
         filters.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
         filters.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        searchInput.Height = 32;
+        searchInput.MinHeight = TrueBimTheme.ControlHeight32;
         searchInput.Margin = new Thickness(0, 0, 8, 0);
         searchInput.ToolTip = "Поиск по имени, категории, типу, параметрам или пути.";
         searchInput.TextChanged += (_, _) => QueueVisibleFamiliesRefresh();
         WpfGrid.SetColumn(searchInput, 0);
         filters.Children.Add(searchInput);
 
-        categoryInput.Height = 32;
+        categoryInput.MinHeight = TrueBimTheme.ControlHeight32;
         categoryInput.Margin = new Thickness(0, 0, 8, 0);
         categoryInput.SelectionChanged += (_, _) => RefreshVisibleFamilies();
         WpfGrid.SetColumn(categoryInput, 1);
@@ -462,7 +504,7 @@ public sealed class FamilyManagerControl : UserControl
         familyGrid.Columns.Add(CreateTextColumn("Размер", nameof(FamilyFileItem.SizeDisplay), 80));
         familyGrid.Columns.Add(CreateTextColumn("Статус", nameof(FamilyFileItem.Status), 150));
         panel.Children.Add(familyGrid);
-        return panel;
+        return CreateSectionFrame(panel);
     }
 
     private UIElement CreateAuditPanel()
@@ -470,7 +512,7 @@ public sealed class FamilyManagerControl : UserControl
         DockPanel panel = new()
         {
             Height = 150,
-            Margin = new Thickness(0, 10, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
         TextBlock title = CreateSubTitle("Проверки библиотеки");
@@ -518,9 +560,10 @@ public sealed class FamilyManagerControl : UserControl
         Border previewFrame = new()
         {
             Height = 160,
-            BorderBrush = Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Background = Brushes.WhiteSmoke,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            Background = TrueBimBrushes.SurfaceAlt,
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
             Margin = new Thickness(0, 0, 0, 8)
         };
         WpfGrid previewHost = new();
@@ -534,7 +577,7 @@ public sealed class FamilyManagerControl : UserControl
         thumbnailPlaceholderText.HorizontalAlignment = HorizontalAlignment.Center;
         thumbnailPlaceholderText.VerticalAlignment = VerticalAlignment.Center;
         thumbnailPlaceholderText.Margin = new Thickness(16);
-        thumbnailPlaceholderText.Foreground = Brushes.DimGray;
+        thumbnailPlaceholderText.Foreground = TrueBimBrushes.TextMuted;
         previewHost.Children.Add(thumbnailPlaceholderText);
 
         previewFrame.Child = previewHost;
@@ -593,14 +636,14 @@ public sealed class FamilyManagerControl : UserControl
         parameterFilters.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         parameterFilters.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(126) });
 
-        parameterSearchInput.Height = 30;
+        parameterSearchInput.MinHeight = TrueBimTheme.ControlHeight32;
         parameterSearchInput.Margin = new Thickness(0, 0, 8, 0);
         parameterSearchInput.ToolTip = "Фильтр параметров по имени, значению, формуле или области.";
         parameterSearchInput.TextChanged += (_, _) => RefreshTypeParameters();
         WpfGrid.SetColumn(parameterSearchInput, 0);
         parameterFilters.Children.Add(parameterSearchInput);
 
-        parameterPresetInput.Height = 30;
+        parameterPresetInput.MinHeight = TrueBimTheme.ControlHeight32;
         parameterPresetInput.Items.Add(AllParameterPreset);
         parameterPresetInput.Items.Add(DimensionParameterPreset);
         parameterPresetInput.Items.Add(MaterialParameterPreset);
@@ -636,7 +679,7 @@ public sealed class FamilyManagerControl : UserControl
         historyList.ItemsSource = historyItems;
         historyList.DisplayMemberPath = nameof(FamilyLoadHistoryItem.DisplayName);
         panel.Children.Add(historyList);
-        return panel;
+        return CreateSectionFrame(panel);
     }
 
     private void LoadProfileState()
@@ -1980,9 +2023,10 @@ public sealed class FamilyManagerControl : UserControl
         return new TextBlock
         {
             Text = text,
-            FontSize = 20,
+            FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 10)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
     }
 
@@ -1992,7 +2036,21 @@ public sealed class FamilyManagerControl : UserControl
         {
             Text = text,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6)
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        };
+    }
+
+    private static Border CreateSectionFrame(UIElement content)
+    {
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Padding = TrueBimTheme.SectionPadding,
+            Child = content
         };
     }
 
@@ -2023,13 +2081,9 @@ public sealed class FamilyManagerControl : UserControl
 
     private static Button CreateButton(string text, TrueBimIcon icon, double minWidth)
     {
-        return new Button
-        {
-            Content = IconFactory.CreateButtonContent(icon, text),
-            MinWidth = minWidth,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
+        Button button = TrueBimUi.CreateSecondaryButton(text, icon, minWidth: minWidth);
+        button.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
+        return button;
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)
@@ -2052,6 +2106,7 @@ public sealed class FamilyManagerControl : UserControl
     {
         DataTemplate template = new(typeof(FamilyFileItem));
         FrameworkElementFactory combo = new(typeof(WpfComboBox));
+        combo.SetValue(FrameworkElement.StyleProperty, TrueBimStyles.CreateComboBoxStyle());
         combo.SetBinding(ItemsControl.ItemsSourceProperty, new WpfBinding(nameof(FamilyFileItem.AvailableTypeNames)));
         combo.SetBinding(WpfComboBox.SelectedItemProperty, new WpfBinding(nameof(FamilyFileItem.SelectedTypeName))
         {

@@ -17,6 +17,7 @@ using TrueBIM.App.Modules.BimTools.FamilyManager.Models;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
@@ -77,7 +78,12 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         this.openManager = openManager ?? throw new ArgumentNullException(nameof(openManager));
         this.hidePane = hidePane ?? throw new ArgumentNullException(nameof(hidePane));
 
-        Background = Brushes.White;
+        TrueBimStyles.RegisterLocalResources(Resources);
+        FontFamily = TrueBimTheme.FontFamily;
+        FontSize = TrueBimTheme.FontSize;
+        Foreground = TrueBimBrushes.TextPrimary;
+        Background = TrueBimBrushes.Surface;
+        ApplySharedControlStyles();
         Content = CreateContent();
         RefreshSummary();
     }
@@ -93,7 +99,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         DockPanel root = new()
         {
             LastChildFill = true,
-            Background = Brushes.White
+            Background = TrueBimBrushes.Surface
         };
 
         UIElement toolbar = CreateToolbar();
@@ -107,7 +113,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         DockPanel browser = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(2, 4, 2, 2)
+            Margin = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4)
         };
 
         ConfigureCatalogInput();
@@ -119,15 +125,15 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         browser.Children.Add(searchBar);
 
         statusText.FontSize = 11;
-        statusText.Foreground = Brushes.DimGray;
-        statusText.Margin = new Thickness(2, 4, 2, 0);
+        statusText.Foreground = TrueBimBrushes.TextSecondary;
+        statusText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
         statusText.TextTrimming = TextTrimming.CharacterEllipsis;
         DockPanel.SetDock(statusText, Dock.Bottom);
         browser.Children.Add(statusText);
 
-        emptyStateText.Foreground = Brushes.DimGray;
+        emptyStateText.Foreground = TrueBimBrushes.TextMuted;
         emptyStateText.TextWrapping = TextWrapping.Wrap;
-        emptyStateText.Margin = new Thickness(4, 8, 4, 4);
+        emptyStateText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing4);
         emptyStateText.Visibility = Visibility.Collapsed;
         DockPanel.SetDock(emptyStateText, Dock.Top);
         browser.Children.Add(emptyStateText);
@@ -135,7 +141,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         libraryTree.ItemsSource = libraryTreeNodes;
         libraryTree.ItemTemplate = CreateTreeTemplate();
         libraryTree.BorderThickness = new Thickness(0);
-        libraryTree.Background = Brushes.White;
+        libraryTree.Background = TrueBimBrushes.Surface;
         libraryTree.Padding = new Thickness(0, 2, 0, 0);
         libraryTree.SelectedItemChanged += (_, _) => UpdateSelectionActions();
         ScrollViewer.SetHorizontalScrollBarVisibility(libraryTree, ScrollBarVisibility.Auto);
@@ -150,15 +156,15 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
     {
         Border border = new()
         {
-            Background = new SolidColorBrush(Color.FromRgb(232, 232, 232)),
-            BorderBrush = Brushes.Gainsboro,
-            BorderThickness = new Thickness(0, 0, 0, 1)
+            Background = TrueBimBrushes.SurfaceAlt,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(0, 0, 0, TrueBimTheme.BorderWidth)
         };
 
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
-            Height = 30,
+            Height = TrueBimTheme.ControlHeight32,
             HorizontalAlignment = HorizontalAlignment.Left
         };
 
@@ -183,19 +189,19 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         DockPanel searchBar = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(0, 2, 0, 2)
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing4)
         };
 
         Button clearButton = CreateIconButton(TrueBimIcon.Close, "Очистить поиск");
-        clearButton.Width = 26;
-        clearButton.Height = 26;
-        clearButton.Margin = new Thickness(2, 0, 0, 0);
+        clearButton.Width = TrueBimTheme.ControlHeight32;
+        clearButton.Height = TrueBimTheme.ControlHeight32;
+        clearButton.Margin = new Thickness(TrueBimTheme.Spacing4, 0, 0, 0);
         clearButton.Click += (_, _) => searchInput.Clear();
         DockPanel.SetDock(clearButton, Dock.Right);
         searchBar.Children.Add(clearButton);
 
         Grid searchHost = new();
-        searchInput.Height = 26;
+        searchInput.Height = TrueBimTheme.ControlHeight32;
         searchInput.VerticalContentAlignment = VerticalAlignment.Center;
         searchInput.ToolTip = "Поиск по семействам, типам, параметрам и пути.";
         searchInput.TextChanged += (_, _) =>
@@ -212,8 +218,8 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         searchHost.Children.Add(searchInput);
 
         searchPlaceholderText.Text = "Поиск от двух символов...";
-        searchPlaceholderText.Foreground = Brushes.Gray;
-        searchPlaceholderText.Margin = new Thickness(6, 0, 0, 0);
+        searchPlaceholderText.Foreground = TrueBimBrushes.TextMuted;
+        searchPlaceholderText.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         searchPlaceholderText.VerticalAlignment = VerticalAlignment.Center;
         searchPlaceholderText.IsHitTestVisible = false;
         searchHost.Children.Add(searchPlaceholderText);
@@ -226,10 +232,10 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
     {
         Border border = new()
         {
-            Background = new SolidColorBrush(Color.FromRgb(232, 232, 232)),
-            BorderBrush = Brushes.Gainsboro,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(2)
+            Background = TrueBimBrushes.SurfaceAlt,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(0, TrueBimTheme.BorderWidth, 0, 0),
+            Padding = new Thickness(TrueBimTheme.Spacing4)
         };
 
         Grid grid = new();
@@ -238,19 +244,19 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        actionButton.Margin = new Thickness(0, 0, 1, 0);
+        actionButton.Margin = new Thickness(0, 0, 2, 0);
         actionButton.Click += (_, _) => ExecutePrimaryAction();
         Grid.SetColumn(actionButton, 0);
         grid.Children.Add(actionButton);
 
-        clearSelectionButton.Margin = new Thickness(1, 0, 0, 0);
+        clearSelectionButton.Margin = new Thickness(2, 0, 0, 0);
         clearSelectionButton.Click += (_, _) => ClearSelection();
         Grid.SetColumn(clearSelectionButton, 1);
         grid.Children.Add(clearSelectionButton);
 
         selectionText.FontSize = 11;
-        selectionText.Foreground = Brushes.DimGray;
-        selectionText.Margin = new Thickness(2, 3, 2, 0);
+        selectionText.Foreground = TrueBimBrushes.TextSecondary;
+        selectionText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
         selectionText.TextTrimming = TextTrimming.CharacterEllipsis;
         Grid.SetColumnSpan(selectionText, 2);
         Grid.SetRow(selectionText, 1);
@@ -262,10 +268,19 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
 
     private void ConfigureCatalogInput()
     {
-        catalogInput.Height = 26;
-        catalogInput.Margin = new Thickness(0, 0, 0, 2);
+        catalogInput.Height = TrueBimTheme.ControlHeight32;
+        catalogInput.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
         catalogInput.VerticalContentAlignment = VerticalAlignment.Center;
         catalogInput.ToolTip = folderPath;
+    }
+
+    private void ApplySharedControlStyles()
+    {
+        catalogInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        searchInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        libraryTree.Foreground = TrueBimBrushes.TextPrimary;
+        actionButton.Style = TrueBimStyles.CreateButtonStyle();
+        clearSelectionButton.Style = TrueBimStyles.CreateButtonStyle();
     }
 
     private void RefreshSummary()
@@ -496,14 +511,16 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         });
 
         FrameworkElementFactory statusBadge = new(typeof(Border));
-        statusBadge.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(120, 220, 160)));
-        statusBadge.SetValue(Border.CornerRadiusProperty, new CornerRadius(2));
+        statusBadge.SetValue(Border.BackgroundProperty, TrueBimBrushes.SuccessBackground);
+        statusBadge.SetValue(Border.BorderBrushProperty, TrueBimBrushes.Success);
+        statusBadge.SetValue(Border.BorderThicknessProperty, new Thickness(TrueBimTheme.BorderWidth));
+        statusBadge.SetValue(Border.CornerRadiusProperty, new CornerRadius(TrueBimTheme.Radius6));
         statusBadge.SetValue(Border.PaddingProperty, new Thickness(4, 1, 4, 1));
         statusBadge.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 0, 2));
 
         FrameworkElementFactory statusText = new(typeof(TextBlock));
         statusText.SetValue(TextBlock.FontSizeProperty, 11.0);
-        statusText.SetValue(TextBlock.ForegroundProperty, Brushes.DarkGreen);
+        statusText.SetValue(TextBlock.ForegroundProperty, TrueBimBrushes.Success);
         statusText.SetBinding(TextBlock.TextProperty, new Binding(nameof(FamilyLibraryTreeNode.ProjectStatus)));
         statusBadge.AppendChild(statusText);
         statusRow.AppendChild(statusBadge);
@@ -517,7 +534,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         });
         subtitle.SetValue(TextBlock.FontSizeProperty, 11.0);
         subtitle.SetValue(TextBlock.FontStyleProperty, FontStyles.Italic);
-        subtitle.SetValue(TextBlock.ForegroundProperty, Brushes.DimGray);
+        subtitle.SetValue(TextBlock.ForegroundProperty, TrueBimBrushes.TextMuted);
         subtitle.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
         textStack.AppendChild(subtitle);
 
@@ -822,13 +839,11 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
                 Stretch = Stretch.Uniform
             },
             ToolTip = toolTip,
-            Width = 28,
-            Height = 26,
+            Width = TrueBimTheme.ControlHeight32,
+            Height = TrueBimTheme.ControlHeight32,
             Padding = new Thickness(0),
             Margin = new Thickness(2, 2, 0, 2),
-            Background = Brushes.Transparent,
-            BorderBrush = Brushes.Transparent,
-            BorderThickness = new Thickness(0)
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Ghost)
         };
     }
 
@@ -837,13 +852,11 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         return new Button
         {
             Content = IconFactory.CreateButtonContent(icon, text),
-            Height = 28,
-            Padding = new Thickness(6, 0, 6, 0),
+            Height = TrueBimTheme.ControlHeight32,
+            Padding = TrueBimTheme.CompactControlPadding,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Background = Brushes.WhiteSmoke,
-            BorderBrush = Brushes.Silver,
-            BorderThickness = new Thickness(1)
+            Style = TrueBimStyles.CreateButtonStyle()
         };
     }
 
