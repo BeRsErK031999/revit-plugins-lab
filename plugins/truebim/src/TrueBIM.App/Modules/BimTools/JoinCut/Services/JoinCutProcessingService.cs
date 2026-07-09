@@ -28,6 +28,24 @@ public sealed class JoinCutProcessingService
         return ProcessJoin(uiDocument, configuration, scope, action, execute: true);
     }
 
+    public JoinCutProcessingResult PreviewCut(
+        UIDocument uiDocument,
+        JoinCutConfiguration configuration,
+        ProcessingScope scope,
+        CutAction action)
+    {
+        return ProcessCut(uiDocument, configuration, scope, action, execute: false);
+    }
+
+    public JoinCutProcessingResult ExecuteCut(
+        UIDocument uiDocument,
+        JoinCutConfiguration configuration,
+        ProcessingScope scope,
+        CutAction action)
+    {
+        return ProcessCut(uiDocument, configuration, scope, action, execute: true);
+    }
+
     private static JoinCutProcessingResult ProcessJoin(
         UIDocument uiDocument,
         JoinCutConfiguration configuration,
@@ -127,6 +145,110 @@ public sealed class JoinCutProcessingService
         if (rows.Count == 0)
         {
             messages.Add("Подходящие пары элементов не найдены. Проверьте область обработки и выбранные категории.");
+        }
+
+        return new JoinCutProcessingResult(rows, messages, changedModel, truncated);
+    }
+
+    private static JoinCutProcessingResult ProcessCut(
+        UIDocument uiDocument,
+        JoinCutConfiguration configuration,
+        ProcessingScope scope,
+        CutAction action,
+        bool execute)
+    {
+        Guard.NotNull(uiDocument, nameof(uiDocument));
+        Guard.NotNull(configuration, nameof(configuration));
+
+        Document document = uiDocument.Document;
+        List<string> messages = [];
+        List<JoinCutOperationRow> rows = [];
+        bool changedModel = false;
+        bool truncated = false;
+
+        IReadOnlyList<CutRule> rules = configuration.CutRules
+            .Where(rule => rule.Enabled)
+            .ToList();
+        if (rules.Count == 0)
+        {
+            messages.Add("В выбранной конфигурации нет включенных правил вырезания.");
+            return new JoinCutProcessingResult(rows, messages, changedModel, truncated);
+        }
+
+        IReadOnlyList<Element> scopeElements = CollectScopeElements(document, uiDocument, scope, messages);
+        if (scopeElements.Count == 0)
+        {
+            return new JoinCutProcessingResult(rows, messages, changedModel, truncated);
+        }
+
+        Transaction? transaction = null;
+        try
+        {
+            if (execute)
+            {
+                transaction = new Transaction(document, "TrueBIM: вырезание элементов");
+                if (transaction.Start() != TransactionStatus.Started)
+                {
+                    messages.Add("Не удалось открыть транзакцию Revit для вырезания элементов.");
+                    return new JoinCutProcessingResult(rows, messages, changedModel, truncated);
+                }
+            }
+
+            foreach (CutRule rule in rules)
+            {
+                IReadOnlyList<ElementCandidate> cuttingCandidates = CreateCandidates(scopeElements, rule.CuttingElementsFilter);
+                IReadOnlyList<ElementCandidate> cutCandidates = CreateCandidates(scopeElements, rule.CutElementsFilter);
+                messages.Add($"{rule.Name}: найдено режущих {cuttingCandidates.Count}, вырезаемых {cutCandidates.Count}.");
+
+                HashSet<string> processedPairs = new(StringComparer.Ordinal);
+                foreach ((ElementCandidate cuttingElement, ElementCandidate cutElement) in CreateIntersectingPairs(cuttingCandidates, cutCandidates, processedPairs))
+                {
+                    if (rows.Count >= MaxPairsPerRun)
+                    {
+                        truncated = true;
+                        messages.Add($"Обработка остановлена после {MaxPairsPerRun} пар. Сузьте категории или область обработки.");
+                        break;
+                    }
+
+                    JoinCutOperationRow row = execute
+                        ? ApplyCutAction(document, rule.Name, cuttingElement, cutElement, action, rule.SplitFacesOfCuttingSolid)
+                        : PreviewCutAction(rule.Name, cuttingElement, cutElement, action);
+                    if (row.Status == JoinCutOperationStatuses.Done)
+                    {
+                        changedModel = true;
+                    }
+
+                    rows.Add(row);
+                }
+
+                if (truncated)
+                {
+                    break;
+                }
+            }
+
+            if (execute && transaction is not null)
+            {
+                transaction.Commit();
+            }
+        }
+        catch
+        {
+            if (transaction is not null && transaction.GetStatus() == TransactionStatus.Started)
+            {
+                transaction.RollBack();
+            }
+
+            throw;
+        }
+        finally
+        {
+            transaction?.Dispose();
+        }
+
+        if (rows.Count == 0)
+        {
+            messages.Add("Подходящие пары элементов для вырезания не найдены. Проверьте область обработки и выбранные категории.");
         }
 
         return new JoinCutProcessingResult(rows, messages, changedModel, truncated);
@@ -240,6 +362,33 @@ public sealed class JoinCutProcessingService
         }
     }
 
+    private static IEnumerable<(ElementCandidate Left, ElementCandidate Right)> CreateIntersectingPairs(
+        IReadOnlyList<ElementCandidate> leftCandidates,
+        IReadOnlyList<ElementCandidate> rightCandidates,
+        ISet<string> processedPairs)
+    {
+        foreach (ElementCandidate left in leftCandidates)
+        {
+            foreach (ElementCandidate right in rightCandidates)
+            {
+                if (left.ElementId == right.ElementId || !BoxesIntersect(left, right))
+                {
+                    continue;
+                }
+
+                long firstId = Math.Min(left.ElementId, right.ElementId);
+                long secondId = Math.Max(left.ElementId, right.ElementId);
+                string pairKey = $"{firstId}:{secondId}";
+                if (!processedPairs.Add(pairKey))
+                {
+                    continue;
+                }
+
+                yield return (left, right);
+            }
+        }
+    }
+
     private static JoinCutOperationRow PreviewJoinAction(
         Document document,
         string ruleName,
@@ -313,6 +462,164 @@ public sealed class JoinCutProcessingService
         catch (Exception exception)
         {
             return CreateRow(ruleName, left, right, JoinCutOperationStatuses.Failed, exception.Message);
+        }
+    }
+
+    private static JoinCutOperationRow PreviewCutAction(
+        string ruleName,
+        ElementCandidate cuttingElement,
+        ElementCandidate cutElement,
+        CutAction action)
+    {
+        try
+        {
+            CutState state = GetCutState(cuttingElement, cutElement);
+            return action switch
+            {
+                CutAction.Cut when state.HasRequestedCut => CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, "Вырезание уже существует."),
+                CutAction.Cut => PreviewCreateCut(ruleName, cuttingElement, cutElement),
+                CutAction.Uncut when !state.HasRequestedCut => CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, "Эти элементы не связаны вырезанием в выбранном направлении."),
+                CutAction.Uncut => CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Ready, "Можно отменить вырезание."),
+                _ => CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, "Неизвестное действие.")
+            };
+        }
+        catch (Exception exception)
+        {
+            return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, $"Revit не разрешает проверить вырезание: {exception.Message}");
+        }
+    }
+
+    private static JoinCutOperationRow PreviewCreateCut(
+        string ruleName,
+        ElementCandidate cuttingElement,
+        ElementCandidate cutElement)
+    {
+        CutCapability capability = GetCutCapability(cuttingElement, cutElement);
+        return capability.CanCut
+            ? CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Ready, capability.IsVoidCut ? "Можно вырезать пустотным семейством." : "Можно вырезать твердотельной геометрией.")
+            : CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, capability.Message);
+    }
+
+    private static JoinCutOperationRow ApplyCutAction(
+        Document document,
+        string ruleName,
+        ElementCandidate cuttingElement,
+        ElementCandidate cutElement,
+        CutAction action,
+        bool splitFacesOfCuttingSolid)
+    {
+        try
+        {
+            CutState state = GetCutState(cuttingElement, cutElement);
+            switch (action)
+            {
+                case CutAction.Cut:
+                    if (state.HasRequestedCut)
+                    {
+                        return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, "Вырезание уже существует.");
+                    }
+
+                    CutCapability capability = GetCutCapability(cuttingElement, cutElement);
+                    if (!capability.CanCut)
+                    {
+                        return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Failed, capability.Message);
+                    }
+
+                    if (capability.IsVoidCut)
+                    {
+                        InstanceVoidCutUtils.AddInstanceVoidCut(document, cutElement.Element, cuttingElement.Element);
+                        return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Done, "Вырезание пустотным семейством выполнено.");
+                    }
+
+                    SolidSolidCutUtils.AddCutBetweenSolids(document, cutElement.Element, cuttingElement.Element, splitFacesOfCuttingSolid);
+                    return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Done, "Вырезание твердотельной геометрией выполнено.");
+
+                case CutAction.Uncut:
+                    if (state.VoidCutExists)
+                    {
+                        InstanceVoidCutUtils.RemoveInstanceVoidCut(document, cutElement.Element, cuttingElement.Element);
+                        return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Done, "Вырезание пустотным семейством отменено.");
+                    }
+
+                    if (state.SolidCutExists && state.CuttingElementCutsCutElement)
+                    {
+                        SolidSolidCutUtils.RemoveCutBetweenSolids(document, cutElement.Element, cuttingElement.Element);
+                        return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Done, "Вырезание твердотельной геометрией отменено.");
+                    }
+
+                    return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, "Эти элементы не связаны вырезанием в выбранном направлении.");
+
+                default:
+                    return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Skipped, "Неизвестное действие.");
+            }
+        }
+        catch (Exception exception)
+        {
+            return CreateRow(ruleName, cuttingElement, cutElement, JoinCutOperationStatuses.Failed, exception.Message);
+        }
+    }
+
+    private static CutState GetCutState(ElementCandidate cuttingElement, ElementCandidate cutElement)
+    {
+        bool solidCutExists = false;
+        bool cuttingElementCutsCutElement = false;
+        try
+        {
+            solidCutExists = SolidSolidCutUtils.CutExistsBetweenElements(cuttingElement.Element, cutElement.Element, out bool firstCutsSecond);
+            cuttingElementCutsCutElement = solidCutExists && firstCutsSecond;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+        }
+
+        bool voidCutExists = false;
+        try
+        {
+            voidCutExists = InstanceVoidCutUtils.InstanceVoidCutExists(cutElement.Element, cuttingElement.Element);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+        }
+
+        return new CutState(solidCutExists, cuttingElementCutsCutElement, voidCutExists);
+    }
+
+    private static CutCapability GetCutCapability(ElementCandidate cuttingElement, ElementCandidate cutElement)
+    {
+        if (CanCreateVoidCut(cuttingElement.Element, cutElement.Element))
+        {
+            return new CutCapability(true, true, string.Empty);
+        }
+
+        try
+        {
+            if (!SolidSolidCutUtils.IsAllowedForSolidCut(cuttingElement.Element)
+                || !SolidSolidCutUtils.IsAllowedForSolidCut(cutElement.Element))
+            {
+                return new CutCapability(false, false, "Один из элементов не поддерживает твердотельное вырезание Revit.");
+            }
+
+            bool canCut = SolidSolidCutUtils.CanElementCutElement(cuttingElement.Element, cutElement.Element, out CutFailureReason reason);
+            return canCut
+                ? new CutCapability(true, false, string.Empty)
+                : new CutCapability(false, false, $"Revit не разрешает вырезание этой пары: {reason}.");
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return new CutCapability(false, false, $"Revit не разрешает вырезание этой пары: {exception.Message}");
+        }
+    }
+
+    private static bool CanCreateVoidCut(Element cuttingElement, Element cutElement)
+    {
+        try
+        {
+            return InstanceVoidCutUtils.IsVoidInstanceCuttingElement(cuttingElement)
+                && InstanceVoidCutUtils.CanBeCutWithVoid(cutElement);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return false;
         }
     }
 
@@ -541,6 +848,19 @@ public sealed class JoinCutProcessingService
             }
         }
     }
+
+    private sealed record CutState(
+        bool SolidCutExists,
+        bool CuttingElementCutsCutElement,
+        bool VoidCutExists)
+    {
+        public bool HasRequestedCut => VoidCutExists || (SolidCutExists && CuttingElementCutsCutElement);
+    }
+
+    private sealed record CutCapability(
+        bool CanCut,
+        bool IsVoidCut,
+        string Message);
 }
 
 public sealed record JoinCutProcessingResult(

@@ -24,8 +24,10 @@ public sealed partial class JoinCutWindow : TrueBimWindow
     private readonly ITrueBimLogger logger;
     private readonly JoinCutConfigurationState state;
     private readonly JoinCutProcessingService processingService = new();
-    private readonly IReadOnlyList<CategoryCatalogItem> categoryCatalog;
-    private readonly IReadOnlyDictionary<BuiltInCategory, string> categoryNames;
+    private readonly JoinCutExternalEventHandler operationHandler;
+    private readonly ExternalEvent operationEvent;
+    private IReadOnlyList<CategoryCatalogItem>? categoryCatalog;
+    private IReadOnlyDictionary<BuiltInCategory, string> categoryNames = new Dictionary<BuiltInCategory, string>();
     private readonly IReadOnlyList<ScopeOption> scopeOptions =
     [
         new ScopeOption(ProcessingScope.SelectedElements, "Выбранные элементы"),
@@ -56,10 +58,8 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         state = loadResult?.State ?? throw new ArgumentNullException(nameof(loadResult));
-        categoryCatalog = CollectCategoryCatalog(document);
-        categoryNames = categoryCatalog
-            .GroupBy(category => category.BuiltInCategory)
-            .ToDictionary(group => group.Key, group => group.First().Name);
+        operationHandler = new JoinCutExternalEventHandler(this);
+        operationEvent = ExternalEvent.Create(operationHandler);
 
         InitializeComponent();
 
@@ -532,31 +532,7 @@ public sealed partial class JoinCutWindow : TrueBimWindow
             return;
         }
 
-        if (MainTabs.SelectedIndex == 1)
-        {
-            string report = BuildStubReport("Предпросмотр");
-            ReportText.Text = report;
-            StatusText.Text = "Предпросмотр вырезания записан в отчёт. Модель Revit не изменялась.";
-            logger.Info("Join/Cut cut preview placeholder invoked.");
-            return;
-        }
-
-        try
-        {
-            JoinCutProcessingResult result = processingService.PreviewJoin(
-                uiDocument,
-                configuration,
-                GetSelectedScope(),
-                GetSelectedJoinAction());
-            ReportText.Text = BuildJoinProcessingReport("Предпросмотр", configuration, result);
-            StatusText.Text = BuildJoinStatus("Предпросмотр", result);
-            logger.Info($"Join/Cut join preview completed with {result.Rows.Count} row(s).");
-        }
-        catch (Exception exception)
-        {
-            logger.Error("Join/Cut join preview failed.", exception);
-            StatusText.Text = "Не удалось выполнить предпросмотр соединения. Используйте логи для диагностики.";
-        }
+        QueuePreviewOperation(configuration);
     }
 
     private void Execute_Click(object sender, RoutedEventArgs e)
@@ -567,31 +543,91 @@ public sealed partial class JoinCutWindow : TrueBimWindow
             return;
         }
 
-        if (MainTabs.SelectedIndex == 1)
-        {
-            string report = BuildStubReport("Выполнение");
-            ReportText.Text = report;
-            StatusText.Text = "Отчёт по вырезанию обновлён. Модель Revit не изменялась.";
-            logger.Info("Join/Cut cut execute placeholder invoked.");
-            return;
-        }
+        QueueExecuteOperation(configuration);
+    }
 
-        try
-        {
-            JoinCutProcessingResult result = processingService.ExecuteJoin(
-                uiDocument,
+    private void QueuePreviewOperation(JoinCutConfiguration configuration)
+    {
+        JoinCutOperationRequest request = MainTabs.SelectedIndex == 1
+            ? JoinCutOperationRequest.ForCut(
+                isPreview: true,
+                configuration,
+                GetSelectedScope(),
+                GetSelectedCutAction())
+            : JoinCutOperationRequest.ForJoin(
+                isPreview: true,
                 configuration,
                 GetSelectedScope(),
                 GetSelectedJoinAction());
-            ReportText.Text = BuildJoinProcessingReport("Выполнение", configuration, result);
-            StatusText.Text = BuildJoinStatus("Выполнение", result);
-            logger.Info($"Join/Cut join execute completed with {result.Rows.Count} row(s), changedModel={result.ChangedModel}.");
+        RaiseOperation(request);
+    }
+
+    private void QueueExecuteOperation(JoinCutConfiguration configuration)
+    {
+        JoinCutOperationRequest request = MainTabs.SelectedIndex == 1
+            ? JoinCutOperationRequest.ForCut(
+                isPreview: false,
+                configuration,
+                GetSelectedScope(),
+                GetSelectedCutAction())
+            : JoinCutOperationRequest.ForJoin(
+                isPreview: false,
+                configuration,
+                GetSelectedScope(),
+                GetSelectedJoinAction());
+        RaiseOperation(request);
+    }
+
+    private void RaiseOperation(JoinCutOperationRequest request)
+    {
+        operationHandler.SetRequest(request);
+        SetOperationButtonsEnabled(false);
+        string mode = request.IsPreview ? "Предпросмотр" : "Выполнение";
+        StatusText.Text = $"{mode} запущен. Revit обработает запрос через ExternalEvent.";
+        logger.Info($"Join/Cut {request.OperationName} {mode.ToLowerInvariant()} requested.");
+        operationEvent.Raise();
+    }
+
+    private void RunOperation(JoinCutOperationRequest request)
+    {
+        try
+        {
+            string action = request.IsPreview ? "Предпросмотр" : "Выполнение";
+            JoinCutProcessingResult result;
+            if (request.JoinAction.HasValue)
+            {
+                result = request.IsPreview
+                    ? processingService.PreviewJoin(uiDocument, request.Configuration, request.Scope, request.JoinAction.Value)
+                    : processingService.ExecuteJoin(uiDocument, request.Configuration, request.Scope, request.JoinAction.Value);
+                ReportText.Text = BuildJoinProcessingReport(action, request.Configuration, result);
+                StatusText.Text = BuildJoinStatus(action, result);
+            }
+            else
+            {
+                result = request.IsPreview
+                    ? processingService.PreviewCut(uiDocument, request.Configuration, request.Scope, request.CutAction!.Value)
+                    : processingService.ExecuteCut(uiDocument, request.Configuration, request.Scope, request.CutAction!.Value);
+                ReportText.Text = BuildCutProcessingReport(action, request.Configuration, result);
+                StatusText.Text = BuildCutStatus(action, result);
+            }
+
+            logger.Info($"Join/Cut {request.OperationName} {action.ToLowerInvariant()} completed with {result.Rows.Count} row(s), changedModel={result.ChangedModel}.");
         }
         catch (Exception exception)
         {
-            logger.Error("Join/Cut join execute failed.", exception);
-            StatusText.Text = "Не удалось выполнить соединение. Используйте логи для диагностики.";
+            logger.Error($"Join/Cut {request.OperationName} failed.", exception);
+            StatusText.Text = "Не удалось выполнить операцию Join/Cut. Используйте логи для диагностики.";
         }
+        finally
+        {
+            SetOperationButtonsEnabled(true);
+        }
+    }
+
+    private void SetOperationButtonsEnabled(bool isEnabled)
+    {
+        PreviewButton.IsEnabled = isEnabled;
+        ExecuteButton.IsEnabled = isEnabled;
     }
 
     private void CopyReport_Click(object sender, RoutedEventArgs e)
@@ -707,26 +743,6 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         }
     }
 
-    private string BuildStubReport(string action)
-    {
-        JoinCutConfiguration? configuration = SelectedConfiguration;
-        string configurationName = configuration?.Name ?? "не выбрана";
-        string scope = ScopeCombo.SelectedItem is ScopeOption scopeOption ? scopeOption.Text : "не выбрана";
-        string selectedAction = ActionCombo.SelectedItem is ActionOption actionOption ? actionOption.Text : "не выбрано";
-
-        return string.Join(
-            Environment.NewLine,
-            $"{action}: Соединить / Вырезать",
-            $"Документ: {document.Title}",
-            $"Конфигурация: {configurationName}",
-            $"Область обработки: {scope}",
-            $"Действие: {selectedAction}",
-            $"Правил соединения: {configuration?.JoinRules.Count ?? 0}",
-            $"Правил вырезания: {configuration?.CutRules.Count ?? 0}",
-            string.Empty,
-            "Модель Revit не изменялась.");
-    }
-
     private string BuildJoinProcessingReport(
         string action,
         JoinCutConfiguration configuration,
@@ -773,6 +789,52 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         return $"{action}: пар {result.Rows.Count}, готово {ready}, выполнено {done}, пропущено {skipped}, ошибок {failed}.{truncated}{modelState}";
     }
 
+    private string BuildCutProcessingReport(
+        string action,
+        JoinCutConfiguration configuration,
+        JoinCutProcessingResult result)
+    {
+        List<string> lines =
+        [
+            $"{action}: Вырезать элементы",
+            $"Документ: {document.Title}",
+            $"Конфигурация: {configuration.Name}",
+            $"Область обработки: {GetScopeText(GetSelectedScope())}",
+            $"Действие: {GetCutActionText(GetSelectedCutAction())}",
+            string.Empty,
+            "Сводка:"
+        ];
+
+        lines.AddRange(result.Messages.Select(message => $"- {message}"));
+        lines.Add(string.Empty);
+        lines.Add($"Пары элементов: {result.Rows.Count}");
+
+        foreach (JoinCutOperationRow row in result.Rows.Take(300))
+        {
+            lines.Add(
+                $"{row.Status}: {row.RuleName}: {row.LeftCategoryName} #{row.LeftElementId} \"{row.LeftElementName}\" cuts {row.RightCategoryName} #{row.RightElementId} \"{row.RightElementName}\". {row.Message}");
+        }
+
+        if (result.Rows.Count > 300)
+        {
+            lines.Add($"Показаны первые 300 строк из {result.Rows.Count}.");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildCutStatus(string action, JoinCutProcessingResult result)
+    {
+        int ready = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Ready);
+        int done = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Done);
+        int skipped = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Skipped);
+        int failed = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Failed);
+        string truncated = result.Truncated ? " Обработка остановлена по лимиту пар." : string.Empty;
+        string modelState = result.ChangedModel ? " Модель Revit изменена." : " Модель Revit не изменялась.";
+
+        return $"{action}: пар {result.Rows.Count}, готово {ready}, выполнено {done}, пропущено {skipped}, ошибок {failed}.{truncated}{modelState}";
+    }
+
     private ProcessingScope GetSelectedScope()
     {
         return ScopeCombo.SelectedItem is ScopeOption scopeOption
@@ -787,6 +849,13 @@ public sealed partial class JoinCutWindow : TrueBimWindow
             : SelectedConfiguration?.LastSelectedJoinAction ?? JoinAction.Join;
     }
 
+    private CutAction GetSelectedCutAction()
+    {
+        return ActionCombo.SelectedItem is ActionOption actionOption && actionOption.CutAction.HasValue
+            ? actionOption.CutAction.Value
+            : SelectedConfiguration?.LastSelectedCutAction ?? CutAction.Cut;
+    }
+
     private string GetScopeText(ProcessingScope scope)
     {
         return scopeOptions.FirstOrDefault(option => option.Value == scope)?.Text ?? scope.ToString();
@@ -795,6 +864,11 @@ public sealed partial class JoinCutWindow : TrueBimWindow
     private string GetJoinActionText(JoinAction action)
     {
         return joinActionOptions.FirstOrDefault(option => option.JoinAction == action)?.Text ?? action.ToString();
+    }
+
+    private string GetCutActionText(CutAction action)
+    {
+        return cutActionOptions.FirstOrDefault(option => option.CutAction == action)?.Text ?? action.ToString();
     }
 
     private void EditFilterCategories(
@@ -825,14 +899,15 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         string title,
         IReadOnlyCollection<BuiltInCategory> selectedCategories)
     {
-        if (categoryCatalog.Count == 0)
+        IReadOnlyList<CategoryCatalogItem> categories = EnsureCategoryCatalog();
+        if (categories.Count == 0)
         {
             MessageBox.Show(this, "В проекте не найдены модельные категории с элементами.", "Категории", MessageBoxButton.OK, MessageBoxImage.Information);
             return null;
         }
 
         bool allCategoriesSelected = selectedCategories.Count == 0;
-        ObservableCollection<CategorySelectionOption> options = new(categoryCatalog
+        ObservableCollection<CategorySelectionOption> options = new(categories
             .Select(category => new CategorySelectionOption(
                 category.BuiltInCategory,
                 category.Name,
@@ -1005,6 +1080,21 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         return categoryNames.TryGetValue(builtInCategory, out string? name)
             ? name
             : builtInCategory.ToString();
+    }
+
+    private IReadOnlyList<CategoryCatalogItem> EnsureCategoryCatalog()
+    {
+        if (categoryCatalog is not null)
+        {
+            return categoryCatalog;
+        }
+
+        categoryCatalog = CollectCategoryCatalog(document);
+        categoryNames = categoryCatalog
+            .GroupBy(category => category.BuiltInCategory)
+            .ToDictionary(group => group.Key, group => group.First().Name);
+        logger.Info($"Join/Cut category catalog loaded with {categoryCatalog.Count} categor(ies).");
+        return categoryCatalog;
     }
 
     private static IReadOnlyList<CategoryCatalogItem> CollectCategoryCatalog(Document document)
@@ -1211,6 +1301,67 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         input.Focus();
 
         return dialog.ShowDialog() == true ? input.Text : null;
+    }
+
+    private sealed class JoinCutExternalEventHandler : IExternalEventHandler
+    {
+        private readonly JoinCutWindow window;
+        private JoinCutOperationRequest? request;
+
+        public JoinCutExternalEventHandler(JoinCutWindow window)
+        {
+            this.window = window ?? throw new ArgumentNullException(nameof(window));
+        }
+
+        public void SetRequest(JoinCutOperationRequest request)
+        {
+            this.request = request;
+        }
+
+        public void Execute(UIApplication app)
+        {
+            JoinCutOperationRequest? currentRequest = request;
+            request = null;
+            if (currentRequest is null)
+            {
+                return;
+            }
+
+            window.RunOperation(currentRequest);
+        }
+
+        public string GetName()
+        {
+            return "TrueBIM Join/Cut";
+        }
+    }
+
+    private sealed record JoinCutOperationRequest(
+        bool IsPreview,
+        JoinCutConfiguration Configuration,
+        ProcessingScope Scope,
+        JoinAction? JoinAction,
+        CutAction? CutAction)
+    {
+        public string OperationName => JoinAction.HasValue ? "join" : "cut";
+
+        public static JoinCutOperationRequest ForJoin(
+            bool isPreview,
+            JoinCutConfiguration configuration,
+            ProcessingScope scope,
+            JoinAction action)
+        {
+            return new JoinCutOperationRequest(isPreview, configuration, scope, action, null);
+        }
+
+        public static JoinCutOperationRequest ForCut(
+            bool isPreview,
+            JoinCutConfiguration configuration,
+            ProcessingScope scope,
+            CutAction action)
+        {
+            return new JoinCutOperationRequest(isPreview, configuration, scope, null, action);
+        }
     }
 
     private sealed record CategoryCatalogItem(

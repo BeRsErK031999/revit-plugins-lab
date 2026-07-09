@@ -2,6 +2,7 @@ using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Microsoft.Win32;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,13 +27,18 @@ public sealed class ParaManagerWindow : TrueBimWindow
     private readonly CategoryResolveService categoryResolveService;
     private readonly ParaManagerCategoryPresetService categoryPresetService;
     private readonly ITrueBimLogger logger;
+    private readonly ParaManagerImportExternalEventHandler importHandler;
+    private readonly ExternalEvent importEvent;
     private readonly WpfTextBox sharedParameterPathInput = new();
     private readonly WpfTextBox csvPathInput = new();
     private readonly WpfTextBox categoryPresetInput = new();
+    private readonly WpfTextBox projectParameterSearchInput = new();
     private readonly ListBox importRowList = new();
-    private readonly ListBox projectParameterList = new();
+    private readonly DataGrid projectParameterGrid = new();
     private readonly WpfTextBox reportText = new();
     private readonly TextBlock statusText = new();
+    private readonly ObservableCollection<ProjectParameterRow> projectParameterRows = [];
+    private List<ProjectParameterRow> allProjectParameterRows = [];
     private List<ParameterImportRow> importRows = [];
     private List<string> selectedCategoryPreset = [];
 
@@ -52,6 +58,8 @@ public sealed class ParaManagerWindow : TrueBimWindow
         this.bindingService = bindingService ?? throw new ArgumentNullException(nameof(bindingService));
         categoryResolveService = new CategoryResolveService();
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        importHandler = new ParaManagerImportExternalEventHandler(this);
+        importEvent = ExternalEvent.Create(importHandler);
         categoryPresetService = new ParaManagerCategoryPresetService(
             ParaManagerCategoryPresetService.GetDefaultSettingsPath(),
             logger);
@@ -192,20 +200,49 @@ public sealed class ParaManagerWindow : TrueBimWindow
         };
         exportButton.Click += (_, _) => ExportProjectParameters();
         toolbar.Children.Add(exportButton);
+        projectParameterSearchInput.Height = 30;
+        projectParameterSearchInput.Width = 260;
+        projectParameterSearchInput.Margin = new Thickness(8, 0, 0, 0);
+        projectParameterSearchInput.VerticalContentAlignment = VerticalAlignment.Center;
+        projectParameterSearchInput.ToolTip = "Search project parameters by name, category, type or group.";
+        projectParameterSearchInput.TextChanged += (_, _) => RefreshProjectParameterGrid();
+        toolbar.Children.Add(projectParameterSearchInput);
         panel.Children.Add(toolbar);
 
-        projectParameterList.BorderBrush = Brushes.LightGray;
-        projectParameterList.BorderThickness = new Thickness(1);
-        projectParameterList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        projectParameterList.ToolTip = "Список параметров, уже привязанных к категориям проекта.";
-        WpfGrid.SetRow(projectParameterList, 1);
-        panel.Children.Add(projectParameterList);
+        projectParameterGrid.AutoGenerateColumns = false;
+        projectParameterGrid.CanUserAddRows = false;
+        projectParameterGrid.CanUserDeleteRows = false;
+        projectParameterGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
+        projectParameterGrid.IsReadOnly = true;
+        projectParameterGrid.ItemsSource = projectParameterRows;
+        projectParameterGrid.SelectionMode = DataGridSelectionMode.Extended;
+        projectParameterGrid.BorderBrush = Brushes.LightGray;
+        projectParameterGrid.BorderThickness = new Thickness(1);
+        projectParameterGrid.ToolTip = "Project parameters already bound to categories in the current Revit document.";
+        projectParameterGrid.Columns.Add(CreateTextColumn("Parameter", nameof(ProjectParameterRow.Name), 220));
+        projectParameterGrid.Columns.Add(CreateTextColumn("Binding", nameof(ProjectParameterRow.BindingTypeDisplay), 90));
+        projectParameterGrid.Columns.Add(CreateTextColumn("Categories", nameof(ProjectParameterRow.CategoriesDisplay), 260));
+        projectParameterGrid.Columns.Add(CreateTextColumn("Group", nameof(ProjectParameterRow.GroupDisplay), 140));
+        projectParameterGrid.Columns.Add(CreateTextColumn("Type", nameof(ProjectParameterRow.DataTypeDisplay), 120));
+        projectParameterGrid.Columns.Add(CreateTextColumn("GUID", nameof(ProjectParameterRow.GuidDisplay), 240));
+        WpfGrid.SetRow(projectParameterGrid, 1);
+        panel.Children.Add(projectParameterGrid);
 
         return new TabItem
         {
             Header = "Параметры проекта",
             Content = panel,
             ToolTip = "Посмотреть параметры, которые уже есть в модели."
+        };
+    }
+
+    private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)
+    {
+        return new DataGridTextColumn
+        {
+            Header = header,
+            Binding = new System.Windows.Data.Binding(bindingPath),
+            Width = width
         };
     }
 
@@ -656,12 +693,8 @@ public sealed class ParaManagerWindow : TrueBimWindow
     {
         try
         {
-            projectParameterList.Items.Clear();
-            foreach (ProjectParameterRow row in bindingService.CollectProjectParameters(document))
-            {
-                projectParameterList.Items.Add(CreateProjectParameterRow(row));
-            }
-
+            allProjectParameterRows = bindingService.CollectProjectParameters(document).ToList();
+            RefreshProjectParameterGrid();
             UpdateStatus();
         }
         catch (Exception exception)
@@ -669,6 +702,33 @@ public sealed class ParaManagerWindow : TrueBimWindow
             logger.Error("Failed to collect project parameters.", exception);
             TaskDialog.Show("ParaManager", "Не удалось собрать параметры проекта. Используйте логи для диагностики.");
         }
+    }
+
+    private void RefreshProjectParameterGrid()
+    {
+        string query = projectParameterSearchInput.Text.Trim();
+        IEnumerable<ProjectParameterRow> rows = allProjectParameterRows;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            rows = rows.Where(row =>
+                Contains(row.Name, query)
+                || Contains(row.BindingTypeDisplay, query)
+                || Contains(row.CategoriesDisplay, query)
+                || Contains(row.GroupDisplay, query)
+                || Contains(row.DataTypeDisplay, query)
+                || Contains(row.GuidDisplay, query));
+        }
+
+        projectParameterRows.Clear();
+        foreach (ProjectParameterRow row in rows)
+        {
+            projectParameterRows.Add(row);
+        }
+    }
+
+    private static bool Contains(string value, string query)
+    {
+        return value?.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0;
     }
 
     private void ExportProjectParameters()
@@ -705,45 +765,6 @@ public sealed class ParaManagerWindow : TrueBimWindow
             logger.Error("Failed to export project parameters.", exception);
             TaskDialog.Show("ParaManager", "Не удалось экспортировать параметры проекта. Используйте логи для диагностики.");
         }
-    }
-
-    private static UIElement CreateProjectParameterRow(ProjectParameterRow row)
-    {
-        DockPanel panel = new()
-        {
-            LastChildFill = true,
-            Margin = new Thickness(8, 6, 8, 6),
-            ToolTip = $"{row.BindingTypeDisplay} parameter. Раздел: {row.GroupDisplay}. Категории: {row.CategoriesDisplay}."
-        };
-
-        TextBlock typeText = new()
-        {
-            Text = row.BindingTypeDisplay,
-            Width = 80,
-            Foreground = Brushes.DimGray,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        DockPanel.SetDock(typeText, Dock.Right);
-        panel.Children.Add(typeText);
-
-        StackPanel textPanel = new();
-        textPanel.Children.Add(new TextBlock
-        {
-            Text = row.Name,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap
-        });
-        string sharedText = row.IsShared ? $"Shared GUID: {row.GuidDisplay}" : "Project/internal";
-        textPanel.Children.Add(new TextBlock
-        {
-            Text = $"{row.DataTypeDisplay} | {row.GroupDisplay} | {sharedText} | {row.CategoriesDisplay}",
-            Foreground = Brushes.DimGray,
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap
-        });
-        panel.Children.Add(textPanel);
-
-        return panel;
     }
 
     private void ExportTemplate()
@@ -795,6 +816,26 @@ public sealed class ParaManagerWindow : TrueBimWindow
                 return;
             }
 
+            QueueImport();
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to import ParaManager parameters.", exception);
+            TaskDialog.Show("ParaManager", "Не удалось импортировать параметры. Используйте логи для диагностики.");
+        }
+    }
+
+    private void QueueImport()
+    {
+        statusText.Text = "Импорт поставлен в очередь Revit. Операция будет выполнена через ExternalEvent.";
+        logger.Info($"ParaManager import requested for {importRows.Count(row => row.CanApply)} row(s).");
+        importEvent.Raise();
+    }
+
+    private void RunImport()
+    {
+        try
+        {
             ParameterImportResult result = bindingService.Import(uiApplication.Application, document, sharedParameterPathInput.Text, importRows);
             importRows = result.Rows.ToList();
             RefreshImportRows();
@@ -834,7 +875,7 @@ public sealed class ParaManagerWindow : TrueBimWindow
     {
         if (importRows.Count == 0)
         {
-            statusText.Text = $"Параметров проекта: {projectParameterList.Items.Count}. Добавьте параметр вручную или загрузите CSV-шаблон.";
+            statusText.Text = $"Параметров проекта: {allProjectParameterRows.Count}. Добавьте параметр вручную или загрузите CSV-шаблон.";
             return;
         }
 
@@ -857,6 +898,26 @@ public sealed class ParaManagerWindow : TrueBimWindow
             ParameterImportStatus.DuplicateInFile => new SolidColorBrush(System.Windows.Media.Color.FromRgb(150, 90, 20)),
             _ => Brushes.DimGray
         };
+    }
+
+    private sealed class ParaManagerImportExternalEventHandler : IExternalEventHandler
+    {
+        private readonly ParaManagerWindow window;
+
+        public ParaManagerImportExternalEventHandler(ParaManagerWindow window)
+        {
+            this.window = window ?? throw new ArgumentNullException(nameof(window));
+        }
+
+        public void Execute(UIApplication app)
+        {
+            window.RunImport();
+        }
+
+        public string GetName()
+        {
+            return "TrueBIM ParaManager Import";
+        }
     }
 
     private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler, string? toolTip = null)
