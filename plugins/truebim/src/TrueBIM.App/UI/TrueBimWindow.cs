@@ -1,19 +1,33 @@
 using System.Windows;
-using System.Windows.Media;
+using System.Windows.Controls;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.UI;
 
 public class TrueBimWindow : Window
 {
-    private static readonly FontFamily ModernFontFamily = new("Segoe UI Variable Text, Segoe UI");
-
     public TrueBimWindow()
     {
-        FontFamily = ModernFontFamily;
-        FontSize = 13;
-        SnapsToDevicePixels = true;
-        UseLayoutRounding = true;
-        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
-        TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
+        TrueBimWindowChrome.Apply(this);
+    }
+
+    protected Grid BuildShell(
+        UIElement? header,
+        UIElement? commandBar,
+        UIElement body,
+        UIElement? status = null,
+        UIElement? footer = null)
+    {
+        return TrueBimUi.CreateWindowShell(header, commandBar, body, status, footer);
+    }
+
+    protected void ApplyTrueBimShell(
+        UIElement? header,
+        UIElement? commandBar,
+        UIElement body,
+        UIElement? status = null,
+        UIElement? footer = null)
+    {
+        Content = BuildShell(header, commandBar, body, status, footer);
     }
 }
