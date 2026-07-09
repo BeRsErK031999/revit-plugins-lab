@@ -1,6 +1,7 @@
 <ui:TrueBimWindow x:Class="TrueBIM.App.Modules.BimTools.JoinCut.UI.JoinCutWindow"
                   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:design="clr-namespace:TrueBIM.App.UI.DesignSystem"
                   xmlns:ui="clr-namespace:TrueBIM.App.UI"
                   Title="Соединить / Вырезать"
                   Width="1040"
@@ -10,6 +11,14 @@
                   ResizeMode="CanResize"
                   WindowStartupLocation="CenterOwner">
     <Grid Margin="16">
+        <Grid.Resources>
+            <Style TargetType="{x:Type Button}" BasedOn="{StaticResource TrueBim.SecondaryButtonStyle}" />
+            <Style TargetType="{x:Type ComboBox}" BasedOn="{StaticResource TrueBim.ComboBoxStyle}" />
+            <Style TargetType="{x:Type CheckBox}" BasedOn="{StaticResource TrueBim.CheckBoxStyle}" />
+            <Style TargetType="{x:Type TabControl}" BasedOn="{StaticResource TrueBim.TabControlStyle}" />
+            <Style TargetType="{x:Type ListBox}" BasedOn="{StaticResource TrueBim.ListBoxStyle}" />
+        </Grid.Resources>
+
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -20,20 +29,20 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="Соединить / Вырезать"
-                       FontSize="22"
+                       FontSize="{x:Static design:TrueBimTheme.WindowTitleFontSize}"
                        FontWeight="SemiBold" />
             <TextBlock x:Name="DocumentText"
-                       Foreground="DimGray"
+                       Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
                        TextWrapping="Wrap"
                        Margin="0,6,0,0" />
         </StackPanel>
 
         <DockPanel Grid.Row="1" Margin="0,0,0,12" LastChildFill="True">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
-                <Button x:Name="AddConfigurationButton" Content="Добавить" MinWidth="92" Height="30" Click="AddConfiguration_Click" />
-                <Button x:Name="DuplicateConfigurationButton" Content="Дублировать" MinWidth="112" Height="30" Margin="8,0,0,0" Click="DuplicateConfiguration_Click" />
-                <Button x:Name="RenameConfigurationButton" Content="Переименовать" MinWidth="124" Height="30" Margin="8,0,0,0" Click="RenameConfiguration_Click" />
-                <Button x:Name="DeleteConfigurationButton" Content="Удалить" MinWidth="88" Height="30" Margin="8,0,0,0" Click="DeleteConfiguration_Click" />
+                <Button x:Name="AddConfigurationButton" Content="Добавить" MinWidth="92" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Click="AddConfiguration_Click" />
+                <Button x:Name="DuplicateConfigurationButton" Content="Дублировать" MinWidth="112" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="DuplicateConfiguration_Click" />
+                <Button x:Name="RenameConfigurationButton" Content="Переименовать" MinWidth="124" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="RenameConfiguration_Click" />
+                <Button x:Name="DeleteConfigurationButton" Content="Удалить" MinWidth="88" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="DeleteConfiguration_Click" />
             </StackPanel>
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Конфигурация"
@@ -42,7 +51,7 @@
                            Margin="0,0,10,0" />
                 <ComboBox x:Name="ConfigurationCombo"
                           Width="300"
-                          Height="30"
+                          MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                           DisplayMemberPath="Name"
                           SelectionChanged="ConfigurationCombo_SelectionChanged" />
             </StackPanel>
@@ -61,26 +70,28 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button Content="Добавить правило" MinWidth="130" Height="30" Click="AddJoinRule_Click" />
-                        <Button Content="Дублировать" MinWidth="110" Height="30" Margin="8,0,0,0" Click="DuplicateJoinRule_Click" />
-                        <Button x:Name="MoveJoinUpButton" Content="Вверх" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveJoinRuleUp_Click" />
-                        <Button x:Name="MoveJoinDownButton" Content="Вниз" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveJoinRuleDown_Click" />
-                        <Button Content="Удалить" MinWidth="86" Height="30" Margin="8,0,0,0" Click="DeleteJoinRule_Click" />
-                        <Button Content="Поменять фильтры" MinWidth="140" Height="30" Margin="8,0,0,0" Click="SwapJoinFilters_Click" />
+                        <Button Content="Добавить правило" MinWidth="130" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Click="AddJoinRule_Click" />
+                        <Button Content="Дублировать" MinWidth="110" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="DuplicateJoinRule_Click" />
+                        <Button x:Name="MoveJoinUpButton" Content="Вверх" MinWidth="82" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="MoveJoinRuleUp_Click" />
+                        <Button x:Name="MoveJoinDownButton" Content="Вниз" MinWidth="82" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="MoveJoinRuleDown_Click" />
+                        <Button Content="Удалить" MinWidth="86" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="DeleteJoinRule_Click" />
+                        <Button Content="Поменять фильтры" MinWidth="140" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="SwapJoinFilters_Click" />
                     </StackPanel>
 
                     <ListBox x:Name="JoinRulesList"
                              Grid.Row="1"
                              Grid.Column="0"
                              DisplayMemberPath="Name"
-                             BorderBrush="LightGray"
+                             BorderBrush="{x:Static design:TrueBimBrushes.Border}"
                              BorderThickness="1"
                              SelectionChanged="JoinRulesList_SelectionChanged" />
 
                     <Border Grid.Row="1"
                             Grid.Column="1"
-                            BorderBrush="LightGray"
+                            BorderBrush="{x:Static design:TrueBimBrushes.Border}"
                             BorderThickness="1"
+                            Background="{x:Static design:TrueBimBrushes.Surface}"
+                            CornerRadius="8"
                             Margin="12,0,0,0"
                             Padding="14">
                         <Grid>
@@ -93,11 +104,14 @@
                             </Grid.RowDefinitions>
                             <TextBlock Text="Параметры правила"
                                        FontWeight="SemiBold"
-                                       FontSize="16"
+                                       FontSize="{x:Static design:TrueBimTheme.SectionTitleFontSize}"
                                        Margin="0,0,0,12" />
                             <StackPanel Grid.Row="1" Margin="0,0,0,12">
                                 <TextBlock Text="Название правила" FontWeight="SemiBold" Margin="0,0,0,5" />
-                                <TextBox x:Name="JoinRuleNameInput" Height="28" LostFocus="JoinRuleNameInput_LostFocus" />
+                                <TextBox x:Name="JoinRuleNameInput"
+                                         MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
+                                         Style="{StaticResource TrueBim.TextBoxStyle}"
+                                         LostFocus="JoinRuleNameInput_LostFocus" />
                             </StackPanel>
                             <CheckBox x:Name="OnlyParallelWallsCheck"
                                       Grid.Row="2"
@@ -110,7 +124,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Border BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="0,0,8,0">
+                                <Border BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="0,0,8,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="Что присоединять" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -118,13 +132,13 @@
                                                     DockPanel.Dock="Right"
                                                     Content="Категории"
                                                     MinWidth="92"
-                                                    Height="26"
+                                                    MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditJoinLeftCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="JoinLeftFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="JoinLeftFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="8,0,0,0">
+                                <Border Grid.Column="1" BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="8,0,0,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="К чему присоединять" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -132,15 +146,15 @@
                                                     DockPanel.Dock="Right"
                                                     Content="Категории"
                                                     MinWidth="92"
-                                                    Height="26"
+                                                    MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditJoinRightCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="JoinRightFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="JoinRightFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
                             <TextBlock Grid.Row="4"
-                                       Foreground="DimGray"
+                                       Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
                                        TextWrapping="Wrap"
                                        Text="Фильтры правила: категории и условия по параметрам." />
                         </Grid>
@@ -160,26 +174,28 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button Content="Добавить правило" MinWidth="130" Height="30" Click="AddCutRule_Click" />
-                        <Button Content="Дублировать" MinWidth="110" Height="30" Margin="8,0,0,0" Click="DuplicateCutRule_Click" />
-                        <Button x:Name="MoveCutUpButton" Content="Вверх" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveCutRuleUp_Click" />
-                        <Button x:Name="MoveCutDownButton" Content="Вниз" MinWidth="82" Height="30" Margin="8,0,0,0" Click="MoveCutRuleDown_Click" />
-                        <Button Content="Удалить" MinWidth="86" Height="30" Margin="8,0,0,0" Click="DeleteCutRule_Click" />
-                        <Button Content="Поменять фильтры" MinWidth="140" Height="30" Margin="8,0,0,0" Click="SwapCutFilters_Click" />
+                        <Button Content="Добавить правило" MinWidth="130" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Click="AddCutRule_Click" />
+                        <Button Content="Дублировать" MinWidth="110" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="DuplicateCutRule_Click" />
+                        <Button x:Name="MoveCutUpButton" Content="Вверх" MinWidth="82" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="MoveCutRuleUp_Click" />
+                        <Button x:Name="MoveCutDownButton" Content="Вниз" MinWidth="82" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="MoveCutRuleDown_Click" />
+                        <Button Content="Удалить" MinWidth="86" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="DeleteCutRule_Click" />
+                        <Button Content="Поменять фильтры" MinWidth="140" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="SwapCutFilters_Click" />
                     </StackPanel>
 
                     <ListBox x:Name="CutRulesList"
                              Grid.Row="1"
                              Grid.Column="0"
                              DisplayMemberPath="Name"
-                             BorderBrush="LightGray"
+                             BorderBrush="{x:Static design:TrueBimBrushes.Border}"
                              BorderThickness="1"
                              SelectionChanged="CutRulesList_SelectionChanged" />
 
                     <Border Grid.Row="1"
                             Grid.Column="1"
-                            BorderBrush="LightGray"
+                            BorderBrush="{x:Static design:TrueBimBrushes.Border}"
                             BorderThickness="1"
+                            Background="{x:Static design:TrueBimBrushes.Surface}"
+                            CornerRadius="8"
                             Margin="12,0,0,0"
                             Padding="14">
                         <Grid>
@@ -192,11 +208,14 @@
                             </Grid.RowDefinitions>
                             <TextBlock Text="Параметры правила"
                                        FontWeight="SemiBold"
-                                       FontSize="16"
+                                       FontSize="{x:Static design:TrueBimTheme.SectionTitleFontSize}"
                                        Margin="0,0,0,12" />
                             <StackPanel Grid.Row="1" Margin="0,0,0,12">
                                 <TextBlock Text="Название правила" FontWeight="SemiBold" Margin="0,0,0,5" />
-                                <TextBox x:Name="CutRuleNameInput" Height="28" LostFocus="CutRuleNameInput_LostFocus" />
+                                <TextBox x:Name="CutRuleNameInput"
+                                         MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
+                                         Style="{StaticResource TrueBim.TextBoxStyle}"
+                                         LostFocus="CutRuleNameInput_LostFocus" />
                             </StackPanel>
                             <CheckBox x:Name="SplitFacesCheck"
                                       Grid.Row="2"
@@ -209,7 +228,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Border BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="0,0,8,0">
+                                <Border BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="0,0,8,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="Что вырезает" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -217,13 +236,13 @@
                                                     DockPanel.Dock="Right"
                                                     Content="Категории"
                                                     MinWidth="92"
-                                                    Height="26"
+                                                    MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditCuttingCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="CuttingFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="CuttingFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="8,0,0,0">
+                                <Border Grid.Column="1" BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="8,0,0,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="Из чего вырезает" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -231,15 +250,15 @@
                                                     DockPanel.Dock="Right"
                                                     Content="Категории"
                                                     MinWidth="92"
-                                                    Height="26"
+                                                    MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditCutElementCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="CutElementFilterText" Foreground="DimGray" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="CutElementFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
                             <TextBlock Grid.Row="4"
-                                       Foreground="DimGray"
+                                       Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
                                        TextWrapping="Wrap"
                                        Text="Фильтры правила: чем вырезать и из каких элементов вырезать." />
                         </Grid>
@@ -254,7 +273,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <Button Content="Скопировать отчёт" MinWidth="140" Height="30" Click="CopyReport_Click" />
+                        <Button Content="Скопировать отчёт" MinWidth="140" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Click="CopyReport_Click" />
                     </StackPanel>
                     <TextBox x:Name="ReportText"
                              Grid.Row="1"
@@ -262,7 +281,9 @@
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
-                             BorderBrush="LightGray"
+                             VerticalContentAlignment="Top"
+                             Style="{StaticResource TrueBim.TextBoxStyle}"
+                             BorderBrush="{x:Static design:TrueBimBrushes.Border}"
                              BorderThickness="1" />
                 </Grid>
             </TabItem>
@@ -270,7 +291,7 @@
 
         <TextBlock x:Name="StatusText"
                    Grid.Row="3"
-                   Foreground="DimGray"
+                   Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
                    TextWrapping="Wrap"
                    Margin="0,10,0,10" />
 
@@ -282,7 +303,7 @@
                            Margin="0,0,10,0" />
                 <ComboBox x:Name="ScopeCombo"
                           Width="180"
-                          Height="30"
+                          MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                           DisplayMemberPath="Text"
                           SelectionChanged="ScopeCombo_SelectionChanged" />
                 <TextBlock Text="Действие"
@@ -291,15 +312,15 @@
                            Margin="18,0,10,0" />
                 <ComboBox x:Name="ActionCombo"
                           Width="210"
-                          Height="30"
+                          MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                           DisplayMemberPath="Text"
                           SelectionChanged="ActionCombo_SelectionChanged" />
             </StackPanel>
 
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button x:Name="PreviewButton" Content="Предпросмотр" MinWidth="136" Height="32" Click="Preview_Click" />
-                <Button x:Name="ExecuteButton" Content="Выполнить" MinWidth="124" Height="32" Margin="8,0,0,0" Click="Execute_Click" />
-                <Button x:Name="CloseButton" Content="Закрыть" MinWidth="110" Height="32" Margin="8,0,0,0" IsCancel="True" Click="Close_Click" />
+                <Button x:Name="PreviewButton" Content="Предпросмотр" MinWidth="136" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Click="Preview_Click" />
+                <Button x:Name="ExecuteButton" Style="{StaticResource TrueBim.PrimaryButtonStyle}" Content="Выполнить" MinWidth="124" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" Click="Execute_Click" />
+                <Button x:Name="CloseButton" Content="Закрыть" MinWidth="110" MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}" Margin="8,0,0,0" IsCancel="True" Click="Close_Click" />
             </StackPanel>
         </DockPanel>
     </Grid>
