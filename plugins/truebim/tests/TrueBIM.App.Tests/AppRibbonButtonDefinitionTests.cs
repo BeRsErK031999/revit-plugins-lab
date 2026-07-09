@@ -133,7 +133,18 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.Equal("Видимость", button.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenViewVisibilityCommand)}", button.CommandClassName);
         Assert.Equal(TrueBimIcon.Visibility, button.Icon);
+        Assert.True(button.IsPulldown);
         Assert.Contains("видимость", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+
+        TrueBimRibbonPulldownItemDefinition allItem = Assert.Single(
+            button.Items,
+            item => string.Equals(item.Name, "TrueBIM_ViewVisibility_All", StringComparison.Ordinal));
+        Assert.Equal("Все", allItem.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenViewVisibilityCommand)}", allItem.CommandClassName);
+        Assert.Contains(button.Items, item => string.Equals(item.Text, "Окна", StringComparison.Ordinal));
+        Assert.Contains(button.Items, item => string.Equals(item.Text, "Стены", StringComparison.Ordinal));
+        Assert.Contains(button.Items, item => string.Equals(item.Text, "Воздуховоды", StringComparison.Ordinal));
+        Assert.Contains(button.Items, item => string.Equals(item.Text, "Аннотации", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -216,7 +227,9 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_HaveUniqueNames()
     {
         string[] duplicateNames = TrueBimRibbon.Buttons
-            .GroupBy(button => button.Name, StringComparer.Ordinal)
+            .Select(button => button.Name)
+            .Concat(TrueBimRibbon.Buttons.SelectMany(button => button.Items.Select(item => item.Name)))
+            .GroupBy(name => name, StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
             .ToArray();
@@ -243,6 +256,12 @@ public sealed class AppRibbonButtonDefinitionTests
         {
             Assert.StartsWith("TrueBIM.App.Commands.", button.CommandClassName, StringComparison.Ordinal);
             Assert.EndsWith("Command", button.CommandClassName, StringComparison.Ordinal);
+
+            foreach (TrueBimRibbonPulldownItemDefinition item in button.Items)
+            {
+                Assert.StartsWith("TrueBIM.App.Commands.", item.CommandClassName, StringComparison.Ordinal);
+                Assert.EndsWith("Command", item.CommandClassName, StringComparison.Ordinal);
+            }
         }
     }
 

@@ -22,33 +22,30 @@ public sealed class ViewCategoryVisibilityService
         List<ViewCategoryVisibilityItem> items = new();
         foreach (Category category in document.Settings.Categories.Cast<Category>())
         {
-            if (!CanControlCategory(view, category))
+            if (TryCreateItem(view, category, out ViewCategoryVisibilityItem? item) && item is not null)
             {
-                continue;
+                items.Add(item);
             }
-
-            bool isVisible;
-            try
-            {
-                isVisible = !view.GetCategoryHidden(category.Id);
-            }
-            catch (Exception exception) when (IsExpectedRevitCategoryException(exception))
-            {
-                logger.Warning($"Skipping category '{category.Name}' because its visibility state cannot be read.");
-                continue;
-            }
-
-            items.Add(new ViewCategoryVisibilityItem(
-                category.Id,
-                category.Name,
-                category.CategoryType,
-                isVisible));
         }
 
         return items
             .OrderBy(item => GetCategoryTypeOrder(item.CategoryType))
             .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+    }
+
+    public bool TryCollect(
+        Document document,
+        View view,
+        BuiltInCategory builtInCategory,
+        out ViewCategoryVisibilityItem? item)
+    {
+        Guard.NotNull(document, nameof(document));
+        Guard.NotNull(view, nameof(view));
+
+        item = null;
+        Category? category = Category.GetCategory(document, builtInCategory);
+        return category is not null && TryCreateItem(view, category, out item);
     }
 
     public ViewCategoryVisibilityApplyResult Apply(Document document, View view, IReadOnlyList<ViewCategoryVisibilityUpdate> updates)
@@ -129,6 +126,33 @@ public sealed class ViewCategoryVisibilityService
         {
             return false;
         }
+    }
+
+    private bool TryCreateItem(View view, Category category, out ViewCategoryVisibilityItem? item)
+    {
+        item = null;
+        if (!CanControlCategory(view, category))
+        {
+            return false;
+        }
+
+        bool isVisible;
+        try
+        {
+            isVisible = !view.GetCategoryHidden(category.Id);
+        }
+        catch (Exception exception) when (IsExpectedRevitCategoryException(exception))
+        {
+            logger.Warning($"Skipping category '{category.Name}' because its visibility state cannot be read.");
+            return false;
+        }
+
+        item = new ViewCategoryVisibilityItem(
+            category.Id,
+            category.Name,
+            category.CategoryType,
+            isVisible);
+        return true;
     }
 
     private static int GetCategoryTypeOrder(CategoryType categoryType)

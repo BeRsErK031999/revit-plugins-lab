@@ -68,6 +68,39 @@ public sealed class App : IExternalApplication
         RibbonPanel panel,
         TrueBimRibbonButtonDefinition button)
     {
+        if (button.IsPulldown)
+        {
+            AddPulldownButton(panel, button);
+            return;
+        }
+
+        panel.AddItem(CreatePushButtonData(button));
+    }
+
+    private static void AddPulldownButton(
+        RibbonPanel panel,
+        TrueBimRibbonButtonDefinition button)
+    {
+        PulldownButtonData pulldownData = new(button.Name, button.Text);
+        PulldownButton pulldown = (PulldownButton)panel.AddItem(pulldownData);
+        pulldown.Image = IconFactory.CreateImage(button.Icon, 16);
+        pulldown.LargeImage = IconFactory.CreateImage(button.Icon, 32);
+        pulldown.ToolTip = button.Tooltip;
+        pulldown.LongDescription = button.LongDescription;
+
+        foreach (TrueBimRibbonPulldownItemDefinition item in button.Items)
+        {
+            if (item.BeginsGroup)
+            {
+                pulldown.AddSeparator();
+            }
+
+            pulldown.AddPushButton(CreatePushButtonData(item));
+        }
+    }
+
+    private static PushButtonData CreatePushButtonData(TrueBimRibbonButtonDefinition button)
+    {
         PushButtonData buttonData = new(
             button.Name,
             button.Text,
@@ -82,7 +115,21 @@ public sealed class App : IExternalApplication
             buttonData.AvailabilityClassName = button.AvailabilityClassName;
         }
 
-        panel.AddItem(buttonData);
+        return buttonData;
+    }
+
+    private static PushButtonData CreatePushButtonData(TrueBimRibbonPulldownItemDefinition item)
+    {
+        PushButtonData buttonData = new(
+            item.Name,
+            item.Text,
+            typeof(App).Assembly.Location,
+            item.CommandClassName);
+        buttonData.Image = IconFactory.CreateImage(item.Icon, 16);
+        buttonData.LargeImage = IconFactory.CreateImage(item.Icon, 32);
+        buttonData.ToolTip = item.Tooltip;
+
+        return buttonData;
     }
 
     private static void RegisterFamilyManagerPane(UIControlledApplication application)
