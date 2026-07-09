@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using TrueBIM.App.Modules.BimTools.JoinCut.Models;
 using TrueBIM.App.Modules.BimTools.JoinCut.Services;
 using TrueBIM.App.Services;
@@ -913,6 +914,7 @@ public sealed partial class JoinCutWindow : TrueBimWindow
                 category.Name,
                 category.ElementCount,
                 allCategoriesSelected || selectedCategories.Contains(category.BuiltInCategory))));
+        ICollectionView categoryView = CollectionViewSource.GetDefaultView(options);
         IReadOnlyList<BuiltInCategory>? result = null;
 
         TrueBimWindow dialog = new()
@@ -934,10 +936,15 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
+        StackPanel headerPanel = new()
+        {
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+
         StackPanel toolbar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 10)
+            Margin = new Thickness(0, 0, 0, 8)
         };
         Button selectAllButton = new()
         {
@@ -945,7 +952,7 @@ public sealed partial class JoinCutWindow : TrueBimWindow
             MinWidth = 104,
             Height = 30
         };
-        selectAllButton.Click += (_, _) => SetCategoryOptionsSelected(options, true);
+        selectAllButton.Click += (_, _) => SetCategoryOptionsSelected(GetVisibleCategoryOptions(categoryView), true);
         toolbar.Children.Add(selectAllButton);
 
         Button clearButton = new()
@@ -955,9 +962,23 @@ public sealed partial class JoinCutWindow : TrueBimWindow
             Height = 30,
             Margin = new Thickness(8, 0, 0, 0)
         };
-        clearButton.Click += (_, _) => SetCategoryOptionsSelected(options, false);
+        clearButton.Click += (_, _) => SetCategoryOptionsSelected(GetVisibleCategoryOptions(categoryView), false);
         toolbar.Children.Add(clearButton);
-        root.Children.Add(toolbar);
+        headerPanel.Children.Add(toolbar);
+
+        WpfTextBox searchInput = new()
+        {
+            Height = 28,
+            ToolTip = "Поиск категории по имени."
+        };
+        searchInput.TextChanged += (_, _) =>
+        {
+            string query = searchInput.Text.Trim();
+            categoryView.Filter = item => CategoryMatchesSearch(item as CategorySelectionOption, query);
+            categoryView.Refresh();
+        };
+        headerPanel.Children.Add(searchInput);
+        root.Children.Add(headerPanel);
 
         DataGrid categoryGrid = new()
         {
@@ -966,7 +987,7 @@ public sealed partial class JoinCutWindow : TrueBimWindow
             CanUserDeleteRows = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
             IsReadOnly = false,
-            ItemsSource = options,
+            ItemsSource = categoryView,
             SelectionMode = DataGridSelectionMode.Extended
         };
         categoryGrid.Columns.Add(new DataGridCheckBoxColumn
@@ -1043,6 +1064,27 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         {
             option.IsSelected = isSelected;
         }
+    }
+
+    private static IEnumerable<CategorySelectionOption> GetVisibleCategoryOptions(ICollectionView categoryView)
+    {
+        foreach (object? item in categoryView)
+        {
+            if (item is CategorySelectionOption option)
+            {
+                yield return option;
+            }
+        }
+    }
+
+    private static bool CategoryMatchesSearch(CategorySelectionOption? option, string query)
+    {
+        if (option is null || string.IsNullOrWhiteSpace(query))
+        {
+            return true;
+        }
+
+        return option.Name.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0;
     }
 
     private string DescribeFilter(ElementFilterDefinition filter)

@@ -264,8 +264,8 @@ public sealed class ColorByParameterWindow : TrueBimWindow
                 Margin = new Thickness(8, 5, 8, 5),
                 Tag = category
             };
-            checkBox.Checked += (_, _) => category.IsSelected = true;
-            checkBox.Unchecked += (_, _) => category.IsSelected = false;
+            checkBox.Checked += (_, _) => UpdateCategorySelection(category, true);
+            checkBox.Unchecked += (_, _) => UpdateCategorySelection(category, false);
             categoryList.Items.Add(checkBox);
         }
 
@@ -288,6 +288,8 @@ public sealed class ColorByParameterWindow : TrueBimWindow
             }
 
             parameters = service.CollectParameters(document, activeView, selectedCategories).ToList();
+            rows = [];
+            RefreshValueList();
             parameterInput.ItemsSource = parameters;
             parameterInput.DisplayMemberPath = nameof(BimParameterItem.DisplayName);
             parameterInput.SelectedIndex = parameters.Count > 0 ? 0 : -1;
@@ -397,6 +399,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         panel.Children.Add(checkBox);
 
         return panel;
+    }
+
+    private void UpdateCategorySelection(BimCategoryItem category, bool isSelected)
+    {
+        category.IsSelected = isSelected;
+        LoadParameters();
     }
 
     private static void ApplyManualColor(ColorRuleRow row, System.Windows.Controls.TextBox input, Border swatch)
