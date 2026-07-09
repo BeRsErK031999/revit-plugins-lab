@@ -14,4 +14,12 @@ public sealed record PdfParserResult(
             Array.Empty<string>(),
             [error]);
     }
+
+    public static PdfParserResult FromWarning(string warning)
+    {
+        return new PdfParserResult(
+            Array.Empty<ParsedTable>(),
+            [warning],
+            Array.Empty<string>());
+    }
 }

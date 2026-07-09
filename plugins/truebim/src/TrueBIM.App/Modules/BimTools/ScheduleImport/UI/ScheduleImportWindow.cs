@@ -74,7 +74,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         InitializeModeInput();
         InitializeTableInput();
         AddWarnings(context.Warnings);
-        UpdateStatus("Выберите PDF или JSON-модель таблицы.");
+        UpdateStatus("Выберите PDF или JSON-модель таблицы. DWG пока нужно предварительно экспортировать в PDF.");
         logger.Info($"Schedule Import window opened for '{context.DocumentTitle}', active view '{context.ActiveViewName}'.");
     }
 
@@ -157,7 +157,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         filePathInput.Height = 32;
         filePathInput.Margin = new Thickness(8, 0, 12, 8);
         filePathInput.IsReadOnly = true;
-        filePathInput.ToolTip = "PDF распознаётся локальным worker, JSON загружает промежуточную модель таблицы.";
+        filePathInput.ToolTip = "PDF распознаётся локальным worker, JSON загружает промежуточную модель таблицы. DWG пока импортируется через предварительный экспорт в PDF.";
         WpfGrid.SetRow(filePathInput, 1);
         WpfGrid.SetColumn(filePathInput, 1);
         root.Children.Add(filePathInput);
@@ -279,8 +279,8 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     {
         OpenFileDialog dialog = new()
         {
-            Title = "Выбрать таблицу PDF/JSON",
-            Filter = "PDF, DWG или JSON (*.pdf;*.dwg;*.json)|*.pdf;*.dwg;*.json|PDF (*.pdf)|*.pdf|JSON (*.json)|*.json|DWG (*.dwg)|*.dwg",
+            Title = "Выбрать PDF или JSON-модель таблицы",
+            Filter = "PDF или JSON (*.pdf;*.json)|*.pdf;*.json|PDF (*.pdf)|*.pdf|JSON (*.json)|*.json|DWG (планируется; выберите для диагностики) (*.dwg)|*.dwg",
             InitialDirectory = Directory.Exists(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments))
                 ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
                 : null
@@ -316,9 +316,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
             tableInput.SelectedIndex = tables.Count > 0 ? 0 : -1;
             ShowSelectedTable();
-            UpdateStatus(tables.Count > 0
-                ? $"Найдено таблиц: {tables.Count}."
-                : "Таблицы не найдены.");
+            UpdateStatus(CreateRecognitionStatus(result));
         }
         catch (Exception exception)
         {
@@ -545,6 +543,18 @@ public sealed class ScheduleImportWindow : TrueBimWindow
                 warnings.Add(item);
             }
         }
+    }
+
+    private static string CreateRecognitionStatus(PdfParserResult result)
+    {
+        if (result.Tables.Count > 0)
+        {
+            return $"Найдено таблиц: {result.Tables.Count}.";
+        }
+
+        return result.Errors.FirstOrDefault()
+            ?? result.Warnings.FirstOrDefault()
+            ?? "Таблицы не найдены.";
     }
 
     private static DataTable BuildPreviewTable(ParsedTable table)

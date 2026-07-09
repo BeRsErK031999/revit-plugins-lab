@@ -58,10 +58,11 @@ public sealed class JsonOrSamplePdfTableParser : IPdfTableParser
 
             if (extension.Equals(".dwg", StringComparison.OrdinalIgnoreCase))
             {
-                return PdfParserResult.FromError("DWG parsing is planned. Для MVP экспортируйте лист в PDF или загрузите JSON-модель таблицы.");
+                return PdfParserResult.FromWarning(
+                    "DWG пока не распознаётся напрямую. Для первого релиза экспортируйте лист DWG в PDF или загрузите промежуточную JSON-модель таблицы.");
             }
 
-            return PdfParserResult.FromError("Поддерживаются PDF, DWG-заглушка и JSON-модель таблицы.");
+            return PdfParserResult.FromError("Поддерживаются PDF и JSON. DWG пока доступен только через предварительную конвертацию в PDF.");
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
