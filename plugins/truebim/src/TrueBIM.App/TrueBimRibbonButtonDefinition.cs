@@ -334,6 +334,14 @@ public static class TrueBimRibbon
             PulldownItems: ViewVisibilityPulldownItems),
         new(
             BimPanelName,
+            "TrueBIM_ScheduleImport",
+            "Импорт\nтаблиц",
+            $"{CommandNamespace}.{nameof(ScheduleImportCommand)}",
+            TrueBimIcon.ScheduleImport,
+            "Открывает импорт таблиц из PDF/JSON с предпросмотром и созданием визуальной таблицы.",
+            "MVP-инструмент: PDF пока использует тестовую JSON-модель, реальные изменения выполняются только в Drafting Table Mode через ExternalEvent и Transaction."),
+        new(
+            BimPanelName,
             "TrueBIM_IsoFieldRebar",
             "Армирование\nпо изополям",
             $"{CommandNamespace}.{nameof(IsoFieldRebarCommand)}",

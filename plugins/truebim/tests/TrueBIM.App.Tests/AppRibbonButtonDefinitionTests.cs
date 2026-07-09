@@ -25,6 +25,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "изополям"
         },
         {
+            "TrueBIM_ScheduleImport",
+            "БИМ",
+            "Импорт\nтаблиц",
+            $"TrueBIM.App.Commands.{nameof(ScheduleImportCommand)}",
+            TrueBimIcon.ScheduleImport,
+            "таблиц"
+        },
+        {
             "TrueBIM_JoinCut",
             "Геометрия",
             "Соединить /\nВырезать",
