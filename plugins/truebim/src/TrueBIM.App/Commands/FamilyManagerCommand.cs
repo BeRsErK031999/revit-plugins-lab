@@ -24,7 +24,7 @@ public sealed class FamilyManagerCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            FamilyManagerDockablePaneProvider.Show(commandData.Application, uiDocument, logger);
+            FamilyManagerDockablePaneProvider.ShowManagerDialog(commandData.Application, uiDocument, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

@@ -38,7 +38,8 @@ public sealed class FamilyManagerWindow : Window
         FamilyLoadService loadService,
         FamilyMetadataService metadataService,
         FamilyThumbnailService thumbnailService,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<string>? showFolderPane = null)
     {
         Title = "Диспетчер семейств";
         Icon = IconFactory.CreateImage(TrueBimIcon.FamilyManager, 32);
@@ -56,7 +57,8 @@ public sealed class FamilyManagerWindow : Window
             loadService,
             metadataService,
             thumbnailService,
-            logger);
+            logger,
+            showFolderPane);
     }
 }
 
@@ -173,6 +175,8 @@ public sealed class FamilyManagerControl : UserControl
     private readonly Button refreshThumbnailButton = CreateButton("Обновить preview", TrueBimIcon.Preview, 220);
     private readonly Button auditButton = CreateButton("Аудит библиотеки", TrueBimIcon.Preview, 236);
     private readonly Button backupPreviewButton = CreateButton("Backup .rfa", TrueBimIcon.Preview, 236);
+    private readonly Button showFolderPaneButton = CreateButton("Вынести в панель", TrueBimIcon.Export, 176);
+    private readonly Action<string>? showFolderPane;
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private FamilyTypeInfo? selectedType;
@@ -198,7 +202,8 @@ public sealed class FamilyManagerControl : UserControl
         FamilyLoadService loadService,
         FamilyMetadataService metadataService,
         FamilyThumbnailService thumbnailService,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<string>? showFolderPane = null)
     {
         this.uiApplication = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
@@ -210,6 +215,7 @@ public sealed class FamilyManagerControl : UserControl
         this.metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
         this.thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.showFolderPane = showFolderPane;
         profile = this.profileStorage.Load();
         familySearchDebounceTimer.Tick += (_, _) =>
         {
@@ -225,6 +231,7 @@ public sealed class FamilyManagerControl : UserControl
         };
 
         LoadProfileState();
+        UpdateFolderPaneButtonState();
         logger.Info($"Family Manager opened for '{document.Title}'. Cached families: {allFamilies.Count}.");
     }
 
@@ -301,6 +308,12 @@ public sealed class FamilyManagerControl : UserControl
         DockPanel.SetDock(scanButton, Dock.Top);
         panel.Children.Add(scanButton);
 
+        showFolderPaneButton.Margin = new Thickness(0, 0, 0, 8);
+        showFolderPaneButton.ToolTip = "Показать выбранную папку в компактной панели Revit.";
+        showFolderPaneButton.Click += (_, _) => ShowSelectedFolderInPane();
+        DockPanel.SetDock(showFolderPaneButton, Dock.Top);
+        panel.Children.Add(showFolderPaneButton);
+
         refreshFolderMetadataButton.Margin = new Thickness(0, 0, 0, 8);
         refreshFolderMetadataButton.ToolTip = "Открывает все семейства из выбранной папки библиотеки и обновляет категории, типы и параметры в кэше.";
         refreshFolderMetadataButton.Click += (_, _) => RefreshSelectedFolderMetadata();
@@ -334,6 +347,8 @@ public sealed class FamilyManagerControl : UserControl
             {
                 fileList.SelectedItem = null;
             }
+
+            UpdateFolderPaneButtonState();
         };
         DockPanel.SetDock(folderList, Dock.Top);
         panel.Children.Add(folderList);
@@ -353,6 +368,8 @@ public sealed class FamilyManagerControl : UserControl
             {
                 folderList.SelectedItem = null;
             }
+
+            UpdateFolderPaneButtonState();
         };
         DockPanel.SetDock(fileList, Dock.Top);
         panel.Children.Add(fileList);
@@ -694,13 +711,39 @@ public sealed class FamilyManagerControl : UserControl
             return;
         }
 
-        folders.Add(new FamilyLibraryFolder
+        FamilyLibraryFolder folder = new()
         {
             Path = folderPath,
             IsEnabled = true
-        });
+        };
+        folders.Add(folder);
+        folderList.SelectedItem = folder;
         SaveProfile();
         ScanLibraries();
+    }
+
+    private void ShowSelectedFolderInPane()
+    {
+        if (showFolderPane is null)
+        {
+            statusText.Text = "Компактная панель недоступна для этого режима запуска.";
+            return;
+        }
+
+        if (folderList.SelectedItem is not FamilyLibraryFolder folder || string.IsNullOrWhiteSpace(folder.Path))
+        {
+            statusText.Text = "Выберите папку библиотеки для компактной панели.";
+            return;
+        }
+
+        SaveProfile();
+        showFolderPane(folder.Path);
+        statusText.Text = $"Папка вынесена в панель: {folder.Path}";
+    }
+
+    private void UpdateFolderPaneButtonState()
+    {
+        showFolderPaneButton.IsEnabled = showFolderPane is not null && folderList.SelectedItem is FamilyLibraryFolder;
     }
 
     private void AddLibraryFile(string filePath)

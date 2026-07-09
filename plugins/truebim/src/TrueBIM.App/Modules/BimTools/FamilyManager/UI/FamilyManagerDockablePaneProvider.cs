@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 using TrueBIM.App.Services.Logging;
@@ -19,16 +21,16 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
         application.RegisterDockablePane(PaneId, "Диспетчер семейств", new FamilyManagerDockablePaneProvider());
     }
 
-    public static void Show(
+    public static void ShowManagerDialog(
         UIApplication uiApplication,
         UIDocument uiDocument,
-        FileTrueBimLogger logger)
+        ITrueBimLogger logger)
     {
         Guard.NotNull(uiApplication, nameof(uiApplication));
         Guard.NotNull(uiDocument, nameof(uiDocument));
         Guard.NotNull(logger, nameof(logger));
 
-        Host.LoadFamilyManager(
+        FamilyManagerWindow window = new(
             uiApplication,
             uiDocument,
             new FamilyManagerProfileStorage(logger),
@@ -36,10 +38,45 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             new FamilyLoadService(),
             new FamilyMetadataService(),
             new FamilyThumbnailService(),
+            logger,
+            folderPath => ShowCompactPane(uiApplication, uiDocument, folderPath, logger));
+
+        if (uiApplication.MainWindowHandle != IntPtr.Zero)
+        {
+            new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
+        }
+
+        window.ShowDialog();
+    }
+
+    public static void ShowCompactPane(
+        UIApplication uiApplication,
+        UIDocument uiDocument,
+        string folderPath,
+        ITrueBimLogger logger)
+    {
+        Guard.NotNull(uiApplication, nameof(uiApplication));
+        Guard.NotNull(uiDocument, nameof(uiDocument));
+        Guard.NotNullOrWhiteSpace(folderPath, nameof(folderPath));
+        Guard.NotNull(logger, nameof(logger));
+
+        Host.LoadCompactPane(
+            uiApplication,
+            uiDocument,
+            folderPath,
+            new FamilyManagerProfileStorage(logger),
             logger);
 
         DockablePane pane = uiApplication.GetDockablePane(PaneId);
         pane.Show();
+    }
+
+    public static void Hide(UIApplication uiApplication)
+    {
+        Guard.NotNull(uiApplication, nameof(uiApplication));
+
+        DockablePane pane = uiApplication.GetDockablePane(PaneId);
+        pane.Hide();
     }
 
     public void SetupDockablePane(DockablePaneProviderData data)
@@ -60,35 +97,36 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             Content = CreatePlaceholder();
         }
 
-        public void LoadFamilyManager(
+        public void LoadCompactPane(
             UIApplication uiApplication,
             UIDocument uiDocument,
+            string folderPath,
             FamilyManagerProfileStorage profileStorage,
-            FamilyLibraryScanner scanner,
-            FamilyLoadService loadService,
-            FamilyMetadataService metadataService,
-            FamilyThumbnailService thumbnailService,
             ITrueBimLogger logger)
         {
-            Content = new FamilyManagerControl(
-                uiApplication,
-                uiDocument,
+            Content = new FamilyManagerCompactPaneControl(
+                folderPath,
                 profileStorage,
-                scanner,
-                loadService,
-                metadataService,
-                thumbnailService,
-                logger);
+                logger,
+                () => ShowManagerDialog(uiApplication, uiDocument, logger),
+                () => Hide(uiApplication));
         }
 
         private static UIElement CreatePlaceholder()
         {
-            return new TextBlock
+            Border border = new()
+            {
+                Background = Brushes.WhiteSmoke,
+                Padding = new Thickness(18)
+            };
+
+            border.Child = new TextBlock
             {
                 Text = "Откройте проект и нажмите TrueBIM -> Библиотека -> Диспетчер семейств.",
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(18)
+                TextWrapping = TextWrapping.Wrap
             };
+
+            return border;
         }
     }
 }
