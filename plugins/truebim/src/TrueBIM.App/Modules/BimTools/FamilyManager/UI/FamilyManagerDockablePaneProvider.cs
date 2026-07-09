@@ -47,7 +47,7 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             new FamilyMetadataService(),
             new FamilyThumbnailService(),
             logger,
-            folderPath => ShowCompactPane(uiApplication, uiDocument, folderPath, logger));
+            (folderPath, revitActionDispatcher) => ShowCompactPane(uiApplication, uiDocument, folderPath, logger, revitActionDispatcher));
 
         ModelessWindowService.Show(windowKey, window, uiApplication.MainWindowHandle, logger);
     }
@@ -56,12 +56,14 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
         UIApplication uiApplication,
         UIDocument uiDocument,
         string folderPath,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        FamilyManagerRevitActionDispatcher revitActionDispatcher)
     {
         Guard.NotNull(uiApplication, nameof(uiApplication));
         Guard.NotNull(uiDocument, nameof(uiDocument));
         Guard.NotNullOrWhiteSpace(folderPath, nameof(folderPath));
         Guard.NotNull(logger, nameof(logger));
+        Guard.NotNull(revitActionDispatcher, nameof(revitActionDispatcher));
 
         compactPaneRequested = true;
         Host.LoadCompactPane(
@@ -70,7 +72,8 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             folderPath,
             new FamilyManagerProfileStorage(logger),
             new FamilyLoadService(),
-            logger);
+            logger,
+            revitActionDispatcher);
 
         DockablePane pane = uiApplication.GetDockablePane(PaneId);
         pane.Show();
@@ -126,7 +129,8 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             string folderPath,
             FamilyManagerProfileStorage profileStorage,
             FamilyLoadService loadService,
-            ITrueBimLogger logger)
+            ITrueBimLogger logger,
+            FamilyManagerRevitActionDispatcher revitActionDispatcher)
         {
             Content = new FamilyManagerCompactPaneControl(
                 uiDocument,
@@ -134,6 +138,7 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
                 profileStorage,
                 loadService,
                 logger,
+                revitActionDispatcher,
                 () => ShowManagerDialog(uiApplication, uiDocument, logger),
                 () => Hide(uiApplication));
         }

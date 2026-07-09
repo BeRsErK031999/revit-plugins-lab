@@ -34,6 +34,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
     private readonly FamilyManagerProfileStorage profileStorage;
     private readonly FamilyLoadService loadService;
     private readonly ITrueBimLogger logger;
+    private readonly FamilyManagerRevitActionDispatcher revitActionDispatcher;
     private readonly Action openManager;
     private readonly Action hidePane;
     private readonly FamilyLibraryTreeBuilder treeBuilder = new();
@@ -54,6 +55,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
     private readonly Button clearSelectionButton = CreateFooterButton("Снять выбор", TrueBimIcon.Close);
     private FamilyManagerProfile profile = new();
     private bool isUpdatingSelection;
+    private bool isFamilyActionQueued;
 
     public FamilyManagerCompactPaneControl(
         RevitUidocument uiDocument,
@@ -61,6 +63,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         FamilyManagerProfileStorage profileStorage,
         FamilyLoadService loadService,
         ITrueBimLogger logger,
+        FamilyManagerRevitActionDispatcher revitActionDispatcher,
         Action openManager,
         Action hidePane)
     {
@@ -70,6 +73,7 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.loadService = loadService ?? throw new ArgumentNullException(nameof(loadService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.revitActionDispatcher = revitActionDispatcher ?? throw new ArgumentNullException(nameof(revitActionDispatcher));
         this.openManager = openManager ?? throw new ArgumentNullException(nameof(openManager));
         this.hidePane = hidePane ?? throw new ArgumentNullException(nameof(hidePane));
 
@@ -531,9 +535,18 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
             return;
         }
 
+        QueueFamilyAction(() => RunPrimaryAction(targets));
+    }
+
+    private void RunPrimaryAction(IReadOnlyList<FamilyActionTarget> targets)
+    {
+        RefreshProjectLoadIndex();
+
         if (targets.Count == 1 && IsTargetLoaded(targets[0]))
         {
             RequestPlacement(targets[0]);
+            RefreshTreeProjectState();
+            UpdateSelectionActions();
             return;
         }
 
@@ -584,6 +597,42 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         UpdateSelectionActions();
         statusText.Text =
             $"Загружено: {loaded.ToString(CultureInfo.InvariantCulture)}. Уже было: {skipped.ToString(CultureInfo.InvariantCulture)}. Ошибок: {failed.ToString(CultureInfo.InvariantCulture)}.";
+    }
+
+    private void QueueFamilyAction(Action action)
+    {
+        if (isFamilyActionQueued)
+        {
+            statusText.Text = "Операция уже ожидает Revit.";
+            return;
+        }
+
+        isFamilyActionQueued = true;
+        actionButton.IsEnabled = false;
+        clearSelectionButton.IsEnabled = false;
+        statusText.Text = "Запрос передан в Revit.";
+
+        try
+        {
+            revitActionDispatcher.Raise(() =>
+            {
+                try
+                {
+                    action();
+                }
+                finally
+                {
+                    isFamilyActionQueued = false;
+                    UpdateSelectionActions();
+                }
+            });
+        }
+        catch
+        {
+            isFamilyActionQueued = false;
+            UpdateSelectionActions();
+            throw;
+        }
     }
 
     private void RequestPlacement(FamilyActionTarget target)
@@ -679,6 +728,19 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
     {
         IReadOnlyList<FamilyActionTarget> targets = GetSelectedTargets();
         clearSelectionButton.IsEnabled = targets.Count > 0;
+        if (isFamilyActionQueued)
+        {
+            clearSelectionButton.IsEnabled = false;
+            SetButtonContent(actionButton, TrueBimIcon.Apply, "Ожидание Revit");
+            actionButton.IsEnabled = false;
+            selectionText.Text = targets.Count == 0
+                ? "Запрос выполняется через Revit."
+                : targets.Count == 1
+                    ? targets[0].DisplayName
+                    : $"Выбрано: {targets.Count.ToString(CultureInfo.InvariantCulture)}";
+            return;
+        }
+
         if (targets.Count == 0)
         {
             SetButtonContent(actionButton, TrueBimIcon.Apply, "Загрузить");

@@ -39,8 +39,9 @@ public sealed class FamilyManagerWindow : TrueBimWindow
         FamilyMetadataService metadataService,
         FamilyThumbnailService thumbnailService,
         ITrueBimLogger logger,
-        Action<string>? showFolderPane = null)
+        Action<string, FamilyManagerRevitActionDispatcher>? showFolderPane = null)
     {
+        FamilyManagerRevitActionDispatcher revitActionDispatcher = new(logger);
         Title = "Диспетчер семейств";
         Icon = IconFactory.CreateImage(TrueBimIcon.FamilyManager, 32);
         Width = 1180;
@@ -58,6 +59,7 @@ public sealed class FamilyManagerWindow : TrueBimWindow
             metadataService,
             thumbnailService,
             logger,
+            revitActionDispatcher,
             showFolderPane);
     }
 }
@@ -134,6 +136,7 @@ public sealed class FamilyManagerControl : UserControl
     private readonly FamilyMetadataService metadataService;
     private readonly FamilyThumbnailService thumbnailService;
     private readonly ITrueBimLogger logger;
+    private readonly FamilyManagerRevitActionDispatcher revitActionDispatcher;
     private readonly ObservableCollection<FamilyLibraryFolder> folders = new();
     private readonly ObservableCollection<FamilyLibraryFile> libraryFiles = new();
     private readonly ObservableCollection<FamilyFileItem> visibleFamilies = new();
@@ -176,11 +179,12 @@ public sealed class FamilyManagerControl : UserControl
     private readonly Button auditButton = CreateButton("Аудит библиотеки", TrueBimIcon.Preview, 236);
     private readonly Button backupPreviewButton = CreateButton("Backup .rfa", TrueBimIcon.Preview, 236);
     private readonly Button showFolderPaneButton = CreateButton("Вынести в панель", TrueBimIcon.Export, 176);
-    private readonly Action<string>? showFolderPane;
+    private readonly Action<string, FamilyManagerRevitActionDispatcher>? showFolderPane;
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private FamilyTypeInfo? selectedType;
     private bool isRefreshing;
+    private bool isFamilyLoadQueued;
 
     public string FamilySearchText
     {
@@ -203,7 +207,8 @@ public sealed class FamilyManagerControl : UserControl
         FamilyMetadataService metadataService,
         FamilyThumbnailService thumbnailService,
         ITrueBimLogger logger,
-        Action<string>? showFolderPane = null)
+        FamilyManagerRevitActionDispatcher revitActionDispatcher,
+        Action<string, FamilyManagerRevitActionDispatcher>? showFolderPane = null)
     {
         this.uiApplication = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
@@ -215,6 +220,7 @@ public sealed class FamilyManagerControl : UserControl
         this.metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
         this.thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.revitActionDispatcher = revitActionDispatcher ?? throw new ArgumentNullException(nameof(revitActionDispatcher));
         this.showFolderPane = showFolderPane;
         profile = this.profileStorage.Load();
         familySearchDebounceTimer.Tick += (_, _) =>
@@ -737,7 +743,7 @@ public sealed class FamilyManagerControl : UserControl
         }
 
         SaveProfile();
-        showFolderPane(folder.Path);
+        showFolderPane(folder.Path, revitActionDispatcher);
         statusText.Text = $"Папка вынесена в панель: {folder.Path}";
     }
 
@@ -1088,8 +1094,8 @@ public sealed class FamilyManagerControl : UserControl
         }
 
         favoriteButton.IsEnabled = true;
-        loadButton.IsEnabled = true;
-        loadAndPlaceButton.IsEnabled = true;
+        loadButton.IsEnabled = !isFamilyLoadQueued;
+        loadAndPlaceButton.IsEnabled = !isFamilyLoadQueued;
         refreshMetadataButton.IsEnabled = true;
         refreshThumbnailButton.IsEnabled = true;
         favoriteButton.Content = IconFactory.CreateButtonContent(
@@ -1556,62 +1562,95 @@ public sealed class FamilyManagerControl : UserControl
         }
 
         string? requestedTypeName = ResolveRequestedTypeName(selectedFamily);
-        FamilyLoadResult? result;
-        if (string.IsNullOrWhiteSpace(requestedTypeName))
-        {
-            result = LoadWholeFamilyWithOverwritePrompt(selectedFamily);
-        }
-        else
-        {
-            result = LoadRequestedFamilyType(selectedFamily, requestedTypeName!);
-        }
-        if (result is null)
-        {
-            return;
-        }
+        FamilyFileItem family = selectedFamily;
+        isFamilyLoadQueued = true;
+        loadButton.IsEnabled = false;
+        loadAndPlaceButton.IsEnabled = false;
+        statusText.Text = "Запрос загрузки передан в Revit.";
+        logger.Info($"Family Manager load requested for '{family.FilePath}'. PlaceAfterLoad={placeAfterLoad}; Type='{requestedTypeName ?? string.Empty}'.");
 
-        selectedFamily.Status = result.Message;
-        statusText.Text = result.Message;
-
-        if (!result.Succeeded)
+        try
         {
-            Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", result.Message);
-            return;
+            revitActionDispatcher.Raise(() => RunSelectedFamilyLoad(family, requestedTypeName, placeAfterLoad));
         }
-
-        string action = placeAfterLoad ? "Загрузка и размещение" : "Загрузка";
-        if (!string.IsNullOrWhiteSpace(requestedTypeName))
+        catch
         {
-            action += $" типа {requestedTypeName}";
+            isFamilyLoadQueued = false;
+            loadButton.IsEnabled = selectedFamily is not null;
+            loadAndPlaceButton.IsEnabled = selectedFamily is not null;
+            throw;
         }
+    }
 
-        AddHistory(selectedFamily, action);
-        SelectFamily(selectedFamily);
-        SaveProfile();
-
-        FamilySymbol? confirmedSymbol = null;
-        if (!string.IsNullOrWhiteSpace(requestedTypeName))
+    private void RunSelectedFamilyLoad(FamilyFileItem family, string? requestedTypeName, bool placeAfterLoad)
+    {
+        try
         {
-            confirmedSymbol = loadService.ResolveSymbolExact(document, selectedFamily.Name, requestedTypeName!);
-            if (confirmedSymbol is null)
+            FamilyLoadResult? result;
+            if (string.IsNullOrWhiteSpace(requestedTypeName))
             {
-                string message = $"Семейство загружено, но выбранный тип не найден в проекте: {requestedTypeName}.";
-                selectedFamily.Status = message;
-                statusText.Text = message;
-                Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", message);
+                result = LoadWholeFamilyWithOverwritePrompt(family);
+            }
+            else
+            {
+                result = LoadRequestedFamilyType(family, requestedTypeName!);
+            }
+
+            if (result is null)
+            {
+                statusText.Text = "Загрузка отменена.";
                 return;
             }
-        }
 
-        if (placeAfterLoad)
+            family.Status = result.Message;
+            statusText.Text = result.Message;
+
+            if (!result.Succeeded)
+            {
+                Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", result.Message);
+                return;
+            }
+
+            string action = placeAfterLoad ? "Загрузка и размещение" : "Загрузка";
+            if (!string.IsNullOrWhiteSpace(requestedTypeName))
+            {
+                action += $" типа {requestedTypeName}";
+            }
+
+            AddHistory(family, action);
+            SelectFamily(family);
+            SaveProfile();
+
+            FamilySymbol? confirmedSymbol = null;
+            if (!string.IsNullOrWhiteSpace(requestedTypeName))
+            {
+                confirmedSymbol = loadService.ResolveSymbolExact(document, family.Name, requestedTypeName!);
+                if (confirmedSymbol is null)
+                {
+                    string message = $"Семейство загружено, но выбранный тип не найден в проекте: {requestedTypeName}.";
+                    family.Status = message;
+                    statusText.Text = message;
+                    Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", message);
+                    return;
+                }
+            }
+
+            if (placeAfterLoad)
+            {
+                RequestPlacement(family, requestedTypeName);
+            }
+
+            string confirmation = confirmedSymbol is null
+                ? result.Message
+                : $"{result.Message}\nТип подтверждён в проекте: {confirmedSymbol.Name}.";
+            Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", confirmation);
+        }
+        finally
         {
-            RequestPlacement(selectedFamily, requestedTypeName);
+            isFamilyLoadQueued = false;
+            loadButton.IsEnabled = selectedFamily is not null;
+            loadAndPlaceButton.IsEnabled = selectedFamily is not null;
         }
-
-        string confirmation = confirmedSymbol is null
-            ? result.Message
-            : $"{result.Message}\nТип подтверждён в проекте: {confirmedSymbol.Name}.";
-        Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", confirmation);
     }
 
     private string? ResolveRequestedTypeName(FamilyFileItem family)
