@@ -8,19 +8,17 @@ namespace TrueBIM.App.Tests.Modules.BimTools.ClashReport;
 public sealed class ClashReportStorageTests
 {
     [Fact]
-    public void NormalizeProfile_ClampsPaddingAndDefaultsName()
+    public void NormalizeProfile_DefaultsNameAndTrimsImportPath()
     {
         ClashReportProfile profile = ClashReportStorage.NormalizeProfile(new ClashReportProfile
         {
             Name = "  ",
             LastImportPath = "  C:/tmp/clashes.xml  ",
-            SectionBoxPaddingMm = double.NaN,
             HighlightOnNavigate = false
         });
 
         Assert.Equal("Импорт коллизий", profile.Name);
         Assert.Equal("C:/tmp/clashes.xml", profile.LastImportPath);
-        Assert.Equal(1500, profile.SectionBoxPaddingMm);
         Assert.False(profile.HighlightOnNavigate);
     }
 
@@ -48,7 +46,6 @@ public sealed class ClashReportStorageTests
             {
                 Name = "Model A",
                 LastImportPath = "C:/tmp/model-a.xml",
-                SectionBoxPaddingMm = 500,
                 HighlightOnNavigate = true
             });
 
@@ -70,7 +67,37 @@ public sealed class ClashReportStorageTests
         Assert.Equal("Fixed", loadedItem.Comment);
         Assert.Equal("Model A", loadedProfile.Name);
         Assert.Equal("C:/tmp/model-a.xml", loadedProfile.LastImportPath);
-        Assert.Equal(500, loadedProfile.SectionBoxPaddingMm);
+        Assert.True(loadedProfile.HighlightOnNavigate);
+    }
+
+    [Fact]
+    public void LoadProfile_IgnoresLegacySectionBoxPadding()
+    {
+        using TempDirectory temp = new();
+        string settingsPath = Path.Combine(temp.Path, "settings.json");
+        File.WriteAllText(
+            settingsPath,
+            """
+            {
+              "Profile": {
+                "Name": "  Legacy import  ",
+                "LastImportPath": "  C:/tmp/legacy.xml  ",
+                "SectionBoxPaddingMm": 5000,
+                "HighlightOnNavigate": false
+              },
+              "States": {}
+            }
+            """);
+
+        ClashReportStorage storage = new(settingsPath, new TestLogger());
+        ClashReportProfile profile = storage.LoadProfile();
+
+        Assert.Equal("Legacy import", profile.Name);
+        Assert.Equal("C:/tmp/legacy.xml", profile.LastImportPath);
+        Assert.False(profile.HighlightOnNavigate);
+
+        storage.SaveProfile(profile);
+        Assert.DoesNotContain("SectionBoxPaddingMm", File.ReadAllText(settingsPath));
     }
 
     private sealed class TempDirectory : IDisposable

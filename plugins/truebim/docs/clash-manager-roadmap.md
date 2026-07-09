@@ -58,7 +58,7 @@
 
 - Удалить `ClashLinkScanner`, scan options и triage-сервисы.
 - Упростить `ClashItem` до импортированной строки: ID, имя, ElementId, linked ElementId, точка, source, status, comment.
-- Упростить profile/storage до последнего файла, section box padding, подсветки, статусов и комментариев.
+- Упростить profile/storage до последнего файла, подсветки, статусов и комментариев.
 - Обновить `ClashReportCommand`, чтобы окно получало import service вместо scanner.
 
 ### 2. CSV/XML import

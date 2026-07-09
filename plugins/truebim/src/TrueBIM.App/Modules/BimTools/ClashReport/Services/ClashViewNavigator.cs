@@ -10,7 +10,6 @@ namespace TrueBIM.App.Modules.BimTools.ClashReport.Services;
 public sealed class ClashViewNavigator
 {
     private const string ViewName = "BIM_Clash_Report_3D";
-    private const double FeetPerMillimeter = 1.0 / 304.8;
     private readonly ITrueBimLogger logger;
 
     public ClashViewNavigator(ITrueBimLogger logger)
@@ -26,7 +25,7 @@ public sealed class ClashViewNavigator
         Guard.NotNull(profile, nameof(profile));
 
         List<Element> elements = ResolveElements(document, item.GetResolvedElementIds());
-        BoundingBoxXYZ? sectionBox = BuildSectionBox(elements, item, profile.SectionBoxPaddingMm * FeetPerMillimeter);
+        BoundingBoxXYZ? sectionBox = BuildSectionBox(elements, item);
         if (sectionBox is null)
         {
             return new ClashNavigationResult(false, "Нет найденных элементов или координат для построения section box.", string.Empty, 0);
@@ -98,16 +97,16 @@ public sealed class ClashViewNavigator
         return elements;
     }
 
-    private static BoundingBoxXYZ? BuildSectionBox(IReadOnlyList<Element> elements, ClashItem item, double padding)
+    private static BoundingBoxXYZ? BuildSectionBox(IReadOnlyList<Element> elements, ClashItem item)
     {
         if (item.Bounds is { } bounds)
         {
-            double boundsMinX = bounds.MinX - padding;
-            double boundsMinY = bounds.MinY - padding;
-            double boundsMinZ = bounds.MinZ - padding;
-            double boundsMaxX = bounds.MaxX + padding;
-            double boundsMaxY = bounds.MaxY + padding;
-            double boundsMaxZ = bounds.MaxZ + padding;
+            double boundsMinX = bounds.MinX;
+            double boundsMinY = bounds.MinY;
+            double boundsMinZ = bounds.MinZ;
+            double boundsMaxX = bounds.MaxX;
+            double boundsMaxY = bounds.MaxY;
+            double boundsMaxZ = bounds.MaxZ;
             EnsureMinimumSize(ref boundsMinX, ref boundsMaxX, 1.0);
             EnsureMinimumSize(ref boundsMinY, ref boundsMaxY, 1.0);
             EnsureMinimumSize(ref boundsMinZ, ref boundsMaxZ, 1.0);
@@ -142,12 +141,12 @@ public sealed class ClashViewNavigator
             return null;
         }
 
-        double minX = points.Min(point => point.X) - padding;
-        double minY = points.Min(point => point.Y) - padding;
-        double minZ = points.Min(point => point.Z) - padding;
-        double maxX = points.Max(point => point.X) + padding;
-        double maxY = points.Max(point => point.Y) + padding;
-        double maxZ = points.Max(point => point.Z) + padding;
+        double minX = points.Min(point => point.X);
+        double minY = points.Min(point => point.Y);
+        double minZ = points.Min(point => point.Z);
+        double maxX = points.Max(point => point.X);
+        double maxY = points.Max(point => point.Y);
+        double maxZ = points.Max(point => point.Z);
         EnsureMinimumSize(ref minX, ref maxX, 1.0);
         EnsureMinimumSize(ref minY, ref maxY, 1.0);
         EnsureMinimumSize(ref minZ, ref maxZ, 1.0);

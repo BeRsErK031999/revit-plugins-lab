@@ -124,7 +124,6 @@ public sealed class ClashReportStorage
         {
             Name = string.IsNullOrWhiteSpace(source.Name) ? "Импорт коллизий" : source.Name.Trim(),
             LastImportPath = source.LastImportPath?.Trim() ?? string.Empty,
-            SectionBoxPaddingMm = ClampNumeric(source.SectionBoxPaddingMm, 100, 10000, 1500),
             HighlightOnNavigate = source.HighlightOnNavigate
         };
     }
@@ -140,23 +139,7 @@ public sealed class ClashReportStorage
         {
             Name = profile.Name,
             LastImportPath = profile.LastImportPath,
-            SectionBoxPaddingMm = profile.SectionBoxPaddingMm,
             HighlightOnNavigate = profile.HighlightOnNavigate
         };
-    }
-
-    private static double ClampNumeric(double value, double minimum, double maximum, double fallback)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            return fallback;
-        }
-
-        if (value < minimum)
-        {
-            return minimum;
-        }
-
-        return value > maximum ? maximum : value;
     }
 }

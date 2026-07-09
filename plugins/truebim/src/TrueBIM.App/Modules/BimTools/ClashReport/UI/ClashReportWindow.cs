@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -36,7 +35,6 @@ public sealed class ClashReportWindow : Window
     private readonly ObservableCollection<ClashReportRow> reportRows = new();
     private readonly TextBox profileNameInput = new();
     private readonly TextBox filterInput = new();
-    private readonly TextBox paddingInput = new();
     private readonly CheckBox highlightInput = new()
     {
         Content = "Подсветка в 3D",
@@ -96,7 +94,6 @@ public sealed class ClashReportWindow : Window
     {
         profileNameInput.Text = profile.Name;
         currentImportPath = profile.LastImportPath;
-        paddingInput.Text = profile.SectionBoxPaddingMm.ToString("0.##", CultureInfo.InvariantCulture);
         highlightInput.IsChecked = profile.HighlightOnNavigate;
         UpdateFileText();
     }
@@ -193,19 +190,13 @@ public sealed class ClashReportWindow : Window
         WpfGrid.SetColumn(fileText, 1);
         root.Children.Add(fileText);
 
-        AddLabel(root, "Параметры", 0, 2);
+        AddLabel(root, "Навигация", 0, 2);
         StackPanel options = new()
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        options.Children.Add(CreateOptionLabel("Запас section box, мм"));
-        paddingInput.Width = 90;
-        paddingInput.Height = 32;
-        paddingInput.Margin = new Thickness(8, 0, 18, 8);
-        paddingInput.ToolTip = "Запас вокруг импортированной точки или найденных элементов при переходе в 3D.";
-        options.Children.Add(paddingInput);
-        highlightInput.Margin = new Thickness(0, 0, 18, 8);
+        highlightInput.Margin = new Thickness(8, 0, 18, 8);
         highlightInput.VerticalAlignment = VerticalAlignment.Center;
         options.Children.Add(highlightInput);
 
@@ -460,7 +451,6 @@ public sealed class ClashReportWindow : Window
         {
             Name = profileNameInput.Text,
             LastImportPath = currentImportPath,
-            SectionBoxPaddingMm = ParseDouble(paddingInput.Text, 1500),
             HighlightOnNavigate = highlightInput.IsChecked == true
         });
     }
@@ -626,14 +616,6 @@ public sealed class ClashReportWindow : Window
     private static bool Contains(string value, string filter)
     {
         return value?.IndexOf(filter, StringComparison.CurrentCultureIgnoreCase) >= 0;
-    }
-
-    private static double ParseDouble(string value, double fallback)
-    {
-        string normalized = (value ?? string.Empty).Trim().Replace(',', '.');
-        return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out double result)
-            ? result
-            : fallback;
     }
 
     private static void TaskDialog(string title, string message)
