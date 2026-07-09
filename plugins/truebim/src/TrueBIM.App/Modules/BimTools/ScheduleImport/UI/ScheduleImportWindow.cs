@@ -24,6 +24,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     private readonly Action<ScheduleImportRequest, Action<DraftingTableCreationResult>, Action<Exception>> createTable;
     private readonly ParsedTableValidationService validationService = new();
     private readonly ParameterMappingService mappingService = new();
+    private readonly BimScheduleDryRunService bimScheduleDryRunService = new();
     private readonly ObservableCollection<TableItem> tables = new();
     private readonly ObservableCollection<ColumnMapping> mappings = new();
     private readonly ObservableCollection<string> warnings = new();
@@ -368,11 +369,12 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         AddWarnings(validation.Warnings);
         AddWarnings(validation.Errors);
         ScheduleImportMode mode = SelectedMode;
+        BimScheduleDryRunReport? bimScheduleReport = null;
         if (mode is ScheduleImportMode.BimSchedule)
         {
-            AddWarnings(context.CanUseBimScheduleMode
-                ? [$"BIM Schedule Mode: доступен read-only предпросмотр сопоставления с активной ViewSchedule. Полей найдено: {context.AvailableBimScheduleParameterNames.Count}. Запись в параметры будет отдельным этапом."]
-                : ["BIM Schedule Mode требует активную ViewSchedule. Для текущего вида используйте Drafting Table Mode."]);
+            bimScheduleReport = bimScheduleDryRunService.CreateReport(table, mappings.ToList(), context);
+            AddWarnings(bimScheduleReport.Warnings);
+            AddWarnings(bimScheduleReport.Errors);
         }
         else if (mode is ScheduleImportMode.KeySchedule)
         {
@@ -390,10 +392,32 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         {
             Autodesk.Revit.UI.TaskDialog.Show(
                 DialogTitle,
-                validation.Succeeded
-                    ? "Таблица готова к Drafting Table Mode."
-                    : string.Join(Environment.NewLine, validation.Errors));
+                CreateValidationDialogText(mode, validation, bimScheduleReport));
         }
+    }
+
+    private static string CreateValidationDialogText(
+        ScheduleImportMode mode,
+        ParsedTableValidationResult validation,
+        BimScheduleDryRunReport? bimScheduleReport)
+    {
+        if (!validation.Succeeded)
+        {
+            return string.Join(Environment.NewLine, validation.Errors);
+        }
+
+        if (mode is ScheduleImportMode.BimSchedule)
+        {
+            return bimScheduleReport?.ToDialogText()
+                ?? "BIM Schedule Mode доступен только после распознавания таблицы.";
+        }
+
+        if (mode is ScheduleImportMode.KeySchedule)
+        {
+            return "Key Schedule Mode пока экспериментальный. Для создания используйте Drafting Table Mode.";
+        }
+
+        return "Таблица готова к Drafting Table Mode.";
     }
 
     private void CreateInRevit()
