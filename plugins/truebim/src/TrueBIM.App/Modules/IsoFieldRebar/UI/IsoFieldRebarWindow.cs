@@ -9,6 +9,7 @@ using TrueBIM.App.Modules.IsoFieldRebar.Revit;
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfPolyline = System.Windows.Shapes.Polyline;
@@ -87,7 +88,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = "Y вниз",
             IsChecked = currentCalibration.InvertImageY,
-            Margin = new Thickness(0, 6, 0, 0),
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0),
+            Style = TrueBimStyles.CreateCheckBoxStyle(),
             ToolTip = "Инвертировать ось Y изображения относительно направления вверх на виде."
         };
         calibrationStatusText = CreateMutedText(FormatCalibration(currentCalibration));
@@ -115,19 +117,6 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
-        {
-            Margin = new Thickness(18)
-        };
-
-        UIElement footer = CreateFooter();
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
-        StackPanel header = CreateHeader();
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
-
         WpfGrid body = new();
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
@@ -145,76 +134,43 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         Border nextStepsPanel = CreateNextStepsPanel();
         WpfGrid.SetColumn(nextStepsPanel, 1);
         WpfGrid.SetRowSpan(nextStepsPanel, 6);
-        nextStepsPanel.Margin = new Thickness(14, 0, 0, 0);
+        nextStepsPanel.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
         body.Children.Add(nextStepsPanel);
 
         Border recognitionPanel = CreateRecognitionPanel();
         WpfGrid.SetRow(recognitionPanel, 1);
-        recognitionPanel.Margin = new Thickness(0, 14, 0, 0);
+        recognitionPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(recognitionPanel);
 
         Border hostPanel = CreateHostPanel();
         WpfGrid.SetRow(hostPanel, 2);
-        hostPanel.Margin = new Thickness(0, 14, 0, 0);
+        hostPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(hostPanel);
 
         Border calibrationPanel = CreateCalibrationPanel();
         WpfGrid.SetRow(calibrationPanel, 3);
-        calibrationPanel.Margin = new Thickness(0, 14, 0, 0);
+        calibrationPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(calibrationPanel);
 
         Border rulePanel = CreateRulePanel();
         WpfGrid.SetRow(rulePanel, 4);
-        rulePanel.Margin = new Thickness(0, 14, 0, 0);
+        rulePanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(rulePanel);
 
         Border previewPanel = CreatePreviewPanel();
         WpfGrid.SetRow(previewPanel, 5);
-        previewPanel.Margin = new Thickness(0, 14, 0, 0);
+        previewPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(previewPanel);
 
-        root.Children.Add(body);
-        return root;
-    }
-
-    private StackPanel CreateHeader()
-    {
-        StackPanel header = new()
-        {
-            Margin = new Thickness(0, 0, 0, 16)
-        };
-
-        DockPanel titleRow = new()
-        {
-            LastChildFill = true,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        Button guideButton = CreateGuideButton();
-        DockPanel.SetDock(guideButton, Dock.Right);
-        titleRow.Children.Add(guideButton);
-
-        StackPanel titleContent = new()
-        {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        titleContent.Children.Add(IconFactory.Create(TrueBimIcon.IsoFieldRebar, 28));
-        titleContent.Children.Add(new TextBlock
-        {
-            Text = "Армирование по изополям",
-            FontSize = 22,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        titleRow.Children.Add(titleContent);
-        header.Children.Add(titleRow);
-
-        header.Children.Add(CreateMutedText(
-            "Выберите изображение или JSON-файл изополей. JSON-контуры можно просмотреть в окне без изменения модели Revit."));
-        header.Children.Add(CreateMutedText($"Активный документ: {documentTitle}."));
-
-        return header;
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                $"Активный документ: {documentTitle}. Безопасный сценарий: файл, preview, host, правила и тестовая арматура только после подтверждения.",
+                TrueBimIcon.IsoFieldRebar),
+            commandBar: TrueBimUi.CreateCommandBar(CreateGuideButton()),
+            body: body,
+            status: null,
+            footer: CreateFooter());
     }
 
     private Button CreateGuideButton()
@@ -229,8 +185,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 Stretch = Stretch.Uniform
             },
             Width = 34,
-            Height = 32,
+            Height = TrueBimTheme.ControlHeight32,
             Padding = new Thickness(4),
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Ghost),
             ToolTip = CreateGuideToolTip(),
             HorizontalAlignment = HorizontalAlignment.Right
         };
@@ -278,14 +235,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать файл"),
             MinWidth = 140,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Выбрать изображение или JSON-файл изополей."
         };
         chooseButton.Click += (_, _) => ChooseSourceFile();
         content.Children.Add(chooseButton);
 
-        selectedFileText.Margin = new Thickness(0, 12, 0, 0);
+        selectedFileText.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         content.Children.Add(selectedFileText);
 
         return CreatePanel(content);
@@ -297,9 +255,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         Border canvasBorder = new()
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 224, 232)),
-            BorderThickness = new Thickness(1),
-            Background = new SolidColorBrush(Color.FromRgb(248, 250, 252)),
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            Background = TrueBimBrushes.SurfaceAlt,
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
             Child = previewCanvas
         };
         content.Children.Add(canvasBorder);
@@ -307,13 +266,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         StackPanel buttonRow = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 10, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
         buttonRow.Children.Add(showRevitPreviewButton);
         buttonRow.Children.Add(clearRevitPreviewButton);
         content.Children.Add(buttonRow);
 
-        previewStatusText.Margin = new Thickness(0, 10, 0, 0);
+        previewStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(previewStatusText);
 
         return CreatePanel(content);
@@ -332,7 +291,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выбрать стену/плиту"),
             MinWidth = 180,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Выбрать стену или плиту как будущий host для армирования."
         };
@@ -343,8 +303,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Сбросить"),
             MinWidth = 110,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
             ToolTip = "Сбросить выбранный host-элемент."
         };
         clearHostButton.Click += (_, _) => ClearHostElement();
@@ -352,7 +313,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         content.Children.Add(buttonRow);
 
-        hostStatusText.Margin = new Thickness(0, 10, 0, 0);
+        hostStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(hostStatusText);
 
         return CreatePanel(content);
@@ -373,15 +334,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Применить"),
             MinWidth = 130,
-            Height = 32,
-            Margin = new Thickness(0, 10, 0, 0),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Проверить параметры калибровки."
         };
         applyCalibrationButton.Click += (_, _) => ApplyCalibration(showDialogOnError: true);
         content.Children.Add(applyCalibrationButton);
 
-        calibrationStatusText.Margin = new Thickness(0, 10, 0, 0);
+        calibrationStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(calibrationStatusText);
 
         return CreatePanel(content);
@@ -400,7 +362,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Рассчитать правила"),
             MinWidth = 170,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Сформировать read-only preview правил армирования для распознанных зон."
         };
@@ -411,8 +374,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Создать тестовую"),
             MinWidth = 160,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Primary),
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Создать тестовую арматуру на выбранном host-элементе после явного подтверждения."
         };
@@ -421,9 +385,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         content.Children.Add(buttonRow);
 
-        ruleStatusText.Margin = new Thickness(0, 10, 0, 0);
+        ruleStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(ruleStatusText);
-        rebarCreationStatusText.Margin = new Thickness(0, 8, 0, 0);
+        rebarCreationStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(rebarCreationStatusText);
 
         return CreatePanel(content);
@@ -437,14 +401,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Распознать файл"),
             MinWidth = 170,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Запустить настроенный CLI-worker или безопасную заглушку без изменения модели."
         };
         stubButton.Click += (_, _) => RunRecognition();
         content.Children.Add(stubButton);
 
-        recognitionStatusText.Margin = new Thickness(0, 12, 0, 0);
+        recognitionStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         content.Children.Add(recognitionStatusText);
 
         return CreatePanel(content);
@@ -462,7 +427,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         content.Children.Add(CreateStep("Тестовая арматура", false, true));
 
         TextBlock note = CreateMutedText("Тестовая арматура создается только по отдельной кнопке и после подтверждения пользователя.");
-        note.Margin = new Thickness(0, 12, 0, 0);
+        note.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         content.Children.Add(note);
 
         return CreatePanel(content);
@@ -470,26 +435,18 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private UIElement CreateFooter()
     {
-        DockPanel footer = new()
-        {
-            LastChildFill = true,
-            Margin = new Thickness(0, 16, 0, 0)
-        };
-
         Button closeButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
             MinWidth = 120,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             IsCancel = true,
             ToolTip = "Закрыть окно."
         };
         closeButton.Click += (_, _) => Close();
-        DockPanel.SetDock(closeButton, Dock.Right);
-        footer.Children.Add(closeButton);
 
-        footer.Children.Add(footerStatusText);
-        return footer;
+        return TrueBimUi.CreateFooter(footerStatusText, closeButton);
     }
 
     private void ChooseSourceFile()
@@ -880,10 +837,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         Brush[] strokes =
         [
-            new SolidColorBrush(Color.FromRgb(28, 103, 176)),
-            new SolidColorBrush(Color.FromRgb(35, 132, 93)),
-            new SolidColorBrush(Color.FromRgb(168, 92, 42)),
-            new SolidColorBrush(Color.FromRgb(128, 77, 156))
+            TrueBimBrushes.Info,
+            TrueBimBrushes.Success,
+            TrueBimBrushes.Warning,
+            TrueBimBrushes.Accent
         ];
 
         for (int index = 0; index < layout.Polylines.Count; index++)
@@ -915,7 +872,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         previewCanvas.Children.Add(new TextBlock
         {
             Text = "Нет данных",
-            Foreground = Brushes.Gray,
+            Foreground = TrueBimBrushes.TextMuted,
             FontWeight = FontWeights.SemiBold
         });
         Canvas.SetLeft(previewCanvas.Children[0], 16);
@@ -934,14 +891,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         StackPanel content = new()
         {
-            Margin = new Thickness(14)
+            Margin = TrueBimTheme.SectionPadding
         };
         content.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 16,
+            FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 10)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         });
 
         return content;
@@ -951,9 +909,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         return new Border
         {
-            BorderBrush = Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Background = Brushes.White,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            Background = TrueBimBrushes.Surface,
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
             Child = child
         };
     }
@@ -965,7 +924,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Content = text,
             IsChecked = isChecked,
             IsEnabled = isEnabled,
-            Margin = new Thickness(0, 0, 0, 10)
+            Style = TrueBimStyles.CreateCheckBoxStyle(),
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
     }
 
@@ -974,10 +934,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         return new TextBlock
         {
             Text = text,
-            Foreground = Brushes.DimGray,
+            Foreground = TrueBimBrushes.TextSecondary,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 6, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
     }
 
@@ -987,9 +947,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Text = FormatNumber(value),
             Width = 110,
-            Height = 26,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateTextBoxStyle(),
             VerticalContentAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 0, 0)
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0)
         };
     }
 
@@ -998,7 +959,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         StackPanel row = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 6)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
 
         row.Children.Add(new TextBlock
@@ -1006,7 +967,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Text = label,
             Width = 80,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brushes.DimGray
+            Foreground = TrueBimBrushes.TextSecondary
         });
         row.Children.Add(input);
         return row;
@@ -1028,7 +989,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Показать в Revit"),
             MinWidth = 150,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             ToolTip = "Создать управляемые линии предпросмотра на активном 2D-виде."
         };
         button.Click += (_, _) => ShowRevitPreview();
@@ -1041,8 +1003,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Очистить"),
             MinWidth = 110,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
             ToolTip = "Удалить линии предпросмотра изополей на активном виде."
         };
         button.Click += (_, _) => ClearRevitPreview();

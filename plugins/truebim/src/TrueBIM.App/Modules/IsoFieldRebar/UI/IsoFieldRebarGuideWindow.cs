@@ -3,15 +3,16 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.UI;
 
 public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 {
-    private static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(18, 38, 58));
-    private static readonly Brush MutedBrush = new SolidColorBrush(Color.FromRgb(74, 90, 106));
-    private static readonly Brush GuideBorderBrush = new SolidColorBrush(Color.FromRgb(215, 222, 232));
-    private static readonly Brush PanelBrush = new SolidColorBrush(Color.FromRgb(248, 250, 252));
+    private static readonly Brush TextBrush = TrueBimBrushes.TextPrimary;
+    private static readonly Brush MutedBrush = TrueBimBrushes.TextSecondary;
+    private static readonly Brush GuideBorderBrush = TrueBimBrushes.Border;
+    private static readonly Brush PanelBrush = TrueBimBrushes.SurfaceAlt;
 
     public IsoFieldRebarGuideWindow()
     {
@@ -28,23 +29,22 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
-        {
-            Margin = new Thickness(18)
-        };
-
-        UIElement footer = CreateFooter();
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
         ScrollViewer viewer = new()
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = CreateGuideBody()
         };
-        root.Children.Add(viewer);
-        return root;
+
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                "Справка по безопасному сценарию IsoField Rebar: файл, preview, host, правила и тестовая запись.",
+                TrueBimIcon.IsoFieldRebar),
+            commandBar: null,
+            body: viewer,
+            status: null,
+            footer: CreateFooter());
     }
 
     private static UIElement CreateGuideBody()
@@ -54,7 +54,6 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             MaxWidth = 820
         };
 
-        body.Children.Add(CreateHeader());
         body.Children.Add(CreateSection(
             "Как работает каркас",
             CreateParagraph("Каркас модуля ведет пользователя от входного файла изополей к безопасной проверке контуров, выбору host-элемента и только затем к созданию тестовой арматуры. До кнопки «Создать тестовую» модель Revit не должна меняться."),
@@ -84,46 +83,19 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         return body;
     }
 
-    private static UIElement CreateHeader()
-    {
-        StackPanel header = new()
-        {
-            Margin = new Thickness(0, 0, 0, 14)
-        };
-
-        StackPanel titleRow = new()
-        {
-            Orientation = Orientation.Horizontal,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        titleRow.Children.Add(IconFactory.Create(TrueBimIcon.IsoFieldRebar, 30));
-        titleRow.Children.Add(new TextBlock
-        {
-            Text = "Методичка каркаса изополей",
-            FontSize = 24,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = TextBrush,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        header.Children.Add(titleRow);
-
-        header.Children.Add(CreateParagraph("Эта справка относится только к модулю `Армирование по изополям` и описывает текущий безопасный сценарий: входной файл, preview, host, правила и тестовую арматуру."));
-        return header;
-    }
-
     private static Border CreateSection(string title, params UIElement[] children)
     {
         StackPanel content = new()
         {
-            Margin = new Thickness(14)
+            Margin = TrueBimTheme.SectionPadding
         };
         content.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 17,
+            FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
             Foreground = TextBrush,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         });
 
         foreach (UIElement child in children)
@@ -134,9 +106,10 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         return new Border
         {
             BorderBrush = GuideBorderBrush,
-            BorderThickness = new Thickness(1),
-            Background = Brushes.White,
-            Margin = new Thickness(0, 0, 8, 14),
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            Background = TrueBimBrushes.Surface,
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing16),
             Child = content
         };
     }
@@ -148,7 +121,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             Foreground = MutedBrush,
-            Margin = new Thickness(0, 4, 0, 8),
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing8),
             LineHeight = 19
         };
     }
@@ -157,7 +130,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
     {
         StackPanel stack = new()
         {
-            Margin = new Thickness(0, 6, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
 
         for (int index = 0; index < items.Length; index++)
@@ -172,7 +145,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
     {
         StackPanel stack = new()
         {
-            Margin = new Thickness(0, 4, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0)
         };
 
         foreach (string item in items)
@@ -189,14 +162,15 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         stack.Children.Add(new Border
         {
             BorderBrush = GuideBorderBrush,
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
             Background = PanelBrush,
-            Padding = new Thickness(8),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Padding = new Thickness(TrueBimTheme.Spacing8),
             Child = diagram
         });
 
         TextBlock captionBlock = CreateParagraph(caption);
-        captionBlock.Margin = new Thickness(0, 6, 0, 10);
+        captionBlock.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing12);
         stack.Children.Add(captionBlock);
         return stack;
     }
@@ -210,16 +184,16 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             ClipToBounds = true
         };
 
-        Brush arrowBrush = new SolidColorBrush(Color.FromRgb(74, 90, 106));
-        AddNode(canvas, 10, 28, 130, 70, "1. Файл", "JSON или изображение", Color.FromRgb(232, 243, 240), Color.FromRgb(31, 138, 112));
+        Brush arrowBrush = MutedBrush;
+        AddNode(canvas, 10, 28, 130, 70, "1. Файл", "JSON или изображение", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
         AddArrow(canvas, 145, 63, 175, 63, arrowBrush);
-        AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "JSON reader или CLI-worker", Color.FromRgb(234, 240, 250), Color.FromRgb(53, 100, 168));
+        AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "JSON reader или CLI-worker", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
         AddArrow(canvas, 315, 63, 345, 63, arrowBrush);
-        AddNode(canvas, 350, 28, 130, 70, "3. Preview", "картинка в окне и линии Revit", Color.FromRgb(255, 243, 219), Color.FromRgb(176, 111, 0));
+        AddNode(canvas, 350, 28, 130, 70, "3. Preview", "картинка в окне и линии Revit", TrueBimBrushes.WarningBackground, TrueBimBrushes.Warning);
         AddArrow(canvas, 485, 63, 515, 63, arrowBrush);
-        AddNode(canvas, 520, 28, 130, 70, "4. Host", "стена или плита", Color.FromRgb(246, 238, 250), Color.FromRgb(128, 77, 156));
+        AddNode(canvas, 520, 28, 130, 70, "4. Host", "стена или плита", TrueBimBrushes.NeutralBackground, TrueBimBrushes.Accent);
         AddArrow(canvas, 655, 63, 685, 63, arrowBrush);
-        AddNode(canvas, 690, 28, 60, 70, "5.", "правила", Color.FromRgb(252, 235, 235), Color.FromRgb(178, 58, 72));
+        AddNode(canvas, 690, 28, 60, 70, "5.", "правила", TrueBimBrushes.DangerBackground, TrueBimBrushes.Danger);
 
         AddCanvasText(canvas, "Безопасная часть: чтение, preview, выбор host и расчет правил не создают арматуру.", 20, 128, 510, 15, FontWeights.SemiBold, TextBrush);
         AddCanvasText(canvas, "Запись в модель начинается только после кнопки «Создать тестовую» и отдельного подтверждения.", 20, 154, 690, 14, FontWeights.Normal, MutedBrush);
@@ -244,10 +218,11 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         {
             Width = 205,
             Height = 174,
-            Background = Brushes.White,
+            Background = TrueBimBrushes.Surface,
             BorderBrush = GuideBorderBrush,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(10),
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius6),
+            Padding = new Thickness(TrueBimTheme.Spacing12),
             Child = new TextBlock
             {
                 Text = "{\n  \"schemaVersion\": \"1.0\",\n  \"polylines\": [\n    {\n      \"id\": \"wall-zone-a\",\n      \"points\": [ ... ]\n    }\n  ]\n}",
@@ -260,7 +235,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         Canvas.SetTop(jsonBlock, 36);
         canvas.Children.Add(jsonBlock);
 
-        Brush arrowBrush = new SolidColorBrush(Color.FromRgb(74, 90, 106));
+        Brush arrowBrush = MutedBrush;
         AddArrow(canvas, 232, 122, 278, 122, arrowBrush);
         AddArrow(canvas, 482, 122, 528, 122, arrowBrush);
 
@@ -268,9 +243,10 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         {
             Width = 190,
             Height = 174,
-            Background = Brushes.White,
+            Background = TrueBimBrushes.Surface,
             BorderBrush = GuideBorderBrush,
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius6),
             Child = CreatePreviewPicture()
         };
         Canvas.SetLeft(previewBorder, 286);
@@ -281,9 +257,10 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         {
             Width = 205,
             Height = 174,
-            Background = Brushes.White,
+            Background = TrueBimBrushes.Surface,
             BorderBrush = GuideBorderBrush,
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius6),
             Child = CreateHostPicture()
         };
         Canvas.SetLeft(hostBorder, 536);
@@ -307,7 +284,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         {
             Width = 188,
             Height = 172,
-            Fill = new SolidColorBrush(Color.FromRgb(248, 250, 252))
+            Fill = TrueBimBrushes.SurfaceAlt
         });
         canvas.Children.Add(new Polyline
         {
@@ -318,7 +295,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 new(122, 58),
                 new(152, 124)
             },
-            Stroke = new SolidColorBrush(Color.FromRgb(31, 138, 112)),
+            Stroke = TrueBimBrushes.Success,
             StrokeThickness = 4,
             StrokeLineJoin = PenLineJoin.Round
         });
@@ -330,7 +307,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 new(95, 92),
                 new(145, 140)
             },
-            Stroke = new SolidColorBrush(Color.FromRgb(53, 100, 168)),
+            Stroke = TrueBimBrushes.Info,
             StrokeThickness = 3,
             StrokeLineJoin = PenLineJoin.Round
         });
@@ -351,7 +328,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         {
             Width = 203,
             Height = 172,
-            Fill = new SolidColorBrush(Color.FromRgb(248, 250, 252))
+            Fill = TrueBimBrushes.SurfaceAlt
         });
         Rectangle hostShape = new()
         {
@@ -359,8 +336,8 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             Height = 74,
             RadiusX = 4,
             RadiusY = 4,
-            Fill = new SolidColorBrush(Color.FromRgb(234, 240, 250)),
-            Stroke = new SolidColorBrush(Color.FromRgb(53, 100, 168)),
+            Fill = TrueBimBrushes.InfoBackground,
+            Stroke = TrueBimBrushes.Info,
             StrokeThickness = 2
         };
         Canvas.SetLeft(hostShape, 30);
@@ -375,7 +352,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 Y1 = 62,
                 X2 = 46 + (index * 30),
                 Y2 = 108,
-                Stroke = new SolidColorBrush(Color.FromRgb(178, 58, 72)),
+                Stroke = TrueBimBrushes.Danger,
                 StrokeThickness = 4,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round
@@ -392,14 +369,14 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
     {
         Grid grid = new()
         {
-            Margin = new Thickness(0, 4, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0)
         };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         UIElement safeColumn = CreateChecklistColumn(
             "Без записи в модель",
-            new SolidColorBrush(Color.FromRgb(31, 138, 112)),
+            TrueBimBrushes.Success,
             "выбор файла и чтение JSON;",
             "preview контуров в окне;",
             "временные линии предпросмотра;",
@@ -410,7 +387,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 
         UIElement writeColumn = CreateChecklistColumn(
             "Меняет модель",
-            new SolidColorBrush(Color.FromRgb(178, 58, 72)),
+            TrueBimBrushes.Danger,
             "только команда «Создать тестовую»;",
             "только после подтверждения;",
             "создается тестовый Rebar;",
@@ -425,14 +402,14 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
     {
         StackPanel stack = new()
         {
-            Margin = new Thickness(0, 0, 14, 0)
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0)
         };
         stack.Children.Add(new TextBlock
         {
             Text = title,
             FontWeight = FontWeights.SemiBold,
             Foreground = accent,
-            Margin = new Thickness(0, 0, 0, 4)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
         });
 
         foreach (string item in items)
@@ -445,32 +422,27 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 
     private UIElement CreateFooter()
     {
-        DockPanel footer = new()
-        {
-            LastChildFill = true,
-            Margin = new Thickness(0, 14, 8, 0)
-        };
-
         Button closeButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
             MinWidth = 120,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             IsCancel = true,
             ToolTip = "Закрыть методичку."
         };
         closeButton.Click += (_, _) => Close();
-        DockPanel.SetDock(closeButton, Dock.Right);
-        footer.Children.Add(closeButton);
-        footer.Children.Add(CreateParagraph("Подсказка отражает текущий каркас модуля и не описывает другие инструменты TrueBIM."));
-        return footer;
+
+        return TrueBimUi.CreateFooter(
+            CreateParagraph("Подсказка отражает текущий каркас модуля и не описывает другие инструменты TrueBIM."),
+            closeButton);
     }
 
-    private static void AddNode(Canvas canvas, double x, double y, double width, double height, string title, string subtitle, Color fill, Color stroke)
+    private static void AddNode(Canvas canvas, double x, double y, double width, double height, string title, string subtitle, Brush fill, Brush stroke)
     {
         StackPanel content = new()
         {
-            Margin = new Thickness(8)
+            Margin = new Thickness(TrueBimTheme.Spacing8)
         };
         content.Children.Add(new TextBlock
         {
@@ -485,17 +457,17 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             FontSize = 11,
             Foreground = MutedBrush,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 3, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0)
         });
 
         Border node = new()
         {
             Width = width,
             Height = height,
-            Background = new SolidColorBrush(fill),
-            BorderBrush = new SolidColorBrush(stroke),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            Background = fill,
+            BorderBrush = stroke,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
             Child = content
         };
         Canvas.SetLeft(node, x);
