@@ -74,18 +74,19 @@ public sealed class FamilyLibraryTreeBuilder
 
     private static void AddFamily(FamilyLibraryTreeNode root, FamilyFileItem family)
     {
+        FamilyLibraryTreeNode folderNode = AddFolderPath(root, family);
         string category = string.IsNullOrWhiteSpace(family.Category)
             ? FamilyManagerDefaults.UnknownCategory
             : family.Category.Trim();
         FamilyLibraryTreeNode categoryNode = GetOrAdd(
-            root.Children,
+            folderNode.Children,
             FamilyLibraryTreeNodeKind.Category,
             category,
-            root.Path);
+            folderNode.Path);
 
-        string familyTitle = family.CachedTypes.Count == 0
-            ? family.Name
-            : $"{family.Name} ({family.CachedTypes.Count})";
+        string familyTitle = string.IsNullOrWhiteSpace(family.Name)
+            ? Path.GetFileNameWithoutExtension(family.FilePath)
+            : family.Name;
         FamilyLibraryTreeNode familyNode = GetOrAdd(
             categoryNode.Children,
             FamilyLibraryTreeNodeKind.Family,
@@ -93,17 +94,83 @@ public sealed class FamilyLibraryTreeBuilder
             family.FilePath,
             family.FilePath);
 
-        foreach (FamilyTypeInfo type in family.CachedTypes
-            .Where(type => !string.IsNullOrWhiteSpace(type.Name))
-            .OrderBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase))
+        foreach (string typeName in ResolveTypeNames(family))
         {
             familyNode.Children.Add(new FamilyLibraryTreeNode(
                 FamilyLibraryTreeNodeKind.Type,
-                type.Name,
+                typeName,
                 family.FilePath,
                 family.FilePath,
-                type.Name));
+                typeName));
         }
+    }
+
+    private static FamilyLibraryTreeNode AddFolderPath(FamilyLibraryTreeNode root, FamilyFileItem family)
+    {
+        string rootPath = FamilyPathNormalizer.Normalize(root.Path).TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        string directoryPath = FamilyPathNormalizer.Normalize(family.DirectoryPath);
+        if (string.IsNullOrWhiteSpace(directoryPath) && !string.IsNullOrWhiteSpace(family.FilePath))
+        {
+            directoryPath = FamilyPathNormalizer.Normalize(Path.GetDirectoryName(family.FilePath) ?? string.Empty);
+        }
+
+        if (string.IsNullOrWhiteSpace(rootPath)
+            || string.IsNullOrWhiteSpace(directoryPath)
+            || !IsUnderFolder(directoryPath, rootPath)
+            || directoryPath.Equals(rootPath, StringComparison.CurrentCultureIgnoreCase))
+        {
+            return root;
+        }
+
+        string relativePath = directoryPath.Substring(rootPath.Length).TrimStart(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return root;
+        }
+
+        FamilyLibraryTreeNode parent = root;
+        string currentPath = rootPath;
+        foreach (string segment in relativePath.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            currentPath = Path.Combine(currentPath, segment);
+            parent = GetOrAdd(
+                parent.Children,
+                FamilyLibraryTreeNodeKind.Folder,
+                segment,
+                currentPath);
+        }
+
+        return parent;
+    }
+
+    private static IReadOnlyList<string> ResolveTypeNames(FamilyFileItem family)
+    {
+        HashSet<string> names = new(StringComparer.CurrentCultureIgnoreCase);
+        foreach (FamilyTypeInfo type in family.CachedTypes)
+        {
+            if (!string.IsNullOrWhiteSpace(type.Name))
+            {
+                names.Add(type.Name.Trim());
+            }
+        }
+
+        foreach (string typeName in family.TypeCatalogTypeNames)
+        {
+            if (!string.IsNullOrWhiteSpace(typeName))
+            {
+                names.Add(typeName.Trim());
+            }
+        }
+
+        return names
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 
     private static FamilyLibraryTreeNode GetOrAdd(

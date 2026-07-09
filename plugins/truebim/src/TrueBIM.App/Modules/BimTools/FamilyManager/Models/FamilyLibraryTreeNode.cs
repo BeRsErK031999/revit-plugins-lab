@@ -28,6 +28,10 @@ public sealed class FamilyLibraryTreeNode
 
     public List<FamilyLibraryTreeNode> Children { get; } = [];
 
+    public string DisplayTitle => Kind is FamilyLibraryTreeNodeKind.Type || Children.Count == 0
+        ? Title
+        : $"{Title} {Children.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
     public string ExplorerPath => !string.IsNullOrWhiteSpace(FamilyPath)
         ? FamilyPath
         : Path;

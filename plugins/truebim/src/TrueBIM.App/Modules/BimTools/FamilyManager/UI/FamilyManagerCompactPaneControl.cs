@@ -1,6 +1,8 @@
+using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Media;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Models;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Services;
@@ -11,21 +13,27 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
 public sealed class FamilyManagerCompactPaneControl : UserControl
 {
+    public static readonly DependencyProperty CompactSearchTextProperty = DependencyProperty.Register(
+        nameof(CompactSearchText),
+        typeof(string),
+        typeof(FamilyManagerCompactPaneControl),
+        new PropertyMetadata(string.Empty));
+
     private readonly string folderPath;
     private readonly FamilyManagerProfileStorage profileStorage;
     private readonly ITrueBimLogger logger;
     private readonly Action openManager;
     private readonly Action hidePane;
-    private readonly TextBlock folderTitle = new();
-    private readonly TextBlock folderPathText = new();
-    private readonly TextBlock cacheText = new();
-    private readonly UniformGrid metricsGrid = new()
-    {
-        Columns = 2,
-        Margin = new Thickness(0, 10, 0, 10)
-    };
-    private readonly StackPanel categoryList = new();
-    private readonly StackPanel recentList = new();
+    private readonly FamilyLibraryTreeBuilder treeBuilder = new();
+    private readonly FamilySearchMatchService searchMatchService = new();
+    private readonly ObservableCollection<FamilyLibraryTreeNode> libraryTreeNodes = new();
+    private readonly List<FamilyFileItem> folderFamilies = [];
+    private readonly ComboBox catalogInput = new();
+    private readonly TextBox searchInput = new();
+    private readonly TextBlock searchPlaceholderText = new();
+    private readonly TreeView libraryTree = new();
+    private readonly TextBlock statusText = new();
+    private readonly TextBlock emptyStateText = new();
 
     public FamilyManagerCompactPaneControl(
         string folderPath,
@@ -40,9 +48,15 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         this.openManager = openManager ?? throw new ArgumentNullException(nameof(openManager));
         this.hidePane = hidePane ?? throw new ArgumentNullException(nameof(hidePane));
 
-        Background = Brushes.WhiteSmoke;
+        Background = Brushes.White;
         Content = CreateContent();
         RefreshSummary();
+    }
+
+    public string CompactSearchText
+    {
+        get => (string)GetValue(CompactSearchTextProperty);
+        set => SetValue(CompactSearchTextProperty, value);
     }
 
     private UIElement CreateContent()
@@ -50,91 +64,132 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         DockPanel root = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(12)
+            Background = Brushes.White
+        };
+
+        UIElement toolbar = CreateToolbar();
+        DockPanel.SetDock(toolbar, Dock.Top);
+        root.Children.Add(toolbar);
+
+        DockPanel browser = new()
+        {
+            LastChildFill = true,
+            Margin = new Thickness(2, 4, 2, 2)
+        };
+
+        ConfigureCatalogInput();
+        DockPanel.SetDock(catalogInput, Dock.Top);
+        browser.Children.Add(catalogInput);
+
+        UIElement searchBar = CreateSearchBar();
+        DockPanel.SetDock(searchBar, Dock.Top);
+        browser.Children.Add(searchBar);
+
+        statusText.FontSize = 11;
+        statusText.Foreground = Brushes.DimGray;
+        statusText.Margin = new Thickness(2, 4, 2, 0);
+        statusText.TextTrimming = TextTrimming.CharacterEllipsis;
+        DockPanel.SetDock(statusText, Dock.Bottom);
+        browser.Children.Add(statusText);
+
+        emptyStateText.Foreground = Brushes.DimGray;
+        emptyStateText.TextWrapping = TextWrapping.Wrap;
+        emptyStateText.Margin = new Thickness(4, 8, 4, 4);
+        emptyStateText.Visibility = Visibility.Collapsed;
+        DockPanel.SetDock(emptyStateText, Dock.Top);
+        browser.Children.Add(emptyStateText);
+
+        libraryTree.ItemsSource = libraryTreeNodes;
+        libraryTree.ItemTemplate = CreateTreeTemplate();
+        libraryTree.BorderThickness = new Thickness(0);
+        libraryTree.Background = Brushes.White;
+        libraryTree.Padding = new Thickness(0, 2, 0, 0);
+        ScrollViewer.SetHorizontalScrollBarVisibility(libraryTree, ScrollBarVisibility.Auto);
+        ScrollViewer.SetVerticalScrollBarVisibility(libraryTree, ScrollBarVisibility.Auto);
+        browser.Children.Add(libraryTree);
+
+        root.Children.Add(browser);
+        return root;
+    }
+
+    private UIElement CreateToolbar()
+    {
+        Border border = new()
+        {
+            Background = new SolidColorBrush(Color.FromRgb(232, 232, 232)),
+            BorderBrush = Brushes.Gainsboro,
+            BorderThickness = new Thickness(0, 0, 0, 1)
         };
 
         StackPanel actions = new()
         {
-            Orientation = Orientation.Vertical,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 0, 0, 12)
+            Orientation = Orientation.Horizontal,
+            Height = 30,
+            HorizontalAlignment = HorizontalAlignment.Left
         };
 
-        Button openButton = CreateButton("Открыть окно", TrueBimIcon.FamilyManager);
+        Button openButton = CreateIconButton(TrueBimIcon.FamilyManager, "Открыть окно диспетчера");
         openButton.Click += (_, _) => openManager();
         actions.Children.Add(openButton);
 
-        Button hideButton = CreateButton("Скрыть", TrueBimIcon.Close);
+        Button hideButton = CreateIconButton(TrueBimIcon.Close, "Скрыть панель");
         hideButton.Click += (_, _) => hidePane();
         actions.Children.Add(hideButton);
 
-        DockPanel.SetDock(actions, Dock.Top);
-        root.Children.Add(actions);
-
-        StackPanel content = new();
-        content.Children.Add(CreateHeaderBlock());
-        content.Children.Add(metricsGrid);
-        content.Children.Add(CreateListBlock("Категории", categoryList));
-        content.Children.Add(CreateListBlock("Недавние семейства", recentList));
-        root.Children.Add(new ScrollViewer
-        {
-            Content = content,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        });
-
-        return root;
+        border.Child = actions;
+        return border;
     }
 
-    private UIElement CreateHeaderBlock()
+    private UIElement CreateSearchBar()
     {
-        Border border = CreateSectionBorder();
-        StackPanel panel = new();
-
-        TextBlock title = new()
+        DockPanel searchBar = new()
         {
-            Text = "Диспетчер семейств",
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 8)
+            LastChildFill = true,
+            Margin = new Thickness(0, 2, 0, 2)
         };
-        panel.Children.Add(title);
 
-        folderTitle.FontWeight = FontWeights.SemiBold;
-        folderTitle.TextTrimming = TextTrimming.CharacterEllipsis;
-        folderTitle.Margin = new Thickness(0, 0, 0, 4);
-        panel.Children.Add(folderTitle);
+        Button clearButton = CreateIconButton(TrueBimIcon.Close, "Очистить поиск");
+        clearButton.Width = 26;
+        clearButton.Height = 26;
+        clearButton.Margin = new Thickness(2, 0, 0, 0);
+        clearButton.Click += (_, _) => searchInput.Clear();
+        DockPanel.SetDock(clearButton, Dock.Right);
+        searchBar.Children.Add(clearButton);
 
-        folderPathText.Foreground = Brushes.DimGray;
-        folderPathText.FontSize = 11;
-        folderPathText.TextWrapping = TextWrapping.Wrap;
-        folderPathText.Margin = new Thickness(0, 0, 0, 8);
-        panel.Children.Add(folderPathText);
+        Grid searchHost = new();
+        searchInput.Height = 26;
+        searchInput.VerticalContentAlignment = VerticalAlignment.Center;
+        searchInput.ToolTip = "Поиск по семействам, типам, параметрам и пути.";
+        searchInput.TextChanged += (_, _) =>
+        {
+            string search = searchInput.Text.Trim();
+            CompactSearchText = search.Length >= 2
+                ? search
+                : string.Empty;
+            searchPlaceholderText.Visibility = string.IsNullOrWhiteSpace(searchInput.Text)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            RefreshTree();
+        };
+        searchHost.Children.Add(searchInput);
 
-        cacheText.Foreground = Brushes.DimGray;
-        cacheText.FontSize = 11;
-        panel.Children.Add(cacheText);
+        searchPlaceholderText.Text = "Поиск от двух символов...";
+        searchPlaceholderText.Foreground = Brushes.Gray;
+        searchPlaceholderText.Margin = new Thickness(6, 0, 0, 0);
+        searchPlaceholderText.VerticalAlignment = VerticalAlignment.Center;
+        searchPlaceholderText.IsHitTestVisible = false;
+        searchHost.Children.Add(searchPlaceholderText);
+        searchBar.Children.Add(searchHost);
 
-        border.Child = panel;
-        return border;
+        return searchBar;
     }
 
-    private UIElement CreateListBlock(string title, Panel host)
+    private void ConfigureCatalogInput()
     {
-        Border border = CreateSectionBorder();
-        border.Margin = new Thickness(0, 0, 0, 10);
-
-        StackPanel panel = new();
-        panel.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6)
-        });
-        panel.Children.Add(host);
-
-        border.Child = panel;
-        return border;
+        catalogInput.Height = 26;
+        catalogInput.Margin = new Thickness(0, 0, 0, 2);
+        catalogInput.VerticalContentAlignment = VerticalAlignment.Center;
+        catalogInput.ToolTip = folderPath;
     }
 
     private void RefreshSummary()
@@ -142,121 +197,118 @@ public sealed class FamilyManagerCompactPaneControl : UserControl
         try
         {
             FamilyManagerProfile profile = profileStorage.Load();
-            FamilyManagerPaneSummary summary = new FamilyManagerPaneSummaryBuilder().Build(profile, folderPath);
-            ApplySummary(summary);
+            folderFamilies.Clear();
+            foreach (FamilyFileItem family in profile.CachedFiles.Where(family => IsUnderFolder(family.FilePath, folderPath)))
+            {
+                folderFamilies.Add(family);
+            }
+
+            catalogInput.Items.Clear();
+            catalogInput.Items.Add("Каталог семейств");
+            catalogInput.SelectedIndex = 0;
+            catalogInput.ToolTip = folderPath;
+            RefreshTree();
         }
         catch (Exception exception)
         {
             logger.Warning($"Failed to refresh Family Manager compact pane: {exception.Message}");
-            folderTitle.Text = "Не удалось прочитать кэш";
-            folderPathText.Text = folderPath;
-            cacheText.Text = "Откройте окно диспетчера и пересканируйте библиотеку.";
+            folderFamilies.Clear();
+            libraryTreeNodes.Clear();
+            catalogInput.Items.Clear();
+            catalogInput.Items.Add("Кэш недоступен");
+            catalogInput.SelectedIndex = 0;
+            emptyStateText.Text = "Откройте окно диспетчера и пересканируйте библиотеку.";
+            emptyStateText.Visibility = Visibility.Visible;
+            statusText.Text = "Не удалось прочитать кэш.";
         }
     }
 
-    private void ApplySummary(FamilyManagerPaneSummary summary)
+    private void RefreshTree()
     {
-        folderTitle.Text = summary.FolderName;
-        folderTitle.ToolTip = summary.FolderPath;
-        folderPathText.Text = summary.FolderPath;
-        folderPathText.ToolTip = summary.FolderPath;
-        cacheText.Text = summary.CacheUpdatedDisplay;
+        string search = CompactSearchText.Trim();
+        bool hasSearch = !string.IsNullOrWhiteSpace(search);
+        List<FamilyFileItem> visibleFamilies = folderFamilies
+            .Where(family => !hasSearch || searchMatchService.Matches(family, search))
+            .OrderBy(family => family.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
 
-        metricsGrid.Children.Clear();
-        metricsGrid.Children.Add(CreateMetric("Семейств", summary.FamiliesDisplay));
-        metricsGrid.Children.Add(CreateMetric("Категорий", summary.CategoriesDisplay));
-        metricsGrid.Children.Add(CreateMetric("Метаданные", summary.MetadataDisplay));
-        metricsGrid.Children.Add(CreateMetric("Типов", summary.TypesDisplay));
+        IReadOnlyList<FamilyLibraryTreeNode> nodes = treeBuilder.Build(
+            [new FamilyLibraryFolder { Path = folderPath, IsEnabled = true }],
+            visibleFamilies);
 
-        ApplyList(categoryList, summary.Categories, "Нет категорий в кэше");
-        ApplyList(recentList, summary.RecentFamilies, "Нет семейств в выбранной папке");
-    }
-
-    private static void ApplyList(Panel host, IReadOnlyList<string> items, string emptyText)
-    {
-        host.Children.Clear();
-        if (items.Count == 0)
+        libraryTreeNodes.Clear();
+        foreach (FamilyLibraryTreeNode node in nodes)
         {
-            host.Children.Add(CreateMutedText(emptyText));
-            return;
+            libraryTreeNodes.Add(node);
         }
 
-        foreach (string item in items)
-        {
-            TextBlock text = new()
-            {
-                Text = item,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(0, 0, 0, 3),
-                ToolTip = item
-            };
-            host.Children.Add(text);
-        }
+        int typeCount = visibleFamilies.Sum(family => family.AvailableTypeNames.Count);
+        statusText.Text = hasSearch
+            ? $"Найдено: {visibleFamilies.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} из {folderFamilies.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} · Типов: {typeCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : $"Семейств: {folderFamilies.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} · Типов: {typeCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+        emptyStateText.Text = folderFamilies.Count == 0
+            ? "В кэше нет семейств для выбранного каталога."
+            : "Поиск не нашёл семейств в выбранном каталоге.";
+        emptyStateText.Visibility = libraryTreeNodes.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
-    private static Border CreateMetric(string label, string value)
+    private static HierarchicalDataTemplate CreateTreeTemplate()
     {
-        Border border = new()
+        HierarchicalDataTemplate template = new(typeof(FamilyLibraryTreeNode))
         {
-            Background = Brushes.White,
-            BorderBrush = Brushes.Gainsboro,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Margin = new Thickness(0, 0, 8, 8),
-            Padding = new Thickness(8)
+            ItemsSource = new Binding(nameof(FamilyLibraryTreeNode.Children))
         };
 
-        StackPanel panel = new();
-        panel.Children.Add(new TextBlock
+        FrameworkElementFactory text = new(typeof(SearchHighlightTextBlock));
+        text.SetBinding(SearchHighlightTextBlock.HighlightTextProperty, new Binding(nameof(FamilyLibraryTreeNode.DisplayTitle)));
+        text.SetBinding(SearchHighlightTextBlock.SearchTextProperty, new Binding(nameof(CompactSearchText))
         {
-            Text = value,
-            FontSize = 18,
-            FontWeight = FontWeights.SemiBold
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(FamilyManagerCompactPaneControl), 1)
         });
-        panel.Children.Add(new TextBlock
-        {
-            Text = label,
-            Foreground = Brushes.DimGray,
-            FontSize = 11,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        });
-
-        border.Child = panel;
-        return border;
+        text.SetBinding(FrameworkElement.ToolTipProperty, new Binding(nameof(FamilyLibraryTreeNode.ExplorerPath)));
+        text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+        text.SetValue(FrameworkElement.MarginProperty, new Thickness(2, 1, 2, 1));
+        template.VisualTree = text;
+        return template;
     }
 
-    private static TextBlock CreateMutedText(string text)
-    {
-        return new TextBlock
-        {
-            Text = text,
-            Foreground = Brushes.DimGray,
-            TextWrapping = TextWrapping.Wrap
-        };
-    }
-
-    private static Border CreateSectionBorder()
-    {
-        return new Border
-        {
-            Background = Brushes.White,
-            BorderBrush = Brushes.Gainsboro,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(10),
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-    }
-
-    private static Button CreateButton(string text, TrueBimIcon icon)
+    private static Button CreateIconButton(TrueBimIcon icon, string toolTip)
     {
         return new Button
         {
-            Content = IconFactory.CreateButtonContent(icon, text),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            Height = 30,
-            Margin = new Thickness(0, 0, 0, 6)
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(icon, 16),
+                Width = 16,
+                Height = 16,
+                Stretch = Stretch.Uniform
+            },
+            ToolTip = toolTip,
+            Width = 28,
+            Height = 26,
+            Padding = new Thickness(0),
+            Margin = new Thickness(2, 2, 0, 2),
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0)
         };
+    }
+
+    private static bool IsUnderFolder(string filePath, string folderPath)
+    {
+        string normalizedPath = FamilyPathNormalizer.Normalize(filePath);
+        string normalizedFolder = FamilyPathNormalizer.Normalize(folderPath);
+        if (string.IsNullOrWhiteSpace(normalizedPath) || string.IsNullOrWhiteSpace(normalizedFolder))
+        {
+            return false;
+        }
+
+        return normalizedPath.Equals(normalizedFolder, StringComparison.CurrentCultureIgnoreCase)
+            || normalizedPath.StartsWith(normalizedFolder + Path.DirectorySeparatorChar, StringComparison.CurrentCultureIgnoreCase)
+            || normalizedPath.StartsWith(normalizedFolder + Path.AltDirectorySeparatorChar, StringComparison.CurrentCultureIgnoreCase);
     }
 }

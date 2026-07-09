@@ -1964,7 +1964,7 @@ public sealed class FamilyManagerControl : UserControl
             ItemsSource = new WpfBinding(nameof(FamilyLibraryTreeNode.Children))
         };
         FrameworkElementFactory text = new(typeof(TextBlock));
-        text.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(FamilyLibraryTreeNode.Title)));
+        text.SetBinding(TextBlock.TextProperty, new WpfBinding(nameof(FamilyLibraryTreeNode.DisplayTitle)));
         text.SetBinding(FrameworkElement.ToolTipProperty, new WpfBinding(nameof(FamilyLibraryTreeNode.ExplorerPath)));
         text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
         template.VisualTree = text;
