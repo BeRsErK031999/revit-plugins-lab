@@ -12,6 +12,18 @@ public sealed class BimParameterItem
         ParameterSourceKind sourceKind,
         int elementCount,
         int categoryCount)
+        : this(parameterId, name, storageType, sourceKind, elementCount, categoryCount, Array.Empty<long>())
+    {
+    }
+
+    public BimParameterItem(
+        ElementId parameterId,
+        string name,
+        StorageType storageType,
+        ParameterSourceKind sourceKind,
+        int elementCount,
+        int categoryCount,
+        IEnumerable<long>? applicableCategoryIds)
     {
         ParameterId = parameterId;
         Name = string.IsNullOrWhiteSpace(name) ? "<без имени>" : name;
@@ -19,6 +31,10 @@ public sealed class BimParameterItem
         SourceKind = sourceKind;
         ElementCount = elementCount;
         CategoryCount = categoryCount;
+        ApplicableCategoryIds = (applicableCategoryIds ?? Array.Empty<long>())
+            .Distinct()
+            .OrderBy(categoryId => categoryId)
+            .ToArray();
     }
 
     public ElementId ParameterId { get; }
@@ -32,6 +48,8 @@ public sealed class BimParameterItem
     public int ElementCount { get; }
 
     public int CategoryCount { get; }
+
+    public IReadOnlyCollection<long> ApplicableCategoryIds { get; }
 
     public string SourceDisplay => SourceKind == ParameterSourceKind.Type ? "Тип" : "Экземпляр";
 

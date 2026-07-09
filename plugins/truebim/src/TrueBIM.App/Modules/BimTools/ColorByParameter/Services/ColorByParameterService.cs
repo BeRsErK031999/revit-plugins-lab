@@ -84,7 +84,8 @@ public sealed class ColorByParameterService
                 bucket.StorageType,
                 bucket.SourceKind,
                 bucket.ElementIds.Count,
-                bucket.CategoryIds.Count))
+                bucket.CategoryIds.Count,
+                bucket.CategoryIds))
             .ToList();
     }
 
@@ -95,7 +96,7 @@ public sealed class ColorByParameterService
         BimParameterItem parameter,
         int maxValueCount)
     {
-        HashSet<long> selectedCategoryIds = CreateCategoryIdSet(categories);
+        HashSet<long> selectedCategoryIds = CreateCategoryIdSet(categories, parameter);
         Dictionary<ParameterValueToken, int> valueCounts = [];
 
         foreach (Element element in CollectVisibleElements(document, activeView))
@@ -174,12 +175,20 @@ public sealed class ColorByParameterService
             && category.CategoryType != CategoryType.Internal;
     }
 
-    private static HashSet<long> CreateCategoryIdSet(IReadOnlyList<BimCategoryItem> categories)
+    private static HashSet<long> CreateCategoryIdSet(IReadOnlyList<BimCategoryItem> categories, BimParameterItem? parameter = null)
     {
-        return categories
+        HashSet<long> categoryIds = categories
             .Where(category => category.IsSelected)
             .Select(category => RevitElementIds.GetValue(category.CategoryId))
             .ToHashSet();
+
+        if (parameter?.ApplicableCategoryIds.Count > 0)
+        {
+            categoryIds = ApplicableCategoryFilter.GetApplicableCategoryIds(categoryIds, parameter.ApplicableCategoryIds)
+                .ToHashSet();
+        }
+
+        return categoryIds;
     }
 
     private static bool IsElementInCategories(Element element, HashSet<long> selectedCategoryIds)

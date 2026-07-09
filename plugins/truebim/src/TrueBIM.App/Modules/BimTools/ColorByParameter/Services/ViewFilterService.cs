@@ -31,13 +31,19 @@ public sealed class ViewFilterService
             return new ColorApplyResult(0, 0, 0, rows.Count, 0, ["Не выбрано ни одно значение."]);
         }
 
-        ICollection<ElementId> categoryIds = categories
+        List<ElementId> selectedCategoryIds = categories
             .Where(category => category.IsSelected)
             .Select(category => category.CategoryId)
             .ToList();
-        if (categoryIds.Count == 0)
+        if (selectedCategoryIds.Count == 0)
         {
             return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0, ["Не выбрана ни одна категория."]);
+        }
+
+        List<ElementId> categoryIds = GetApplicableCategoryIds(selectedCategoryIds, parameter);
+        if (categoryIds.Count == 0)
+        {
+            return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0, ["Выбранный параметр не назначен выбранным категориям. Обновите значения или выберите другие категории."]);
         }
 
         FillPatternElement? solidFillPattern = FindSolidFillPattern(document);
@@ -46,6 +52,11 @@ public sealed class ViewFilterService
         int applied = 0;
         int skipped = 0;
         List<string> messages = [];
+        int skippedCategoryCount = selectedCategoryIds.Count - categoryIds.Count;
+        if (skippedCategoryCount > 0)
+        {
+            messages.Add($"Параметр '{parameter.Name}' применим не ко всем выбранным категориям; пропущено категорий: {skippedCategoryCount}.");
+        }
 
         using Transaction transaction = new(document, "TrueBIM: цвета по параметрам");
         transaction.Start();
@@ -60,41 +71,51 @@ public sealed class ViewFilterService
 
             ElementParameterFilter elementFilter = new(rule);
             ISet<ElementId> categorySet = new HashSet<ElementId>(categoryIds);
-            if (!ParameterFilterElement.ElementFilterIsAcceptableForParameterFilterElement(document, categorySet, elementFilter))
+            try
             {
-                skipped++;
-                messages.Add($"{row.DisplayValue}: выбранный параметр недоступен для части выбранных категорий.");
-                continue;
-            }
-
-            string filterName = filterNameBuilder.Build(parameter.Name, row.DisplayValue);
-            ParameterFilterElement? filter = FindParameterFilterByName(document, filterName);
-            if (filter is null)
-            {
-                filter = ParameterFilterElement.Create(document, filterName, categoryIds, elementFilter);
-                created++;
-            }
-            else
-            {
-                filter.SetCategories(categoryIds);
-                if (!filter.SetElementFilter(elementFilter))
+                if (!ParameterFilterElement.ElementFilterIsAcceptableForParameterFilterElement(document, categorySet, elementFilter))
                 {
                     skipped++;
-                    messages.Add($"{row.DisplayValue}: Revit не принял правило фильтра.");
+                    messages.Add($"{row.DisplayValue}: выбранный параметр недоступен для выбранных категорий.");
                     continue;
                 }
 
-                updated++;
-            }
+                string filterName = filterNameBuilder.Build(parameter.Name, row.DisplayValue);
+                ParameterFilterElement? filter = FindParameterFilterByName(document, filterName);
+                if (filter is null)
+                {
+                    filter = ParameterFilterElement.Create(document, filterName, categoryIds, elementFilter);
+                    created++;
+                }
+                else
+                {
+                    filter.SetCategories(categoryIds);
+                    if (!filter.SetElementFilter(elementFilter))
+                    {
+                        skipped++;
+                        messages.Add($"{row.DisplayValue}: Revit не принял правило фильтра.");
+                        continue;
+                    }
 
-            if (!activeView.GetFilters().Contains(filter.Id))
+                    updated++;
+                }
+
+                if (!activeView.GetFilters().Contains(filter.Id))
+                {
+                    activeView.AddFilter(filter.Id);
+                }
+
+                activeView.SetFilterOverrides(filter.Id, CreateOverrides(row, solidFillPattern));
+                activeView.SetFilterVisibility(filter.Id, true);
+                applied++;
+            }
+            catch (Autodesk.Revit.Exceptions.ArgumentException exception)
             {
-                activeView.AddFilter(filter.Id);
+                skipped++;
+                string message = $"{row.DisplayValue}: Revit отклонил фильтр для выбранных категорий ({exception.Message}).";
+                messages.Add(message);
+                logger.Warning(message);
             }
-
-            activeView.SetFilterOverrides(filter.Id, CreateOverrides(row, solidFillPattern));
-            activeView.SetFilterVisibility(filter.Id, true);
-            applied++;
         }
 
         transaction.Commit();
@@ -126,6 +147,23 @@ public sealed class ViewFilterService
 
         logger.Info($"Color By Parameter removed {filtersToRemove.Count} filters from active view.");
         return new ColorApplyResult(0, 0, 0, 0, filtersToRemove.Count, []);
+    }
+
+    private static List<ElementId> GetApplicableCategoryIds(IReadOnlyList<ElementId> selectedCategoryIds, BimParameterItem parameter)
+    {
+        if (parameter.ApplicableCategoryIds.Count == 0)
+        {
+            return selectedCategoryIds.ToList();
+        }
+
+        IReadOnlyList<long> applicableCategoryIds = ApplicableCategoryFilter.GetApplicableCategoryIds(
+            selectedCategoryIds.Select(RevitElementIds.GetValue),
+            parameter.ApplicableCategoryIds);
+        HashSet<long> applicableCategoryIdSet = applicableCategoryIds.ToHashSet();
+
+        return selectedCategoryIds
+            .Where(categoryId => applicableCategoryIdSet.Contains(RevitElementIds.GetValue(categoryId)))
+            .ToList();
     }
 
     private static bool TryCreateRule(BimParameterItem parameter, ParameterValueToken value, out FilterRule? rule, out string? reason)
