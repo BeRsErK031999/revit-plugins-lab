@@ -32,7 +32,7 @@ public sealed class FamilyLibraryTreeBuilderTests
         FamilyLibraryTreeNode root = Assert.Single(roots);
         Assert.Equal(FamilyLibraryTreeNodeKind.Library, root.Kind);
         Assert.Equal("Library", root.Title);
-        Assert.Equal("Library 1", root.DisplayTitle);
+        Assert.Equal("Library", root.DisplayTitle);
 
         FamilyLibraryTreeNode folder = Assert.Single(root.Children);
         Assert.Equal(FamilyLibraryTreeNodeKind.Folder, folder.Kind);
@@ -45,9 +45,10 @@ public sealed class FamilyLibraryTreeBuilderTests
         FamilyLibraryTreeNode family = Assert.Single(category.Children);
         Assert.Equal(FamilyLibraryTreeNodeKind.Family, family.Kind);
         Assert.Equal("Door A", family.Title);
-        Assert.Equal("Door A 2", family.DisplayTitle);
+        Assert.Equal("Door A", family.DisplayTitle);
         Assert.Equal(familyPath, family.FamilyPath);
         Assert.Equal(familyPath, family.ExplorerPath);
+        Assert.NotNull(family.Family);
 
         Assert.Equal(
             ["1000x2100", "900x2100"],

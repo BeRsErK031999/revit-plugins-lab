@@ -92,7 +92,8 @@ public sealed class FamilyLibraryTreeBuilder
             FamilyLibraryTreeNodeKind.Family,
             familyTitle,
             family.FilePath,
-            family.FilePath);
+            family.FilePath,
+            family);
 
         foreach (string typeName in ResolveTypeNames(family))
         {
@@ -101,7 +102,8 @@ public sealed class FamilyLibraryTreeBuilder
                 typeName,
                 family.FilePath,
                 family.FilePath,
-                typeName));
+                typeName,
+                family));
         }
     }
 
@@ -178,7 +180,8 @@ public sealed class FamilyLibraryTreeBuilder
         FamilyLibraryTreeNodeKind kind,
         string title,
         string path,
-        string familyPath = "")
+        string familyPath = "",
+        FamilyFileItem? family = null)
     {
         FamilyLibraryTreeNode? existing = nodes.FirstOrDefault(node =>
             node.Kind == kind
@@ -189,7 +192,7 @@ public sealed class FamilyLibraryTreeBuilder
             return existing;
         }
 
-        FamilyLibraryTreeNode node = new(kind, title, path, familyPath);
+        FamilyLibraryTreeNode node = new(kind, title, path, familyPath, family: family);
         nodes.Add(node);
         return node;
     }

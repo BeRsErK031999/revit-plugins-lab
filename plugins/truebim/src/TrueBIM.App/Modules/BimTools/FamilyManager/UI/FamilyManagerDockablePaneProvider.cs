@@ -13,6 +13,7 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
     public static readonly DockablePaneId PaneId = new(new Guid("9C06F88A-4782-4F1E-8C43-81DD5F50F45E"));
 
     private static readonly FamilyManagerDockablePaneHost Host = new();
+    private static bool compactPaneRequested;
 
     public static void Register(UIControlledApplication application)
     {
@@ -31,6 +32,7 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
         Guard.NotNull(logger, nameof(logger));
 
         const string windowKey = "truebim.family-manager";
+        HideUnrequestedCompactPane(uiApplication, logger);
         if (ModelessWindowService.Activate(windowKey, logger))
         {
             return;
@@ -61,11 +63,13 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
         Guard.NotNullOrWhiteSpace(folderPath, nameof(folderPath));
         Guard.NotNull(logger, nameof(logger));
 
+        compactPaneRequested = true;
         Host.LoadCompactPane(
             uiApplication,
             uiDocument,
             folderPath,
             new FamilyManagerProfileStorage(logger),
+            new FamilyLoadService(),
             logger);
 
         DockablePane pane = uiApplication.GetDockablePane(PaneId);
@@ -91,6 +95,24 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
         };
     }
 
+    private static void HideUnrequestedCompactPane(UIApplication uiApplication, ITrueBimLogger logger)
+    {
+        if (compactPaneRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            DockablePane pane = uiApplication.GetDockablePane(PaneId);
+            pane.Hide();
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Failed to hide unrequested Family Manager pane: {exception.Message}");
+        }
+    }
+
     private sealed class FamilyManagerDockablePaneHost : UserControl
     {
         public FamilyManagerDockablePaneHost()
@@ -103,11 +125,14 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             UIDocument uiDocument,
             string folderPath,
             FamilyManagerProfileStorage profileStorage,
+            FamilyLoadService loadService,
             ITrueBimLogger logger)
         {
             Content = new FamilyManagerCompactPaneControl(
+                uiDocument,
                 folderPath,
                 profileStorage,
+                loadService,
                 logger,
                 () => ShowManagerDialog(uiApplication, uiDocument, logger),
                 () => Hide(uiApplication));
