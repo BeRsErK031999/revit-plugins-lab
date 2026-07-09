@@ -25,12 +25,6 @@ public sealed class DatumExtentCommand : IExternalCommand
             }
 
             Document document = uiDocument.Document;
-            if (!TrueBimRibbon.IsButtonAvailableForRevitVersion(nameof(DatumExtentCommand), commandData.Application.Application.VersionNumber))
-            {
-                logger.Warning("Datum Extents requested in Revit 2022 or earlier.");
-                TaskDialog.Show("Оси 2D/3D", "Инструмент осей 2D/3D доступен только в Revit 2023 и новее.");
-                return Result.Succeeded;
-            }
 
             View activeView = uiDocument.ActiveView;
             if (!DatumExtentCollectorService.CanUseActiveView(activeView, out string viewMessage))
@@ -64,12 +58,6 @@ public sealed class DatumExtentCommandAvailability : IExternalCommandAvailabilit
     {
         try
         {
-            if (!TrueBimRibbon.IsButtonAvailableForRevitVersion(
-                    nameof(DatumExtentCommand),
-                    applicationData.Application.VersionNumber))
-            {
-                return false;
-            }
 
             UIDocument? uiDocument = applicationData.ActiveUIDocument;
             return uiDocument is not null

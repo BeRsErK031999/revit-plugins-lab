@@ -256,18 +256,6 @@ public sealed class AppRibbonButtonDefinitionTests
         }
     }
 
-    [Fact]
-    public void DatumExtents_IsHiddenForRevit2022AndEarlier()
-    {
-        TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
-            button => string.Equals(button.Name, "TrueBIM_DatumExtents", StringComparison.Ordinal));
-
-        Assert.False(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2022"));
-        Assert.False(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2021"));
-        Assert.True(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2023"));
-        Assert.True(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2025"));
-    }
 
     [Fact]
     public void DatumExtents_UsesActiveViewAvailability()

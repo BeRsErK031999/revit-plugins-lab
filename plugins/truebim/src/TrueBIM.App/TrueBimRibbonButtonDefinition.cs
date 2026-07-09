@@ -454,24 +454,4 @@ public static class TrueBimRibbon
             "Открывает расчет потери напряжения и нагрузок по данным первого листа Excel.")
     ];
 
-    public static bool IsButtonAvailableForRevitVersion(TrueBimRibbonButtonDefinition button, string revitVersion)
-    {
-        Guard.NotNull(button, nameof(button));
-
-        return IsButtonAvailableForRevitVersion(button.CommandClassName, revitVersion);
-    }
-
-    public static bool IsButtonAvailableForRevitVersion(string commandClassName, string revitVersion)
-    {
-        if (!string.Equals(
-                commandClassName,
-                $"{CommandNamespace}.{nameof(DatumExtentCommand)}",
-                StringComparison.Ordinal)
-            && !string.Equals(commandClassName, nameof(DatumExtentCommand), StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return int.TryParse(revitVersion, out int version) && version > 2022;
-    }
 }
