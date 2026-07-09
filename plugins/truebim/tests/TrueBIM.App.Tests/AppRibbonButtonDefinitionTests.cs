@@ -10,7 +10,7 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         {
             "TrueBIM_ColorByParameter",
-            "Координация",
+            TrueBimRibbon.ModelReviewPanelName,
             "Цвета\nпо параметрам",
             $"TrueBIM.App.Commands.{nameof(ColorByParameterCommand)}",
             TrueBimIcon.ColorByParameter,
@@ -18,7 +18,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_IsoFieldRebar",
-            "КР",
+            TrueBimRibbon.KrPanelName,
             "Армирование\nпо изополям",
             $"TrueBIM.App.Commands.{nameof(IsoFieldRebarCommand)}",
             TrueBimIcon.IsoFieldRebar,
@@ -26,7 +26,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_ScheduleImport",
-            "БИМ",
+            TrueBimRibbon.BimDocumentationPanelName,
             "Импорт\nтаблиц",
             $"TrueBIM.App.Commands.{nameof(ScheduleImportCommand)}",
             TrueBimIcon.ScheduleImport,
@@ -34,7 +34,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_JoinCut",
-            "Геометрия",
+            TrueBimRibbon.GeometryPanelName,
             "Соединить /\nВырезать",
             $"TrueBIM.App.Commands.{nameof(JoinCutCommand)}",
             TrueBimIcon.JoinCut,
@@ -42,7 +42,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_CopyParameters",
-            "Параметры",
+            TrueBimRibbon.ParametersPanelName,
             "Копирование\nпараметров",
             $"TrueBIM.App.Commands.{nameof(CopyParametersCommand)}",
             TrueBimIcon.CopyParameters,
@@ -50,7 +50,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_ParaManager",
-            "Параметры",
+            TrueBimRibbon.ParametersPanelName,
             "ParaManager",
             $"TrueBIM.App.Commands.{nameof(ParaManagerCommand)}",
             TrueBimIcon.Parameters,
@@ -58,7 +58,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_CreateWorksets",
-            "Координация",
+            TrueBimRibbon.AdministrationPanelName,
             "Рабочие\nнаборы",
             $"TrueBIM.App.Commands.{nameof(CreateWorksetsCommand)}",
             TrueBimIcon.Worksets,
@@ -66,7 +66,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_DatumExtents",
-            "Оформление",
+            TrueBimRibbon.BimViewsPanelName,
             "Оси\n2D/3D",
             $"TrueBIM.App.Commands.{nameof(DatumExtentCommand)}",
             TrueBimIcon.DatumExtents,
@@ -74,7 +74,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_OpeningViews",
-            "Оформление",
+            TrueBimRibbon.BimViewsPanelName,
             "Фасады\nдверей/окон",
             $"TrueBIM.App.Commands.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
@@ -82,7 +82,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_ClashReport",
-            "Координация",
+            TrueBimRibbon.BimCoordinationPanelName,
             "Отчёт\nколлизий",
             $"TrueBIM.App.Commands.{nameof(ClashReportCommand)}",
             TrueBimIcon.ClashReport,
@@ -90,7 +90,7 @@ public sealed class AppRibbonButtonDefinitionTests
         },
         {
             "TrueBIM_FamilyManager",
-            "Координация",
+            TrueBimRibbon.BimLibraryPanelName,
             "Диспетчер\nсемейств",
             $"TrueBIM.App.Commands.{nameof(FamilyManagerCommand)}",
             TrueBimIcon.FamilyManager,
@@ -99,13 +99,13 @@ public sealed class AppRibbonButtonDefinitionTests
     };
 
     [Fact]
-    public void RibbonButtons_IncludesViewVisibilityOnCoordinationPanel()
+    public void RibbonButtons_IncludesViewVisibilityOnViewsPanel()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
             TrueBimRibbon.Buttons,
             button => string.Equals(button.Name, "TrueBIM_ViewVisibility", StringComparison.Ordinal));
 
-        Assert.Equal("Координация", button.PanelName);
+        Assert.Equal(TrueBimRibbon.BimViewsPanelName, button.PanelName);
         Assert.Equal("Видимость", button.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenViewVisibilityCommand)}", button.CommandClassName);
         Assert.Equal(TrueBimIcon.Visibility, button.Icon);
@@ -130,7 +130,7 @@ public sealed class AppRibbonButtonDefinitionTests
             TrueBimRibbon.Buttons,
             button => string.Equals(button.Name, "TrueBIM_SheetNumbering", StringComparison.Ordinal));
 
-        Assert.Equal("Оформление", button.PanelName);
+        Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, button.PanelName);
         Assert.Equal("Нумератор\nлистов", button.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenSheetNumberingCommand)}", button.CommandClassName);
         Assert.Equal(TrueBimIcon.SheetNumbering, button.Icon);
@@ -144,7 +144,7 @@ public sealed class AppRibbonButtonDefinitionTests
             TrueBimRibbon.Buttons,
             button => string.Equals(button.Name, "TrueBIM_VoltageDropCalculation", StringComparison.Ordinal));
 
-        Assert.Equal("ЭОМ", button.PanelName);
+        Assert.Equal(TrueBimRibbon.EomPanelName, button.PanelName);
         Assert.Equal("Расчет\nпотери\nнапряжения", button.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenVoltageDropCalculationCommand)}", button.CommandClassName);
         Assert.Equal(TrueBimIcon.VoltageDrop, button.Icon);
@@ -158,7 +158,7 @@ public sealed class AppRibbonButtonDefinitionTests
             TrueBimRibbon.Buttons,
             button => string.Equals(button.Name, "TrueBIM_OpenLogs", StringComparison.Ordinal));
 
-        Assert.Equal("Помощь", button.PanelName);
+        Assert.Equal(TrueBimRibbon.HelpPanelName, button.PanelName);
         Assert.Equal("Логи", button.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenTrueBimLogsCommand)}", button.CommandClassName);
         Assert.Equal(TrueBimIcon.Logs, button.Icon);
@@ -175,13 +175,13 @@ public sealed class AppRibbonButtonDefinitionTests
             TrueBimRibbon.Buttons,
             button => string.Equals(button.Name, "TrueBIM_PrintDwg", StringComparison.Ordinal));
 
-        Assert.Equal("БИМ", pdfButton.PanelName);
+        Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, pdfButton.PanelName);
         Assert.Equal("Печать\nPDF", pdfButton.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintPdfCommand)}", pdfButton.CommandClassName);
         Assert.Equal(TrueBimIcon.Print, pdfButton.Icon);
         Assert.Contains("PDF", pdfButton.Tooltip, StringComparison.Ordinal);
 
-        Assert.Equal("БИМ", dwgButton.PanelName);
+        Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, dwgButton.PanelName);
         Assert.Equal("Печать\nDWG", dwgButton.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintDwgCommand)}", dwgButton.CommandClassName);
         Assert.Equal(TrueBimIcon.Print, dwgButton.Icon);
@@ -215,20 +215,41 @@ public sealed class AppRibbonButtonDefinitionTests
     [Fact]
     public void RibbonPanelNames_IncludeVisiblePanelsOnly()
     {
-        Assert.Contains("БИМ", TrueBimRibbon.PanelNames);
-        Assert.Contains("Оформление", TrueBimRibbon.PanelNames);
-        Assert.Contains("Координация", TrueBimRibbon.PanelNames);
-        Assert.Contains("Геометрия", TrueBimRibbon.PanelNames);
-        Assert.Contains("Параметры", TrueBimRibbon.PanelNames);
-        Assert.Contains("Помощь", TrueBimRibbon.PanelNames);
-        Assert.Contains("КР", TrueBimRibbon.PanelNames);
-        Assert.Contains("ЭОМ", TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.BimDocumentationPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.BimViewsPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.BimCoordinationPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.BimLibraryPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.ModelReviewPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.GeometryPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.ParametersPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.AdministrationPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.HelpPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.KrPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.EomPanelName, TrueBimRibbon.PanelNames);
 
-        Assert.DoesNotContain("Виды", TrueBimRibbon.PanelNames);
-        Assert.DoesNotContain("Библиотека", TrueBimRibbon.PanelNames);
-        Assert.DoesNotContain("Проверка модели", TrueBimRibbon.PanelNames);
-        Assert.DoesNotContain("Администрирование", TrueBimRibbon.PanelNames);
-        Assert.DoesNotContain("СС", TrueBimRibbon.PanelNames);
+        Assert.DoesNotContain(TrueBimRibbon.BimPanelName, TrueBimRibbon.PanelNames);
+        Assert.DoesNotContain(TrueBimRibbon.SsPanelName, TrueBimRibbon.PanelNames);
+    }
+
+    [Fact]
+    public void RibbonPanelNames_UseReviewedOrder()
+    {
+        string[] expectedPanelNames =
+        [
+            TrueBimRibbon.BimDocumentationPanelName,
+            TrueBimRibbon.BimViewsPanelName,
+            TrueBimRibbon.BimCoordinationPanelName,
+            TrueBimRibbon.BimLibraryPanelName,
+            TrueBimRibbon.ModelReviewPanelName,
+            TrueBimRibbon.GeometryPanelName,
+            TrueBimRibbon.ParametersPanelName,
+            TrueBimRibbon.AdministrationPanelName,
+            TrueBimRibbon.KrPanelName,
+            TrueBimRibbon.EomPanelName,
+            TrueBimRibbon.HelpPanelName
+        ];
+
+        Assert.Equal(expectedPanelNames, TrueBimRibbon.PanelNames);
     }
 
     [Fact]
@@ -252,6 +273,32 @@ public sealed class AppRibbonButtonDefinitionTests
         foreach (string panelName in TrueBimRibbon.PanelNames)
         {
             Assert.Contains(panelName, usedPanels);
+        }
+    }
+
+    [Fact]
+    public void RibbonPanels_KeepReviewedRootButtonDensity()
+    {
+        Dictionary<string, int> maxButtonCountByPanel = new(StringComparer.Ordinal)
+        {
+            [TrueBimRibbon.BimDocumentationPanelName] = 4,
+            [TrueBimRibbon.BimViewsPanelName] = 3,
+            [TrueBimRibbon.BimCoordinationPanelName] = 2,
+            [TrueBimRibbon.BimLibraryPanelName] = 2,
+            [TrueBimRibbon.ModelReviewPanelName] = 2,
+            [TrueBimRibbon.GeometryPanelName] = 2,
+            [TrueBimRibbon.ParametersPanelName] = 3,
+            [TrueBimRibbon.AdministrationPanelName] = 2,
+            [TrueBimRibbon.KrPanelName] = 3,
+            [TrueBimRibbon.EomPanelName] = 2,
+            [TrueBimRibbon.HelpPanelName] = 2
+        };
+
+        foreach (string panelName in TrueBimRibbon.PanelNames)
+        {
+            int buttonCount = TrueBimRibbon.Buttons.Count(button => string.Equals(button.PanelName, panelName, StringComparison.Ordinal));
+
+            Assert.InRange(buttonCount, 1, maxButtonCountByPanel[panelName]);
         }
     }
 

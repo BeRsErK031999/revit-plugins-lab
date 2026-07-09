@@ -285,14 +285,17 @@ public static class TrueBimRibbon
 
     public static IReadOnlyList<string> PanelNames { get; } =
     [
-        BimPanelName,
         BimDocumentationPanelName,
+        BimViewsPanelName,
         BimCoordinationPanelName,
+        BimLibraryPanelName,
+        ModelReviewPanelName,
         GeometryPanelName,
         ParametersPanelName,
-        HelpPanelName,
+        AdministrationPanelName,
         KrPanelName,
-        EomPanelName
+        EomPanelName,
+        HelpPanelName
     ];
 
     public static IReadOnlyList<TrueBimRibbonButtonDefinition> Buttons { get; } =
@@ -305,21 +308,21 @@ public static class TrueBimRibbon
             TrueBimIcon.SheetNumbering,
             "Открывает нумератор листов TrueBIM."),
         new(
-            BimPanelName,
+            BimDocumentationPanelName,
             "TrueBIM_PrintPdf",
             "Печать\nPDF",
             $"{CommandNamespace}.{nameof(OpenPrintPdfCommand)}",
             TrueBimIcon.Print,
             "Открывает печать листов TrueBIM в PDF."),
         new(
-            BimPanelName,
+            BimDocumentationPanelName,
             "TrueBIM_PrintDwg",
             "Печать\nDWG",
             $"{CommandNamespace}.{nameof(OpenPrintDwgCommand)}",
             TrueBimIcon.Print,
             "Открывает CAD-печать листов TrueBIM."),
         new(
-            BimCoordinationPanelName,
+            BimViewsPanelName,
             "TrueBIM_ViewVisibility",
             "Видимость",
             $"{CommandNamespace}.{nameof(OpenViewVisibilityCommand)}",
@@ -328,7 +331,7 @@ public static class TrueBimRibbon
             LongDescription: "Открывает выпадающий список категорий без отдельного модального окна. Выбор пункта сразу переключает видимость категории на активном виде.",
             PulldownItems: ViewVisibilityPulldownItems),
         new(
-            BimPanelName,
+            BimDocumentationPanelName,
             "TrueBIM_ScheduleImport",
             "Импорт\nтаблиц",
             $"{CommandNamespace}.{nameof(ScheduleImportCommand)}",
@@ -344,7 +347,7 @@ public static class TrueBimRibbon
             "Открывает экспериментальный модуль армирования по изополям.",
             "Безопасная заглушка: показывает статус подключения без распознавания, OpenCV/Python и создания арматуры."),
         new(
-            BimDocumentationPanelName,
+            BimViewsPanelName,
             "TrueBIM_DatumExtents",
             "Оси\n2D/3D",
             $"{CommandNamespace}.{nameof(DatumExtentCommand)}",
@@ -353,7 +356,7 @@ public static class TrueBimRibbon
             "Доступно только при открытом проекте Revit и обычном активном 2D-виде модели: план, разрез, фасад или потолочный план. На листах, 3D-видах, спецификациях и шаблонах кнопка недоступна.",
             $"{CommandNamespace}.{nameof(DatumExtentCommandAvailability)}"),
         new(
-            BimDocumentationPanelName,
+            BimViewsPanelName,
             "TrueBIM_OpeningViews",
             "Фасады\nдверей/окон",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
@@ -369,7 +372,7 @@ public static class TrueBimRibbon
             "Импортирует CSV/XML со списком коллизий и открывает выбранную коллизию в 3D.",
             "Инструмент координации: импорт внешнего списка коллизий, статусы и комментарии, локальное JSON-состояние, section box и подсветка найденных элементов."),
         new(
-            BimCoordinationPanelName,
+            BimLibraryPanelName,
             "TrueBIM_FamilyManager",
             "Диспетчер\nсемейств",
             $"{CommandNamespace}.{nameof(FamilyManagerCommand)}",
@@ -377,7 +380,7 @@ public static class TrueBimRibbon
             "Открывает каркас диспетчера семейств.",
             "Каркас будущего инструмента библиотеки: папки семейств, поиск, типы, избранное, загрузка и отчет без изменения проекта в первом срезе."),
         new(
-            BimCoordinationPanelName,
+            ModelReviewPanelName,
             "TrueBIM_ColorByParameter",
             "Цвета\nпо параметрам",
             $"{CommandNamespace}.{nameof(ColorByParameterCommand)}",
@@ -409,7 +412,7 @@ public static class TrueBimRibbon
             "Открывает подготовку управления shared parameters и параметрами проекта.",
             "MVP-инструмент для будущего импорта shared parameters из CSV или Excel, предпросмотра привязок и отчета по созданным параметрам."),
         new(
-            BimCoordinationPanelName,
+            AdministrationPanelName,
             "TrueBIM_CreateWorksets",
             "Рабочие\nнаборы",
             $"{CommandNamespace}.{nameof(CreateWorksetsCommand)}",

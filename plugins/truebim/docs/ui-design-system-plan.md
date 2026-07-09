@@ -36,7 +36,8 @@ Create a lightweight TrueBIM design system on top of native WPF:
 4. Done: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
 5. Done: move `VoltageDropWindow`, `VoltageDropReferenceWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
 6. Done: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
-7. Pending: review ribbon grouping after the common window layer is stable.
+7. Done: review ribbon grouping after the common window layer is stable; split commands into focused panels for documentation, views, coordination, library, model review, geometry, parameters, administration, discipline-specific tools, and final help access.
+8. Pending: continue migrating remaining BIM utility windows with the same local-resource pattern, starting with `ParaManagerWindow`, `ScheduleImportWindow`, and the smaller selection/helper dialogs.
 
 ## Current readiness
 
@@ -52,7 +53,8 @@ Create a lightweight TrueBIM design system on top of native WPF:
 - `VoltageDropWindow` and `VoltageDropReferenceWindow` migrations: done.
 - `IsoFieldRebarWindow` and `IsoFieldRebarGuideWindow` migrations: done.
 - `JoinCutWindow.xaml` migration: done.
-- Next production task: review ribbon grouping after the common window layer is stable.
+- Ribbon grouping review: done.
+- Next production task: continue remaining BIM utility window migrations, starting with `ParaManagerWindow`, `ScheduleImportWindow`, and smaller selection/helper dialogs.
 - Third-party library adoption: intentionally not started.
 - Manual Revit UI smoke: pending because it requires local deploy/restart conditions.
 
