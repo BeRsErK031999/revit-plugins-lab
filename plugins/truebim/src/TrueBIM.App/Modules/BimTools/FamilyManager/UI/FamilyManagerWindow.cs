@@ -91,6 +91,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly FamilyLibraryScanner scanner;
     private readonly FamilyLibraryTreeBuilder treeBuilder = new();
     private readonly FamilyMetadataBatchSelector metadataBatchSelector = new();
+    private readonly FamilyLibraryAuditService auditService = new();
     private readonly FamilySearchMatchService searchMatchService = new();
     private readonly FamilyLoadService loadService;
     private readonly FamilyMetadataService metadataService;
@@ -103,11 +104,13 @@ public sealed class FamilyManagerWindow : Window
     private readonly ObservableCollection<FamilyTypeInfo> familyTypes = new();
     private readonly ObservableCollection<FamilyTypeParameterInfo> typeParameters = new();
     private readonly ObservableCollection<FamilyLibraryTreeNode> libraryTreeNodes = new();
+    private readonly ObservableCollection<FamilyLibraryAuditIssue> auditIssues = new();
     private readonly List<FamilyFileItem> allFamilies = new();
     private readonly ListBox folderList = new();
     private readonly ListBox fileList = new();
     private readonly TreeView libraryTree = new();
     private readonly DataGrid familyGrid = new();
+    private readonly DataGrid auditGrid = new();
     private readonly DataGrid parameterGrid = new();
     private readonly ListBox historyList = new();
     private readonly ListBox typeList = new();
@@ -129,6 +132,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Button refreshMetadataButton = CreateButton("Обновить метаданные", TrueBimIcon.Preview, 220);
     private readonly Button refreshFolderMetadataButton = CreateButton("Метаданные папки", TrueBimIcon.Preview, 236);
     private readonly Button refreshThumbnailButton = CreateButton("Обновить preview", TrueBimIcon.Preview, 220);
+    private readonly Button auditButton = CreateButton("Аудит библиотеки", TrueBimIcon.Preview, 236);
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private FamilyTypeInfo? selectedType;
@@ -266,6 +270,12 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(refreshFolderMetadataButton, Dock.Top);
         panel.Children.Add(refreshFolderMetadataButton);
 
+        auditButton.Margin = new Thickness(0, 0, 0, 8);
+        auditButton.ToolTip = "Read-only проверка дублей, отсутствующих файлов и устаревшего cache.";
+        auditButton.Click += (_, _) => RunLibraryAudit();
+        DockPanel.SetDock(auditButton, Dock.Top);
+        panel.Children.Add(auditButton);
+
         TextBlock foldersTitle = CreateSubTitle("Папки");
         DockPanel.SetDock(foldersTitle, Dock.Top);
         panel.Children.Add(foldersTitle);
@@ -358,6 +368,10 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(filters, Dock.Top);
         panel.Children.Add(filters);
 
+        UIElement auditPanel = CreateAuditPanel();
+        DockPanel.SetDock(auditPanel, Dock.Bottom);
+        panel.Children.Add(auditPanel);
+
         familyGrid.AutoGenerateColumns = false;
         familyGrid.CanUserAddRows = false;
         familyGrid.CanUserDeleteRows = false;
@@ -380,6 +394,35 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.Columns.Add(CreateTextColumn("Размер", nameof(FamilyFileItem.SizeDisplay), 80));
         familyGrid.Columns.Add(CreateTextColumn("Статус", nameof(FamilyFileItem.Status), 150));
         panel.Children.Add(familyGrid);
+        return panel;
+    }
+
+    private UIElement CreateAuditPanel()
+    {
+        DockPanel panel = new()
+        {
+            Height = 150,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+
+        TextBlock title = CreateSubTitle("Аудит библиотеки");
+        DockPanel.SetDock(title, Dock.Top);
+        panel.Children.Add(title);
+
+        auditGrid.AutoGenerateColumns = false;
+        auditGrid.CanUserAddRows = false;
+        auditGrid.CanUserDeleteRows = false;
+        auditGrid.IsReadOnly = true;
+        auditGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
+        auditGrid.SelectionMode = DataGridSelectionMode.Single;
+        auditGrid.ItemsSource = auditIssues;
+        auditGrid.SelectionChanged += (_, _) => SelectAuditIssue(auditGrid.SelectedItem as FamilyLibraryAuditIssue);
+        auditGrid.Columns.Add(CreateTextColumn("Уровень", nameof(FamilyLibraryAuditIssue.SeverityDisplay), 70));
+        auditGrid.Columns.Add(CreateTextColumn("Проверка", nameof(FamilyLibraryAuditIssue.KindDisplay), 120));
+        auditGrid.Columns.Add(CreateTextColumn("Семейство", nameof(FamilyLibraryAuditIssue.FamilyName), 120));
+        auditGrid.Columns.Add(CreateTextColumn("Описание", nameof(FamilyLibraryAuditIssue.Message), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        auditGrid.Columns.Add(CreateTextColumn("Кол.", nameof(FamilyLibraryAuditIssue.CountDisplay), 48));
+        panel.Children.Add(auditGrid);
         return panel;
     }
 
@@ -837,6 +880,54 @@ public sealed class FamilyManagerWindow : Window
         {
             historyItems.Add(item);
         }
+    }
+
+    private void RunLibraryAudit()
+    {
+        auditIssues.Clear();
+        IReadOnlyList<FamilyLibraryAuditIssue> issues = auditService.Audit(allFamilies, folders.ToList());
+        foreach (FamilyLibraryAuditIssue issue in issues)
+        {
+            auditIssues.Add(issue);
+        }
+
+        int errorCount = issues.Count(issue => issue.Severity == FamilyLibraryAuditSeverity.Error);
+        int warningCount = issues.Count(issue => issue.Severity == FamilyLibraryAuditSeverity.Warning);
+        int infoCount = issues.Count(issue => issue.Severity == FamilyLibraryAuditSeverity.Info);
+        statusText.Text = $"Аудит библиотеки: ошибок {errorCount}, рисков {warningCount}, инфо {infoCount}. Проверено семейств: {allFamilies.Count}.";
+    }
+
+    private void SelectAuditIssue(FamilyLibraryAuditIssue? issue)
+    {
+        if (issue is null || string.IsNullOrWhiteSpace(issue.FilePath))
+        {
+            return;
+        }
+
+        FamilyFileItem? family = allFamilies.FirstOrDefault(item =>
+            string.Equals(
+                FamilyPathNormalizer.Normalize(item.FilePath),
+                FamilyPathNormalizer.Normalize(issue.FilePath),
+                StringComparison.CurrentCultureIgnoreCase));
+        if (family is null)
+        {
+            statusText.Text = issue.GroupKey;
+            return;
+        }
+
+        if (!visibleFamilies.Contains(family))
+        {
+            statusText.Text = "Семейство из аудита скрыто текущими фильтрами.";
+            SelectFamily(family);
+            return;
+        }
+
+        familyGrid.SelectedItem = family;
+        familyGrid.ScrollIntoView(family);
+        SelectFamily(family);
+        statusText.Text = string.IsNullOrWhiteSpace(issue.GroupKey)
+            ? issue.Message
+            : issue.GroupKey;
     }
 
     private void SelectFamily(FamilyFileItem? family)
