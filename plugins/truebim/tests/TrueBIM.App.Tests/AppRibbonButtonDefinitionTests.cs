@@ -150,6 +150,20 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.Contains("потери напряжения", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
     }
 
+    [Fact]
+    public void RibbonButtons_IncludesQuickLogAccessOnHelpPanel()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_OpenLogs", StringComparison.Ordinal));
+
+        Assert.Equal("Помощь", button.PanelName);
+        Assert.Equal("Логи", button.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenTrueBimLogsCommand)}", button.CommandClassName);
+        Assert.Equal(TrueBimIcon.Logs, button.Icon);
+        Assert.Contains("логов", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+    }
+
     [Theory]
     [MemberData(nameof(BimToolButtons))]
     public void RibbonButtons_IncludeBimToolScaffoldButtons(
@@ -184,6 +198,7 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.Contains("Геометрия", TrueBimRibbon.PanelNames);
         Assert.Contains("Параметры", TrueBimRibbon.PanelNames);
         Assert.Contains("Администрирование", TrueBimRibbon.PanelNames);
+        Assert.Contains("Помощь", TrueBimRibbon.PanelNames);
     }
 
     [Fact]

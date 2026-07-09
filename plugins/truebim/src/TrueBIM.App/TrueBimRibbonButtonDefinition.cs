@@ -25,6 +25,7 @@ public static class TrueBimRibbon
     public const string GeometryPanelName = "Геометрия";
     public const string ParametersPanelName = "Параметры";
     public const string AdministrationPanelName = "Администрирование";
+    public const string HelpPanelName = "Помощь";
     public const string KrPanelName = "КР";
     public const string EomPanelName = "ЭОМ";
     public const string SsPanelName = "СС";
@@ -43,6 +44,7 @@ public static class TrueBimRibbon
         GeometryPanelName,
         ParametersPanelName,
         AdministrationPanelName,
+        HelpPanelName,
         KrPanelName,
         EomPanelName,
         SsPanelName
@@ -184,6 +186,14 @@ public static class TrueBimRibbon
             TrueBimIcon.Worksets,
             "Открывает подготовку создания рабочих наборов из CSV или Excel.",
             "Инструмент администрирования для будущей проверки шаблона, включения worksharing только с подтверждением и создания worksets с отчетом."),
+        new(
+            HelpPanelName,
+            "TrueBIM_OpenLogs",
+            "Логи",
+            $"{CommandNamespace}.{nameof(OpenTrueBimLogsCommand)}",
+            TrueBimIcon.Logs,
+            "Открывает локальный файл логов TrueBIM.",
+            "Быстрый доступ к truebim.log для диагностики ошибок и передачи логов в поддержку."),
         new(
             KrPanelName,
             "TrueBIM_CollapseScheduleColumns",

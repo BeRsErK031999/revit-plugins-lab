@@ -1,6 +1,8 @@
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
+using TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
+using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 
 namespace TrueBIM.App;
@@ -39,6 +41,7 @@ public sealed class App : IExternalApplication
             AddButton(panels[button.PanelName], button);
         }
 
+        RegisterFamilyManagerPane(application);
         return Result.Succeeded;
     }
 
@@ -80,5 +83,18 @@ public sealed class App : IExternalApplication
         }
 
         panel.AddItem(buttonData);
+    }
+
+    private static void RegisterFamilyManagerPane(UIControlledApplication application)
+    {
+        try
+        {
+            FamilyManagerDockablePaneProvider.Register(application);
+        }
+        catch (Exception exception)
+        {
+            FileTrueBimLogger logger = new(new TrueBimLogPaths());
+            logger.Error("Failed to register Family Manager dockable pane.", exception);
+        }
     }
 }

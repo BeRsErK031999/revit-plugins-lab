@@ -12,6 +12,7 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
 
     private bool isFavorite;
     private string searchMatchText = string.Empty;
+    private string selectedTypeName = string.Empty;
     private string status = string.Empty;
     private string thumbnailPath = string.Empty;
     private DateTimeOffset? thumbnailUpdatedAtUtc;
@@ -73,6 +74,38 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
 
     [JsonIgnore]
     public string SearchMatchDisplay => string.IsNullOrWhiteSpace(SearchMatchText) ? "-" : SearchMatchText;
+
+    [JsonIgnore]
+    public string SelectedTypeName
+    {
+        get => selectedTypeName;
+        set => SetField(ref selectedTypeName, value ?? string.Empty);
+    }
+
+    [JsonIgnore]
+    public string SelectedTypeDisplay => string.IsNullOrWhiteSpace(SelectedTypeName) ? "-" : SelectedTypeName;
+
+    [JsonIgnore]
+    public IReadOnlyList<string> AvailableTypeNames
+    {
+        get
+        {
+            List<string> names = [];
+            HashSet<string> seen = new(StringComparer.CurrentCultureIgnoreCase);
+
+            foreach (FamilyTypeInfo type in CachedTypes)
+            {
+                AddTypeName(type.Name, names, seen);
+            }
+
+            foreach (string typeName in TypeCatalogTypeNames)
+            {
+                AddTypeName(typeName, names, seen);
+            }
+
+            return names;
+        }
+    }
 
     public string SizeDisplay => SizeBytes <= 0
         ? "-"
@@ -139,6 +172,11 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         {
             OnPropertyChanged(nameof(SearchMatchDisplay));
         }
+
+        if (propertyName is nameof(SelectedTypeName))
+        {
+            OnPropertyChanged(nameof(SelectedTypeDisplay));
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -160,6 +198,20 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         return values.Count == 0
             ? "-"
             : string.Join(", ", values);
+    }
+
+    private static void AddTypeName(string? typeName, ICollection<string> names, ISet<string> seen)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return;
+        }
+
+        string normalizedName = typeName!.Trim();
+        if (seen.Add(normalizedName))
+        {
+            names.Add(normalizedName);
+        }
     }
 
     private static bool ParameterNameMatches(string parameterName, IEnumerable<string> tokens)

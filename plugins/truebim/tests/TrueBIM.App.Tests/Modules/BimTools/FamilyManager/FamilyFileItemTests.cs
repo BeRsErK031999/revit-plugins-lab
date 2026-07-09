@@ -34,4 +34,24 @@ public sealed class FamilyFileItemTests
         Assert.Equal("2100", family.HeightParameterDisplay);
         Assert.Equal("Дерево, Металл", family.MaterialParameterDisplay);
     }
+
+    [Fact]
+    public void AvailableTypeNames_MergesCachedAndCatalogTypes()
+    {
+        FamilyFileItem family = new()
+        {
+            CachedTypes =
+            [
+                new FamilyTypeInfo(0, "DN15"),
+                new FamilyTypeInfo(0, "DN20")
+            ],
+            TypeCatalogTypeNames = ["DN20", "DN25"]
+        };
+
+        Assert.Equal(["DN15", "DN20", "DN25"], family.AvailableTypeNames);
+
+        family.SelectedTypeName = "DN20";
+
+        Assert.Equal("DN20", family.SelectedTypeDisplay);
+    }
 }

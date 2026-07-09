@@ -24,16 +24,7 @@ public sealed class FamilyManagerCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            FamilyManagerWindow window = new(
-                commandData.Application,
-                uiDocument,
-                new FamilyManagerProfileStorage(logger),
-                new FamilyLibraryScanner(),
-                new FamilyLoadService(),
-                new FamilyMetadataService(),
-                new FamilyThumbnailService(),
-                logger);
-            window.ShowDialog();
+            FamilyManagerDockablePaneProvider.Show(commandData.Application, uiDocument, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

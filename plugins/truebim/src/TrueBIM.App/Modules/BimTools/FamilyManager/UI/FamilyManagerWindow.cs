@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -29,16 +30,48 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
 public sealed class FamilyManagerWindow : Window
 {
+    public FamilyManagerWindow(
+        UIApplication uiApplication,
+        UIDocument uiDocument,
+        FamilyManagerProfileStorage profileStorage,
+        FamilyLibraryScanner scanner,
+        FamilyLoadService loadService,
+        FamilyMetadataService metadataService,
+        FamilyThumbnailService thumbnailService,
+        ITrueBimLogger logger)
+    {
+        Title = "Диспетчер семейств";
+        Icon = IconFactory.CreateImage(TrueBimIcon.FamilyManager, 32);
+        Width = 1180;
+        Height = 760;
+        MinWidth = 1040;
+        MinHeight = 640;
+        ResizeMode = ResizeMode.CanResize;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Content = new FamilyManagerControl(
+            uiApplication,
+            uiDocument,
+            profileStorage,
+            scanner,
+            loadService,
+            metadataService,
+            thumbnailService,
+            logger);
+    }
+}
+
+public sealed class FamilyManagerControl : UserControl
+{
     public static readonly DependencyProperty FamilySearchTextProperty = DependencyProperty.Register(
         nameof(FamilySearchText),
         typeof(string),
-        typeof(FamilyManagerWindow),
+        typeof(FamilyManagerControl),
         new PropertyMetadata(string.Empty));
 
     public static readonly DependencyProperty ParameterHighlightTextProperty = DependencyProperty.Register(
         nameof(ParameterHighlightText),
         typeof(string),
-        typeof(FamilyManagerWindow),
+        typeof(FamilyManagerControl),
         new PropertyMetadata(string.Empty));
 
     private const string AllParameterPreset = "Все";
@@ -86,6 +119,7 @@ public sealed class FamilyManagerWindow : Window
 
     private readonly UIApplication uiApplication;
     private readonly UIDocument uiDocument;
+    private readonly IntPtr revitWindowHandle;
     private readonly Document document;
     private readonly FamilyManagerProfileStorage profileStorage;
     private readonly FamilyLibraryScanner scanner;
@@ -115,6 +149,10 @@ public sealed class FamilyManagerWindow : Window
     private readonly DataGrid parameterGrid = new();
     private readonly ListBox historyList = new();
     private readonly ListBox typeList = new();
+    private readonly DispatcherTimer familySearchDebounceTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(180)
+    };
     private readonly Image thumbnailImage = new();
     private readonly TextBlock thumbnailPlaceholderText = new();
     private readonly WpfTextBox searchInput = new();
@@ -152,7 +190,7 @@ public sealed class FamilyManagerWindow : Window
         set => SetValue(ParameterHighlightTextProperty, value);
     }
 
-    public FamilyManagerWindow(
+    public FamilyManagerControl(
         UIApplication uiApplication,
         UIDocument uiDocument,
         FamilyManagerProfileStorage profileStorage,
@@ -164,6 +202,7 @@ public sealed class FamilyManagerWindow : Window
     {
         this.uiApplication = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
+        revitWindowHandle = uiApplication.MainWindowHandle;
         document = uiDocument.Document;
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
@@ -172,25 +211,21 @@ public sealed class FamilyManagerWindow : Window
         this.thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         profile = this.profileStorage.Load();
+        familySearchDebounceTimer.Tick += (_, _) =>
+        {
+            familySearchDebounceTimer.Stop();
+            RefreshVisibleFamilies();
+        };
 
-        Title = "Диспетчер семейств";
-        Icon = IconFactory.CreateImage(TrueBimIcon.FamilyManager, 32);
-        Width = 1180;
-        Height = 760;
-        MinWidth = 1040;
-        MinHeight = 640;
-        ResizeMode = ResizeMode.CanResize;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
+        Unloaded += (_, _) =>
+        {
+            familySearchDebounceTimer.Stop();
+            SaveProfile();
+        };
 
         LoadProfileState();
         logger.Info($"Family Manager opened for '{document.Title}'. Cached families: {allFamilies.Count}.");
-    }
-
-    protected override void OnClosed(EventArgs e)
-    {
-        SaveProfile();
-        base.OnClosed(e);
     }
 
     private UIElement CreateContent()
@@ -357,7 +392,7 @@ public sealed class FamilyManagerWindow : Window
         searchInput.Height = 32;
         searchInput.Margin = new Thickness(0, 0, 8, 0);
         searchInput.ToolTip = "Поиск по имени, категории, типу, параметрам или пути.";
-        searchInput.TextChanged += (_, _) => RefreshVisibleFamilies();
+        searchInput.TextChanged += (_, _) => QueueVisibleFamiliesRefresh();
         WpfGrid.SetColumn(searchInput, 0);
         filters.Children.Add(searchInput);
 
@@ -383,13 +418,15 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.AutoGenerateColumns = false;
         familyGrid.CanUserAddRows = false;
         familyGrid.CanUserDeleteRows = false;
-        familyGrid.IsReadOnly = true;
+        familyGrid.IsReadOnly = false;
         familyGrid.SelectionMode = DataGridSelectionMode.Single;
         familyGrid.ItemsSource = visibleFamilies;
         familyGrid.ContextMenu = CreateFamilyContextMenu();
+        familyGrid.PreviewMouseLeftButtonDown += (_, args) => SelectFamilyRowUnderPointer(args.OriginalSource as DependencyObject);
         familyGrid.PreviewMouseRightButtonDown += (_, args) => SelectFamilyRowUnderPointer(args.OriginalSource as DependencyObject);
         familyGrid.SelectionChanged += (_, _) => SelectFamily(familyGrid.SelectedItem as FamilyFileItem);
         familyGrid.Columns.Add(CreateHighlightedTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star), nameof(FamilySearchText)));
+        familyGrid.Columns.Add(CreateTypePickerColumn());
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
         familyGrid.Columns.Add(CreateHighlightedTextColumn("Совпадение", nameof(FamilyFileItem.SearchMatchDisplay), 170, nameof(FamilySearchText)));
         familyGrid.Columns.Add(CreateTextColumn("Типов", nameof(FamilyFileItem.CachedTypeCountDisplay), 60));
@@ -518,6 +555,7 @@ public sealed class FamilyManagerWindow : Window
         typeList.Height = 120;
         typeList.Margin = new Thickness(0, 0, 0, 12);
         typeList.SelectionChanged += (_, _) => SelectType(typeList.SelectedItem as FamilyTypeInfo);
+        typeList.MouseDoubleClick += (_, _) => LoadSelectedFamily(placeAfterLoad: false);
         DockPanel.SetDock(typeList, Dock.Top);
         panel.Children.Add(typeList);
 
@@ -629,7 +667,11 @@ public sealed class FamilyManagerWindow : Window
             Multiselect = false
         };
 
-        if (dialog.ShowDialog(this) != true)
+        Window? ownerWindow = Window.GetWindow(this);
+        bool? selected = ownerWindow is null
+            ? dialog.ShowDialog()
+            : dialog.ShowDialog(ownerWindow);
+        if (selected != true)
         {
             return;
         }
@@ -710,7 +752,7 @@ public sealed class FamilyManagerWindow : Window
     {
         BrowseInfo browseInfo = new()
         {
-            HwndOwner = new WindowInteropHelper(this).Handle,
+            HwndOwner = ResolveDialogOwnerHandle(),
             Title = "Выберите папку библиотеки семейств",
             Flags = BrowseInfoReturnOnlyFileSystemDirectories
                 | BrowseInfoNewDialogStyle
@@ -781,6 +823,7 @@ public sealed class FamilyManagerWindow : Window
 
         family.ThumbnailPath = previous.ThumbnailPath;
         family.ThumbnailUpdatedAtUtc = previous.ThumbnailUpdatedAtUtc;
+        family.SelectedTypeName = previous.SelectedTypeName;
         if (previous.MetadataUpdatedAtUtc is null)
         {
             return;
@@ -832,10 +875,13 @@ public sealed class FamilyManagerWindow : Window
         string search = FamilySearchText;
         string category = categoryInput.SelectedItem as string ?? FamilyManagerDefaults.AllCategories;
         bool favoritesOnly = favoritesOnlyInput.IsChecked == true;
+        bool hasSearch = !string.IsNullOrWhiteSpace(search);
         IEnumerable<FamilyFileItem> families = allFamilies;
         foreach (FamilyFileItem family in allFamilies)
         {
-            family.SearchMatchText = searchMatchService.FindMatchText(family, search);
+            family.SearchMatchText = hasSearch
+                ? searchMatchService.FindMatchText(family, search)
+                : string.Empty;
         }
 
         if (favoritesOnly)
@@ -848,9 +894,9 @@ public sealed class FamilyManagerWindow : Window
             families = families.Where(family => string.Equals(family.Category, category, StringComparison.CurrentCultureIgnoreCase));
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (hasSearch)
         {
-            families = families.Where(family => searchMatchService.Matches(family, search));
+            families = families.Where(family => !string.IsNullOrWhiteSpace(family.SearchMatchText));
         }
 
         visibleFamilies.Clear();
@@ -870,6 +916,13 @@ public sealed class FamilyManagerWindow : Window
         }
 
         UpdateStatus();
+    }
+
+    private void QueueVisibleFamiliesRefresh()
+    {
+        UpdateHighlightTextState();
+        familySearchDebounceTimer.Stop();
+        familySearchDebounceTimer.Start();
     }
 
     private void RefreshLibraryTree()
@@ -1035,8 +1088,7 @@ public sealed class FamilyManagerWindow : Window
             logger.Warning($"Failed to collect loaded family types for '{family.Name}': {exception.Message}");
         }
 
-        FamilyTypeInfo? preferredType = familyTypes.FirstOrDefault(type => type.Parameters.Count > 0)
-            ?? familyTypes.FirstOrDefault();
+        FamilyTypeInfo? preferredType = ResolvePreferredType(family);
         typeList.SelectedItem = preferredType;
         SelectType(preferredType);
         UpdateStatus();
@@ -1055,7 +1107,28 @@ public sealed class FamilyManagerWindow : Window
     private void SelectType(FamilyTypeInfo? type)
     {
         selectedType = type;
+        if (selectedFamily is not null)
+        {
+            selectedFamily.SelectedTypeName = type?.Name ?? string.Empty;
+        }
+
         RefreshTypeParameters();
+    }
+
+    private FamilyTypeInfo? ResolvePreferredType(FamilyFileItem family)
+    {
+        if (!string.IsNullOrWhiteSpace(family.SelectedTypeName))
+        {
+            FamilyTypeInfo? selected = familyTypes.FirstOrDefault(type =>
+                string.Equals(type.Name, family.SelectedTypeName, StringComparison.CurrentCultureIgnoreCase));
+            if (selected is not null)
+            {
+                return selected;
+            }
+        }
+
+        return familyTypes.FirstOrDefault(type => type.Parameters.Count > 0)
+            ?? familyTypes.FirstOrDefault();
     }
 
     private void RefreshTypeParameters()
@@ -1353,8 +1426,7 @@ public sealed class FamilyManagerWindow : Window
             return;
         }
 
-        MessageBoxResult decision = MessageBox.Show(
-            this,
+        MessageBoxResult decision = ShowMessageBox(
             $"Обновить метаданные для семейств в выбранной папке?\n\nПапка: {folder.Path}\nСемейств: {families.Count}\n\nОперация последовательно открывает `.rfa` файлы, читает категорию, типы и параметры, затем закрывает файлы без сохранения.",
             "Диспетчер семейств",
             MessageBoxButton.YesNo,
@@ -1440,9 +1512,7 @@ public sealed class FamilyManagerWindow : Window
             return;
         }
 
-        string? requestedTypeName = typeList.SelectedItem is FamilyTypeInfo selectedType
-            ? selectedType.Name
-            : null;
+        string? requestedTypeName = ResolveRequestedTypeName(selectedFamily);
         FamilyLoadResult? result;
         if (string.IsNullOrWhiteSpace(requestedTypeName))
         {
@@ -1501,14 +1571,25 @@ public sealed class FamilyManagerWindow : Window
         Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", confirmation);
     }
 
+    private string? ResolveRequestedTypeName(FamilyFileItem family)
+    {
+        if (!string.IsNullOrWhiteSpace(family.SelectedTypeName))
+        {
+            return family.SelectedTypeName;
+        }
+
+        return typeList.SelectedItem is FamilyTypeInfo type
+            ? type.Name
+            : null;
+    }
+
     private FamilyLoadResult? LoadRequestedFamilyType(FamilyFileItem family, string requestedTypeName)
     {
         bool overwrite = false;
         FamilySymbol? existingSymbol = loadService.ResolveSymbolExact(document, family.Name, requestedTypeName);
         if (existingSymbol is not null)
         {
-            MessageBoxResult decision = MessageBox.Show(
-                this,
+            MessageBoxResult decision = ShowMessageBox(
                 $"Тип уже загружен в проект: {requestedTypeName}\n\nДа - перезагрузить тип из файла библиотеки.\nНет - использовать уже загруженный тип.\nОтмена - остановить операцию.",
                 "Диспетчер семейств",
                 MessageBoxButton.YesNoCancel,
@@ -1536,8 +1617,7 @@ public sealed class FamilyManagerWindow : Window
             return result;
         }
 
-        MessageBoxResult fallbackDecision = MessageBox.Show(
-            this,
+        MessageBoxResult fallbackDecision = ShowMessageBox(
             $"{result.Message}\n\nВыполнить полную загрузку семейства как fallback?",
             "Диспетчер семейств",
             MessageBoxButton.YesNo,
@@ -1553,8 +1633,7 @@ public sealed class FamilyManagerWindow : Window
         bool overwrite = false;
         if (loadService.FamilyExists(document, family.Name))
         {
-            MessageBoxResult decision = MessageBox.Show(
-                this,
+            MessageBoxResult decision = ShowMessageBox(
                 "Семейство уже загружено в проект.\n\nДа - перезаписать из файла библиотеки.\nНет - использовать уже загруженное семейство.\nОтмена - остановить операцию.",
                 "Диспетчер семейств",
                 MessageBoxButton.YesNoCancel,
@@ -1636,6 +1715,29 @@ public sealed class FamilyManagerWindow : Window
             SaveProfile();
             RefreshVisibleFamilies();
         }
+
+        if (args.PropertyName is nameof(FamilyFileItem.SelectedTypeName)
+            && sender is FamilyFileItem family
+            && ReferenceEquals(family, selectedFamily))
+        {
+            SelectTypeFromFamilyChoice(family);
+        }
+    }
+
+    private void SelectTypeFromFamilyChoice(FamilyFileItem family)
+    {
+        FamilyTypeInfo? type = string.IsNullOrWhiteSpace(family.SelectedTypeName)
+            ? null
+            : familyTypes.FirstOrDefault(item =>
+                string.Equals(item.Name, family.SelectedTypeName, StringComparison.CurrentCultureIgnoreCase));
+
+        if (!ReferenceEquals(typeList.SelectedItem, type))
+        {
+            typeList.SelectedItem = type;
+        }
+
+        selectedType = type;
+        RefreshTypeParameters();
     }
 
     private void UpdateStatus()
@@ -1864,6 +1966,31 @@ public sealed class FamilyManagerWindow : Window
         };
     }
 
+    private static DataGridTemplateColumn CreateTypePickerColumn()
+    {
+        DataTemplate template = new(typeof(FamilyFileItem));
+        FrameworkElementFactory combo = new(typeof(WpfComboBox));
+        combo.SetBinding(ItemsControl.ItemsSourceProperty, new WpfBinding(nameof(FamilyFileItem.AvailableTypeNames)));
+        combo.SetBinding(WpfComboBox.SelectedItemProperty, new WpfBinding(nameof(FamilyFileItem.SelectedTypeName))
+        {
+            Mode = BindingMode.TwoWay,
+            UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+        });
+        combo.SetValue(FrameworkElement.MinWidthProperty, 140d);
+        combo.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 4, 0));
+        combo.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        combo.SetValue(FrameworkElement.ToolTipProperty, "Выбрать типоразмер для загрузки.");
+        template.VisualTree = combo;
+
+        return new DataGridTemplateColumn
+        {
+            Header = "Типоразмер",
+            CellTemplate = template,
+            Width = new DataGridLength(170),
+            IsReadOnly = false
+        };
+    }
+
     private static DataGridTemplateColumn CreateHighlightedTextColumn(
         string header,
         string bindingPath,
@@ -1896,12 +2023,33 @@ public sealed class FamilyManagerWindow : Window
         text.SetBinding(SearchHighlightTextBlock.HighlightTextProperty, new WpfBinding(bindingPath));
         text.SetBinding(SearchHighlightTextBlock.SearchTextProperty, new WpfBinding(searchBindingPath)
         {
-            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(FamilyManagerWindow), 1)
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(FamilyManagerControl), 1)
         });
         text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
         text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
         text.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 4, 0));
         return text;
+    }
+
+    private IntPtr ResolveDialogOwnerHandle()
+    {
+        Window? ownerWindow = Window.GetWindow(this);
+        return ownerWindow is null
+            ? revitWindowHandle
+            : new WindowInteropHelper(ownerWindow).Handle;
+    }
+
+    private MessageBoxResult ShowMessageBox(
+        string message,
+        string caption,
+        MessageBoxButton button,
+        MessageBoxImage icon,
+        MessageBoxResult defaultResult)
+    {
+        Window? ownerWindow = Window.GetWindow(this);
+        return ownerWindow is null
+            ? MessageBox.Show(message, caption, button, icon, defaultResult)
+            : MessageBox.Show(ownerWindow, message, caption, button, icon, defaultResult);
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
