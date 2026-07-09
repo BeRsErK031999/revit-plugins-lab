@@ -6,7 +6,7 @@ using TrueBIM.App.Services.Logging;
 namespace TrueBIM.App.Commands;
 
 [Transaction(TransactionMode.Manual)]
-public sealed class OpenPrintCommand : IExternalCommand
+public sealed class OpenPrintPdfCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {

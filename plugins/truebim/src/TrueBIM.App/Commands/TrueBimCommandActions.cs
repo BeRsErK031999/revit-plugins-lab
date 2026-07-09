@@ -20,21 +20,45 @@ internal static class TrueBimCommandActions
 {
     public static void OpenPrint(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
+        OpenPrint(commandData, owner, logger, PrintExportProfile.Pdf);
+    }
+
+    public static void OpenPrintPdf(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
+    {
+        OpenPrint(commandData, owner, logger, PrintExportProfile.Pdf);
+    }
+
+    public static void OpenPrintDwg(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
+    {
+        OpenPrint(commandData, owner, logger, PrintExportProfile.Dwg);
+    }
+
+    private static void OpenPrint(
+        ExternalCommandData commandData,
+        System.Windows.Window? owner,
+        ITrueBimLogger logger,
+        PrintExportProfile exportProfile)
+    {
         try
         {
-            const string windowKey = "truebim.print";
+            string windowKey = exportProfile == PrintExportProfile.Pdf
+                ? "truebim.print.pdf"
+                : "truebim.print.dwg";
+            string windowTitle = exportProfile == PrintExportProfile.Pdf
+                ? "Печать PDF"
+                : "Печать DWG";
             if (ModelessWindowService.Activate(windowKey, logger))
             {
                 return;
             }
 
-            logger.Info("Opening Print module.");
+            logger.Info($"Opening Print module: {windowTitle}.");
 
             Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
             if (activeDocument is null)
             {
-                logger.Warning("Print module requested without an active document.");
-                TaskDialog.Show("Печать", "Откройте документ Revit перед запуском модуля печати.");
+                logger.Warning($"{windowTitle} requested without an active document.");
+                TaskDialog.Show(windowTitle, "Откройте документ Revit перед запуском модуля печати.");
                 return;
             }
 
@@ -42,11 +66,11 @@ internal static class TrueBimCommandActions
                 commandData.Application.Application.Documents.Cast<Document>().ToList(),
                 activeDocument);
             int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
-            logger.Info($"Print module collected {sheetCount} sheets from {sheetSources.Count} open documents.");
+            logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents.");
             PrintSettingsService settingsService = new(
                 PrintSettingsService.CreateSettingsPath(commandData.Application.Application.VersionNumber),
                 logger);
-            PrintWindow printWindow = new(activeDocument, sheetSources, settingsService, logger)
+            PrintWindow printWindow = new(activeDocument, sheetSources, exportProfile, settingsService, logger)
             {
                 ShowInTaskbar = true
             };
@@ -54,8 +78,10 @@ internal static class TrueBimCommandActions
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to open Print module.", exception);
-            TaskDialog.Show("Печать", "Не удалось открыть модуль печати. Используйте логи для диагностики.");
+            logger.Error($"Failed to open Print module profile '{exportProfile}'.", exception);
+            TaskDialog.Show(
+                exportProfile == PrintExportProfile.Pdf ? "Печать PDF" : "Печать DWG",
+                "Не удалось открыть модуль печати. Используйте логи для диагностики.");
         }
     }
 

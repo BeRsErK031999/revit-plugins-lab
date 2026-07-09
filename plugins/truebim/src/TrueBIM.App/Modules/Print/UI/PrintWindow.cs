@@ -34,11 +34,11 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly PrintCadExportService cadExportService = new();
     private readonly PrintCadExportSetupService cadExportSetupService = new();
     private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
-    private readonly ObservableCollection<PrintFileNameTokenOption> fileNameTokenOptions = new();
     private readonly PrintSettingsService? printSettingsService;
     private readonly PrintSettings initialSettings;
     private readonly bool hasSavedPrintSettings;
     private readonly PrintFileNameContext fileNameContext;
+    private readonly PrintExportProfile exportProfile;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
     private readonly ComboBox sourceFilterInput = new()
@@ -108,22 +108,21 @@ public sealed class PrintWindow : TrueBimWindow
     };
     private readonly ComboBox dwgSetupInput = CreateCadSetupInput("Настройка экспорта DWG из сохраненных настроек Revit.");
     private readonly ComboBox dxfSetupInput = CreateCadSetupInput("Настройка экспорта DXF из сохраненных настроек Revit.");
-    private readonly ComboBox fileNameTokenInput = new()
-    {
-        DisplayMemberPath = nameof(PrintFileNameTokenOption.DisplayName),
-        Height = 32,
-        MinWidth = 240,
-        ToolTip = "Токен или параметр для вставки в маску имени файла."
-    };
     private readonly Button exportButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
 
+    private bool IsPdfProfile => exportProfile == PrintExportProfile.Pdf;
+
+    private bool IsDwgProfile => exportProfile == PrintExportProfile.Dwg;
+
+    private string WindowTitle => IsPdfProfile ? "Печать PDF" : "Печать DWG";
+
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetInfo> sheets, ITrueBimLogger logger)
-        : this(document, CreateSingleSource(document, sheets), logger)
+        : this(document, CreateSingleSource(document, sheets), PrintExportProfile.Pdf, logger)
     {
     }
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetSource> sheetSources, ITrueBimLogger logger)
-        : this(document, sheetSources, printSettingsService: null, logger)
+        : this(document, sheetSources, PrintExportProfile.Pdf, printSettingsService: null, logger)
     {
     }
 
@@ -132,9 +131,31 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyList<PrintSheetSource> sheetSources,
         PrintSettingsService? printSettingsService,
         ITrueBimLogger logger)
+        : this(document, sheetSources, PrintExportProfile.Pdf, printSettingsService, logger)
+    {
+    }
+
+    public PrintWindow(
+        RevitDocument document,
+        IReadOnlyList<PrintSheetSource> sheetSources,
+        PrintExportProfile exportProfile,
+        ITrueBimLogger logger)
+        : this(document, sheetSources, exportProfile, printSettingsService: null, logger)
+    {
+    }
+
+    public PrintWindow(
+        RevitDocument document,
+        IReadOnlyList<PrintSheetSource> sheetSources,
+        PrintExportProfile exportProfile,
+        PrintSettingsService? printSettingsService,
+        ITrueBimLogger logger)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
+        this.exportProfile = Enum.IsDefined(typeof(PrintExportProfile), exportProfile)
+            ? exportProfile
+            : PrintExportProfile.Pdf;
         sourceSheetsById = this.sheetSources.ToDictionary(
             source => source.SourceId,
             source =>
@@ -160,12 +181,12 @@ public sealed class PrintWindow : TrueBimWindow
         initialSettings = printSettingsService?.Load() ?? PrintSettingsService.DefaultSettings;
         fileNameContext = CreateFileNameContext(document);
         LoadSourceFilterOptions();
-        LoadFileNameTokenOptions();
         LoadCadExportSetupOptions();
         ApplyInitialSettings();
 
-        Title = "Печать";
+        Title = WindowTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
+        exportButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, IsPdfProfile ? "Экспорт PDF" : "Экспорт DWG");
         Width = 1120;
         Height = 720;
         MinWidth = 980;
@@ -175,7 +196,7 @@ public sealed class PrintWindow : TrueBimWindow
         Content = CreateContent();
 
         LoadSheets();
-        logger.Info($"Print window opened for '{document.Title}' with {GetAllLoadedSheets().Count} loaded sheets from {this.sheetSources.Count} sources.");
+        logger.Info($"{WindowTitle} window opened for '{document.Title}' with {GetAllLoadedSheets().Count} loaded sheets from {this.sheetSources.Count} sources.");
     }
 
     protected override void OnClosed(EventArgs e)
@@ -314,13 +335,12 @@ public sealed class PrintWindow : TrueBimWindow
         {
             Margin = new Thickness(0, 16, 0, 0)
         };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        for (int index = 0; index < 5; index++)
+        {
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        }
+
+        int rowIndex = 0;
 
         Grid folderRow = new();
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
@@ -352,7 +372,7 @@ public sealed class PrintWindow : TrueBimWindow
         Grid.SetColumn(browseButton, 2);
         folderRow.Children.Add(browseButton);
 
-        Grid.SetRow(folderRow, 0);
+        Grid.SetRow(folderRow, rowIndex++);
         root.Children.Add(folderRow);
 
         Grid maskRow = new()
@@ -373,195 +393,171 @@ public sealed class PrintWindow : TrueBimWindow
         Grid.SetColumn(fileNameMaskInput, 1);
         maskRow.Children.Add(fileNameMaskInput);
 
-        Grid.SetRow(maskRow, 1);
+        Grid.SetRow(maskRow, rowIndex++);
         root.Children.Add(maskRow);
 
-        Grid tokenRow = new()
+        if (IsPdfProfile)
         {
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
-        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        tokenRow.Children.Add(new TextBlock
+            Grid pdfRow = new()
+            {
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            combinePdfInput.VerticalAlignment = VerticalAlignment.Center;
+            combinePdfInput.Margin = new Thickness(0, 0, 16, 0);
+            combinePdfInput.Checked += (_, _) => UpdatePdfOptionsState();
+            combinePdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+            pdfRow.Children.Add(combinePdfInput);
+
+            separatePdfWithCombinedInput.VerticalAlignment = VerticalAlignment.Center;
+            separatePdfWithCombinedInput.Margin = new Thickness(0, 0, 16, 0);
+            separatePdfWithCombinedInput.Checked += (_, _) => UpdatePdfOptionsState();
+            separatePdfWithCombinedInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+            Grid.SetColumn(separatePdfWithCombinedInput, 1);
+            pdfRow.Children.Add(separatePdfWithCombinedInput);
+
+            TextBlock combinedPdfNameLabel = new()
+            {
+                Text = "PDF файл",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            Grid.SetColumn(combinedPdfNameLabel, 2);
+            pdfRow.Children.Add(combinedPdfNameLabel);
+
+            combinedPdfNameInput.Height = 32;
+            combinedPdfNameInput.TextChanged += (_, _) =>
+            {
+                ResetExportStatuses();
+                UpdateExportState();
+            };
+            Grid.SetColumn(combinedPdfNameInput, 3);
+            pdfRow.Children.Add(combinedPdfNameInput);
+
+            Grid.SetRow(pdfRow, rowIndex++);
+            root.Children.Add(pdfRow);
+
+            Grid pdfSettingsRow = new()
+            {
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            pdfSettingsRow.Children.Add(new TextBlock
+            {
+                Text = "PDF цвет",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            });
+
+            BindPdfColorModeInput();
+            Grid.SetColumn(pdfColorModeInput, 1);
+            pdfSettingsRow.Children.Add(pdfColorModeInput);
+
+            TextBlock pdfRasterQualityLabel = new()
+            {
+                Text = "Качество",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(16, 0, 8, 0)
+            };
+            Grid.SetColumn(pdfRasterQualityLabel, 2);
+            pdfSettingsRow.Children.Add(pdfRasterQualityLabel);
+
+            BindPdfRasterQualityInput();
+            Grid.SetColumn(pdfRasterQualityInput, 3);
+            pdfSettingsRow.Children.Add(pdfRasterQualityInput);
+
+            forceRasterPdfInput.VerticalAlignment = VerticalAlignment.Center;
+            forceRasterPdfInput.Margin = new Thickness(16, 0, 0, 0);
+            forceRasterPdfInput.Checked += (_, _) => UpdatePdfOptionsState();
+            forceRasterPdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+            Grid.SetColumn(forceRasterPdfInput, 4);
+            pdfSettingsRow.Children.Add(forceRasterPdfInput);
+
+            Grid.SetRow(pdfSettingsRow, rowIndex++);
+            root.Children.Add(pdfSettingsRow);
+        }
+
+        if (IsDwgProfile)
         {
-            Text = "Добавить в маску",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
-        });
+            Grid cadSetupRow = new()
+            {
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        fileNameTokenInput.ItemsSource = fileNameTokenOptions;
-        fileNameTokenInput.SelectedIndex = fileNameTokenOptions.Count > 0 ? 0 : -1;
-        Grid.SetColumn(fileNameTokenInput, 1);
-        tokenRow.Children.Add(fileNameTokenInput);
+            cadSetupRow.Children.Add(new TextBlock
+            {
+                Text = "DWG настройка",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            });
 
-        Button addTokenButton = CreateActionButton("Добавить", TrueBimIcon.Apply, isEnabled: true);
-        addTokenButton.Margin = new Thickness(8, 0, 0, 0);
-        addTokenButton.ToolTip = "Вставить выбранный токен в маску имени файла.";
-        addTokenButton.Click += (_, _) => InsertSelectedFileNameToken();
-        Grid.SetColumn(addTokenButton, 2);
-        tokenRow.Children.Add(addTokenButton);
+            BindCadSetupInput(dwgSetupInput, initialSettings.DwgSetupName);
+            Grid.SetColumn(dwgSetupInput, 1);
+            cadSetupRow.Children.Add(dwgSetupInput);
 
-        Grid.SetRow(tokenRow, 2);
-        root.Children.Add(tokenRow);
+            TextBlock dxfSetupLabel = new()
+            {
+                Text = "DXF настройка",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(16, 0, 8, 0)
+            };
+            Grid.SetColumn(dxfSetupLabel, 2);
+            cadSetupRow.Children.Add(dxfSetupLabel);
 
-        Grid pdfRow = new()
-        {
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            BindCadSetupInput(dxfSetupInput, initialSettings.DxfSetupName);
+            Grid.SetColumn(dxfSetupInput, 3);
+            cadSetupRow.Children.Add(dxfSetupInput);
 
-        combinePdfInput.VerticalAlignment = VerticalAlignment.Center;
-        combinePdfInput.Margin = new Thickness(0, 0, 16, 0);
-        combinePdfInput.Checked += (_, _) => UpdatePdfOptionsState();
-        combinePdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
-        pdfRow.Children.Add(combinePdfInput);
-
-        separatePdfWithCombinedInput.VerticalAlignment = VerticalAlignment.Center;
-        separatePdfWithCombinedInput.Margin = new Thickness(0, 0, 16, 0);
-        separatePdfWithCombinedInput.Checked += (_, _) => UpdatePdfOptionsState();
-        separatePdfWithCombinedInput.Unchecked += (_, _) => UpdatePdfOptionsState();
-        Grid.SetColumn(separatePdfWithCombinedInput, 1);
-        pdfRow.Children.Add(separatePdfWithCombinedInput);
-
-        TextBlock combinedPdfNameLabel = new()
-        {
-            Text = "PDF файл",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
-        Grid.SetColumn(combinedPdfNameLabel, 2);
-        pdfRow.Children.Add(combinedPdfNameLabel);
-
-        combinedPdfNameInput.Height = 32;
-        combinedPdfNameInput.TextChanged += (_, _) =>
-        {
-            ResetExportStatuses();
-            UpdateExportState();
-        };
-        Grid.SetColumn(combinedPdfNameInput, 3);
-        pdfRow.Children.Add(combinedPdfNameInput);
-
-        Grid.SetRow(pdfRow, 3);
-        root.Children.Add(pdfRow);
-
-        Grid pdfSettingsRow = new()
-        {
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pdfSettingsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        pdfSettingsRow.Children.Add(new TextBlock
-        {
-            Text = "PDF цвет",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
-        });
-
-        BindPdfColorModeInput();
-        Grid.SetColumn(pdfColorModeInput, 1);
-        pdfSettingsRow.Children.Add(pdfColorModeInput);
-
-        TextBlock pdfRasterQualityLabel = new()
-        {
-            Text = "Качество",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 0, 8, 0)
-        };
-        Grid.SetColumn(pdfRasterQualityLabel, 2);
-        pdfSettingsRow.Children.Add(pdfRasterQualityLabel);
-
-        BindPdfRasterQualityInput();
-        Grid.SetColumn(pdfRasterQualityInput, 3);
-        pdfSettingsRow.Children.Add(pdfRasterQualityInput);
-
-        forceRasterPdfInput.VerticalAlignment = VerticalAlignment.Center;
-        forceRasterPdfInput.Margin = new Thickness(16, 0, 0, 0);
-        forceRasterPdfInput.Checked += (_, _) => UpdatePdfOptionsState();
-        forceRasterPdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
-        Grid.SetColumn(forceRasterPdfInput, 4);
-        pdfSettingsRow.Children.Add(forceRasterPdfInput);
-
-        Grid.SetRow(pdfSettingsRow, 4);
-        root.Children.Add(pdfSettingsRow);
-
-        Grid cadSetupRow = new()
-        {
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        cadSetupRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        cadSetupRow.Children.Add(new TextBlock
-        {
-            Text = "DWG настройка",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
-        });
-
-        BindCadSetupInput(dwgSetupInput, initialSettings.DwgSetupName);
-        Grid.SetColumn(dwgSetupInput, 1);
-        cadSetupRow.Children.Add(dwgSetupInput);
-
-        TextBlock dxfSetupLabel = new()
-        {
-            Text = "DXF настройка",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 0, 8, 0)
-        };
-        Grid.SetColumn(dxfSetupLabel, 2);
-        cadSetupRow.Children.Add(dxfSetupLabel);
-
-        BindCadSetupInput(dxfSetupInput, initialSettings.DxfSetupName);
-        Grid.SetColumn(dxfSetupInput, 3);
-        cadSetupRow.Children.Add(dxfSetupInput);
-
-        Grid.SetRow(cadSetupRow, 5);
-        root.Children.Add(cadSetupRow);
+            Grid.SetRow(cadSetupRow, rowIndex++);
+            root.Children.Add(cadSetupRow);
+        }
 
         DockPanel actionRow = new()
         {
             Margin = new Thickness(0, 12, 0, 0)
         };
 
-        StackPanel formatActions = new()
+        if (IsDwgProfile)
         {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
+            StackPanel formatActions = new()
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
 
-        pdfInput.Margin = new Thickness(0, 0, 16, 0);
-        dwgInput.Margin = new Thickness(0, 0, 16, 0);
-        dxfInput.Margin = new Thickness(0, 0, 16, 0);
-        dwfInput.Margin = new Thickness(0, 0, 16, 0);
-        combineDwgInput.Margin = new Thickness(0, 0, 16, 0);
-        pdfInput.Checked += (_, _) => UpdatePdfOptionsState();
-        pdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
-        dwgInput.Checked += (_, _) => UpdateExportState();
-        dwgInput.Unchecked += (_, _) => UpdateExportState();
-        dxfInput.Checked += (_, _) => UpdateExportState();
-        dxfInput.Unchecked += (_, _) => UpdateExportState();
-        dwfInput.Checked += (_, _) => UpdateExportState();
-        dwfInput.Unchecked += (_, _) => UpdateExportState();
-        combineDwgInput.Checked += (_, _) => UpdateExportState();
-        combineDwgInput.Unchecked += (_, _) => UpdateExportState();
-        formatActions.Children.Add(pdfInput);
-        formatActions.Children.Add(dwgInput);
-        formatActions.Children.Add(combineDwgInput);
-        formatActions.Children.Add(dxfInput);
-        formatActions.Children.Add(dwfInput);
+            dwgInput.Margin = new Thickness(0, 0, 16, 0);
+            dxfInput.Margin = new Thickness(0, 0, 16, 0);
+            dwfInput.Margin = new Thickness(0, 0, 16, 0);
+            combineDwgInput.Margin = new Thickness(0, 0, 16, 0);
+            dwgInput.Checked += (_, _) => UpdateExportState();
+            dwgInput.Unchecked += (_, _) => UpdateExportState();
+            dxfInput.Checked += (_, _) => UpdateExportState();
+            dxfInput.Unchecked += (_, _) => UpdateExportState();
+            dwfInput.Checked += (_, _) => UpdateExportState();
+            dwfInput.Unchecked += (_, _) => UpdateExportState();
+            combineDwgInput.Checked += (_, _) => UpdateExportState();
+            combineDwgInput.Unchecked += (_, _) => UpdateExportState();
+            formatActions.Children.Add(dwgInput);
+            formatActions.Children.Add(combineDwgInput);
+            formatActions.Children.Add(dxfInput);
+            formatActions.Children.Add(dwfInput);
 
-        DockPanel.SetDock(formatActions, Dock.Left);
-        actionRow.Children.Add(formatActions);
+            DockPanel.SetDock(formatActions, Dock.Left);
+            actionRow.Children.Add(formatActions);
+        }
 
         StackPanel actions = new()
         {
@@ -569,7 +565,6 @@ public sealed class PrintWindow : TrueBimWindow
             HorizontalAlignment = HorizontalAlignment.Right
         };
 
-        exportButton.ToolTip = "Экспорт будет реализован следующими задачами.";
         exportButton.Click += (_, _) => StartExport();
         actions.Children.Add(exportButton);
 
@@ -581,7 +576,7 @@ public sealed class PrintWindow : TrueBimWindow
         actions.Children.Add(closeButton);
 
         actionRow.Children.Add(actions);
-        Grid.SetRow(actionRow, 6);
+        Grid.SetRow(actionRow, rowIndex);
         root.Children.Add(actionRow);
 
         UpdatePdfOptionsState();
@@ -680,38 +675,6 @@ public sealed class PrintWindow : TrueBimWindow
             : sourceFilterOptions.FirstOrDefault(option => string.Equals(option.SourceId, activeSourceId, StringComparison.Ordinal));
     }
 
-    private void LoadFileNameTokenOptions()
-    {
-        fileNameTokenOptions.Clear();
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер листа", "{Номер листа}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя листа", "{Имя листа}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя документа", "{Имя документа}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер проекта", "{Номер проекта}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя проекта", "{Имя проекта}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Дата сегодня", "{Дата:yyyy-MM-dd}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Счетчик 001", "{Счетчик:000}"));
-
-        foreach (string parameterName in GetAllLoadedSheets()
-            .SelectMany(sheet => sheet.SheetParameters.Keys)
-            .Distinct(StringComparer.CurrentCultureIgnoreCase)
-            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
-        {
-            fileNameTokenOptions.Add(new PrintFileNameTokenOption(
-                $"Параметр листа: {parameterName}",
-                $"{{Параметр листа:{parameterName}}}"));
-        }
-
-        foreach (string parameterName in fileNameContextsBySourceId.Values
-            .SelectMany(context => context.ProjectParameters.Keys)
-            .Distinct(StringComparer.CurrentCultureIgnoreCase)
-            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
-        {
-            fileNameTokenOptions.Add(new PrintFileNameTokenOption(
-                $"Параметр проекта: {parameterName}",
-                $"{{Параметр проекта:{parameterName}}}"));
-        }
-    }
-
     private void LoadSheets()
     {
         sheetRows.Clear();
@@ -756,7 +719,6 @@ public sealed class PrintWindow : TrueBimWindow
             sheetRows.Add(row);
         }
 
-        LoadFileNameTokenOptions();
         UpdateFileNamePreviews();
     }
 
@@ -882,7 +844,7 @@ public sealed class PrintWindow : TrueBimWindow
         MessageBoxResult result = MessageBox.Show(
             this,
             $"В папке экспорта уже есть файлов с такими именами: {existingPaths.Count}.\n\nДа - заменить существующие файлы.\nНет - пропустить листы с совпадающими файлами.\nОтмена - не запускать экспорт.",
-            "Печать",
+            WindowTitle,
             MessageBoxButton.YesNoCancel,
             MessageBoxImage.Warning);
 
@@ -1007,7 +969,7 @@ public sealed class PrintWindow : TrueBimWindow
                 .ToList();
             if (selectedRows.Count == 0)
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Печать", "Все выбранные листы пропущены: файлы уже существуют.");
+                Autodesk.Revit.UI.TaskDialog.Show(WindowTitle, "Все выбранные листы пропущены: файлы уже существуют.");
                 UpdateExportState();
                 return;
             }
@@ -1129,7 +1091,7 @@ public sealed class PrintWindow : TrueBimWindow
             ? "\n\nОшибки:\n" + string.Join("\n", failureMessages.Take(3))
             : string.Empty;
         Autodesk.Revit.UI.TaskDialog.Show(
-            "Печать",
+            WindowTitle,
             $"Экспортировано файлов: {exportedCount}\nОшибок: {failureCount}{failureMessage}");
         UpdateExportState();
     }
@@ -1395,38 +1357,40 @@ public sealed class PrintWindow : TrueBimWindow
         PrintSettings settings = PrintSettingsService.Normalize(initialSettings);
         includePlaceholdersInput.IsChecked = settings.IncludePlaceholders;
         fileNameMaskInput.Text = settings.FileNameMask;
-        pdfInput.IsChecked = settings.ExportPdf;
+        pdfInput.IsChecked = IsPdfProfile;
         combinePdfInput.IsChecked = settings.CombinePdf;
         combinedPdfNameInput.Text = hasSavedPrintSettings
             ? settings.CombinedPdfFileName
             : PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName);
         forceRasterPdfInput.IsChecked = settings.AlwaysUseRasterPdf;
-        dwgInput.IsChecked = settings.ExportDwg;
-        dxfInput.IsChecked = settings.ExportDxf;
-        dwfInput.IsChecked = settings.ExportDwf;
-        combineDwgInput.IsChecked = settings.CombineDwg;
+        bool hasSavedCadFormat = settings.ExportDwg || settings.ExportDxf || settings.ExportDwf;
+        dwgInput.IsChecked = IsDwgProfile && (hasSavedCadFormat ? settings.ExportDwg : true);
+        dxfInput.IsChecked = IsDwgProfile && settings.ExportDxf;
+        dwfInput.IsChecked = IsDwgProfile && settings.ExportDwf;
+        combineDwgInput.IsChecked = IsDwgProfile && settings.CombineDwg;
         separatePdfWithCombinedInput.IsChecked = settings.ExportSeparatePdfWithCombined;
     }
 
     private void SavePrintSettings()
     {
+        PrintSettings settings = PrintSettingsService.Normalize(initialSettings);
         printSettingsService?.Save(new PrintSettings(
             exportFolderInput.Text,
             fileNameMaskInput.Text,
             includePlaceholdersInput.IsChecked == true,
-            pdfInput.IsChecked == true,
-            combinePdfInput.IsChecked == true,
-            combinedPdfNameInput.Text,
-            GetSelectedPdfColorMode(),
-            GetSelectedPdfRasterQuality(),
-            forceRasterPdfInput.IsChecked == true,
-            dwgInput.IsChecked == true,
-            dxfInput.IsChecked == true,
-            dwfInput.IsChecked == true,
-            combineDwgInput.IsChecked == true,
-            separatePdfWithCombinedInput.IsChecked == true,
-            GetSelectedSetupName(dwgSetupInput),
-            GetSelectedSetupName(dxfSetupInput)));
+            IsPdfProfile ? pdfInput.IsChecked == true : settings.ExportPdf,
+            IsPdfProfile ? combinePdfInput.IsChecked == true : settings.CombinePdf,
+            IsPdfProfile ? combinedPdfNameInput.Text : settings.CombinedPdfFileName,
+            IsPdfProfile ? GetSelectedPdfColorMode() : settings.PdfColorMode,
+            IsPdfProfile ? GetSelectedPdfRasterQuality() : settings.PdfRasterQuality,
+            IsPdfProfile ? forceRasterPdfInput.IsChecked == true : settings.AlwaysUseRasterPdf,
+            IsDwgProfile ? dwgInput.IsChecked == true : settings.ExportDwg,
+            IsDwgProfile ? dxfInput.IsChecked == true : settings.ExportDxf,
+            IsDwgProfile ? dwfInput.IsChecked == true : settings.ExportDwf,
+            IsDwgProfile ? combineDwgInput.IsChecked == true : settings.CombineDwg,
+            IsPdfProfile ? separatePdfWithCombinedInput.IsChecked == true : settings.ExportSeparatePdfWithCombined,
+            IsDwgProfile ? GetSelectedSetupName(dwgSetupInput) : settings.DwgSetupName,
+            IsDwgProfile ? GetSelectedSetupName(dxfSetupInput) : settings.DxfSetupName));
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)
@@ -1529,19 +1493,6 @@ public sealed class PrintWindow : TrueBimWindow
 
         args.Handled = true;
         UpdateExportState();
-    }
-
-    private void InsertSelectedFileNameToken()
-    {
-        if (fileNameTokenInput.SelectedItem is not PrintFileNameTokenOption option)
-        {
-            return;
-        }
-
-        int caretIndex = Math.Max(0, fileNameMaskInput.CaretIndex);
-        fileNameMaskInput.Text = fileNameMaskInput.Text.Insert(caretIndex, option.Token);
-        fileNameMaskInput.CaretIndex = caretIndex + option.Token.Length;
-        fileNameMaskInput.Focus();
     }
 
     private static ComboBox CreateCadSetupInput(string tooltip)
@@ -1867,8 +1818,6 @@ public sealed class PrintWindow : TrueBimWindow
     }
 
     private sealed record PrintSheetSourceFilterOption(string? SourceId, string DisplayName, bool IncludeLinked);
-
-    private sealed record PrintFileNameTokenOption(string DisplayName, string Token);
 
     private enum ExistingFileDecision
     {

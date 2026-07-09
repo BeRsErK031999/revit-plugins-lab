@@ -159,6 +159,31 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.Contains("логов", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
     }
 
+    [Fact]
+    public void RibbonButtons_IncludeSeparatePrintPdfAndDwgButtons()
+    {
+        TrueBimRibbonButtonDefinition pdfButton = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_PrintPdf", StringComparison.Ordinal));
+        TrueBimRibbonButtonDefinition dwgButton = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_PrintDwg", StringComparison.Ordinal));
+
+        Assert.Equal("БИМ", pdfButton.PanelName);
+        Assert.Equal("Печать\nPDF", pdfButton.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintPdfCommand)}", pdfButton.CommandClassName);
+        Assert.Equal(TrueBimIcon.Print, pdfButton.Icon);
+        Assert.Contains("PDF", pdfButton.Tooltip, StringComparison.Ordinal);
+
+        Assert.Equal("БИМ", dwgButton.PanelName);
+        Assert.Equal("Печать\nDWG", dwgButton.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintDwgCommand)}", dwgButton.CommandClassName);
+        Assert.Equal(TrueBimIcon.Print, dwgButton.Icon);
+        Assert.Contains("CAD", dwgButton.Tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain("DXF", dwgButton.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DWF", dwgButton.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [MemberData(nameof(BimToolButtons))]
     public void RibbonButtons_IncludeBimToolScaffoldButtons(

@@ -311,11 +311,18 @@ public static class TrueBimRibbon
             "Открывает нумератор листов TrueBIM."),
         new(
             BimPanelName,
-            "TrueBIM_Print",
-            "Печать",
-            $"{CommandNamespace}.{nameof(OpenPrintCommand)}",
+            "TrueBIM_PrintPdf",
+            "Печать\nPDF",
+            $"{CommandNamespace}.{nameof(OpenPrintPdfCommand)}",
             TrueBimIcon.Print,
-            "Открывает модуль печати и экспорта листов TrueBIM."),
+            "Открывает печать листов TrueBIM в PDF."),
+        new(
+            BimPanelName,
+            "TrueBIM_PrintDwg",
+            "Печать\nDWG",
+            $"{CommandNamespace}.{nameof(OpenPrintDwgCommand)}",
+            TrueBimIcon.Print,
+            "Открывает CAD-печать листов TrueBIM."),
         new(
             BimPanelName,
             "TrueBIM_ViewVisibility",
