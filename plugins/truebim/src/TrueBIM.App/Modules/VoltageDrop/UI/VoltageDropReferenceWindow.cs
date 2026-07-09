@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using TrueBIM.App.Modules.VoltageDrop.Models;
 using TrueBIM.App.Modules.VoltageDrop.Services;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.Modules.VoltageDrop.UI;
 
@@ -29,46 +29,34 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
+        TabControl tabs = new()
         {
-            Margin = new Thickness(18)
+            Style = TrueBimStyles.CreateTabControlStyle()
         };
-
-        UIElement footer = CreateFooter();
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
-        TabControl tabs = new();
         tabs.Items.Add(CreateTab("Коэффициенты C", CreateCoefficientContent()));
         tabs.Items.Add(CreateTab("Квартиры", CreateApartmentContent()));
         tabs.Items.Add(CreateTab("Лифты", CreateLiftContent()));
         tabs.Items.Add(CreateTab("Формулы", CreateFormulaContent()));
-        root.Children.Add(tabs);
 
-        return root;
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                "Оцифрованные коэффициенты, формулы и расчетные справочники для проверки входных данных.",
+                TrueBimIcon.Preview),
+            commandBar: null,
+            body: tabs,
+            status: null,
+            footer: CreateFooter());
     }
 
     private static UIElement CreateFooter()
     {
-        StackPanel footer = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 14, 0, 0)
-        };
-
-        Button closeButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
-            MinWidth = 120,
-            Height = 32,
-            IsCancel = true,
-            ToolTip = "Закрыть окно справочников."
-        };
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close, minWidth: 120);
+        closeButton.IsCancel = true;
+        closeButton.ToolTip = "Закрыть окно справочников.";
         closeButton.Click += (_, _) => Window.GetWindow(closeButton)?.Close();
-        footer.Children.Add(closeButton);
 
-        return footer;
+        return TrueBimUi.CreateFooter(null, closeButton);
     }
 
     private static TabItem CreateTab(string header, UIElement content)
@@ -89,7 +77,7 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
     {
         StackPanel panel = new()
         {
-            Margin = new Thickness(0, 12, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
 
         panel.Children.Add(CreateSection(
@@ -111,7 +99,7 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
     {
         StackPanel panel = new()
         {
-            Margin = new Thickness(0, 12, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
 
         panel.Children.Add(CreateSection(
@@ -139,7 +127,7 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
     {
         StackPanel panel = new()
         {
-            Margin = new Thickness(0, 12, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
 
         panel.Children.Add(CreateSection(
@@ -161,7 +149,7 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
     {
         StackPanel panel = new()
         {
-            Margin = new Thickness(0, 12, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
 
         panel.Children.Add(CreateSection(
@@ -179,8 +167,8 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
         {
             Header = header,
             Content = content,
-            Margin = new Thickness(0, 0, 0, 14),
-            Padding = new Thickness(10)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12),
+            Style = TrueBimStyles.CreateGroupBoxStyle()
         };
         return groupBox;
     }
@@ -233,17 +221,18 @@ public sealed class VoltageDropReferenceWindow : TrueBimWindow
     {
         Border border = new()
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(208, 214, 219)),
-            BorderThickness = new Thickness(0, 0, 1, 1),
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(0, 0, TrueBimTheme.BorderWidth, TrueBimTheme.BorderWidth),
             Background = isHeader
-                ? new SolidColorBrush(Color.FromRgb(236, 240, 244))
-                : Brushes.White
+                ? TrueBimBrushes.SurfaceAlt
+                : TrueBimBrushes.Surface
         };
         TextBlock textBlock = new()
         {
             Text = text,
             FontWeight = isHeader ? FontWeights.SemiBold : FontWeights.Normal,
-            Padding = new Thickness(8, 5, 8, 5),
+            Foreground = isHeader ? TrueBimBrushes.TextSecondary : TrueBimBrushes.TextPrimary,
+            Padding = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4),
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
         };
