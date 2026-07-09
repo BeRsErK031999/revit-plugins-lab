@@ -17,7 +17,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.AutoTags.UI;
 
-public sealed class AutoTagWindow : Window
+public sealed class AutoTagWindow : TrueBimWindow
 {
     private readonly RevitDocument document;
     private readonly RevitView activeView;

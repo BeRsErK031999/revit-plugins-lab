@@ -19,7 +19,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.ClashReport.UI;
 
-public sealed class ClashReportWindow : Window
+public sealed class ClashReportWindow : TrueBimWindow
 {
     private static readonly IReadOnlyList<ClashStatus> StatusOptions =
         Enum.GetValues(typeof(ClashStatus)).Cast<ClashStatus>().ToList();

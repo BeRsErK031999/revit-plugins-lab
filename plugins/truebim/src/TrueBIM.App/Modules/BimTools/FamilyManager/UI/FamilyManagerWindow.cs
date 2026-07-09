@@ -28,7 +28,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
-public sealed class FamilyManagerWindow : Window
+public sealed class FamilyManagerWindow : TrueBimWindow
 {
     public FamilyManagerWindow(
         UIApplication uiApplication,

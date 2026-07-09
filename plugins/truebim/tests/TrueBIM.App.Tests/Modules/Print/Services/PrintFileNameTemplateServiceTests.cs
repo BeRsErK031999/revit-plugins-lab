@@ -22,6 +22,19 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void Build_ReplacesRussianSheetProjectAndDocumentTokens()
+    {
+        PrintFileNamePreview preview = service.Build(
+            "{Номер проекта}_{Имя документа}_{Номер листа}_{Имя листа}",
+            Sheet("A-101", "План этажа"),
+            Context("РД", "P-42", "Model"),
+            counter: 1);
+
+        Assert.Equal("P-42_Model_A-101_План этажа", preview.FileName);
+        Assert.False(preview.HasUnknownTokens);
+    }
+
+    [Fact]
     public void Build_ReplacesDateAndCounterTokens()
     {
         PrintFileNamePreview preview = service.Build(
@@ -34,10 +47,42 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void Build_ReplacesRussianDateAndCounterTokens()
+    {
+        PrintFileNamePreview preview = service.Build(
+            "{Дата:yyyy-MM-dd}_{Счетчик:000}_{Номер листа}",
+            Sheet("A-101", "План"),
+            Context("РД", "P-42", "Model"),
+            counter: 7);
+
+        Assert.Equal("2026-07-02_007_A-101", preview.FileName);
+    }
+
+    [Fact]
     public void Build_ReplacesSheetAndProjectParameterTokens()
     {
         PrintFileNamePreview preview = service.Build(
             "{SheetParameter:Формат листа}_{ProjectParameter:Шифр}_{SheetNumber}",
+            Sheet(
+                "A-101",
+                "План",
+                new Dictionary<string, string> { ["Формат листа"] = "A1" }),
+            Context(
+                "РД",
+                "P-42",
+                "Model",
+                new Dictionary<string, string> { ["Шифр"] = "KR-01" }),
+            counter: 1);
+
+        Assert.Equal("A1_KR-01_A-101", preview.FileName);
+        Assert.False(preview.HasUnknownTokens);
+    }
+
+    [Fact]
+    public void Build_ReplacesRussianSheetAndProjectParameterTokens()
+    {
+        PrintFileNamePreview preview = service.Build(
+            "{Параметр листа:Формат листа}_{Параметр проекта:Шифр}_{Номер листа}",
             Sheet(
                 "A-101",
                 "План",

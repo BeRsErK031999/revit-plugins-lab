@@ -8,7 +8,7 @@ using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Modules.VoltageDrop.UI;
 
-public sealed class VoltageDropReferenceWindow : Window
+public sealed class VoltageDropReferenceWindow : TrueBimWindow
 {
     private readonly VoltageDropReferenceCatalog catalog;
 

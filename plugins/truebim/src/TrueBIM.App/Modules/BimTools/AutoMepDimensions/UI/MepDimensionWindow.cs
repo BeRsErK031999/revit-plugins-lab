@@ -18,7 +18,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.AutoMepDimensions.UI;
 
-public sealed class MepDimensionWindow : Window
+public sealed class MepDimensionWindow : TrueBimWindow
 {
     private readonly RevitDocument document;
     private readonly RevitView activeView;

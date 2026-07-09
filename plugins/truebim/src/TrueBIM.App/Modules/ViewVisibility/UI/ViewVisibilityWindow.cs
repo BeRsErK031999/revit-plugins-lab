@@ -11,7 +11,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.ViewVisibility.UI;
 
-public sealed class ViewVisibilityWindow : Window
+public sealed class ViewVisibilityWindow : TrueBimWindow
 {
     private readonly Document document;
     private readonly View view;

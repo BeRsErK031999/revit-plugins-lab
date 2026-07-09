@@ -8,7 +8,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.ParaManager.UI;
 
-public sealed class ParameterManualAddWindow : Window
+public sealed class ParameterManualAddWindow : TrueBimWindow
 {
     private static readonly string[] BindingTypes = ["Instance", "Type"];
     private static readonly string[] GroupOptions = ["Identity Data", "Text", "Dimensions", "Data", "General", "Other"];

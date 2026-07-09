@@ -1,13 +1,14 @@
-<Window x:Class="TrueBIM.App.Modules.BimTools.JoinCut.UI.JoinCutWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Соединить / Вырезать"
-        Width="1040"
-        Height="720"
-        MinWidth="940"
-        MinHeight="620"
-        ResizeMode="CanResize"
-        WindowStartupLocation="CenterOwner">
+<ui:TrueBimWindow x:Class="TrueBIM.App.Modules.BimTools.JoinCut.UI.JoinCutWindow"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="clr-namespace:TrueBIM.App.UI"
+                  Title="Соединить / Вырезать"
+                  Width="1040"
+                  Height="720"
+                  MinWidth="940"
+                  MinHeight="620"
+                  ResizeMode="CanResize"
+                  WindowStartupLocation="CenterOwner">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -302,4 +303,4 @@
             </StackPanel>
         </DockPanel>
     </Grid>
-</Window>
+</ui:TrueBimWindow>

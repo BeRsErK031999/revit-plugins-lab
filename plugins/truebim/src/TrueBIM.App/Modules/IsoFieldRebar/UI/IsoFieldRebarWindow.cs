@@ -16,7 +16,7 @@ using ElementId = Autodesk.Revit.DB.ElementId;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.UI;
 
-public sealed class IsoFieldRebarWindow : Window
+public sealed class IsoFieldRebarWindow : TrueBimWindow
 {
     private readonly string documentTitle;
     private readonly UIDocument? uiDocument;

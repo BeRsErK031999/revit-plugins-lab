@@ -7,7 +7,7 @@ using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Modules.ScheduleColumnCollapse.UI;
 
-public sealed class ScheduleSourceSelectionWindow : Window
+public sealed class ScheduleSourceSelectionWindow : TrueBIM.App.UI.TrueBimWindow
 {
     private readonly RadioButton activeViewOption = new();
     private readonly RadioButton projectBrowserOption = new();

@@ -18,7 +18,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.TitleBlockFill.UI;
 
-public sealed class TitleBlockFillWindow : Window
+public sealed class TitleBlockFillWindow : TrueBimWindow
 {
     private readonly Document document;
     private readonly TitleBlockProfileStorage profileStorage;

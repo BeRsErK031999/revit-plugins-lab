@@ -11,7 +11,7 @@ using RevitView = Autodesk.Revit.DB.View;
 
 namespace TrueBIM.App.Modules.BimTools.DatumExtents.UI;
 
-public sealed class DatumExtentWindow : Window
+public sealed class DatumExtentWindow : TrueBimWindow
 {
     private readonly RevitDocument document;
     private readonly RevitView activeView;

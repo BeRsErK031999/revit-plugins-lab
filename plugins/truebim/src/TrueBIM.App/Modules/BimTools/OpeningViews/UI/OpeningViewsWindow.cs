@@ -19,7 +19,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.OpeningViews.UI;
 
-public sealed class OpeningViewsWindow : Window
+public sealed class OpeningViewsWindow : TrueBimWindow
 {
     private const string DialogTitle = "Фасады дверей/окон";
 

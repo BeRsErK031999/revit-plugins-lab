@@ -5,7 +5,7 @@ using TrueBIM.App.Modules;
 
 namespace TrueBIM.App.UI;
 
-public sealed class ModuleLauncherWindow : Window
+public sealed class ModuleLauncherWindow : TrueBimWindow
 {
     private readonly IReadOnlyDictionary<string, Action<Window>> moduleActions;
     private readonly Action<string, bool> setModuleEnabled;

@@ -8,7 +8,7 @@ using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Modules.ScheduleColumnCollapse.UI;
 
-public sealed class ScheduleSelectionWindow : Window
+public sealed class ScheduleSelectionWindow : TrueBIM.App.UI.TrueBimWindow
 {
     private readonly IReadOnlyList<ScheduleSelectionItem> allSchedules;
     private readonly ListBox scheduleList = new();

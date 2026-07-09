@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.Print.Services;
 
 public sealed class PrintFileNameTemplateService
 {
-    public const string DefaultTemplate = "{SheetNumber}_{SheetName}";
+    public const string DefaultTemplate = "{Номер листа}_{Имя листа}";
 
     private const int MaxFileNameLength = 180;
     private static readonly Regex TokenRegex = new(@"\{([^{}]+)\}", RegexOptions.Compiled);
@@ -64,22 +64,33 @@ public sealed class PrintFileNameTemplateService
     {
         return token switch
         {
-            "SheetNumber" => sheet.SheetNumber,
-            "SheetName" => sheet.SheetName,
-            "ProjectNumber" => context.ProjectNumber,
-            "ProjectName" => context.ProjectName,
-            "DocumentName" => context.DocumentName,
-            "Counter" => counter.ToString(CultureInfo.InvariantCulture),
-            _ when token.StartsWith("Counter:", StringComparison.Ordinal) => FormatCounter(token, counter),
-            _ when token.StartsWith("Date:", StringComparison.Ordinal) => FormatDate(token, context.ExportDate),
+            "SheetNumber" or "НомерЛиста" or "Номер листа" => sheet.SheetNumber,
+            "SheetName" or "ИмяЛиста" or "Имя листа" => sheet.SheetName,
+            "ProjectNumber" or "НомерПроекта" or "Номер проекта" => context.ProjectNumber,
+            "ProjectName" or "ИмяПроекта" or "Имя проекта" => context.ProjectName,
+            "DocumentName" or "ИмяДокумента" or "Имя документа" => context.DocumentName,
+            "Counter" or "Счетчик" or "Счётчик" => counter.ToString(CultureInfo.InvariantCulture),
+            _ when token.StartsWith("Counter:", StringComparison.Ordinal) => FormatCounter(token, "Counter:", counter),
+            _ when token.StartsWith("Счетчик:", StringComparison.CurrentCultureIgnoreCase) => FormatCounter(token, "Счетчик:", counter),
+            _ when token.StartsWith("Счётчик:", StringComparison.CurrentCultureIgnoreCase) => FormatCounter(token, "Счётчик:", counter),
+            _ when token.StartsWith("Date:", StringComparison.Ordinal) => FormatDate(token, "Date:", context.ExportDate),
+            _ when token.StartsWith("Дата:", StringComparison.CurrentCultureIgnoreCase) => FormatDate(token, "Дата:", context.ExportDate),
             _ when token.StartsWith("SheetParameter:", StringComparison.Ordinal) => ResolveDictionaryToken(
                 sheet.SheetParameters,
                 token,
                 "SheetParameter:"),
+            _ when token.StartsWith("Параметр листа:", StringComparison.CurrentCultureIgnoreCase) => ResolveDictionaryToken(
+                sheet.SheetParameters,
+                token,
+                "Параметр листа:"),
             _ when token.StartsWith("ProjectParameter:", StringComparison.Ordinal) => ResolveDictionaryToken(
                 context.ProjectParameters,
                 token,
                 "ProjectParameter:"),
+            _ when token.StartsWith("Параметр проекта:", StringComparison.CurrentCultureIgnoreCase) => ResolveDictionaryToken(
+                context.ProjectParameters,
+                token,
+                "Параметр проекта:"),
             _ => null
         };
     }
@@ -95,17 +106,17 @@ public sealed class PrintFileNameTemplateService
             : null;
     }
 
-    private static string FormatCounter(string token, int counter)
+    private static string FormatCounter(string token, string prefix, int counter)
     {
-        string format = token.Substring("Counter:".Length);
+        string format = token.Substring(prefix.Length);
         return string.IsNullOrWhiteSpace(format)
             ? counter.ToString(CultureInfo.InvariantCulture)
             : counter.ToString(format, CultureInfo.InvariantCulture);
     }
 
-    private static string FormatDate(string token, DateTime exportDate)
+    private static string FormatDate(string token, string prefix, DateTime exportDate)
     {
-        string format = token.Substring("Date:".Length);
+        string format = token.Substring(prefix.Length);
         return string.IsNullOrWhiteSpace(format)
             ? exportDate.ToShortDateString()
             : exportDate.ToString(format, CultureInfo.InvariantCulture);

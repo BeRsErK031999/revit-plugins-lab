@@ -16,7 +16,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.JoinCut.UI;
 
-public sealed partial class JoinCutWindow : Window
+public sealed partial class JoinCutWindow : TrueBimWindow
 {
     private readonly UIDocument uiDocument;
     private readonly Document document;
@@ -840,7 +840,7 @@ public sealed partial class JoinCutWindow : Window
                 allCategoriesSelected || selectedCategories.Contains(category.BuiltInCategory))));
         IReadOnlyList<BuiltInCategory>? result = null;
 
-        Window dialog = new()
+        TrueBimWindow dialog = new()
         {
             Title = title,
             Owner = this,
@@ -1145,7 +1145,7 @@ public sealed partial class JoinCutWindow : Window
 
     private string? PromptForText(string title, string label, string value)
     {
-        Window dialog = new()
+        TrueBimWindow dialog = new()
         {
             Title = title,
             Owner = this,

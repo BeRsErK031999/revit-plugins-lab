@@ -15,7 +15,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.ParaManager.UI;
 
-public sealed class ParaManagerWindow : Window
+public sealed class ParaManagerWindow : TrueBimWindow
 {
     private readonly UIApplication uiApplication;
     private readonly Document document;

@@ -15,8 +15,10 @@ using RevitDocument = Autodesk.Revit.DB.Document;
 
 namespace TrueBIM.App.Modules.Print.UI;
 
-public sealed class PrintWindow : Window
+public sealed class PrintWindow : TrueBimWindow
 {
+    private const double ExportLabelWidth = 132;
+
     private readonly ObservableCollection<PrintSheetRow> sheetRows = new();
     private readonly ObservableCollection<PrintSheetSourceFilterOption> sourceFilterOptions = new();
     private readonly IReadOnlyList<PrintSheetSource> sheetSources;
@@ -50,7 +52,7 @@ public sealed class PrintWindow : Window
     private readonly TextBox fileNameMaskInput = new()
     {
         Text = PrintFileNameTemplateService.DefaultTemplate,
-        ToolTip = "Маска имени файла. Доступны токены: {SheetNumber}, {SheetName}, {ProjectNumber}, {ProjectName}, {DocumentName}, {Date:yyyy-MM-dd}, {Counter}, {Counter:000}."
+        ToolTip = "Маска имени файла. Доступны токены: {Номер листа}, {Имя листа}, {Номер проекта}, {Имя проекта}, {Имя документа}, {Дата:yyyy-MM-dd}, {Счетчик}, {Счетчик:000}. Старые английские токены тоже поддерживаются."
     };
     private readonly CheckBox includePlaceholdersInput = new()
     {
@@ -321,7 +323,7 @@ public sealed class PrintWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         Grid folderRow = new();
-        folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -357,7 +359,7 @@ public sealed class PrintWindow : Window
         {
             Margin = new Thickness(0, 8, 0, 0)
         };
-        maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
         maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         maskRow.Children.Add(new TextBlock
         {
@@ -378,7 +380,7 @@ public sealed class PrintWindow : Window
         {
             Margin = new Thickness(0, 8, 0, 0)
         };
-        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
         tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         tokenRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         tokenRow.Children.Add(new TextBlock
@@ -681,13 +683,13 @@ public sealed class PrintWindow : Window
     private void LoadFileNameTokenOptions()
     {
         fileNameTokenOptions.Clear();
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер листа", "{SheetNumber}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя листа", "{SheetName}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя документа", "{DocumentName}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер проекта", "{ProjectNumber}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя проекта", "{ProjectName}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Дата сегодня", "{Date:yyyy-MM-dd}"));
-        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Счетчик 001", "{Counter:000}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер листа", "{Номер листа}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя листа", "{Имя листа}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя документа", "{Имя документа}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Номер проекта", "{Номер проекта}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Имя проекта", "{Имя проекта}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Дата сегодня", "{Дата:yyyy-MM-dd}"));
+        fileNameTokenOptions.Add(new PrintFileNameTokenOption("Счетчик 001", "{Счетчик:000}"));
 
         foreach (string parameterName in GetAllLoadedSheets()
             .SelectMany(sheet => sheet.SheetParameters.Keys)
@@ -696,7 +698,7 @@ public sealed class PrintWindow : Window
         {
             fileNameTokenOptions.Add(new PrintFileNameTokenOption(
                 $"Параметр листа: {parameterName}",
-                $"{{SheetParameter:{parameterName}}}"));
+                $"{{Параметр листа:{parameterName}}}"));
         }
 
         foreach (string parameterName in fileNameContextsBySourceId.Values
@@ -706,7 +708,7 @@ public sealed class PrintWindow : Window
         {
             fileNameTokenOptions.Add(new PrintFileNameTokenOption(
                 $"Параметр проекта: {parameterName}",
-                $"{{ProjectParameter:{parameterName}}}"));
+                $"{{Параметр проекта:{parameterName}}}"));
         }
     }
 

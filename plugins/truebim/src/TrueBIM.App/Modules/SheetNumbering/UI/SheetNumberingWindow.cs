@@ -15,7 +15,7 @@ using RevitDocument = Autodesk.Revit.DB.Document;
 
 namespace TrueBIM.App.Modules.SheetNumbering.UI;
 
-public sealed class SheetNumberingWindow : Window
+public sealed class SheetNumberingWindow : TrueBimWindow
 {
     private readonly ObservableCollection<PreviewRow> previewRows = new();
     private readonly RevitDocument document;

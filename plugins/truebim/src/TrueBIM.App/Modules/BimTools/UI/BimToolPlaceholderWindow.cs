@@ -11,7 +11,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.UI;
 
-public sealed class BimToolPlaceholderWindow : Window
+public sealed class BimToolPlaceholderWindow : TrueBimWindow
 {
     private readonly BimToolPlaceholderDefinition definition;
     private readonly string documentTitle;

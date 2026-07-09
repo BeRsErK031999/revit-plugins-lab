@@ -6,7 +6,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.ParaManager.UI;
 
-public sealed class ParameterCategorySelectionWindow : Window
+public sealed class ParameterCategorySelectionWindow : TrueBimWindow
 {
     private readonly IReadOnlyList<string> categoryNames;
     private readonly HashSet<string> selectedCategoryNames;

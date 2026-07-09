@@ -9,7 +9,7 @@ using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Modules.VoltageDrop.UI;
 
-public sealed class VoltageDropWindow : Window
+public sealed class VoltageDropWindow : TrueBimWindow
 {
     private readonly VoltageDropCalculationService calculationService;
     private readonly ITrueBimLogger logger;

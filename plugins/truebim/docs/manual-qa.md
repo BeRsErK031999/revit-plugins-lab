@@ -175,8 +175,8 @@ Status: the first working release is implemented and preflight-verified. Repeat 
 5. Confirm the window lists printable sheets with source, sheet number, sheet name, format, export status, and filename preview columns.
 6. If more than one document is open, change the source filter and confirm selected sheets are preserved when switching back.
 7. Set an export folder.
-8. Change the filename template and confirm filename previews update.
-9. Use a template containing `{SheetNumber}`, `{SheetName}`, `{ProjectNumber}`, `{ProjectName}`, `{DocumentName}`, `{Date:yyyy-MM-dd}`, `{Counter}`, and `{Counter:000}` as needed.
+8. Change the filename mask and confirm filename previews update.
+9. Use a mask containing `{Номер листа}`, `{Имя листа}`, `{Номер проекта}`, `{Имя проекта}`, `{Имя документа}`, `{Дата:yyyy-MM-dd}`, `{Счетчик}`, and `{Счетчик:000}` as needed. Existing masks with `{SheetNumber}` / `{SheetName}` must keep working.
 10. Confirm invalid Windows filename characters are normalized in previews.
 11. Enable PDF and select separate PDF mode.
 12. Choose PDF color, raster quality, and raster/vector settings.

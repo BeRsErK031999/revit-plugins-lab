@@ -15,7 +15,7 @@ using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace TrueBIM.App.Modules.BimTools.Worksets.UI;
 
-public sealed class CreateWorksetsWindow : Window
+public sealed class CreateWorksetsWindow : TrueBimWindow
 {
     private readonly Document document;
     private readonly WorksetCsvReader csvReader;

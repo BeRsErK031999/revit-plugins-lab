@@ -7,7 +7,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.CopyParameters.UI;
 
-public sealed class CopyParametersWindow : Window
+public sealed class CopyParametersWindow : TrueBimWindow
 {
     private readonly List<CopyParameterRow> rows;
     private readonly TextBlock statusText = new();

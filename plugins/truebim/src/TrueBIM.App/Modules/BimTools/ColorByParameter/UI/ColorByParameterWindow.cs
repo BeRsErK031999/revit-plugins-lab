@@ -13,7 +13,7 @@ using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.BimTools.ColorByParameter.UI;
 
-public sealed class ColorByParameterWindow : Window
+public sealed class ColorByParameterWindow : TrueBimWindow
 {
     private const int MaxValueCount = 40;
     private readonly Document document;

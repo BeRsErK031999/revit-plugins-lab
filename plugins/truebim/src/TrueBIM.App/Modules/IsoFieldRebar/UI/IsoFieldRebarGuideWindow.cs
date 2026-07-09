@@ -6,7 +6,7 @@ using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.UI;
 
-public sealed class IsoFieldRebarGuideWindow : Window
+public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 {
     private static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(18, 38, 58));
     private static readonly Brush MutedBrush = new SolidColorBrush(Color.FromRgb(74, 90, 106));
