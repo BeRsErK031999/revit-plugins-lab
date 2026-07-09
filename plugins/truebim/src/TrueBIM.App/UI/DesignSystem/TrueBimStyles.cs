@@ -198,7 +198,7 @@ public static class TrueBimStyles
         return style;
     }
 
-    private static Style CreateDataGridRowStyle()
+    public static Style CreateDataGridRowStyle()
     {
         Style style = new(typeof(DataGridRow));
         style.Setters.Add(new Setter(Control.BackgroundProperty, TrueBimBrushes.Surface));

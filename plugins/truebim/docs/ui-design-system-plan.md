@@ -30,12 +30,22 @@ Create a lightweight TrueBIM design system on top of native WPF:
 
 ## Staged implementation
 
-1. Add `UI/DesignSystem`, wire local theme resources through `TrueBimWindow`, and migrate `ModuleLauncherWindow` as the first low-risk consumer.
-2. Apply shared button, table, footer, and status helpers to `PrintWindow`, `SheetNumberingWindow`, and `ViewVisibilityWindow`.
-3. Apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
-4. Move `VoltageDropWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
-5. Convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
-6. Review `IconFactory` and ribbon grouping after the common window layer is stable.
+1. Done in `c03b876`: add `UI/DesignSystem`, wire local theme resources through `TrueBimWindow`, migrate `ModuleLauncherWindow` as the first low-risk consumer, and expand `IconFactory` for shared UI states.
+2. In progress: apply shared shell, button, table, footer, and status helpers to `PrintWindow`, then repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`.
+3. Pending: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
+4. Pending: move `VoltageDropWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
+5. Pending: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
+6. Pending: review ribbon grouping after the common window layer is stable.
+
+## Current readiness
+
+- Design system foundation: done.
+- Local `TrueBimWindow` resource/chrome integration: done.
+- First migrated consumer, `ModuleLauncherWindow`: done.
+- `PrintWindow` migration: in progress.
+- Remaining production windows: pending staged migration.
+- Third-party library adoption: intentionally not started.
+- Manual Revit UI smoke: pending because it requires local deploy/restart conditions.
 
 ## Third-party libraries
 

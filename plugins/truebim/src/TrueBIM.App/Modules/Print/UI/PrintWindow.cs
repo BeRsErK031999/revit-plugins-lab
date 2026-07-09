@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +12,7 @@ using TrueBIM.App.Modules.Print.Services;
 using TrueBIM.App.Modules.Print.Models;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using RevitDocument = Autodesk.Revit.DB.Document;
 
 namespace TrueBIM.App.Modules.Print.UI;
@@ -115,7 +117,7 @@ public sealed class PrintWindow : TrueBimWindow
         TextWrapping = TextWrapping.Wrap,
         VerticalAlignment = VerticalAlignment.Center
     };
-    private readonly Button exportButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
+    private readonly Button exportButton = TrueBimUi.CreatePrimaryButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
     private DwgExportProfileStoreState dwgProfileState = new();
     private DwgExportProfile selectedDwgProfile = DwgExportOptionsFactory.CreateProfileFromOptions(
         DwgExportProfile.DefaultProfileName,
@@ -210,13 +212,17 @@ public sealed class PrintWindow : TrueBimWindow
 
         Title = WindowTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
-        exportButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, IsPdfProfile ? "Экспорт PDF" : "Экспорт DWG");
+        exportButton.Content = IconFactory.CreateButtonContent(
+            TrueBimIcon.Export,
+            IsPdfProfile ? "Экспорт PDF" : "Экспорт DWG",
+            Colors.White);
         Width = 1120;
         Height = 720;
         MinWidth = 980;
         MinHeight = 620;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ApplySharedControlStyles();
         Content = CreateContent();
 
         LoadSheets();
@@ -231,32 +237,27 @@ public sealed class PrintWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
-        {
-            Margin = new Thickness(20)
-        };
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                "Печать / Экспорт",
+                "Пакетная печать PDF, DWG, DXF и DWF из выбранных листов.",
+                TrueBimIcon.Print),
+            commandBar: CreateReadSettings(),
+            body: CreateSheetsSection(),
+            status: CreateStatus(),
+            footer: CreateExportSettings());
+    }
 
-        UIElement readSettings = CreateReadSettings();
-        DockPanel.SetDock(readSettings, Dock.Top);
-        root.Children.Add(readSettings);
-
-        UIElement status = CreateStatus();
-        DockPanel.SetDock(status, Dock.Top);
-        root.Children.Add(status);
-
-        UIElement exportSettings = CreateExportSettings();
-        DockPanel.SetDock(exportSettings, Dock.Bottom);
-        root.Children.Add(exportSettings);
-
-        root.Children.Add(CreateSheetGrid());
-        return root;
+    private UIElement CreateSheetsSection()
+    {
+        return TrueBimUi.CreateSectionCard("Листы для экспорта", CreateSheetGrid());
     }
 
     private UIElement CreateReadSettings()
     {
         DockPanel controls = new()
         {
-            Margin = new Thickness(0, 0, 0, 12)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
 
         StackPanel selectionActions = new()
@@ -277,8 +278,8 @@ public sealed class PrintWindow : TrueBimWindow
         clearSelectionButton.Click += (_, _) => SetAllSelected(isSelected: false);
         selectionActions.Children.Add(clearSelectionButton);
 
-        Button refreshButton = CreateActionButton("Обновить", TrueBimIcon.Preview, isEnabled: true);
-        refreshButton.Margin = new Thickness(0, 0, 16, 0);
+        Button refreshButton = CreateActionButton("Обновить", TrueBimIcon.Refresh, isEnabled: true);
+        refreshButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
         refreshButton.ToolTip = "Перечитать список листов, уже собранный при открытии окна.";
         refreshButton.Click += (_, _) => LoadSheets();
         selectionActions.Children.Add(refreshButton);
@@ -286,7 +287,7 @@ public sealed class PrintWindow : TrueBimWindow
         includePlaceholdersInput.VerticalAlignment = VerticalAlignment.Center;
         includePlaceholdersInput.Checked += (_, _) => LoadSheets();
         includePlaceholdersInput.Unchecked += (_, _) => LoadSheets();
-        includePlaceholdersInput.Margin = new Thickness(0, 0, 16, 0);
+        includePlaceholdersInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
         selectionActions.Children.Add(includePlaceholdersInput);
 
         sourceFilterInput.ItemsSource = sourceFilterOptions;
@@ -304,6 +305,7 @@ public sealed class PrintWindow : TrueBimWindow
                 ? $"Источников: {sheetSources.Count}. Активный: {(string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title)}"
                 : string.IsNullOrWhiteSpace(document.Title) ? "Активный документ" : document.Title,
             FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextSecondary,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right
         };
@@ -314,9 +316,9 @@ public sealed class PrintWindow : TrueBimWindow
 
     private UIElement CreateStatus()
     {
-        statusText.Margin = new Thickness(0, 0, 0, 12);
+        statusText.Foreground = TrueBimBrushes.TextPrimary;
         statusText.TextWrapping = TextWrapping.Wrap;
-        return statusText;
+        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
     }
 
     private UIElement CreateSheetGrid()
@@ -324,6 +326,7 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.AutoGenerateColumns = false;
         sheetGrid.CanUserAddRows = false;
         sheetGrid.IsReadOnly = false;
+        sheetGrid.Style = TrueBimStyles.CreateDataGridStyle();
         sheetGrid.ItemsSource = sheetRows;
         ICollectionView groupedView = CollectionViewSource.GetDefaultView(sheetRows);
         groupedView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PrintSheetRow.GroupName)));
@@ -347,7 +350,7 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.Columns.Add(CreateTextColumn("Номер", nameof(PrintSheetRow.SheetNumber), 110));
         sheetGrid.Columns.Add(CreateTextColumn("Имя листа", nameof(PrintSheetRow.SheetName), new DataGridLength(1, DataGridLengthUnitType.Star)));
         sheetGrid.Columns.Add(CreateTextColumn("Формат", nameof(PrintSheetRow.SheetFormat), 120));
-        sheetGrid.Columns.Add(CreateTextColumn("Статус", nameof(PrintSheetRow.Status), 150));
+        sheetGrid.Columns.Add(CreateStatusColumn());
         sheetGrid.Columns.Add(CreateTextColumn("Имя файла", nameof(PrintSheetRow.FileNamePreview), 240));
 
         return sheetGrid;
@@ -357,7 +360,7 @@ public sealed class PrintWindow : TrueBimWindow
     {
         Grid root = new()
         {
-            Margin = new Thickness(0, 16, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, 0)
         };
         for (int index = 0; index < 5; index++)
         {
@@ -568,14 +571,20 @@ public sealed class PrintWindow : TrueBimWindow
             Grid.SetColumn(dwgProfileSourceText, 1);
             dwgProfileRow.Children.Add(dwgProfileSourceText);
 
-            Button dwgSettingsButton = CreateActionButton("Настройки DWG...", TrueBimIcon.Preview, isEnabled: true);
+            Button dwgSettingsButton = CreateActionButton(
+                "Настройки DWG...",
+                TrueBimIcon.Settings,
+                isEnabled: true);
             dwgSettingsButton.Margin = new Thickness(8, 0, 0, 0);
             dwgSettingsButton.ToolTip = "Открыть расширенные настройки DWGExportOptions.";
             dwgSettingsButton.Click += (_, _) => OpenDwgSettings();
             Grid.SetColumn(dwgSettingsButton, 2);
             dwgProfileRow.Children.Add(dwgSettingsButton);
 
-            Button validateDwgButton = CreateActionButton("Проверить настройки", TrueBimIcon.Apply, isEnabled: true);
+            Button validateDwgButton = CreateActionButton(
+                "Проверить настройки",
+                TrueBimIcon.Check,
+                isEnabled: true);
             validateDwgButton.Margin = new Thickness(8, 0, 0, 0);
             validateDwgButton.ToolTip = "Показать сводку выбранных листов, папки и DWG-профиля.";
             validateDwgButton.Click += (_, _) => ShowDwgSettingsSummary();
@@ -588,7 +597,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         DockPanel actionRow = new()
         {
-            Margin = new Thickness(0, 12, 0, 0)
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
         if (IsDwgProfile)
@@ -629,7 +638,7 @@ public sealed class PrintWindow : TrueBimWindow
         exportButton.Click += (_, _) => StartExport();
         actions.Children.Add(exportButton);
 
-        Button closeButton = CreateActionButton("Закрыть", TrueBimIcon.Close, isEnabled: true);
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close);
         closeButton.Margin = new Thickness(8, 0, 0, 0);
         closeButton.IsCancel = true;
         closeButton.ToolTip = "Закрыть окно печати.";
@@ -642,6 +651,28 @@ public sealed class PrintWindow : TrueBimWindow
 
         UpdatePdfOptionsState();
         return root;
+    }
+
+    private void ApplySharedControlStyles()
+    {
+        sourceFilterInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        exportFolderInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        fileNameMaskInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        combinedPdfNameInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        pdfColorModeInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        pdfRasterQualityInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        dwgSetupInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        dxfSetupInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        includePlaceholdersInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        pdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        combinePdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        separatePdfWithCombinedInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        forceRasterPdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        dwgInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        dxfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        dwfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        combineDwgInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        dwgProfileSourceText.Foreground = TrueBimBrushes.TextSecondary;
     }
 
     private void BindCadSetupInput(ComboBox setupInput, string? setupName)
@@ -1669,6 +1700,38 @@ public sealed class PrintWindow : TrueBimWindow
         };
     }
 
+    private static DataGridTemplateColumn CreateStatusColumn()
+    {
+        FrameworkElementFactory badge = new(typeof(Border));
+        badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+        badge.SetValue(Border.BorderThicknessProperty, new Thickness(TrueBimTheme.BorderWidth));
+        badge.SetValue(Border.PaddingProperty, TrueBimTheme.BadgePadding);
+        badge.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+        badge.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        badge.SetBinding(Border.BackgroundProperty, new Binding(nameof(PrintSheetRow.Status)) { Converter = new PrintStatusBackgroundConverter() });
+        badge.SetBinding(Border.BorderBrushProperty, new Binding(nameof(PrintSheetRow.Status)) { Converter = new PrintStatusBrushConverter() });
+
+        FrameworkElementFactory text = new(typeof(TextBlock));
+        text.SetValue(TextBlock.FontSizeProperty, TrueBimTheme.CaptionFontSize);
+        text.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        text.SetValue(FrameworkElement.MinWidthProperty, 84.0);
+        text.SetBinding(TextBlock.TextProperty, new Binding(nameof(PrintSheetRow.Status)));
+        text.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(PrintSheetRow.Status)) { Converter = new PrintStatusBrushConverter() });
+        badge.AppendChild(text);
+
+        return new DataGridTemplateColumn
+        {
+            Header = "Статус",
+            CellTemplate = new DataTemplate
+            {
+                VisualTree = badge
+            },
+            Width = 150,
+            IsReadOnly = true
+        };
+    }
+
     private static GroupStyle CreateSheetGroupStyle()
     {
         FrameworkElementFactory expander = new(typeof(Expander));
@@ -1692,14 +1755,14 @@ public sealed class PrintWindow : TrueBimWindow
 
     private static Style CreateSheetRowStyle()
     {
-        Style style = new(typeof(DataGridRow));
+        Style style = TrueBimStyles.CreateDataGridRowStyle();
         style.Triggers.Add(new DataTrigger
         {
             Binding = new Binding(nameof(PrintSheetRow.SourceIsLinked)),
             Value = true,
             Setters =
             {
-                new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(238, 246, 255)))
+                new Setter(Control.BackgroundProperty, TrueBimBrushes.InfoBackground)
             }
         });
         return style;
@@ -1736,7 +1799,7 @@ public sealed class PrintWindow : TrueBimWindow
         return new ComboBox
         {
             DisplayMemberPath = nameof(PrintCadExportSetupOption.DisplayName),
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
             MinWidth = 220,
             ToolTip = tooltip
         };
@@ -1748,7 +1811,7 @@ public sealed class PrintWindow : TrueBimWindow
         {
             DisplayMemberPath = "Value",
             SelectedValuePath = "Key",
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
             MinWidth = 160,
             ToolTip = tooltip
         };
@@ -1756,14 +1819,9 @@ public sealed class PrintWindow : TrueBimWindow
 
     private static Button CreateActionButton(string text, TrueBimIcon icon, bool isEnabled)
     {
-        return new Button
-        {
-            Content = IconFactory.CreateButtonContent(icon, text),
-            MinWidth = 110,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0),
-            IsEnabled = isEnabled
-        };
+        Button button = TrueBimUi.CreateSecondaryButton(text, icon, isEnabled: isEnabled);
+        button.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
+        return button;
     }
 
     private static string GetRevitVersion(RevitDocument document)
@@ -2077,6 +2135,69 @@ public sealed class PrintWindow : TrueBimWindow
         Replace,
         Skip,
         Cancel
+    }
+
+    private sealed class PrintStatusBrushConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return TrueBimBrushes.ForSeverity(GetStatusSeverity(value as string));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class PrintStatusBackgroundConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return TrueBimBrushes.BackgroundForSeverity(GetStatusSeverity(value as string));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private static TrueBimUiSeverity GetStatusSeverity(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return TrueBimUiSeverity.Neutral;
+        }
+
+        string normalizedStatus = status!;
+
+        if (StatusContains(normalizedStatus, "ошибка"))
+        {
+            return TrueBimUiSeverity.Danger;
+        }
+
+        if (StatusContains(normalizedStatus, "дубликат")
+            || StatusContains(normalizedStatus, "неизвест")
+            || StatusContains(normalizedStatus, "обрез")
+            || StatusContains(normalizedStatus, "заглуш")
+            || StatusContains(normalizedStatus, "не печатается"))
+        {
+            return TrueBimUiSeverity.Warning;
+        }
+
+        if (StatusContains(normalizedStatus, "готов")
+            || StatusContains(normalizedStatus, "экспорт"))
+        {
+            return TrueBimUiSeverity.Success;
+        }
+
+        return TrueBimUiSeverity.Info;
+    }
+
+    private static bool StatusContains(string status, string value)
+    {
+        return status.IndexOf(value, StringComparison.CurrentCultureIgnoreCase) >= 0;
     }
 
     private static IReadOnlyList<KeyValuePair<PrintPdfColorMode, string>> GetPdfColorModeOptions()

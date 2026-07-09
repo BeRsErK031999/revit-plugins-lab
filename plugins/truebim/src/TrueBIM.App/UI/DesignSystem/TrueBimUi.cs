@@ -192,18 +192,23 @@ public static class TrueBimUi
 
     public static Border CreateInfoBanner(string text, TrueBimUiSeverity severity = TrueBimUiSeverity.Info)
     {
-        DockPanel content = new()
-        {
-            LastChildFill = true
-        };
-        content.Children.Add(IconFactory.Create(GetSeverityIcon(severity), TrueBimBrushes.ForSeverity(severity).Color, TrueBimTheme.IconSizeSmall));
-        content.Children.Add(new TextBlock
+        return CreateInfoBanner(new TextBlock
         {
             Text = text,
             Foreground = TrueBimBrushes.TextPrimary,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center
-        });
+        }, severity);
+    }
+
+    public static Border CreateInfoBanner(UIElement contentElement, TrueBimUiSeverity severity = TrueBimUiSeverity.Info)
+    {
+        DockPanel content = new()
+        {
+            LastChildFill = true
+        };
+        content.Children.Add(IconFactory.Create(GetSeverityIcon(severity), TrueBimBrushes.ForSeverity(severity).Color, TrueBimTheme.IconSizeSmall));
+        content.Children.Add(contentElement);
 
         return new Border
         {
