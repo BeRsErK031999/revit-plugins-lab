@@ -59,9 +59,9 @@ public sealed class ParaManagerWindow : Window
 
         Title = "ParaManager";
         Icon = IconFactory.CreateImage(TrueBimIcon.Parameters, 32);
-        Width = 980;
+        Width = 1040;
         Height = 700;
-        MinWidth = 900;
+        MinWidth = 960;
         MinHeight = 620;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -118,22 +118,42 @@ public sealed class ParaManagerWindow : Window
         return root;
     }
 
-    private StackPanel CreateHeader()
+    private UIElement CreateHeader()
     {
-        StackPanel header = new();
-        header.Children.Add(new TextBlock
+        DockPanel header = new()
+        {
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+
+        Button helpButton = new()
+        {
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Help, "Справка"),
+            Height = 30,
+            MinWidth = 110,
+            ToolTip = "Показать короткую подсказку по ручному добавлению, CSV и shared parameter file."
+        };
+        helpButton.Click += (_, _) => ShowHelp();
+        DockPanel.SetDock(helpButton, Dock.Right);
+        header.Children.Add(helpButton);
+
+        StackPanel textPanel = new()
+        {
+            Margin = new Thickness(0, 0, 12, 0)
+        };
+        textPanel.Children.Add(new TextBlock
         {
             Text = "ParaManager",
             FontSize = 22,
             FontWeight = FontWeights.SemiBold
         });
-        header.Children.Add(new TextBlock
+        textPanel.Children.Add(new TextBlock
         {
-            Text = "Просмотр параметров проекта, выбор shared parameter .txt и импорт привязок из таблицы настройки.",
+            Text = "Создание и привязка project/shared parameters к категориям текущей модели Revit.",
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 12)
+            Margin = new Thickness(0, 6, 0, 0)
         });
+        header.Children.Add(textPanel);
         return header;
     }
 
@@ -156,7 +176,8 @@ public sealed class ParaManagerWindow : Window
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Обновить список"),
             Height = 30,
-            MinWidth = 160
+            MinWidth = 160,
+            ToolTip = "Снова прочитать project parameters из текущего документа Revit."
         };
         refreshButton.Click += (_, _) => RefreshProjectParameters();
         toolbar.Children.Add(refreshButton);
@@ -166,7 +187,8 @@ public sealed class ParaManagerWindow : Window
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Export, "Экспорт списка"),
             Height = 30,
             MinWidth = 130,
-            Margin = new Thickness(8, 0, 0, 0)
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = "Сохранить текущие project parameters в CSV для проверки или передачи BIM-координатору."
         };
         exportButton.Click += (_, _) => ExportProjectParameters();
         toolbar.Children.Add(exportButton);
@@ -175,13 +197,15 @@ public sealed class ParaManagerWindow : Window
         projectParameterList.BorderBrush = Brushes.LightGray;
         projectParameterList.BorderThickness = new Thickness(1);
         projectParameterList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        projectParameterList.ToolTip = "Список параметров, уже привязанных к категориям проекта.";
         WpfGrid.SetRow(projectParameterList, 1);
         panel.Children.Add(projectParameterList);
 
         return new TabItem
         {
             Header = "Параметры проекта",
-            Content = panel
+            Content = panel,
+            ToolTip = "Посмотреть параметры, которые уже есть в модели."
         };
     }
 
@@ -198,10 +222,22 @@ public sealed class ParaManagerWindow : Window
         panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        UIElement sharedFileBar = CreatePathBar(sharedParameterPathInput, "Shared parameter file (*.txt)|*.txt|All files (*.*)|*.*", "Выбрать shared parameters", ChooseSharedParameterFile);
+        UIElement sharedFileBar = CreatePathBar(
+            sharedParameterPathInput,
+            "Shared parameter file (*.txt)|*.txt|All files (*.*)|*.*",
+            "Выбрать shared .txt",
+            ChooseSharedParameterFile,
+            "Файл общих параметров Revit. ParaManager создаёт в нём definitions и затем привязывает их к проекту.",
+            "Выбрать существующий Revit shared parameter .txt.");
         panel.Children.Add(sharedFileBar);
 
-        UIElement csvFileBar = CreatePathBar(csvPathInput, "CSV files (*.csv)|*.csv|All files (*.*)|*.*", "Выбрать таблицу", ChooseImportFile);
+        UIElement csvFileBar = CreatePathBar(
+            csvPathInput,
+            "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+            "Выбрать CSV",
+            ChooseImportFile,
+            "CSV-шаблон ParaManager для массового создания параметров. Это не Revit-спецификация.",
+            "Выбрать заполненный CSV-шаблон с колонками ParameterName, BindingType, Categories и другими.");
         WpfGrid.SetRow(csvFileBar, 1);
         panel.Children.Add(csvFileBar);
 
@@ -214,10 +250,32 @@ public sealed class ParaManagerWindow : Window
             Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 0, 0, 8)
         };
-        toolbar.Children.Add(CreateSmallButton("Проверить", (_, _) => LoadAndValidate()));
-        Button templateButton = CreateSmallButton("Экспортировать шаблон", (_, _) => ExportTemplate());
+        Button addButton = CreateSmallButton(
+            "Добавить параметр",
+            (_, _) => AddManualParameter(),
+            "Создать одну строку параметра вручную без CSV.");
+        toolbar.Children.Add(addButton);
+
+        Button validateButton = CreateSmallButton(
+            "Проверить",
+            (_, _) => LoadAndValidate(),
+            "Прочитать CSV и проверить имена, типы, категории и существующие параметры проекта.");
+        validateButton.Margin = new Thickness(8, 0, 0, 0);
+        toolbar.Children.Add(validateButton);
+
+        Button templateButton = CreateSmallButton(
+            "CSV-шаблон",
+            (_, _) => ExportTemplate(),
+            "Сохранить CSV-шаблон с примерами строк. Заполните его и загрузите через «Выбрать CSV».");
         templateButton.Margin = new Thickness(8, 0, 0, 0);
         toolbar.Children.Add(templateButton);
+
+        Button removeButton = CreateSmallButton(
+            "Убрать выбранные",
+            (_, _) => RemoveSelectedRows(),
+            "Удалить выделенные строки из текущего списка импорта. Модель Revit при этом не меняется.");
+        removeButton.Margin = new Thickness(8, 0, 0, 0);
+        toolbar.Children.Add(removeButton);
         WpfGrid.SetRow(toolbar, 3);
         panel.Children.Add(toolbar);
 
@@ -225,6 +283,7 @@ public sealed class ParaManagerWindow : Window
         importRowList.BorderThickness = new Thickness(1);
         importRowList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         importRowList.SelectionMode = SelectionMode.Extended;
+        importRowList.ToolTip = "Выделите строки, чтобы присвоить им выбранные категории или убрать их из списка.";
         WpfGrid.SetRow(importRowList, 4);
         panel.Children.Add(importRowList);
 
@@ -238,7 +297,8 @@ public sealed class ParaManagerWindow : Window
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Применить импорт"),
             MinWidth = 170,
-            Height = 32
+            Height = 32,
+            ToolTip = "Записать проверенные параметры в shared parameter file и привязать их к категориям текущего проекта."
         };
         applyButton.Click += (_, _) => ApplyImport();
         footer.Children.Add(applyButton);
@@ -247,8 +307,9 @@ public sealed class ParaManagerWindow : Window
 
         return new TabItem
         {
-            Header = "Импорт",
-            Content = panel
+            Header = "Создание и импорт",
+            Content = panel,
+            ToolTip = "Добавить один параметр вручную или загрузить набор параметров из CSV."
         };
     }
 
@@ -264,6 +325,7 @@ public sealed class ParaManagerWindow : Window
         return new TabItem
         {
             Header = "Отчёт",
+            ToolTip = "Итоги последнего применения импорта и ошибки по строкам.",
             Content = new WpfGrid
             {
                 Margin = new Thickness(10),
@@ -272,7 +334,13 @@ public sealed class ParaManagerWindow : Window
         };
     }
 
-    private static DockPanel CreatePathBar(WpfTextBox input, string filter, string buttonText, RoutedEventHandler clickHandler)
+    private static DockPanel CreatePathBar(
+        WpfTextBox input,
+        string filter,
+        string buttonText,
+        RoutedEventHandler clickHandler,
+        string inputToolTip,
+        string buttonToolTip)
     {
         DockPanel fileBar = new()
         {
@@ -286,7 +354,8 @@ public sealed class ParaManagerWindow : Window
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, buttonText),
             Height = 30,
             MinWidth = 190,
-            Margin = new Thickness(8, 0, 0, 0)
+            Margin = new Thickness(8, 0, 0, 0),
+            ToolTip = buttonToolTip
         };
         chooseButton.Click += clickHandler;
         DockPanel.SetDock(chooseButton, Dock.Right);
@@ -294,6 +363,7 @@ public sealed class ParaManagerWindow : Window
 
         input.Height = 30;
         input.VerticalContentAlignment = VerticalAlignment.Center;
+        input.ToolTip = inputToolTip;
         fileBar.Children.Add(input);
 
         return fileBar;
@@ -309,11 +379,11 @@ public sealed class ParaManagerWindow : Window
 
         Button applyButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Добавить к выбранным"),
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Присвоить категории"),
             Height = 30,
-            MinWidth = 185,
+            MinWidth = 195,
             Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = "Записать сохранённый список категорий в выделенные строки импорта."
+            ToolTip = "Записать выбранный набор категорий в выделенные строки импорта. Это ещё не меняет модель."
         };
         applyButton.Click += (_, _) => ApplyCategoriesToSelectedRows();
         DockPanel.SetDock(applyButton, Dock.Right);
@@ -325,7 +395,7 @@ public sealed class ParaManagerWindow : Window
             Height = 30,
             MinWidth = 125,
             Margin = new Thickness(8, 0, 0, 0),
-            ToolTip = "Выбрать и сохранить список категорий для ParaManager."
+            ToolTip = "Выбрать категории Revit, которым нужно добавить параметры."
         };
         chooseButton.Click += (_, _) => ChooseCategories();
         DockPanel.SetDock(chooseButton, Dock.Right);
@@ -334,17 +404,79 @@ public sealed class ParaManagerWindow : Window
         categoryPresetInput.Height = 30;
         categoryPresetInput.VerticalContentAlignment = VerticalAlignment.Center;
         categoryPresetInput.IsReadOnly = true;
-        categoryPresetInput.ToolTip = "Сохранённые категории для применения к выбранным параметрам.";
+        categoryPresetInput.ToolTip = "Сохранённый набор категорий. Его можно применить к строкам CSV или использовать как стартовый набор при ручном добавлении.";
         categoryBar.Children.Add(categoryPresetInput);
 
         return categoryBar;
+    }
+
+    private static void ShowHelp()
+    {
+        TaskDialog dialog = new("ParaManager")
+        {
+            MainInstruction = "Что делает ParaManager",
+            MainContent =
+                "ParaManager создаёт project/shared parameters и привязывает их к категориям текущего проекта Revit.\n\n" +
+                "1. «Выбрать shared .txt» — файл общих параметров Revit, где хранятся definitions.\n" +
+                "2. «Добавить параметр» — ручной ввод одного параметра без CSV.\n" +
+                "3. «Выбрать CSV» — массовый импорт строк из CSV-шаблона ParaManager, не выбор Revit-спецификации.\n" +
+                "4. «Категории» и «Присвоить категории» — задают, какие категории получат параметр.\n" +
+                "5. «Применить импорт» — единственный шаг, который записывает изменения в модель."
+        };
+        dialog.Show();
+    }
+
+    private void AddManualParameter()
+    {
+        IReadOnlyList<string> categoryNames = categoryResolveService.CollectBindableCategoryNames(document);
+        ParameterManualAddWindow window = new(categoryNames, selectedCategoryPreset)
+        {
+            Owner = this
+        };
+        if (window.ShowDialog() != true || window.CreatedRow is null)
+        {
+            return;
+        }
+
+        importRows.Add(window.CreatedRow);
+        ValidateRows();
+        RefreshImportRows();
+        statusText.Text = $"Параметр добавлен в список проверки: {window.CreatedRow.ParameterName}. Перед записью нажмите «Применить импорт».";
+    }
+
+    private void RemoveSelectedRows()
+    {
+        if (importRows.Count == 0)
+        {
+            statusText.Text = "Нет строк импорта для удаления.";
+            return;
+        }
+
+        IReadOnlyList<ParameterImportRow> selectedRows = GetSelectedImportRows();
+        if (selectedRows.Count == 0)
+        {
+            statusText.Text = "Выделите строки импорта, которые нужно убрать из списка.";
+            return;
+        }
+
+        HashSet<ParameterImportRow> selectedRowSet = selectedRows.ToHashSet();
+        importRows = importRows
+            .Where(row => !selectedRowSet.Contains(row))
+            .ToList();
+        if (importRows.Count > 0)
+        {
+            ValidateRows();
+        }
+
+        RefreshImportRows();
+        statusText.Text = $"Из списка импорта убрано строк: {selectedRows.Count}.";
     }
 
     private void ChooseSharedParameterFile(object sender, RoutedEventArgs args)
     {
         if (ChooseFile(sharedParameterPathInput, "Shared parameter file (*.txt)|*.txt|All files (*.*)|*.*"))
         {
-            statusText.Text = $"Shared parameter .txt выбран: {sharedParameterPathInput.Text}";
+            statusText.Text = $"Shared parameter .txt выбран: {sharedParameterPathInput.Text}. Теперь добавьте параметр вручную или загрузите CSV.";
         }
     }
 
@@ -476,11 +608,13 @@ public sealed class ParaManagerWindow : Window
 
     private static UIElement CreateImportRow(ParameterImportRow row)
     {
+        string source = GetRowSourceDisplay(row);
         DockPanel panel = new()
         {
             LastChildFill = true,
             Margin = new Thickness(8, 6, 8, 6),
-            Tag = row
+            Tag = row,
+            ToolTip = $"{source}. {row.BindingType} parameter: {row.DataType}. Категории: {row.Categories}. {row.Message}"
         };
 
         TextBlock status = new()
@@ -503,7 +637,7 @@ public sealed class ParaManagerWindow : Window
         });
         textPanel.Children.Add(new TextBlock
         {
-            Text = $"Строка {row.LineNumber}. {row.BindingType} | {row.DataType} | {row.GroupUnder} | {row.Categories}. {row.Message}",
+            Text = $"{source}. {row.BindingType} | {row.DataType} | {row.GroupUnder} | {row.Categories}. {row.Message}",
             Foreground = Brushes.DimGray,
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap
@@ -511,6 +645,11 @@ public sealed class ParaManagerWindow : Window
         panel.Children.Add(textPanel);
 
         return panel;
+    }
+
+    private static string GetRowSourceDisplay(ParameterImportRow row)
+    {
+        return row.LineNumber > 0 ? $"Строка {row.LineNumber}" : "Ручной ввод";
     }
 
     private void RefreshProjectParameters()
@@ -573,7 +712,8 @@ public sealed class ParaManagerWindow : Window
         DockPanel panel = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(8, 6, 8, 6)
+            Margin = new Thickness(8, 6, 8, 6),
+            ToolTip = $"{row.BindingTypeDisplay} parameter. Раздел: {row.GroupDisplay}. Категории: {row.CategoriesDisplay}."
         };
 
         TextBlock typeText = new()
@@ -610,7 +750,7 @@ public sealed class ParaManagerWindow : Window
     {
         SaveFileDialog dialog = new()
         {
-            Title = "Сохранить шаблон ParaManager",
+            Title = "Сохранить CSV-шаблон ParaManager",
             Filter = "CSV files (*.csv)|*.csv",
             FileName = "truebim-paramanager-template.csv",
             AddExtension = true,
@@ -623,7 +763,7 @@ public sealed class ParaManagerWindow : Window
         }
 
         File.WriteAllText(dialog.FileName, csvImportService.CreateTemplate(), System.Text.Encoding.UTF8);
-        statusText.Text = $"Шаблон сохранён: {dialog.FileName}";
+        statusText.Text = $"CSV-шаблон сохранён: {dialog.FileName}. Заполните строки и загрузите файл через «Выбрать CSV».";
     }
 
     private void ApplyImport()
@@ -694,7 +834,7 @@ public sealed class ParaManagerWindow : Window
     {
         if (importRows.Count == 0)
         {
-            statusText.Text = $"Параметров проекта: {projectParameterList.Items.Count}. Файл импорта не выбран.";
+            statusText.Text = $"Параметров проекта: {projectParameterList.Items.Count}. Добавьте параметр вручную или загрузите CSV-шаблон.";
             return;
         }
 
@@ -719,13 +859,14 @@ public sealed class ParaManagerWindow : Window
         };
     }
 
-    private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler)
+    private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler, string? toolTip = null)
     {
         Button button = new()
         {
             Content = text,
             Height = 28,
-            MinWidth = 110
+            MinWidth = 110,
+            ToolTip = toolTip
         };
         button.Click += clickHandler;
         return button;

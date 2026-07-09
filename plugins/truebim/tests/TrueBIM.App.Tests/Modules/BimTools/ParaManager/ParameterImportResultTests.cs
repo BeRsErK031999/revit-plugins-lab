@@ -27,6 +27,20 @@ public sealed class ParameterImportResultTests
         Assert.Contains("строка 2: BIM_Ошибка - Категория не найдена", text);
     }
 
+    [Fact]
+    public void ToDialogTextLabelsManualRows()
+    {
+        ParameterImportRow failed = new(0, "BIM_Проверено", "BIM", "Instance", "Walls", "Identity Data", "YesNo", "true", "true", string.Empty)
+        {
+            Status = ParameterImportStatus.Failed,
+            Message = "Shared parameter file не выбран"
+        };
+
+        string text = new ParameterImportResult([failed]).ToDialogText();
+
+        Assert.Contains("ручной ввод: BIM_Проверено - Shared parameter file не выбран", text);
+    }
+
     private static ParameterImportRow CreateRow(string name)
     {
         return new ParameterImportRow(2, name, "BIM", "Instance", "Walls", "Identity Data", "Text", "true", "true", string.Empty);

@@ -37,10 +37,15 @@ public sealed class ParameterImportResult
             builder.AppendLine("Ошибки:");
             foreach (ParameterImportRow row in failedRows)
             {
-                builder.AppendLine($"- строка {row.LineNumber}: {row.ParameterName} - {row.Message}");
+                builder.AppendLine($"- {GetRowSourceDisplay(row)}: {row.ParameterName} - {row.Message}");
             }
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static string GetRowSourceDisplay(ParameterImportRow row)
+    {
+        return row.LineNumber > 0 ? $"строка {row.LineNumber}" : "ручной ввод";
     }
 }
