@@ -32,8 +32,8 @@ Create a lightweight TrueBIM design system on top of native WPF:
 
 1. Done in `c03b876`: add `UI/DesignSystem`, wire local theme resources through `TrueBimWindow`, migrate `ModuleLauncherWindow` as the first low-risk consumer, and expand `IconFactory` for shared UI states.
 2. Done in `4a5f2b9`: apply shared shell, button, table, footer, and status helpers to `PrintWindow`.
-3. In progress: repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`; `SheetNumberingWindow` is migrated, `ViewVisibilityWindow` remains next.
-4. Pending: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
+3. Done: repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`.
+4. Next: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
 5. Pending: move `VoltageDropWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
 6. Pending: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
 7. Pending: review ribbon grouping after the common window layer is stable.
@@ -45,7 +45,8 @@ Create a lightweight TrueBIM design system on top of native WPF:
 - First migrated consumer, `ModuleLauncherWindow`: done.
 - `PrintWindow` migration: done in `4a5f2b9`.
 - `SheetNumberingWindow` migration: done.
-- Next production window: `ViewVisibilityWindow`.
+- `ViewVisibilityWindow` migration: done.
+- Next production windows: `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
 - Third-party library adoption: intentionally not started.
 - Manual Revit UI smoke: pending because it requires local deploy/restart conditions.
 

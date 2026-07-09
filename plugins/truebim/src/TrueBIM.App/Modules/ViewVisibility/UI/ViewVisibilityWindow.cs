@@ -6,7 +6,8 @@ using TrueBIM.App.Modules.ViewVisibility.Models;
 using TrueBIM.App.Modules.ViewVisibility.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
-using WpfColor = System.Windows.Media.Color;
+using TrueBIM.App.UI.DesignSystem;
+using MediaColor = System.Windows.Media.Color;
 using WpfGrid = System.Windows.Controls.Grid;
 
 namespace TrueBIM.App.Modules.ViewVisibility.UI;
@@ -23,14 +24,14 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
     private readonly TextBox searchBox = new();
     private readonly ComboBox categoryTypeFilter = new();
     private string? applySummary;
-    private static readonly WpfColor VisibleEyeColor = WpfColor.FromRgb(0, 122, 204);
-    private static readonly WpfColor HiddenEyeColor = WpfColor.FromRgb(142, 151, 163);
-    private static readonly Brush VisibleBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(229, 242, 255));
-    private static readonly Brush VisibleBadgeBorder = new SolidColorBrush(VisibleEyeColor);
-    private static readonly Brush VisibleBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(0, 92, 158));
-    private static readonly Brush HiddenBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(239, 242, 246));
-    private static readonly Brush HiddenBadgeBorder = new SolidColorBrush(WpfColor.FromRgb(176, 184, 195));
-    private static readonly Brush HiddenBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(93, 102, 114));
+    private static readonly MediaColor VisibleEyeColor = TrueBimTheme.InfoColor;
+    private static readonly MediaColor HiddenEyeColor = TrueBimTheme.TextMutedColor;
+    private static readonly Brush VisibleBadgeBackground = TrueBimBrushes.InfoBackground;
+    private static readonly Brush VisibleBadgeBorder = TrueBimBrushes.Info;
+    private static readonly Brush VisibleBadgeForeground = TrueBimBrushes.Info;
+    private static readonly Brush HiddenBadgeBackground = TrueBimBrushes.SurfaceAlt;
+    private static readonly Brush HiddenBadgeBorder = TrueBimBrushes.Border;
+    private static readonly Brush HiddenBadgeForeground = TrueBimBrushes.TextSecondary;
 
     public ViewVisibilityWindow(
         Document document,
@@ -48,11 +49,13 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
             .ToList();
 
         Title = "Видимость";
+        Icon = IconFactory.CreateImage(TrueBimIcon.Visibility, 32);
         Width = 620;
         Height = 720;
         MinWidth = 540;
         MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ApplySharedControlStyles();
         InitializeCategoryTypeFilter();
         Content = CreateContent();
 
@@ -63,82 +66,69 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        WpfGrid root = new()
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                "Видимость категорий",
+                $"Активный вид: {view.Name}",
+                TrueBimIcon.Visibility),
+            commandBar: CreateCommandPanel(),
+            body: CreateCategorySection(),
+            status: CreateStatus(),
+            footer: CreateFooter());
+    }
+
+    private UIElement CreateCommandPanel()
+    {
+        StackPanel panel = new()
         {
-            Margin = new Thickness(16)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.Children.Add(CreateActionBar());
+        panel.Children.Add(CreateSearchBar());
+        return panel;
+    }
 
-        TextBlock title = new()
-        {
-            Text = "Видимость категорий",
-            FontSize = 20,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 4)
-        };
-        root.Children.Add(title);
-
-        TextBlock viewName = new()
-        {
-            Text = $"Активный вид: {view.Name}",
-            Foreground = Brushes.DimGray,
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-        WpfGrid.SetRow(viewName, 1);
-        root.Children.Add(viewName);
-
-        WpfGrid body = new();
-        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        WpfGrid.SetRow(body, 2);
-        root.Children.Add(body);
-
+    private UIElement CreateActionBar()
+    {
         StackPanel actionBar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
-        body.Children.Add(actionBar);
 
-        Button showAllButton = CreateSmallButton("Показать все", (_, _) => SetAllVisible(true));
+        Button showAllButton = CreateSmallButton("Показать все", TrueBimIcon.Visibility, (_, _) => SetAllVisible(true));
         actionBar.Children.Add(showAllButton);
 
-        Button hideAllButton = CreateSmallButton("Скрыть все", (_, _) => SetAllVisible(false));
-        hideAllButton.Margin = new Thickness(8, 0, 16, 0);
+        Button hideAllButton = CreateSmallButton("Скрыть все", TrueBimIcon.Close, (_, _) => SetAllVisible(false));
+        hideAllButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing16, 0);
         actionBar.Children.Add(hideAllButton);
 
         actionBar.Children.Add(new TextBlock
         {
             Text = "Группа:",
+            Foreground = TrueBimBrushes.TextSecondary,
+            FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 6, 0)
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0)
         });
 
         categoryTypeFilter.Width = 190;
-        categoryTypeFilter.Height = 28;
+        categoryTypeFilter.MinHeight = TrueBimTheme.ControlHeight32;
         categoryTypeFilter.VerticalContentAlignment = VerticalAlignment.Center;
         actionBar.Children.Add(categoryTypeFilter);
+        return actionBar;
+    }
 
+    private UIElement CreateSearchBar()
+    {
         DockPanel searchBar = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0)
         };
-        WpfGrid.SetRow(searchBar, 1);
-        body.Children.Add(searchBar);
 
-        Button clearSearchButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Очистить"),
-            Height = 28,
-            MinWidth = 92,
-            Margin = new Thickness(8, 0, 0, 0)
-        };
+        Button clearSearchButton = TrueBimUi.CreateSecondaryButton("Очистить", TrueBimIcon.Close, minWidth: 100);
+        clearSearchButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         clearSearchButton.Click += (_, _) => searchBox.Clear();
         DockPanel.SetDock(clearSearchButton, Dock.Right);
         searchBar.Children.Add(clearSearchButton);
@@ -146,59 +136,84 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
         TextBlock searchLabel = new()
         {
             Text = "Поиск:",
+            Foreground = TrueBimBrushes.TextSecondary,
+            FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 6, 0)
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0)
         };
         DockPanel.SetDock(searchLabel, Dock.Left);
         searchBar.Children.Add(searchLabel);
 
         searchBox.MinWidth = 180;
-        searchBox.Height = 28;
+        searchBox.MinHeight = TrueBimTheme.ControlHeight32;
         searchBox.VerticalContentAlignment = VerticalAlignment.Center;
         searchBox.ToolTip = "Поиск категории по названию или группе.";
         searchBar.Children.Add(searchBox);
+        return searchBar;
+    }
 
-        categoryList.BorderBrush = Brushes.LightGray;
-        categoryList.BorderThickness = new Thickness(1);
+    private UIElement CreateCategoryList()
+    {
         categoryList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        WpfGrid.SetRow(categoryList, 2);
-        body.Children.Add(categoryList);
+        return categoryList;
+    }
 
-        statusText.Foreground = Brushes.DimGray;
-        statusText.Margin = new Thickness(0, 10, 0, 10);
+    private UIElement CreateCategorySection()
+    {
+        WpfGrid content = new()
+        {
+            Margin = TrueBimTheme.SectionPadding
+        };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "Категории вида",
+            FontSize = TrueBimTheme.SectionTitleFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        });
+
+        UIElement list = CreateCategoryList();
+        WpfGrid.SetRow(list, 1);
+        content.Children.Add(list);
+
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Child = content
+        };
+    }
+
+    private UIElement CreateStatus()
+    {
+        statusText.Foreground = TrueBimBrushes.TextPrimary;
         statusText.TextWrapping = TextWrapping.Wrap;
-        WpfGrid.SetRow(statusText, 3);
-        root.Children.Add(statusText);
+        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
+    }
 
-        StackPanel footer = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-        WpfGrid.SetRow(footer, 4);
-        root.Children.Add(footer);
-
-        Button applyButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Применить"),
-            MinWidth = 120,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
+    private UIElement CreateFooter()
+    {
+        Button applyButton = TrueBimUi.CreatePrimaryButton("Применить", TrueBimIcon.Apply, minWidth: 120);
         applyButton.Click += (_, _) => ApplyChanges();
-        footer.Children.Add(applyButton);
 
-        Button closeButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
-            MinWidth = 110,
-            Height = 32,
-            IsCancel = true
-        };
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close);
+        closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
-        footer.Children.Add(closeButton);
 
-        return root;
+        return TrueBimUi.CreateFooter(null, applyButton, closeButton);
+    }
+
+    private void ApplySharedControlStyles()
+    {
+        categoryList.Style = TrueBimStyles.CreateListBoxStyle();
+        searchBox.Style = TrueBimStyles.CreateTextBoxStyle();
+        categoryTypeFilter.Style = TrueBimStyles.CreateComboBoxStyle();
     }
 
     private void RefreshList()
@@ -226,17 +241,17 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
         DockPanel content = new()
         {
             LastChildFill = true,
-            Background = new SolidColorBrush(WpfColor.FromRgb(242, 244, 247)),
-            Margin = new Thickness(0, 6, 0, 2),
+            Background = TrueBimBrushes.SurfaceAlt,
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing4),
             MinHeight = 28
         };
 
         TextBlock summary = new()
         {
             Text = $"{groupRows.Count} / видно {groupRows.Count(row => row.IsVisible)}",
-            Foreground = Brushes.DimGray,
+            Foreground = TrueBimBrushes.TextSecondary,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(12, 0, 10, 0)
+            Margin = new Thickness(TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing12, 0)
         };
         DockPanel.SetDock(summary, Dock.Right);
         content.Children.Add(summary);
@@ -245,8 +260,9 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
         {
             Text = LocalizeCategoryType(categoryType),
             FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(10, 0, 10, 0)
+            Margin = new Thickness(TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing12, 0)
         });
 
         return new ListBoxItem
@@ -281,14 +297,14 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
                 {
                     Text = row.Item.Name,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = row.IsVisible ? Brushes.Black : Brushes.Gray,
+                    Foreground = row.IsVisible ? TrueBimBrushes.TextPrimary : TrueBimBrushes.TextMuted,
                     TextTrimming = TextTrimming.CharacterEllipsis
                 },
                 new TextBlock
                 {
                     Text = row.IsVisible == row.InitialIsVisible ? "Без изменений" : "Изменено",
-                    Foreground = Brushes.DimGray,
-                    FontSize = 11
+                    Foreground = TrueBimBrushes.TextSecondary,
+                    FontSize = TrueBimTheme.CaptionFontSize
                 }
             }
         });
@@ -300,6 +316,7 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Style = TrueBimStyles.CreateCheckBoxStyle(),
             ToolTip = row.IsVisible ? "Категория включена на активном виде." : "Категория выключена на активном виде.",
             Content = content
         };
@@ -324,7 +341,7 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
         {
             Text = isVisible ? "Будет видно" : "Будет скрыто",
             Foreground = isVisible ? VisibleBadgeForeground : HiddenBadgeForeground,
-            FontSize = 11,
+            FontSize = TrueBimTheme.CaptionFontSize,
             FontWeight = FontWeights.SemiBold,
             MinWidth = 82,
             TextAlignment = TextAlignment.Center,
@@ -335,10 +352,10 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
         {
             Background = isVisible ? VisibleBadgeBackground : HiddenBadgeBackground,
             BorderBrush = isVisible ? VisibleBadgeBorder : HiddenBadgeBorder,
-            BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(8, 2, 8, 3),
-            Margin = new Thickness(8, 0, 0, 0),
+            Padding = TrueBimTheme.BadgePadding,
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             ToolTip = isVisible ? "Голубой глаз: категория должна быть видна." : "Серый глаз: категория должна быть скрыта.",
             Child = content
@@ -423,14 +440,9 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
         }
     }
 
-    private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler)
+    private static Button CreateSmallButton(string text, TrueBimIcon icon, RoutedEventHandler clickHandler)
     {
-        Button button = new()
-        {
-            Content = text,
-            Height = 28,
-            MinWidth = 92
-        };
+        Button button = TrueBimUi.CreateSecondaryButton(text, icon, minWidth: 104);
         button.Click += clickHandler;
         return button;
     }
