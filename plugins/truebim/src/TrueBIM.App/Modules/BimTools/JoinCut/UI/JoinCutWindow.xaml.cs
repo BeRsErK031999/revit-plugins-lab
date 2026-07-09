@@ -1,12 +1,16 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using TrueBIM.App.Modules.BimTools.JoinCut.Models;
 using TrueBIM.App.Modules.BimTools.JoinCut.Services;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using WpfBinding = System.Windows.Data.Binding;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfTextBox = System.Windows.Controls.TextBox;
 
@@ -19,6 +23,9 @@ public sealed partial class JoinCutWindow : Window
     private readonly JoinCutConfigurationStorage storage;
     private readonly ITrueBimLogger logger;
     private readonly JoinCutConfigurationState state;
+    private readonly JoinCutProcessingService processingService = new();
+    private readonly IReadOnlyList<CategoryCatalogItem> categoryCatalog;
+    private readonly IReadOnlyDictionary<BuiltInCategory, string> categoryNames;
     private readonly IReadOnlyList<ScopeOption> scopeOptions =
     [
         new ScopeOption(ProcessingScope.SelectedElements, "Выбранные элементы"),
@@ -49,6 +56,10 @@ public sealed partial class JoinCutWindow : Window
         this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         state = loadResult?.State ?? throw new ArgumentNullException(nameof(loadResult));
+        categoryCatalog = CollectCategoryCatalog(document);
+        categoryNames = categoryCatalog
+            .GroupBy(category => category.BuiltInCategory)
+            .ToDictionary(group => group.Key, group => group.First().Name);
 
         InitializeComponent();
 
@@ -493,20 +504,94 @@ public sealed partial class JoinCutWindow : Window
         SaveState("Настройка разделения граней сохранена.");
     }
 
+    private void EditJoinLeftCategories_Click(object sender, RoutedEventArgs e)
+    {
+        EditFilterCategories(SelectedJoinRule?.LeftFilter, "Категории: что присоединять", UpdateJoinRuleEditor);
+    }
+
+    private void EditJoinRightCategories_Click(object sender, RoutedEventArgs e)
+    {
+        EditFilterCategories(SelectedJoinRule?.RightFilter, "Категории: к чему присоединять", UpdateJoinRuleEditor);
+    }
+
+    private void EditCuttingCategories_Click(object sender, RoutedEventArgs e)
+    {
+        EditFilterCategories(SelectedCutRule?.CuttingElementsFilter, "Категории: что вырезает", UpdateCutRuleEditor);
+    }
+
+    private void EditCutElementCategories_Click(object sender, RoutedEventArgs e)
+    {
+        EditFilterCategories(SelectedCutRule?.CutElementsFilter, "Категории: из чего вырезает", UpdateCutRuleEditor);
+    }
+
     private void Preview_Click(object sender, RoutedEventArgs e)
     {
-        string report = BuildStubReport("Предпросмотр");
-        ReportText.Text = report;
-        StatusText.Text = "Предпросмотр записан в отчёт. Модель Revit не изменялась.";
-        logger.Info("Join/Cut preview placeholder invoked.");
+        JoinCutConfiguration? configuration = SelectedConfiguration;
+        if (configuration is null)
+        {
+            return;
+        }
+
+        if (MainTabs.SelectedIndex == 1)
+        {
+            string report = BuildStubReport("Предпросмотр");
+            ReportText.Text = report;
+            StatusText.Text = "Предпросмотр вырезания записан в отчёт. Модель Revit не изменялась.";
+            logger.Info("Join/Cut cut preview placeholder invoked.");
+            return;
+        }
+
+        try
+        {
+            JoinCutProcessingResult result = processingService.PreviewJoin(
+                uiDocument,
+                configuration,
+                GetSelectedScope(),
+                GetSelectedJoinAction());
+            ReportText.Text = BuildJoinProcessingReport("Предпросмотр", configuration, result);
+            StatusText.Text = BuildJoinStatus("Предпросмотр", result);
+            logger.Info($"Join/Cut join preview completed with {result.Rows.Count} row(s).");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Join/Cut join preview failed.", exception);
+            StatusText.Text = "Не удалось выполнить предпросмотр соединения. Используйте логи для диагностики.";
+        }
     }
 
     private void Execute_Click(object sender, RoutedEventArgs e)
     {
-        string report = BuildStubReport("Выполнение");
-        ReportText.Text = report;
-        StatusText.Text = "Отчёт обновлён. Модель Revit не изменялась.";
-        logger.Info("Join/Cut execute placeholder invoked.");
+        JoinCutConfiguration? configuration = SelectedConfiguration;
+        if (configuration is null)
+        {
+            return;
+        }
+
+        if (MainTabs.SelectedIndex == 1)
+        {
+            string report = BuildStubReport("Выполнение");
+            ReportText.Text = report;
+            StatusText.Text = "Отчёт по вырезанию обновлён. Модель Revit не изменялась.";
+            logger.Info("Join/Cut cut execute placeholder invoked.");
+            return;
+        }
+
+        try
+        {
+            JoinCutProcessingResult result = processingService.ExecuteJoin(
+                uiDocument,
+                configuration,
+                GetSelectedScope(),
+                GetSelectedJoinAction());
+            ReportText.Text = BuildJoinProcessingReport("Выполнение", configuration, result);
+            StatusText.Text = BuildJoinStatus("Выполнение", result);
+            logger.Info($"Join/Cut join execute completed with {result.Rows.Count} row(s), changedModel={result.ChangedModel}.");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Join/Cut join execute failed.", exception);
+            StatusText.Text = "Не удалось выполнить соединение. Используйте логи для диагностики.";
+        }
     }
 
     private void CopyReport_Click(object sender, RoutedEventArgs e)
@@ -586,6 +671,8 @@ public sealed partial class JoinCutWindow : Window
         JoinRuleNameInput.IsEnabled = rule is not null;
         OnlyParallelWallsCheck.IsChecked = rule?.OnlyParallelWalls == true;
         OnlyParallelWallsCheck.IsEnabled = rule is not null;
+        EditJoinLeftCategoriesButton.IsEnabled = rule is not null;
+        EditJoinRightCategoriesButton.IsEnabled = rule is not null;
         JoinLeftFilterText.Text = rule is null ? "Правило не выбрано." : DescribeFilter(rule.LeftFilter);
         JoinRightFilterText.Text = rule is null ? "Правило не выбрано." : DescribeFilter(rule.RightFilter);
         refreshing = false;
@@ -599,6 +686,8 @@ public sealed partial class JoinCutWindow : Window
         CutRuleNameInput.IsEnabled = rule is not null;
         SplitFacesCheck.IsChecked = rule?.SplitFacesOfCuttingSolid == true;
         SplitFacesCheck.IsEnabled = rule is not null;
+        EditCuttingCategoriesButton.IsEnabled = rule is not null;
+        EditCutElementCategoriesButton.IsEnabled = rule is not null;
         CuttingFilterText.Text = rule is null ? "Правило не выбрано." : DescribeFilter(rule.CuttingElementsFilter);
         CutElementFilterText.Text = rule is null ? "Правило не выбрано." : DescribeFilter(rule.CutElementsFilter);
         refreshing = false;
@@ -638,17 +727,337 @@ public sealed partial class JoinCutWindow : Window
             "Модель Revit не изменялась.");
     }
 
-    private static string DescribeFilter(ElementFilterDefinition filter)
+    private string BuildJoinProcessingReport(
+        string action,
+        JoinCutConfiguration configuration,
+        JoinCutProcessingResult result)
     {
-        string categories = filter.Categories.Count == 0
-            ? "любые категории"
-            : $"{filter.Categories.Count} категорий";
+        List<string> lines =
+        [
+            $"{action}: Соединить элементы",
+            $"Документ: {document.Title}",
+            $"Конфигурация: {configuration.Name}",
+            $"Область обработки: {GetScopeText(GetSelectedScope())}",
+            $"Действие: {GetJoinActionText(GetSelectedJoinAction())}",
+            string.Empty,
+            "Сводка:"
+        ];
+
+        lines.AddRange(result.Messages.Select(message => $"- {message}"));
+        lines.Add(string.Empty);
+        lines.Add($"Пары элементов: {result.Rows.Count}");
+
+        foreach (JoinCutOperationRow row in result.Rows.Take(300))
+        {
+            lines.Add(
+                $"{row.Status}: {row.RuleName}: {row.LeftCategoryName} #{row.LeftElementId} \"{row.LeftElementName}\" -> {row.RightCategoryName} #{row.RightElementId} \"{row.RightElementName}\". {row.Message}");
+        }
+
+        if (result.Rows.Count > 300)
+        {
+            lines.Add($"Показаны первые 300 строк из {result.Rows.Count}.");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildJoinStatus(string action, JoinCutProcessingResult result)
+    {
+        int ready = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Ready);
+        int done = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Done);
+        int skipped = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Skipped);
+        int failed = result.Rows.Count(row => row.Status == JoinCutOperationStatuses.Failed);
+        string truncated = result.Truncated ? " Обработка остановлена по лимиту пар." : string.Empty;
+        string modelState = result.ChangedModel ? " Модель Revit изменена." : " Модель Revit не изменялась.";
+
+        return $"{action}: пар {result.Rows.Count}, готово {ready}, выполнено {done}, пропущено {skipped}, ошибок {failed}.{truncated}{modelState}";
+    }
+
+    private ProcessingScope GetSelectedScope()
+    {
+        return ScopeCombo.SelectedItem is ScopeOption scopeOption
+            ? scopeOption.Value
+            : SelectedConfiguration?.LastSelectedScope ?? ProcessingScope.SelectedElements;
+    }
+
+    private JoinAction GetSelectedJoinAction()
+    {
+        return ActionCombo.SelectedItem is ActionOption actionOption && actionOption.JoinAction.HasValue
+            ? actionOption.JoinAction.Value
+            : SelectedConfiguration?.LastSelectedJoinAction ?? JoinAction.Join;
+    }
+
+    private string GetScopeText(ProcessingScope scope)
+    {
+        return scopeOptions.FirstOrDefault(option => option.Value == scope)?.Text ?? scope.ToString();
+    }
+
+    private string GetJoinActionText(JoinAction action)
+    {
+        return joinActionOptions.FirstOrDefault(option => option.JoinAction == action)?.Text ?? action.ToString();
+    }
+
+    private void EditFilterCategories(
+        ElementFilterDefinition? filter,
+        string title,
+        Action refreshEditor)
+    {
+        if (filter is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<BuiltInCategory>? selectedCategories = ShowCategorySelectionDialog(title, filter.Categories);
+        if (selectedCategories is null)
+        {
+            return;
+        }
+
+        filter.Categories = selectedCategories
+            .Distinct()
+            .OrderBy(GetCategoryDisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        SaveState("Категории фильтра сохранены.");
+        refreshEditor();
+    }
+
+    private IReadOnlyList<BuiltInCategory>? ShowCategorySelectionDialog(
+        string title,
+        IReadOnlyCollection<BuiltInCategory> selectedCategories)
+    {
+        if (categoryCatalog.Count == 0)
+        {
+            MessageBox.Show(this, "В проекте не найдены модельные категории с элементами.", "Категории", MessageBoxButton.OK, MessageBoxImage.Information);
+            return null;
+        }
+
+        bool allCategoriesSelected = selectedCategories.Count == 0;
+        ObservableCollection<CategorySelectionOption> options = new(categoryCatalog
+            .Select(category => new CategorySelectionOption(
+                category.BuiltInCategory,
+                category.Name,
+                category.ElementCount,
+                allCategoriesSelected || selectedCategories.Contains(category.BuiltInCategory))));
+        IReadOnlyList<BuiltInCategory>? result = null;
+
+        Window dialog = new()
+        {
+            Title = title,
+            Owner = this,
+            Width = 560,
+            Height = 620,
+            MinWidth = 460,
+            MinHeight = 420,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        WpfGrid root = new()
+        {
+            Margin = new Thickness(14)
+        };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        StackPanel toolbar = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        Button selectAllButton = new()
+        {
+            Content = "Выбрать все",
+            MinWidth = 104,
+            Height = 30
+        };
+        selectAllButton.Click += (_, _) => SetCategoryOptionsSelected(options, true);
+        toolbar.Children.Add(selectAllButton);
+
+        Button clearButton = new()
+        {
+            Content = "Снять все",
+            MinWidth = 96,
+            Height = 30,
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+        clearButton.Click += (_, _) => SetCategoryOptionsSelected(options, false);
+        toolbar.Children.Add(clearButton);
+        root.Children.Add(toolbar);
+
+        DataGrid categoryGrid = new()
+        {
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            IsReadOnly = false,
+            ItemsSource = options,
+            SelectionMode = DataGridSelectionMode.Extended
+        };
+        categoryGrid.Columns.Add(new DataGridCheckBoxColumn
+        {
+            Header = "Вкл.",
+            Binding = new WpfBinding(nameof(CategorySelectionOption.IsSelected))
+            {
+                Mode = System.Windows.Data.BindingMode.TwoWay,
+                UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged
+            },
+            Width = 54
+        });
+        categoryGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Категория",
+            Binding = new WpfBinding(nameof(CategorySelectionOption.Name)),
+            IsReadOnly = true,
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+        });
+        categoryGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Элементов",
+            Binding = new WpfBinding(nameof(CategorySelectionOption.ElementCount)),
+            IsReadOnly = true,
+            Width = 100
+        });
+        WpfGrid.SetRow(categoryGrid, 1);
+        root.Children.Add(categoryGrid);
+
+        StackPanel buttons = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        Button okButton = new()
+        {
+            Content = "OK",
+            MinWidth = 82,
+            Height = 30,
+            IsDefault = true
+        };
+        okButton.Click += (_, _) =>
+        {
+            List<BuiltInCategory> selected = options
+                .Where(option => option.IsSelected)
+                .Select(option => option.BuiltInCategory)
+                .ToList();
+            result = selected.Count == options.Count ? [] : selected;
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(okButton);
+
+        Button cancelButton = new()
+        {
+            Content = "Отмена",
+            MinWidth = 90,
+            Height = 30,
+            Margin = new Thickness(8, 0, 0, 0),
+            IsCancel = true
+        };
+        buttons.Children.Add(cancelButton);
+        WpfGrid.SetRow(buttons, 2);
+        root.Children.Add(buttons);
+
+        dialog.Content = root;
+        dialog.ShowDialog();
+        return result;
+    }
+
+    private static void SetCategoryOptionsSelected(IEnumerable<CategorySelectionOption> options, bool isSelected)
+    {
+        foreach (CategorySelectionOption option in options)
+        {
+            option.IsSelected = isSelected;
+        }
+    }
+
+    private string DescribeFilter(ElementFilterDefinition filter)
+    {
+        string categories = DescribeCategories(filter.Categories);
         string parameters = filter.ParameterConditions.Count == 0
             ? "без условий по параметрам"
             : $"{filter.ParameterConditions.Count} условий по параметрам";
         string logicalOperator = filter.CategoryAndParameterOperator == FilterLogicalOperator.And ? "AND" : "OR";
 
         return $"{categories}; {parameters}; связка {logicalOperator}.";
+    }
+
+    private string DescribeCategories(IReadOnlyCollection<BuiltInCategory> categories)
+    {
+        if (categories.Count == 0)
+        {
+            return "любые категории";
+        }
+
+        IReadOnlyList<string> names = categories
+            .Select(GetCategoryDisplayName)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        if (names.Count <= 3)
+        {
+            return string.Join(", ", names);
+        }
+
+        return $"{names.Count} категорий: {string.Join(", ", names.Take(3))}...";
+    }
+
+    private string GetCategoryDisplayName(BuiltInCategory builtInCategory)
+    {
+        return categoryNames.TryGetValue(builtInCategory, out string? name)
+            ? name
+            : builtInCategory.ToString();
+    }
+
+    private static IReadOnlyList<CategoryCatalogItem> CollectCategoryCatalog(Document document)
+    {
+        Dictionary<BuiltInCategory, CategoryBucket> buckets = [];
+        foreach (Element element in new FilteredElementCollector(document).WhereElementIsNotElementType())
+        {
+            if (!CanCatalogElement(element) || !TryGetBuiltInCategory(element.Category, out BuiltInCategory builtInCategory))
+            {
+                continue;
+            }
+
+            if (!buckets.TryGetValue(builtInCategory, out CategoryBucket? bucket))
+            {
+                bucket = new CategoryBucket(builtInCategory, element.Category?.Name ?? builtInCategory.ToString());
+                buckets.Add(builtInCategory, bucket);
+            }
+
+            bucket.ElementCount++;
+        }
+
+        return buckets.Values
+            .OrderBy(bucket => bucket.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(bucket => new CategoryCatalogItem(bucket.BuiltInCategory, bucket.Name, bucket.ElementCount))
+            .ToList();
+    }
+
+    private static bool CanCatalogElement(Element element)
+    {
+        Category? category = element.Category;
+        return category is not null
+            && category.Id != ElementId.InvalidElementId
+            && category.CategoryType == CategoryType.Model
+            && element is not RevitLinkInstance
+            && !element.ViewSpecific;
+    }
+
+    private static bool TryGetBuiltInCategory(Category? category, out BuiltInCategory builtInCategory)
+    {
+        builtInCategory = default;
+        if (category is null || category.Id == ElementId.InvalidElementId)
+        {
+            return false;
+        }
+
+        long categoryId = RevitElementIds.GetValue(category.Id);
+        if (categoryId is < int.MinValue or > int.MaxValue)
+        {
+            return false;
+        }
+
+        builtInCategory = (BuiltInCategory)(int)categoryId;
+        return true;
     }
 
     private string CreateUniqueConfigurationName(string baseName)
@@ -802,6 +1211,56 @@ public sealed partial class JoinCutWindow : Window
         input.Focus();
 
         return dialog.ShowDialog() == true ? input.Text : null;
+    }
+
+    private sealed record CategoryCatalogItem(
+        BuiltInCategory BuiltInCategory,
+        string Name,
+        int ElementCount);
+
+    private sealed record CategoryBucket(BuiltInCategory BuiltInCategory, string Name)
+    {
+        public int ElementCount { get; set; }
+    }
+
+    private sealed class CategorySelectionOption : INotifyPropertyChanged
+    {
+        private bool isSelected;
+
+        public CategorySelectionOption(
+            BuiltInCategory builtInCategory,
+            string name,
+            int elementCount,
+            bool isSelected)
+        {
+            BuiltInCategory = builtInCategory;
+            Name = name;
+            ElementCount = elementCount;
+            this.isSelected = isSelected;
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public BuiltInCategory BuiltInCategory { get; }
+
+        public string Name { get; }
+
+        public int ElementCount { get; }
+
+        public bool IsSelected
+        {
+            get => isSelected;
+            set
+            {
+                if (isSelected == value)
+                {
+                    return;
+                }
+
+                isSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            }
+        }
     }
 
     private sealed record ScopeOption(ProcessingScope Value, string Text);

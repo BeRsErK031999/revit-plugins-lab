@@ -111,13 +111,29 @@
                                 </Grid.ColumnDefinitions>
                                 <Border BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="0,0,8,0">
                                     <StackPanel>
-                                        <TextBlock Text="Что присоединять" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <DockPanel Margin="0,0,0,6" LastChildFill="False">
+                                            <TextBlock Text="Что присоединять" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <Button x:Name="EditJoinLeftCategoriesButton"
+                                                    DockPanel.Dock="Right"
+                                                    Content="Категории"
+                                                    MinWidth="92"
+                                                    Height="26"
+                                                    Click="EditJoinLeftCategories_Click" />
+                                        </DockPanel>
                                         <TextBlock x:Name="JoinLeftFilterText" Foreground="DimGray" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                                 <Border Grid.Column="1" BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="8,0,0,0">
                                     <StackPanel>
-                                        <TextBlock Text="К чему присоединять" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <DockPanel Margin="0,0,0,6" LastChildFill="False">
+                                            <TextBlock Text="К чему присоединять" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <Button x:Name="EditJoinRightCategoriesButton"
+                                                    DockPanel.Dock="Right"
+                                                    Content="Категории"
+                                                    MinWidth="92"
+                                                    Height="26"
+                                                    Click="EditJoinRightCategories_Click" />
+                                        </DockPanel>
                                         <TextBlock x:Name="JoinRightFilterText" Foreground="DimGray" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
@@ -194,13 +210,29 @@
                                 </Grid.ColumnDefinitions>
                                 <Border BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="0,0,8,0">
                                     <StackPanel>
-                                        <TextBlock Text="Что вырезает" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <DockPanel Margin="0,0,0,6" LastChildFill="False">
+                                            <TextBlock Text="Что вырезает" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <Button x:Name="EditCuttingCategoriesButton"
+                                                    DockPanel.Dock="Right"
+                                                    Content="Категории"
+                                                    MinWidth="92"
+                                                    Height="26"
+                                                    Click="EditCuttingCategories_Click" />
+                                        </DockPanel>
                                         <TextBlock x:Name="CuttingFilterText" Foreground="DimGray" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                                 <Border Grid.Column="1" BorderBrush="#FFD8D8D8" BorderThickness="1" Padding="10" Margin="8,0,0,0">
                                     <StackPanel>
-                                        <TextBlock Text="Из чего вырезает" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <DockPanel Margin="0,0,0,6" LastChildFill="False">
+                                            <TextBlock Text="Из чего вырезает" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <Button x:Name="EditCutElementCategoriesButton"
+                                                    DockPanel.Dock="Right"
+                                                    Content="Категории"
+                                                    MinWidth="92"
+                                                    Height="26"
+                                                    Click="EditCutElementCategories_Click" />
+                                        </DockPanel>
                                         <TextBlock x:Name="CutElementFilterText" Foreground="DimGray" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
