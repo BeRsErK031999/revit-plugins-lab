@@ -23,6 +23,12 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
     private readonly TextBox searchBox = new();
     private readonly ComboBox categoryTypeFilter = new();
     private string? applySummary;
+    private static readonly Brush VisibleBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(220, 245, 230));
+    private static readonly Brush VisibleBadgeBorder = new SolidColorBrush(WpfColor.FromRgb(52, 168, 83));
+    private static readonly Brush VisibleBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(20, 108, 67));
+    private static readonly Brush HiddenBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(239, 242, 246));
+    private static readonly Brush HiddenBadgeBorder = new SolidColorBrush(WpfColor.FromRgb(176, 184, 195));
+    private static readonly Brush HiddenBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(93, 102, 114));
 
     public ViewVisibilityWindow(
         Document document,
@@ -252,34 +258,76 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
 
     private UIElement CreateCategoryRow(CategoryToggleRow row)
     {
+        DockPanel content = new()
+        {
+            LastChildFill = true,
+            MinHeight = 42,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        Border statusBadge = CreateVisibilityBadge(row.IsVisible);
+        DockPanel.SetDock(statusBadge, Dock.Right);
+        content.Children.Add(statusBadge);
+
+        content.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Margin = new Thickness(0, 0, 12, 0),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = row.Item.Name,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = row.IsVisible ? Brushes.Black : Brushes.Gray,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                },
+                new TextBlock
+                {
+                    Text = row.IsVisible == row.InitialIsVisible ? "Без изменений" : "Изменено",
+                    Foreground = Brushes.DimGray,
+                    FontSize = 11
+                }
+            }
+        });
+
         CheckBox checkBox = new()
         {
             IsChecked = row.IsVisible,
             Margin = new Thickness(22, 5, 8, 5),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Center,
-            Content = new StackPanel
-            {
-                Orientation = Orientation.Vertical,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = row.Item.Name,
-                        FontWeight = FontWeights.SemiBold
-                    },
-                    new TextBlock
-                    {
-                        Text = row.IsVisible == row.InitialIsVisible ? "Без изменений" : "Изменено",
-                        Foreground = Brushes.DimGray,
-                        FontSize = 11
-                    }
-                }
-            }
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            ToolTip = row.IsVisible ? "Категория включена на активном виде." : "Категория выключена на активном виде.",
+            Content = content
         };
         checkBox.Checked += (_, _) => UpdateRowVisibility(row, isVisible: true);
         checkBox.Unchecked += (_, _) => UpdateRowVisibility(row, isVisible: false);
 
         return checkBox;
+    }
+
+    private static Border CreateVisibilityBadge(bool isVisible)
+    {
+        return new Border
+        {
+            Background = isVisible ? VisibleBadgeBackground : HiddenBadgeBackground,
+            BorderBrush = isVisible ? VisibleBadgeBorder : HiddenBadgeBorder,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 2, 8, 3),
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = isVisible ? "Включено" : "Выключено",
+                Foreground = isVisible ? VisibleBadgeForeground : HiddenBadgeForeground,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                MinWidth = 74,
+                TextAlignment = TextAlignment.Center
+            }
+        };
     }
 
     private void SetAllVisible(bool isVisible)
