@@ -4,6 +4,7 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.ClashReport.Services;
 using TrueBIM.App.Modules.BimTools.ClashReport.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -16,6 +17,12 @@ public sealed class ClashReportCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.clash-report";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -31,7 +38,7 @@ public sealed class ClashReportCommand : IExternalCommand
                 new ClashViewNavigator(logger),
                 new ClashReportStorage(logger),
                 logger);
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

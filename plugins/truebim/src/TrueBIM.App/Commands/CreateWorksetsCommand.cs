@@ -4,6 +4,7 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.Worksets.Services;
 using TrueBIM.App.Modules.BimTools.Worksets.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -16,6 +17,12 @@ public sealed class CreateWorksetsCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.create-worksets";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -31,7 +38,7 @@ public sealed class CreateWorksetsCommand : IExternalCommand
                 new WorksharingService(logger),
                 new WorksetCreationService(logger),
                 logger);
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
         }
         catch (Exception exception)
         {

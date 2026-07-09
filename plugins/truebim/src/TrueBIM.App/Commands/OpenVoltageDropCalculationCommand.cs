@@ -11,7 +11,7 @@ public sealed class OpenVoltageDropCalculationCommand : IExternalCommand
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         TrueBimCommandActions.OpenVoltageDropCalculation(
-            owner: null,
+            commandData.Application.MainWindowHandle,
             new FileTrueBimLogger(new TrueBimLogPaths()));
 
         return Result.Succeeded;

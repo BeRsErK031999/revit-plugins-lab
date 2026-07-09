@@ -12,30 +12,23 @@ using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Modules.SheetNumbering.UI;
 using TrueBIM.App.Modules.VoltageDrop.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
 internal static class TrueBimCommandActions
 {
-    private static PrintWindow? activePrintWindow;
-
     public static void OpenPrint(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
         try
         {
-            logger.Info("Opening Print module.");
-
-            if (activePrintWindow is { IsVisible: true })
+            const string windowKey = "truebim.print";
+            if (ModelessWindowService.Activate(windowKey, logger))
             {
-                if (activePrintWindow.WindowState == System.Windows.WindowState.Minimized)
-                {
-                    activePrintWindow.WindowState = System.Windows.WindowState.Normal;
-                }
-
-                activePrintWindow.Activate();
-                logger.Info("Print module window is already open. Existing window was activated.");
                 return;
             }
+
+            logger.Info("Opening Print module.");
 
             Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
             if (activeDocument is null)
@@ -57,9 +50,7 @@ internal static class TrueBimCommandActions
             {
                 ShowInTaskbar = true
             };
-            activePrintWindow = printWindow;
-            printWindow.Closed += (_, _) => activePrintWindow = null;
-            printWindow.ShowDialog();
+            ModelessWindowService.Show(windowKey, printWindow, commandData.Application.MainWindowHandle, logger);
         }
         catch (Exception exception)
         {
@@ -72,6 +63,12 @@ internal static class TrueBimCommandActions
     {
         try
         {
+            const string windowKey = "truebim.sheet-numbering";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return;
+            }
+
             logger.Info("Opening Sheet Numbering window.");
 
             Document? activeDocument = commandData.Application.ActiveUIDocument?.Document;
@@ -95,7 +92,7 @@ internal static class TrueBimCommandActions
             {
                 ShowInTaskbar = true
             };
-            sheetNumberingWindow.ShowDialog();
+            ModelessWindowService.Show(windowKey, sheetNumberingWindow, commandData.Application.MainWindowHandle, logger);
         }
         catch (Exception exception)
         {
@@ -104,16 +101,22 @@ internal static class TrueBimCommandActions
         }
     }
 
-    public static void OpenVoltageDropCalculation(System.Windows.Window? owner, ITrueBimLogger logger)
+    public static void OpenVoltageDropCalculation(IntPtr ownerHandle, ITrueBimLogger logger)
     {
         try
         {
+            const string windowKey = "truebim.voltage-drop";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return;
+            }
+
             logger.Info("Opening Voltage Drop Calculation window.");
             VoltageDropWindow window = new(logger)
             {
                 ShowInTaskbar = true
             };
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, ownerHandle, logger);
         }
         catch (Exception exception)
         {
@@ -130,13 +133,19 @@ internal static class TrueBimCommandActions
     {
         try
         {
+            string windowKey = $"truebim.bim-tool-placeholder.{definition.SettingsKey}";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return;
+            }
+
             logger.Info($"Opening BIM tool scaffold: {definition.Title}.");
             string? documentTitle = commandData.Application.ActiveUIDocument?.Document?.Title;
             BimToolPlaceholderWindow window = new(definition, documentTitle, logger)
             {
                 ShowInTaskbar = true
             };
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
         }
         catch (Exception exception)
         {

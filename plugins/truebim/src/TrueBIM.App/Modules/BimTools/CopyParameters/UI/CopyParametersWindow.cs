@@ -9,13 +9,18 @@ namespace TrueBIM.App.Modules.BimTools.CopyParameters.UI;
 
 public sealed class CopyParametersWindow : TrueBimWindow
 {
+    private readonly Action<IReadOnlyList<CopyParameterRow>>? confirmSelection;
     private readonly List<CopyParameterRow> rows;
     private readonly TextBlock statusText = new();
     private readonly ListBox instanceParameterList = new();
     private readonly ListBox typeParameterList = new();
 
-    public CopyParametersWindow(string sourceElementLabel, IReadOnlyList<CopyParameterRow> parameters)
+    public CopyParametersWindow(
+        string sourceElementLabel,
+        IReadOnlyList<CopyParameterRow> parameters,
+        Action<IReadOnlyList<CopyParameterRow>>? confirmSelection = null)
     {
+        this.confirmSelection = confirmSelection;
         rows = parameters?.ToList() ?? throw new ArgumentNullException(nameof(parameters));
 
         Title = "Копирование параметров";
@@ -120,9 +125,9 @@ public sealed class CopyParametersWindow : TrueBimWindow
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Отмена"),
             MinWidth = 110,
             Height = 32,
-            IsCancel = true
+            IsCancel = confirmSelection is null
         };
-        cancelButton.Click += (_, _) => DialogResult = false;
+        cancelButton.Click += (_, _) => Cancel();
         footer.Children.Add(cancelButton);
 
         return root;
@@ -258,7 +263,26 @@ public sealed class CopyParametersWindow : TrueBimWindow
             return;
         }
 
-        DialogResult = true;
+        if (confirmSelection is not null)
+        {
+            confirmSelection(SelectedParameters);
+            Close();
+        }
+        else
+        {
+            DialogResult = true;
+        }
+    }
+
+    private void Cancel()
+    {
+        if (confirmSelection is not null)
+        {
+            Close();
+            return;
+        }
+
+        DialogResult = false;
     }
 
     private void UpdateStatus()

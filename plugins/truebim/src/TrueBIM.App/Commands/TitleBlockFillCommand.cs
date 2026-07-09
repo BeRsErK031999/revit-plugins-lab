@@ -5,6 +5,7 @@ using TrueBIM.App.Modules.BimTools.TitleBlockFill.Services;
 using TrueBIM.App.Modules.BimTools.TitleBlockFill.UI;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -17,6 +18,12 @@ public sealed class TitleBlockFillCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.title-block-fill";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -33,7 +40,7 @@ public sealed class TitleBlockFillCommand : IExternalCommand
                 new TitleBlockFinderService(),
                 new TitleBlockFillService(new TitleBlockValueResolver(), new TitleBlockParameterWriter()),
                 logger);
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

@@ -1,10 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
@@ -30,6 +30,12 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
         Guard.NotNull(uiDocument, nameof(uiDocument));
         Guard.NotNull(logger, nameof(logger));
 
+        const string windowKey = "truebim.family-manager";
+        if (ModelessWindowService.Activate(windowKey, logger))
+        {
+            return;
+        }
+
         FamilyManagerWindow window = new(
             uiApplication,
             uiDocument,
@@ -41,12 +47,7 @@ public sealed class FamilyManagerDockablePaneProvider : IDockablePaneProvider
             logger,
             folderPath => ShowCompactPane(uiApplication, uiDocument, folderPath, logger));
 
-        if (uiApplication.MainWindowHandle != IntPtr.Zero)
-        {
-            new WindowInteropHelper(window).Owner = uiApplication.MainWindowHandle;
-        }
-
-        window.ShowDialog();
+        ModelessWindowService.Show(windowKey, window, uiApplication.MainWindowHandle, logger);
     }
 
     public static void ShowCompactPane(

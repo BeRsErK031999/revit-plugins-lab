@@ -335,14 +335,6 @@ public static class TrueBimRibbon
             "Безопасная заглушка: показывает статус подключения без распознавания, OpenCV/Python и создания арматуры."),
         new(
             BimDocumentationPanelName,
-            "TrueBIM_AutoMepDimensions",
-            "Авторазмеры\nMEP",
-            $"{CommandNamespace}.{nameof(AutoMepDimensionsCommand)}",
-            TrueBimIcon.AutoDimensions,
-            "Открывает каркас инструмента авторазмеров MEP.",
-            "Каркас будущего инструмента для размеров MEP: профиль, фильтры, предпросмотр, выполнение и отчет без изменений модели в первом срезе."),
-        new(
-            BimDocumentationPanelName,
             "TrueBIM_AutoTags",
             "Автомарки",
             $"{CommandNamespace}.{nameof(AutoTagCommand)}",

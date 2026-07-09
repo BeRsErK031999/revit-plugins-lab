@@ -57,14 +57,6 @@ public sealed class AppRibbonButtonDefinitionTests
             "рабочих наборов"
         },
         {
-            "TrueBIM_AutoMepDimensions",
-            "Оформление",
-            "Авторазмеры\nMEP",
-            $"TrueBIM.App.Commands.{nameof(AutoMepDimensionsCommand)}",
-            TrueBimIcon.AutoDimensions,
-            "авторазмеров"
-        },
-        {
             "TrueBIM_AutoTags",
             "Оформление",
             "Автомарки",
@@ -255,7 +247,6 @@ public sealed class AppRibbonButtonDefinitionTests
             }
         }
     }
-
 
     [Fact]
     public void DatumExtents_UsesActiveViewAvailability()

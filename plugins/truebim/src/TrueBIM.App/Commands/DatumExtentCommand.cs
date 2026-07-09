@@ -4,6 +4,7 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.DatumExtents.Services;
 using TrueBIM.App.Modules.BimTools.DatumExtents.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -16,6 +17,12 @@ public sealed class DatumExtentCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.datum-extents";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -25,7 +32,6 @@ public sealed class DatumExtentCommand : IExternalCommand
             }
 
             Document document = uiDocument.Document;
-
             View activeView = uiDocument.ActiveView;
             if (!DatumExtentCollectorService.CanUseActiveView(activeView, out string viewMessage))
             {
@@ -40,7 +46,7 @@ public sealed class DatumExtentCommand : IExternalCommand
                 activeView,
                 datumExtentService,
                 logger);
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)
@@ -58,7 +64,6 @@ public sealed class DatumExtentCommandAvailability : IExternalCommandAvailabilit
     {
         try
         {
-
             UIDocument? uiDocument = applicationData.ActiveUIDocument;
             return uiDocument is not null
                 && DatumExtentCollectorService.CanUseActiveView(uiDocument.ActiveView, out _);

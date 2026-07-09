@@ -4,6 +4,7 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.Services;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -16,6 +17,12 @@ public sealed class ColorByParameterCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.color-by-parameter";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -41,7 +48,7 @@ public sealed class ColorByParameterCommand : IExternalCommand
             }
 
             ColorByParameterWindow window = new(uiDocument.Document, activeView, categories, service, logger);
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

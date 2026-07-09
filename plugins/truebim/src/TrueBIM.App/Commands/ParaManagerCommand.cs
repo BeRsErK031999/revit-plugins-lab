@@ -4,6 +4,7 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.ParaManager.Services;
 using TrueBIM.App.Modules.BimTools.ParaManager.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -16,6 +17,12 @@ public sealed class ParaManagerCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.para-manager";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -35,7 +42,7 @@ public sealed class ParaManagerCommand : IExternalCommand
                 new ParaManagerValidationService(),
                 bindingService,
                 logger);
-            window.ShowDialog();
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

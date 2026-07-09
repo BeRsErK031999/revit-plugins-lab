@@ -4,7 +4,9 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.CopyParameters.Models;
 using TrueBIM.App.Modules.BimTools.CopyParameters.Services;
 using TrueBIM.App.Modules.BimTools.CopyParameters.UI;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 using RevitOperationCanceledException = Autodesk.Revit.Exceptions.OperationCanceledException;
 
 namespace TrueBIM.App.Commands;
@@ -18,6 +20,12 @@ public sealed class CopyParametersCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.copy-parameters";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -37,29 +45,25 @@ public sealed class CopyParametersCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            CopyParametersWindow window = new(ParameterCopyService.BuildElementLabel(sourceElement), parameters);
-            bool? dialogResult = window.ShowDialog();
-            if (dialogResult != true)
-            {
-                logger.Info("Copy Parameters cancelled before target selection.");
-                return Result.Cancelled;
-            }
-
-            IReadOnlyList<CopyParameterRow> selectedParameters = window.SelectedParameters;
-            IReadOnlyList<Element> targetElements = selectionService.PickTargetElements(uiDocument, sourceElement);
-            if (targetElements.Count == 0)
-            {
-                logger.Info("Copy Parameters target selection returned no elements.");
-                return Result.Cancelled;
-            }
-
-            ParameterCopyResult result = copyService.Copy(
-                uiDocument.Document,
+            CopyParametersApplyHandler handler = new(
+                uiDocument,
                 sourceElement,
-                selectedParameters,
-                targetElements);
+                selectionService,
+                copyService,
+                logger);
+            ExternalEvent externalEvent = ExternalEvent.Create(handler);
 
-            TaskDialog.Show("Копирование параметров", result.ToDialogText());
+            CopyParametersWindow? window = null;
+            window = new CopyParametersWindow(
+                ParameterCopyService.BuildElementLabel(sourceElement),
+                parameters,
+                selectedParameters =>
+                {
+                    handler.SetSelectedParameters(selectedParameters);
+                    externalEvent.Raise();
+                });
+
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (RevitOperationCanceledException)
@@ -74,5 +78,80 @@ public sealed class CopyParametersCommand : IExternalCommand
             return Result.Failed;
         }
 
+    }
+
+    private sealed class CopyParametersApplyHandler : IExternalEventHandler
+    {
+        private readonly UIDocument uiDocument;
+        private readonly ElementId sourceElementId;
+        private readonly ElementSelectionService selectionService;
+        private readonly ParameterCopyService copyService;
+        private readonly ITrueBimLogger logger;
+        private IReadOnlyList<CopyParameterRow> selectedParameters = Array.Empty<CopyParameterRow>();
+
+        public CopyParametersApplyHandler(
+            UIDocument uiDocument,
+            Element sourceElement,
+            ElementSelectionService selectionService,
+            ParameterCopyService copyService,
+            ITrueBimLogger logger)
+        {
+            this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
+            sourceElementId = sourceElement?.Id ?? throw new ArgumentNullException(nameof(sourceElement));
+            this.selectionService = selectionService ?? throw new ArgumentNullException(nameof(selectionService));
+            this.copyService = copyService ?? throw new ArgumentNullException(nameof(copyService));
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
+        public void SetSelectedParameters(IReadOnlyList<CopyParameterRow> selectedParameters)
+        {
+            this.selectedParameters = selectedParameters is null
+                ? Array.Empty<CopyParameterRow>()
+                : selectedParameters.ToList();
+        }
+
+        public void Execute(UIApplication app)
+        {
+            try
+            {
+                Document document = uiDocument.Document;
+                Element? sourceElement = document.GetElement(sourceElementId);
+                if (sourceElement is null)
+                {
+                    logger.Warning($"Copy Parameters source element '{RevitElementIds.GetValue(sourceElementId)}' was not found.");
+                    TaskDialog.Show("Копирование параметров", "Исходный элемент больше не найден в документе.");
+                    return;
+                }
+
+                IReadOnlyList<Element> targetElements = selectionService.PickTargetElements(uiDocument, sourceElement);
+                if (targetElements.Count == 0)
+                {
+                    logger.Info("Copy Parameters target selection returned no elements.");
+                    return;
+                }
+
+                ParameterCopyResult result = copyService.Copy(
+                    document,
+                    sourceElement,
+                    selectedParameters,
+                    targetElements);
+
+                TaskDialog.Show("Копирование параметров", result.ToDialogText());
+            }
+            catch (RevitOperationCanceledException)
+            {
+                logger.Info("Copy Parameters cancelled by user selection.");
+            }
+            catch (Exception exception)
+            {
+                logger.Error("Failed to copy parameters.", exception);
+                TaskDialog.Show("Копирование параметров", "Не удалось скопировать параметры. Используйте логи для диагностики.");
+            }
+        }
+
+        public string GetName()
+        {
+            return "TrueBIM Copy Parameters";
+        }
     }
 }

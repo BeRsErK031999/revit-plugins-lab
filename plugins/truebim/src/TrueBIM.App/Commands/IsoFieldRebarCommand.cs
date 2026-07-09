@@ -5,6 +5,7 @@ using TrueBIM.App.Modules.IsoFieldRebar.Revit;
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Modules.IsoFieldRebar.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -17,6 +18,12 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.isofield-rebar";
+            if (ModelessWindowService.Activate(windowKey, logger))
+            {
+                return Result.Succeeded;
+            }
+
             logger.Info("Opening IsoField Rebar window.");
             UIDocument? activeUiDocument = commandData.Application.ActiveUIDocument;
             string? documentTitle = activeUiDocument?.Document?.Title;
@@ -30,8 +37,7 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
                 new IsoFieldHostSelectionService(),
                 new IsoFieldRebarCreationService(logger),
                 logger);
-            window.ShowDialog();
-            logger.Info("IsoField Rebar window closed.");
+            ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)

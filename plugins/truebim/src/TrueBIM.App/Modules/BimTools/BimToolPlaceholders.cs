@@ -4,24 +4,6 @@ namespace TrueBIM.App.Modules.BimTools;
 
 public static class BimToolPlaceholders
 {
-    public static BimToolPlaceholderDefinition AutoMepDimensions { get; } = new(
-        "Авторазмеры MEP",
-        TrueBimIcon.AutoDimensions,
-        "Каркас инструмента для будущей расстановки размеров MEP на активном виде.",
-        [
-            "Профиль размеров и фильтры MEP-элементов.",
-            "Предпросмотр найденных труб, воздуховодов, лотков или кабель-каналов.",
-            "Подготовка линий размеров и проверка геометрических ссылок.",
-            "Выполнение только внутри Transaction после отдельного MVP-среза."
-        ],
-        [
-            "Начать с активного плана и категории Pipes.",
-            "Собрать LocationCurve и ближайшие стены или оси.",
-            "Получить корректные Reference для NewDimension.",
-            "Записать причины пропуска в общий отчет."
-        ],
-        "auto-mep-dimensions");
-
     public static BimToolPlaceholderDefinition AutoTags { get; } = new(
         "Автомарки",
         TrueBimIcon.AutoTags,
