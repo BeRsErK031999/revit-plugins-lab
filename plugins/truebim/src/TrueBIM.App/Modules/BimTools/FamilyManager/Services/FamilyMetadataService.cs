@@ -23,6 +23,11 @@ public sealed class FamilyMetadataService
 
     public FamilyMetadataResult Read(Application application, string filePath, ITrueBimLogger logger)
     {
+        return Read(application, displayUnitsDocument: null, filePath, logger);
+    }
+
+    public FamilyMetadataResult Read(Application application, Document? displayUnitsDocument, string filePath, ITrueBimLogger logger)
+    {
         Guard.NotNull(application, nameof(application));
         Guard.NotNullOrWhiteSpace(filePath, nameof(filePath));
         Guard.NotNull(logger, nameof(logger));
@@ -50,8 +55,9 @@ public sealed class FamilyMetadataService
                 };
             }
 
+            Units displayUnits = displayUnitsDocument?.GetUnits() ?? familyDocument.GetUnits();
             string category = familyDocument.OwnerFamily?.FamilyCategory?.Name ?? FamilyManagerDefaults.UnknownCategory;
-            List<FamilyTypeInfo> types = CollectTypes(familyDocument);
+            List<FamilyTypeInfo> types = CollectTypes(familyDocument, displayUnits);
             FamilyTypeCatalogInfo typeCatalog = typeCatalogReader.ReadForFamily(normalizedPath);
             return new FamilyMetadataResult
             {
@@ -80,7 +86,7 @@ public sealed class FamilyMetadataService
         }
     }
 
-    private static List<FamilyTypeInfo> CollectTypes(Document familyDocument)
+    private static List<FamilyTypeInfo> CollectTypes(Document familyDocument, Units displayUnits)
     {
         List<FamilyTypeInfo> types = [];
         FamilyTypeSet familyTypes = familyDocument.FamilyManager.Types;
@@ -95,7 +101,7 @@ public sealed class FamilyMetadataService
             types.Add(new FamilyTypeInfo(
                 0,
                 familyType.Name.Trim(),
-                CollectTypeParameters(familyType, parameters)));
+                CollectTypeParameters(familyType, parameters, displayUnits)));
         }
 
         return types
@@ -127,7 +133,8 @@ public sealed class FamilyMetadataService
 
     private static List<FamilyTypeParameterInfo> CollectTypeParameters(
         FamilyType familyType,
-        IReadOnlyList<FamilyParameter> parameters)
+        IReadOnlyList<FamilyParameter> parameters,
+        Units displayUnits)
     {
         List<FamilyTypeParameterInfo> result = [];
         foreach (FamilyParameter parameter in parameters)
@@ -141,7 +148,7 @@ public sealed class FamilyMetadataService
             string parameterName = name!;
             result.Add(new FamilyTypeParameterInfo(
                 parameterName,
-                ReadParameterValue(familyType, parameter),
+                ReadParameterValue(familyType, parameter, displayUnits),
                 parameter.StorageType.ToString(),
                 parameter.IsInstance ? "Экземпляр" : "Тип",
                 parameter.Formula ?? string.Empty));
@@ -155,7 +162,7 @@ public sealed class FamilyMetadataService
             .ToList();
     }
 
-    private static string ReadParameterValue(FamilyType familyType, FamilyParameter parameter)
+    private static string ReadParameterValue(FamilyType familyType, FamilyParameter parameter, Units displayUnits)
     {
         try
         {
@@ -163,7 +170,7 @@ public sealed class FamilyMetadataService
             {
                 StorageType.String => familyType.AsString(parameter) ?? string.Empty,
                 StorageType.Integer => FormatNullableInteger(familyType.AsInteger(parameter)),
-                StorageType.Double => FormatNullableDouble(familyType.AsDouble(parameter)),
+                StorageType.Double => FormatNullableDouble(familyType.AsDouble(parameter), parameter, displayUnits),
                 StorageType.ElementId => FormatElementId(familyType.AsElementId(parameter)),
                 _ => string.Empty
             };
@@ -183,11 +190,37 @@ public sealed class FamilyMetadataService
             : string.Empty;
     }
 
-    private static string FormatNullableDouble(double? value)
+    private static string FormatNullableDouble(double? value, FamilyParameter parameter, Units displayUnits)
     {
-        return value.HasValue
-            ? value.Value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)
-            : string.Empty;
+        if (!value.HasValue)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            ForgeTypeId dataType = parameter.Definition?.GetDataType() ?? new ForgeTypeId();
+            if (UnitUtils.IsMeasurableSpec(dataType))
+            {
+                return UnitFormatUtils.Format(displayUnits, dataType, value.Value, forEditing: false);
+            }
+        }
+        catch (Exception exception) when (exception is Autodesk.Revit.Exceptions.ArgumentException
+            or Autodesk.Revit.Exceptions.ArgumentNullException
+            or Autodesk.Revit.Exceptions.InvalidOperationException
+            or ArgumentException
+            or ArgumentNullException
+            or InvalidOperationException)
+        {
+            return FormatInvariantDouble(value.Value);
+        }
+
+        return FormatInvariantDouble(value.Value);
+    }
+
+    private static string FormatInvariantDouble(double value)
+    {
+        return value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string FormatElementId(ElementId? value)

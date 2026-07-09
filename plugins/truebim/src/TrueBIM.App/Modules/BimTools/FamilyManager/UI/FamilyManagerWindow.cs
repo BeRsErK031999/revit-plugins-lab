@@ -1147,7 +1147,7 @@ public sealed class FamilyManagerWindow : Window
 
         refreshMetadataButton.IsEnabled = false;
         statusText.Text = $"Чтение метаданных: {selectedFamily.Name}...";
-        FamilyMetadataResult result = metadataService.Read(uiApplication.Application, selectedFamily.FilePath, logger);
+        FamilyMetadataResult result = metadataService.Read(uiApplication.Application, document, selectedFamily.FilePath, logger);
         selectedFamily.Status = result.Message;
 
         if (result.Succeeded)
@@ -1219,7 +1219,7 @@ public sealed class FamilyManagerWindow : Window
                 }
 
                 statusText.Text = $"Чтение метаданных {index + 1}/{families.Count}: {family.Name}...";
-                FamilyMetadataResult result = metadataService.Read(uiApplication.Application, family.FilePath, logger);
+                FamilyMetadataResult result = metadataService.Read(uiApplication.Application, document, family.FilePath, logger);
                 family.Status = result.Message;
                 if (result.Succeeded)
                 {
