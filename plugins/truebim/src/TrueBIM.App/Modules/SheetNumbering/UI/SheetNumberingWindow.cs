@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +12,7 @@ using TrueBIM.App.Modules.SheetNumbering.Rules;
 using TrueBIM.App.Modules.SheetNumbering.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using RevitDocument = Autodesk.Revit.DB.Document;
 
 namespace TrueBIM.App.Modules.SheetNumbering.UI;
@@ -23,7 +25,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
     private readonly SheetNumberApplyService applyService;
     private readonly ITrueBimLogger logger;
     private readonly SheetPreviewOrderService orderService = new();
-    private readonly Button applyButton = CreateActionButton("Применить", TrueBimIcon.Apply, isEnabled: false);
+    private readonly Button applyButton = TrueBimUi.CreatePrimaryButton("Применить", TrueBimIcon.Apply, isEnabled: false);
     private readonly Button exportPreviewButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
     private readonly Button invisibleDuplicateButton = CreateActionButton("Скрытый символ", TrueBimIcon.Move, isEnabled: false, minWidth: 150);
     private readonly Button moveUpButton = CreateActionButton("Вверх", TrueBimIcon.Up, isEnabled: false);
@@ -59,7 +61,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         this.applyService = applyService ?? throw new ArgumentNullException(nameof(applyService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = "Нумерация листов";
-        Icon = IconFactory.CreateImage(TrueBimIcon.App, 32);
+        Icon = IconFactory.CreateImage(TrueBimIcon.SheetNumbering, 32);
         Width = Math.Min(1180, Math.Max(1000, SystemParameters.WorkArea.Width - 64));
         Height = Math.Min(760, Math.Max(680, SystemParameters.WorkArea.Height - 64));
         MinWidth = Math.Min(1100, Width);
@@ -67,6 +69,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         selectionLogTimer = CreateSelectionLogTimer();
+        ApplySharedControlStyles();
         Content = CreateContent();
         logger.Info($"Sheet Numbering window opened with {sheets.Count} sheets.");
         LoadCurrentSheets();
@@ -74,36 +77,34 @@ public sealed class SheetNumberingWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                "Нумерация листов",
+                "Подготовка новых номеров по выбранному порядку с предпросмотром перед применением.",
+                TrueBimIcon.SheetNumbering),
+            commandBar: CreateCommandPanel(),
+            body: CreatePreviewSection(),
+            status: CreateStatus(),
+            footer: CreateActions());
+    }
+
+    private UIElement CreateCommandPanel()
+    {
+        StackPanel panel = new()
         {
-            Margin = new Thickness(20)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
 
-        UIElement ruleInputs = CreateRuleInputs();
-        DockPanel.SetDock(ruleInputs, Dock.Top);
-        root.Children.Add(ruleInputs);
-
-        UIElement selectionControls = CreateSelectionControls();
-        DockPanel.SetDock(selectionControls, Dock.Top);
-        root.Children.Add(selectionControls);
-
-        UIElement status = CreateStatus();
-        DockPanel.SetDock(status, Dock.Top);
-        root.Children.Add(status);
-
-        UIElement actions = CreateActions();
-        DockPanel.SetDock(actions, Dock.Bottom);
-        root.Children.Add(actions);
-
-        root.Children.Add(CreatePreviewGrid());
-        return root;
+        panel.Children.Add(CreateRuleInputs());
+        panel.Children.Add(CreateSelectionControls());
+        return panel;
     }
 
     private UIElement CreateRuleInputs()
     {
         Grid rules = new()
         {
-            Margin = new Thickness(0, 0, 0, 16)
+            Margin = new Thickness(0)
         };
 
         for (int index = 0; index < 5; index++)
@@ -117,14 +118,16 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         AddRuleField(rules, "Шаг", incrementInput, 3);
         AddRuleField(rules, "Разрядность", paddingInput, 4);
 
-        return rules;
+        Border card = TrueBimUi.CreateSectionCard("Правила нумерации", rules);
+        card.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        return card;
     }
 
     private UIElement CreateSelectionControls()
     {
         DockPanel controls = new()
         {
-            Margin = new Thickness(0, 0, 0, 12)
+            Margin = new Thickness(0)
         };
 
         StackPanel selectionActions = new()
@@ -134,13 +137,13 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         };
 
         Button selectAllButton = CreateActionButton("Выбрать все", TrueBimIcon.Apply, isEnabled: true);
-        selectAllButton.Margin = new Thickness(0, 0, 8, 0);
+        selectAllButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
         selectAllButton.ToolTip = "Отметить все обычные листы в таблице. Листы-заглушки остаются исключенными.";
         selectAllButton.Click += (_, _) => SetAllSelected(isSelected: true);
         selectionActions.Children.Add(selectAllButton);
 
         Button clearSelectionButton = CreateActionButton("Снять выбор", TrueBimIcon.Close, isEnabled: true);
-        clearSelectionButton.Margin = new Thickness(0, 0, 8, 0);
+        clearSelectionButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
         clearSelectionButton.ToolTip = "Снять отметки со всех листов.";
         clearSelectionButton.Click += (_, _) => SetAllSelected(isSelected: false);
         selectionActions.Children.Add(clearSelectionButton);
@@ -157,12 +160,14 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         orderControls.Children.Add(new TextBlock
         {
             Text = "Порядок предпросмотра",
+            Foreground = TrueBimBrushes.TextSecondary,
+            FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0)
         });
 
         orderInput.Width = 180;
-        orderInput.Height = 32;
+        orderInput.MinHeight = TrueBimTheme.ControlHeight32;
         orderInput.ToolTip = "Выберите сортировку для предпросмотра. Ручные перемещения включают ручной порядок.";
         orderInput.Items.Add(new ComboBoxItem { Content = "Исходный порядок", Tag = PreviewOrder.Original });
         orderInput.Items.Add(new ComboBoxItem { Content = "Группа листов", Tag = PreviewOrder.Group });
@@ -177,11 +182,17 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         return controls;
     }
 
+    private UIElement CreatePreviewSection()
+    {
+        return TrueBimUi.CreateSectionCard("Листы и предпросмотр", CreatePreviewGrid());
+    }
+
     private UIElement CreatePreviewGrid()
     {
         previewGrid.AutoGenerateColumns = false;
         previewGrid.CanUserAddRows = false;
         previewGrid.IsReadOnly = false;
+        previewGrid.Style = TrueBimStyles.CreateDataGridStyle();
         previewGrid.ItemsSource = previewRows;
         ICollectionView groupedView = CollectionViewSource.GetDefaultView(previewRows);
         groupedView.GroupDescriptions.Clear();
@@ -210,20 +221,13 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         previewGrid.Columns.Add(CreateTextColumn("Текущий номер", nameof(PreviewRow.CurrentNumber), 130));
         previewGrid.Columns.Add(CreateTextColumn("Предпросмотр", nameof(PreviewRow.PreviewNumber), 130));
         previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
-        previewGrid.Columns.Add(CreateTextColumn("Статус / проблема", nameof(PreviewRow.Status), 200));
+        previewGrid.Columns.Add(CreateStatusColumn());
 
         return previewGrid;
     }
 
     private UIElement CreateActions()
     {
-        Grid actionRoot = new()
-        {
-            Margin = new Thickness(0, 16, 0, 0)
-        };
-        actionRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        actionRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
         StackPanel orderActions = new()
         {
             Orientation = Orientation.Horizontal,
@@ -231,12 +235,12 @@ public sealed class SheetNumberingWindow : TrueBimWindow
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        moveUpButton.Margin = new Thickness(0, 0, 8, 0);
+        moveUpButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
         moveUpButton.ToolTip = "Переместить выбранную строку на одну позицию вверх.";
         moveUpButton.Click += (_, _) => MoveSelectedRowUp();
         orderActions.Children.Add(moveUpButton);
 
-        moveDownButton.Margin = new Thickness(0, 0, 16, 0);
+        moveDownButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
         moveDownButton.ToolTip = "Переместить выбранную строку на одну позицию вниз.";
         moveDownButton.Click += (_, _) => MoveSelectedRowDown();
         orderActions.Children.Add(moveDownButton);
@@ -244,63 +248,65 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         orderActions.Children.Add(new TextBlock
         {
             Text = "Позиция",
+            Foreground = TrueBimBrushes.TextSecondary,
+            FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0)
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0)
         });
         positionInput.Width = 72;
-        positionInput.Height = 32;
+        positionInput.MinHeight = TrueBimTheme.ControlHeight32;
         positionInput.ToolTip = "Номер позиции, куда нужно переместить выбранный лист.";
         orderActions.Children.Add(positionInput);
 
-        moveToPositionButton.Margin = new Thickness(8, 0, 0, 0);
+        moveToPositionButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         moveToPositionButton.ToolTip = "Перемещает выбранный лист на указанную позицию в списке предпросмотра.";
         moveToPositionButton.Click += (_, _) => MoveSelectedRowToPosition();
         orderActions.Children.Add(moveToPositionButton);
 
-        Grid.SetColumn(orderActions, 0);
-        actionRoot.Children.Add(orderActions);
-
-        StackPanel actions = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
         Button previewButton = CreateActionButton("Предпросмотр", TrueBimIcon.Preview, isEnabled: true);
         previewButton.ToolTip = "Сформировать новые номера для выбранных листов.";
         previewButton.Click += (_, _) => GeneratePreview();
-        actions.Children.Add(previewButton);
 
         exportPreviewButton.ToolTip = "Экспорт доступен после предпросмотра.";
         exportPreviewButton.Click += (_, _) => ExportPreview();
-        actions.Children.Add(exportPreviewButton);
 
         invisibleDuplicateButton.ToolTip = "Добавить невидимые символы к дублирующимся номерам, чтобы Revit считал их уникальными.";
         invisibleDuplicateButton.Click += (_, _) => ApplyInvisibleDuplicateSuffixes();
-        actions.Children.Add(invisibleDuplicateButton);
 
         applyButton.ToolTip = "Сначала выполните предпросмотр.";
         applyButton.Click += (_, _) => ApplyPreview();
-        actions.Children.Add(applyButton);
 
-        Button closeButton = CreateActionButton("Закрыть", TrueBimIcon.Close, isEnabled: true);
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close);
         closeButton.IsCancel = true;
         closeButton.ToolTip = "Закрыть окно без изменений.";
         closeButton.Click += (_, _) => Close();
-        actions.Children.Add(closeButton);
 
-        Grid.SetColumn(actions, 1);
-        actionRoot.Children.Add(actions);
-        return actionRoot;
+        return TrueBimUi.CreateFooter(
+            orderActions,
+            previewButton,
+            exportPreviewButton,
+            invisibleDuplicateButton,
+            applyButton,
+            closeButton);
     }
 
     private UIElement CreateStatus()
     {
-        statusText.Margin = new Thickness(0, 0, 0, 12);
+        statusText.Foreground = TrueBimBrushes.TextPrimary;
         statusText.TextWrapping = TextWrapping.Wrap;
         UpdateStatusSummary();
-        return statusText;
+        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
+    }
+
+    private void ApplySharedControlStyles()
+    {
+        prefixInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        suffixInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        startNumberInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        incrementInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        paddingInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        positionInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        orderInput.Style = TrueBimStyles.CreateComboBoxStyle();
     }
 
     private void LoadCurrentSheets()
@@ -983,17 +989,13 @@ public sealed class SheetNumberingWindow : TrueBimWindow
     {
         StackPanel field = new()
         {
-            Margin = new Thickness(column == 0 ? 0 : 8, 0, 0, 0)
+            Margin = new Thickness(column == 0 ? 0 : TrueBimTheme.Spacing8, 0, 0, 0)
         };
 
-        field.Children.Add(new TextBlock
-        {
-            Text = label,
-            Margin = new Thickness(0, 0, 0, 4)
-        });
+        field.Children.Add(TrueBimUi.CreateFieldLabel(label));
 
         input.MinWidth = 120;
-        input.Height = 28;
+        input.MinHeight = TrueBimTheme.ControlHeight32;
         field.Children.Add(input);
 
         Grid.SetColumn(field, column);
@@ -1013,6 +1015,38 @@ public sealed class SheetNumberingWindow : TrueBimWindow
             Binding = new Binding(bindingPath),
             IsReadOnly = true,
             Width = width
+        };
+    }
+
+    private static DataGridTemplateColumn CreateStatusColumn()
+    {
+        FrameworkElementFactory badge = new(typeof(Border));
+        badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+        badge.SetValue(Border.BorderThicknessProperty, new Thickness(TrueBimTheme.BorderWidth));
+        badge.SetValue(Border.PaddingProperty, TrueBimTheme.BadgePadding);
+        badge.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+        badge.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        badge.SetBinding(Border.BackgroundProperty, new Binding(nameof(PreviewRow.Status)) { Converter = new SheetStatusBackgroundConverter() });
+        badge.SetBinding(Border.BorderBrushProperty, new Binding(nameof(PreviewRow.Status)) { Converter = new SheetStatusBrushConverter() });
+
+        FrameworkElementFactory text = new(typeof(TextBlock));
+        text.SetValue(TextBlock.FontSizeProperty, TrueBimTheme.CaptionFontSize);
+        text.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        text.SetValue(FrameworkElement.MinWidthProperty, 150.0);
+        text.SetBinding(TextBlock.TextProperty, new Binding(nameof(PreviewRow.Status)));
+        text.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(PreviewRow.Status)) { Converter = new SheetStatusBrushConverter() });
+        badge.AppendChild(text);
+
+        return new DataGridTemplateColumn
+        {
+            Header = "Статус / проблема",
+            CellTemplate = new DataTemplate
+            {
+                VisualTree = badge
+            },
+            Width = 220,
+            IsReadOnly = true
         };
     }
 
@@ -1039,14 +1073,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
 
     private static Button CreateActionButton(string text, TrueBimIcon icon, bool isEnabled, double minWidth = 104)
     {
-        return new Button
-        {
-            Content = IconFactory.CreateButtonContent(icon, text),
-            MinWidth = minWidth,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0),
-            IsEnabled = isEnabled
-        };
+        return TrueBimUi.CreateSecondaryButton(text, icon, isEnabled: isEnabled, minWidth: minWidth);
     }
 
     private void MoveSelectedRowUp()
@@ -1148,6 +1175,69 @@ public sealed class SheetNumberingWindow : TrueBimWindow
             "Padding must be zero or greater." => "Разрядность должна быть нулем или больше.",
             _ => message
         };
+    }
+
+    private sealed class SheetStatusBrushConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return TrueBimBrushes.ForSeverity(GetStatusSeverity(value as string));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class SheetStatusBackgroundConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return TrueBimBrushes.BackgroundForSeverity(GetStatusSeverity(value as string));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private static TrueBimUiSeverity GetStatusSeverity(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return TrueBimUiSeverity.Neutral;
+        }
+
+        string normalizedStatus = status!;
+
+        if (StatusContains(normalizedStatus, "ошибка"))
+        {
+            return TrueBimUiSeverity.Danger;
+        }
+
+        if (StatusContains(normalizedStatus, "дубль")
+            || StatusContains(normalizedStatus, "конфликт")
+            || StatusContains(normalizedStatus, "заглуш")
+            || StatusContains(normalizedStatus, "исключ")
+            || StatusContains(normalizedStatus, "не выбрано"))
+        {
+            return TrueBimUiSeverity.Warning;
+        }
+
+        if (StatusContains(normalizedStatus, "готов")
+            || StatusContains(normalizedStatus, "будет изменено"))
+        {
+            return TrueBimUiSeverity.Success;
+        }
+
+        return TrueBimUiSeverity.Info;
+    }
+
+    private static bool StatusContains(string status, string value)
+    {
+        return status.IndexOf(value, StringComparison.CurrentCultureIgnoreCase) >= 0;
     }
 
     private enum PreviewOrder

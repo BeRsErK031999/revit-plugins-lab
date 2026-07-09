@@ -32,7 +32,7 @@ Create a lightweight TrueBIM design system on top of native WPF:
 
 1. Done in `c03b876`: add `UI/DesignSystem`, wire local theme resources through `TrueBimWindow`, migrate `ModuleLauncherWindow` as the first low-risk consumer, and expand `IconFactory` for shared UI states.
 2. Done in `4a5f2b9`: apply shared shell, button, table, footer, and status helpers to `PrintWindow`.
-3. Next: repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`.
+3. In progress: repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`; `SheetNumberingWindow` is migrated, `ViewVisibilityWindow` remains next.
 4. Pending: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
 5. Pending: move `VoltageDropWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
 6. Pending: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
@@ -44,7 +44,8 @@ Create a lightweight TrueBIM design system on top of native WPF:
 - Local `TrueBimWindow` resource/chrome integration: done.
 - First migrated consumer, `ModuleLauncherWindow`: done.
 - `PrintWindow` migration: done in `4a5f2b9`.
-- Next production windows: `SheetNumberingWindow` and `ViewVisibilityWindow`.
+- `SheetNumberingWindow` migration: done.
+- Next production window: `ViewVisibilityWindow`.
 - Third-party library adoption: intentionally not started.
 - Manual Revit UI smoke: pending because it requires local deploy/restart conditions.
 
