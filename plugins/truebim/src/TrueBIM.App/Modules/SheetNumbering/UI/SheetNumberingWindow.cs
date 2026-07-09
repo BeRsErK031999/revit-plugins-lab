@@ -29,12 +29,6 @@ public sealed class SheetNumberingWindow : Window
     private readonly Button moveUpButton = CreateActionButton("Вверх", TrueBimIcon.Up, isEnabled: false);
     private readonly Button moveDownButton = CreateActionButton("Вниз", TrueBimIcon.Down, isEnabled: false);
     private readonly Button moveToPositionButton = CreateActionButton("К позиции", TrueBimIcon.Move, isEnabled: false, minWidth: 128);
-    private readonly CheckBox includePlaceholdersInput = new()
-    {
-        Content = "Включать листы-заглушки",
-        IsChecked = false,
-        ToolTip = "Включает листы-заглушки в предпросмотр и применение."
-    };
     private readonly TextBlock statusText = new();
     private readonly ComboBox orderInput = new();
     private readonly TextBox positionInput = new() { Text = "1" };
@@ -66,10 +60,10 @@ public sealed class SheetNumberingWindow : Window
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = "Нумерация листов";
         Icon = IconFactory.CreateImage(TrueBimIcon.App, 32);
-        Width = 1060;
-        Height = 720;
-        MinWidth = 1000;
-        MinHeight = 650;
+        Width = Math.Min(1180, Math.Max(1000, SystemParameters.WorkArea.Width - 64));
+        Height = Math.Min(760, Math.Max(680, SystemParameters.WorkArea.Height - 64));
+        MinWidth = Math.Min(1100, Width);
+        MinHeight = Math.Min(700, Height);
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         selectionLogTimer = CreateSelectionLogTimer();
@@ -141,7 +135,7 @@ public sealed class SheetNumberingWindow : Window
 
         Button selectAllButton = CreateActionButton("Выбрать все", TrueBimIcon.Apply, isEnabled: true);
         selectAllButton.Margin = new Thickness(0, 0, 8, 0);
-        selectAllButton.ToolTip = "Отметить все листы в таблице.";
+        selectAllButton.ToolTip = "Отметить все обычные листы в таблице. Листы-заглушки остаются исключенными.";
         selectAllButton.Click += (_, _) => SetAllSelected(isSelected: true);
         selectionActions.Children.Add(selectAllButton);
 
@@ -150,12 +144,6 @@ public sealed class SheetNumberingWindow : Window
         clearSelectionButton.ToolTip = "Снять отметки со всех листов.";
         clearSelectionButton.Click += (_, _) => SetAllSelected(isSelected: false);
         selectionActions.Children.Add(clearSelectionButton);
-
-        includePlaceholdersInput.VerticalAlignment = VerticalAlignment.Center;
-        includePlaceholdersInput.Margin = new Thickness(8, 0, 0, 0);
-        includePlaceholdersInput.Checked += (_, _) => OnIncludePlaceholdersChanged();
-        includePlaceholdersInput.Unchecked += (_, _) => OnIncludePlaceholdersChanged();
-        selectionActions.Children.Add(includePlaceholdersInput);
 
         DockPanel.SetDock(selectionActions, Dock.Left);
         controls.Children.Add(selectionActions);
@@ -177,6 +165,7 @@ public sealed class SheetNumberingWindow : Window
         orderInput.Height = 32;
         orderInput.ToolTip = "Выберите сортировку для предпросмотра. Ручные перемещения включают ручной порядок.";
         orderInput.Items.Add(new ComboBoxItem { Content = "Исходный порядок", Tag = PreviewOrder.Original });
+        orderInput.Items.Add(new ComboBoxItem { Content = "Группа листов", Tag = PreviewOrder.Group });
         orderInput.Items.Add(new ComboBoxItem { Content = "Текущий номер", Tag = PreviewOrder.CurrentNumber });
         orderInput.Items.Add(new ComboBoxItem { Content = "Название", Tag = PreviewOrder.Name });
         orderInput.Items.Add(new ComboBoxItem { Content = "Ручной порядок", Tag = PreviewOrder.Manual });
@@ -194,10 +183,15 @@ public sealed class SheetNumberingWindow : Window
         previewGrid.CanUserAddRows = false;
         previewGrid.IsReadOnly = false;
         previewGrid.ItemsSource = previewRows;
+        ICollectionView groupedView = CollectionViewSource.GetDefaultView(previewRows);
+        groupedView.GroupDescriptions.Clear();
+        groupedView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PreviewRow.GroupName)));
         previewGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
         previewGrid.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
         previewGrid.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         previewGrid.SelectionMode = DataGridSelectionMode.Single;
+        previewGrid.CanUserSortColumns = true;
+        previewGrid.GroupStyle.Add(CreateSheetGroupStyle());
         previewGrid.ToolTip = "Список листов. Отметьте листы и задайте порядок перед предпросмотром.";
         previewGrid.SelectionChanged += (_, _) => UpdateManualOrderButtons();
 
@@ -212,6 +206,7 @@ public sealed class SheetNumberingWindow : Window
             Width = 72
         });
         previewGrid.Columns.Add(CreateTextColumn("Позиция", nameof(PreviewRow.Position), 70));
+        previewGrid.Columns.Add(CreateTextColumn("Группа", nameof(PreviewRow.GroupName), 140));
         previewGrid.Columns.Add(CreateTextColumn("Текущий номер", nameof(PreviewRow.CurrentNumber), 130));
         previewGrid.Columns.Add(CreateTextColumn("Предпросмотр", nameof(PreviewRow.PreviewNumber), 130));
         previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
@@ -318,7 +313,7 @@ public sealed class SheetNumberingWindow : Window
             previewRows.Add(new PreviewRow(
                 sheet,
                 index,
-                isSelected: true,
+                isSelected: !sheet.IsPlaceholder,
                 sheet.CurrentNumber,
                 string.Empty,
                 sheet.Name,
@@ -356,11 +351,11 @@ public sealed class SheetNumberingWindow : Window
 
         IReadOnlyList<SheetInfo> previewSheets = SheetNumberingPreviewSelection.FilterSheetsForPreview(
             selectedRows.Select(row => row.Sheet).ToList(),
-            IncludePlaceholders);
+            includePlaceholders: false);
 
         if (previewSheets.Count == 0)
         {
-            UpdateStatusSummary("Выбранные листы являются заглушками. Включите листы-заглушки для предпросмотра.");
+            UpdateStatusSummary("Выбранные листы являются заглушками и не участвуют в нумерации.");
             logger.Warning("Sheet Numbering preview validation failed: selected sheets were excluded placeholders.");
             return;
         }
@@ -377,7 +372,7 @@ public sealed class SheetNumberingWindow : Window
 
         try
         {
-            logger.Info($"Running Sheet Numbering preview for {previewSheets.Count} sheets. Include placeholders: {IncludePlaceholders}.");
+            logger.Info($"Running Sheet Numbering preview for {previewSheets.Count} sheets. Include placeholders: false.");
             SheetNumberingPreviewResult result = workflow.GeneratePreview(
                 new SheetNumberingPreviewRequest(
                     previewSheets,
@@ -755,7 +750,7 @@ public sealed class SheetNumberingWindow : Window
 
         foreach (PreviewRow row in previewRows)
         {
-            row.IsSelected = isSelected;
+            row.IsSelected = isSelected && !row.Sheet.IsPlaceholder;
             row.PreviewNumber = string.Empty;
             row.Status = GetBaseStatus(row);
         }
@@ -764,7 +759,7 @@ public sealed class SheetNumberingWindow : Window
         isPreviewCurrent = false;
         previewRowCount = 0;
         duplicateIssueCount = 0;
-        UpdateStatusSummary(isSelected ? "Выбраны все листы." : "Выбор снят.");
+        UpdateStatusSummary(isSelected ? "Выбраны все листы для нумерации." : "Выбор снят.");
         logger.Info($"Sheet Numbering selection changed: {GetSelectedCount()} of {sheets.Count} sheets selected.");
     }
 
@@ -849,6 +844,11 @@ public sealed class SheetNumberingWindow : Window
             PreviewOrder.CurrentNumber => previewRows
                 .OrderBy(row => row.CurrentNumber, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(row => row.OriginalOrder),
+            PreviewOrder.Group => previewRows
+                .OrderBy(row => row.GroupName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.CurrentNumber, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.OriginalOrder),
             PreviewOrder.Name => previewRows
                 .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(row => row.OriginalOrder),
@@ -866,7 +866,7 @@ public sealed class SheetNumberingWindow : Window
 
     private void UpdateStatusSummary(string? message = null)
     {
-        string summary = $"Загружено листов: {sheets.Count}. Выбрано: {GetSelectedCount()}. Строк предпросмотра: {previewRowCount}. Дублей: {duplicateIssueCount}.";
+        string summary = $"Загружено листов: {sheets.Count}. Групп: {GetGroupCount()}. Выбрано для нумерации: {GetSelectedPreviewEligibleCount()}. Строк предпросмотра: {previewRowCount}. Дублей: {duplicateIssueCount}.";
         statusText.Text = string.IsNullOrWhiteSpace(message)
             ? summary
             : $"{summary} {message}";
@@ -904,10 +904,16 @@ public sealed class SheetNumberingWindow : Window
 
     private int GetSelectedPreviewEligibleCount()
     {
-        return previewRows.Count(row => row.IsSelected && (IncludePlaceholders || !row.Sheet.IsPlaceholder));
+        return previewRows.Count(row => row.IsSelected && !row.Sheet.IsPlaceholder);
     }
 
-    private bool IncludePlaceholders => includePlaceholdersInput.IsChecked == true;
+    private int GetGroupCount()
+    {
+        return sheets
+            .Select(sheet => sheet.GroupName)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .Count();
+    }
 
     private string GetBaseStatus(PreviewRow row)
     {
@@ -926,7 +932,7 @@ public sealed class SheetNumberingWindow : Window
             return "Готово";
         }
 
-        return IncludePlaceholders ? "Лист-заглушка" : "Заглушка исключена";
+        return "Заглушка исключена";
     }
 
     private static bool IsRowApplyEligible(PreviewRow row)
@@ -973,12 +979,6 @@ public sealed class SheetNumberingWindow : Window
         return true;
     }
 
-    private void OnIncludePlaceholdersChanged()
-    {
-        InvalidatePreview("Настройка листов-заглушек изменена. Выполните предпросмотр заново.");
-        logger.Info($"Sheet Numbering Include placeholders changed: {IncludePlaceholders}.");
-    }
-
     private static void AddRuleField(Grid grid, string label, TextBox input, int column)
     {
         StackPanel field = new()
@@ -1013,6 +1013,27 @@ public sealed class SheetNumberingWindow : Window
             Binding = new Binding(bindingPath),
             IsReadOnly = true,
             Width = width
+        };
+    }
+
+    private static GroupStyle CreateSheetGroupStyle()
+    {
+        FrameworkElementFactory expander = new(typeof(Expander));
+        expander.SetValue(Expander.IsExpandedProperty, true);
+        expander.SetBinding(HeaderedContentControl.HeaderProperty, new Binding("Name") { StringFormat = "Группа: {0}" });
+        FrameworkElementFactory presenter = new(typeof(ItemsPresenter));
+        expander.AppendChild(presenter);
+
+        ControlTemplate template = new(typeof(GroupItem))
+        {
+            VisualTree = expander
+        };
+        Style containerStyle = new(typeof(GroupItem));
+        containerStyle.Setters.Add(new Setter(Control.TemplateProperty, template));
+
+        return new GroupStyle
+        {
+            ContainerStyle = containerStyle
         };
     }
 
@@ -1132,6 +1153,7 @@ public sealed class SheetNumberingWindow : Window
     private enum PreviewOrder
     {
         Original,
+        Group,
         CurrentNumber,
         Name,
         Manual
@@ -1203,6 +1225,8 @@ public sealed class SheetNumberingWindow : Window
         }
 
         public string CurrentNumber { get; }
+
+        public string GroupName => Sheet.GroupName;
 
         public string PreviewNumber
         {
