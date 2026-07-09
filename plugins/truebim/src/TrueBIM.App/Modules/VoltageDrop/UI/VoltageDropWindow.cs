@@ -6,6 +6,7 @@ using TrueBIM.App.Modules.VoltageDrop.Models;
 using TrueBIM.App.Modules.VoltageDrop.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.Modules.VoltageDrop.UI;
 
@@ -21,10 +22,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
     private readonly TextBlock statusText = new();
     private readonly StackPanel threePhaseCurrentRows = new();
     private readonly StackPanel singlePhaseCurrentRows = new();
-    private readonly Brush inputBackground = new SolidColorBrush(Color.FromRgb(232, 246, 231));
-    private readonly Brush inputBorder = new SolidColorBrush(Color.FromRgb(80, 150, 80));
-    private readonly Brush invalidInputBackground = new SolidColorBrush(Color.FromRgb(255, 235, 235));
-    private readonly Brush invalidInputBorder = new SolidColorBrush(Color.FromRgb(180, 40, 40));
+    private readonly Brush inputBackground = TrueBimBrushes.SuccessBackground;
+    private readonly Brush inputBorder = TrueBimBrushes.Success;
+    private readonly Brush invalidInputBackground = TrueBimBrushes.DangerBackground;
+    private readonly Brush invalidInputBorder = TrueBimBrushes.Danger;
     private bool isLoadingDefaults;
 
     public VoltageDropWindow(ITrueBimLogger logger)
@@ -57,30 +58,30 @@ public sealed class VoltageDropWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        DockPanel root = new()
-        {
-            Margin = new Thickness(12)
-        };
-
-        UIElement footer = CreateFooter();
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
-        statusText.Margin = new Thickness(0, 0, 0, 8);
-        statusText.Foreground = Brushes.DimGray;
-        DockPanel.SetDock(statusText, Dock.Top);
-        root.Children.Add(statusText);
-
         tableTabs.Margin = new Thickness(0, 0, 0, 4);
+        tableTabs.Style = TrueBimStyles.CreateTabControlStyle();
         tableTabs.SelectionChanged += TableTabsSelectionChanged;
         tableTabs.Items.Add(CreateTableTab("Таблица 1: Потеря напряжения", CreateVoltageDropTable(), new TableViewport(1220, 820)));
         tableTabs.Items.Add(CreateTableTab("Таблица 2: Квартиры и лифты", CreateApartmentDemandTable(), new TableViewport(1240, 860)));
         tableTabs.Items.Add(CreateTableTab("Таблица 3: Повышенная комфортность", CreateHighComfortDemandTable(), new TableViewport(1320, 940)));
         tableTabs.Items.Add(CreateTableTab("Таблица 4: Дополнительные формулы", CreateSupplementaryTable(), new TableViewport(1320, 940)));
         tableTabs.SelectedIndex = 0;
-        root.Children.Add(tableTabs);
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                Title,
+                "Табличные расчеты кабельных линий, квартирных нагрузок, лифтов и вспомогательных формул.",
+                TrueBimIcon.VoltageDrop),
+            commandBar: null,
+            body: tableTabs,
+            status: CreateStatus(),
+            footer: CreateFooter());
+    }
 
-        return root;
+    private UIElement CreateStatus()
+    {
+        statusText.Foreground = TrueBimBrushes.TextPrimary;
+        statusText.TextWrapping = TextWrapping.Wrap;
+        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
     }
 
     private static TabItem CreateTableTab(string header, UIElement content, TableViewport viewport)
@@ -137,36 +138,28 @@ public sealed class VoltageDropWindow : TrueBimWindow
 
     private UIElement CreateFooter()
     {
-        StackPanel footer = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 16, 0, 0)
-        };
-
         Button referencesButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Справочники"),
             MinWidth = 140,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             ToolTip = "Открыть оцифрованные справочные таблицы и формулы."
         };
         referencesButton.Click += (_, _) => OpenReferences();
-        footer.Children.Add(referencesButton);
 
         Button closeButton = new()
         {
             Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
             MinWidth = 120,
-            Height = 32,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateButtonStyle(),
             IsCancel = true,
             ToolTip = "Закрыть окно расчета."
         };
         closeButton.Click += (_, _) => Close();
-        footer.Children.Add(closeButton);
 
-        return footer;
+        return TrueBimUi.CreateFooter(null, referencesButton, closeButton);
     }
 
     private void OpenReferences()
@@ -336,8 +329,9 @@ public sealed class VoltageDropWindow : TrueBimWindow
         {
             Header = header,
             Content = content,
-            Margin = new Thickness(0, 6, 0, 6),
-            Padding = new Thickness(6)
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing4),
+            Padding = new Thickness(TrueBimTheme.Spacing8),
+            Style = TrueBimStyles.CreateGroupBoxStyle()
         };
         return groupBox;
     }
@@ -392,9 +386,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
         TextBlock textBlock = new()
         {
             Text = title,
-            FontSize = 16,
+            FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 8)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
         Grid.SetRow(textBlock, 0);
         Grid.SetColumnSpan(textBlock, grid.ColumnDefinitions.Count);
@@ -407,7 +402,8 @@ public sealed class VoltageDropWindow : TrueBimWindow
         {
             Text = text,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 8, 0, 3)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing4)
         };
     }
 
@@ -416,9 +412,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
         TextBlock textBlock = new()
         {
             Text = label,
+            Foreground = TrueBimBrushes.TextPrimary,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(6, 3, 6, 3)
+            Padding = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4)
         };
         Border cell = CreateTextCell(textBlock);
         Grid.SetRow(cell, row);
@@ -431,10 +428,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
         TextBlock textBlock = new()
         {
             Text = text,
-            Foreground = Brushes.DimGray,
+            Foreground = TrueBimBrushes.TextSecondary,
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(8, 3, 8, 3)
+            Padding = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4)
         };
         Border cell = CreateTextCell(textBlock);
         Grid.SetRow(cell, row);
@@ -446,9 +443,9 @@ public sealed class VoltageDropWindow : TrueBimWindow
     {
         return new Border
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 224, 229)),
-            BorderThickness = new Thickness(0, 0, 1, 1),
-            Background = Brushes.White,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(0, 0, TrueBimTheme.BorderWidth, TrueBimTheme.BorderWidth),
+            Background = TrueBimBrushes.Surface,
             Child = content
         };
     }
@@ -457,10 +454,11 @@ public sealed class VoltageDropWindow : TrueBimWindow
     {
         TextBox textBox = new()
         {
-            Height = 24,
+            Height = TrueBimTheme.ControlHeight32,
             MinWidth = 120,
-            Background = new SolidColorBrush(Color.FromRgb(232, 246, 231)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(80, 150, 80)),
+            Background = inputBackground,
+            BorderBrush = inputBorder,
+            Style = TrueBimStyles.CreateTextBoxStyle(),
             VerticalContentAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 1, 0, 1)
         };
@@ -473,8 +471,9 @@ public sealed class VoltageDropWindow : TrueBimWindow
         return new ComboBox
         {
             DisplayMemberPath = "DisplayName",
-            Height = 24,
+            Height = TrueBimTheme.ControlHeight32,
             MinWidth = 140,
+            Style = TrueBimStyles.CreateComboBoxStyle(),
             VerticalContentAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 1, 0, 1),
             ToolTip = toolTip
@@ -485,9 +484,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
     {
         return new TextBlock
         {
-            MinHeight = 24,
-            Background = new SolidColorBrush(Color.FromRgb(229, 242, 249)),
-            Padding = new Thickness(6, 3, 6, 3),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Background = TrueBimBrushes.InfoBackground,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Padding = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 1, 0, 1)
         };
@@ -682,7 +682,7 @@ public sealed class VoltageDropWindow : TrueBimWindow
             SetOutput("suppLineVoltageDropPercent", supplementary.LineVoltageDropPercent);
 
             statusText.Text = "Готово";
-            statusText.Foreground = Brushes.DimGray;
+            statusText.Foreground = TrueBimBrushes.TextSecondary;
         }
         catch (VoltageDropValidationException exception)
         {
@@ -813,9 +813,9 @@ public sealed class VoltageDropWindow : TrueBimWindow
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(700) });
 
-            AddCurrentCell(row, 0, current.Label, Brushes.Transparent);
-            AddCurrentCell(row, 1, Format(current.Current), new SolidColorBrush(Color.FromRgb(229, 242, 249)));
-            AddCurrentCell(row, 2, current.Note, Brushes.Transparent);
+            AddCurrentCell(row, 0, current.Label, TrueBimBrushes.Surface);
+            AddCurrentCell(row, 1, Format(current.Current), TrueBimBrushes.InfoBackground);
+            AddCurrentCell(row, 2, current.Note, TrueBimBrushes.Surface);
             panel.Children.Add(row);
         }
     }
@@ -826,7 +826,7 @@ public sealed class VoltageDropWindow : TrueBimWindow
         {
             Text = text,
             Background = background,
-            Padding = new Thickness(6, 4, 6, 4),
+            Padding = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4),
             TextWrapping = TextWrapping.Wrap
         };
         Grid.SetColumn(cell, column);
@@ -868,7 +868,7 @@ public sealed class VoltageDropWindow : TrueBimWindow
         }
 
         statusText.Text = exception.Message;
-        statusText.Foreground = Brushes.DarkRed;
+        statusText.Foreground = TrueBimBrushes.Danger;
     }
 
     private string ResolveInputKey(string fieldKey, IReadOnlyDictionary<string, string> fieldKeyMap)
