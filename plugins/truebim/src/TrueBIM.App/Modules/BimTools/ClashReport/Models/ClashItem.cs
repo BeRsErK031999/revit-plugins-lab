@@ -8,7 +8,6 @@ public sealed class ClashItem : INotifyPropertyChanged
 {
     private ClashStatus status;
     private string comment;
-    private string assignedTo;
     private bool isElement1Resolved;
     private bool isElement2Resolved;
     private string element1Name = string.Empty;
@@ -30,14 +29,7 @@ public sealed class ClashItem : INotifyPropertyChanged
         string element2SourceName = "",
         long? linkedElementId2 = null,
         long? linkedElementId1 = null,
-        string source = "",
-        ClashType clashType = ClashType.Hard,
-        ClashPriority priority = ClashPriority.Low,
-        double severityScore = 0,
-        string groupKey = "",
-        string fingerprint = "",
-        double? approximateVolumeMm3 = null,
-        string assignedTo = "")
+        string source = "")
     {
         ClashId = string.IsNullOrWhiteSpace(clashId) ? "Clash" : clashId.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? ClashId : name.Trim();
@@ -52,14 +44,7 @@ public sealed class ClashItem : INotifyPropertyChanged
         Element2SourceName = element2SourceName?.Trim() ?? string.Empty;
         LinkedElementId1 = linkedElementId1;
         LinkedElementId2 = linkedElementId2;
-        Source = string.IsNullOrWhiteSpace(source) ? "Проверка" : source.Trim();
-        ClashType = clashType;
-        Priority = priority;
-        SeverityScore = NormalizeSeverityScore(severityScore);
-        GroupKey = string.IsNullOrWhiteSpace(groupKey) ? "Без группы" : groupKey.Trim();
-        Fingerprint = string.IsNullOrWhiteSpace(fingerprint) ? ClashId : fingerprint.Trim();
-        ApproximateVolumeMm3 = NormalizeOptionalVolume(approximateVolumeMm3);
-        this.assignedTo = assignedTo?.Trim() ?? string.Empty;
+        Source = string.IsNullOrWhiteSpace(source) ? "Импорт" : source.Trim();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -80,27 +65,7 @@ public sealed class ClashItem : INotifyPropertyChanged
 
     public string Source { get; }
 
-    public ClashType ClashType { get; }
-
-    public string ClashTypeDisplay => ClashTypes.ToDisplayName(ClashType);
-
-    public ClashPriority Priority { get; }
-
-    public string PriorityDisplay => ClashPriorities.ToDisplayName(Priority);
-
-    public double SeverityScore { get; }
-
-    public string SeverityDisplay => SeverityScore.ToString("0.#", CultureInfo.InvariantCulture);
-
-    public string GroupKey { get; }
-
-    public string Fingerprint { get; }
-
-    public string StableId => string.IsNullOrWhiteSpace(Fingerprint) ? ClashId : Fingerprint;
-
-    public double? ApproximateVolumeMm3 { get; }
-
-    public string ApproximateVolumeText => ApproximateVolumeMm3?.ToString("0", CultureInfo.InvariantCulture) ?? string.Empty;
+    public string StableId => ClashId;
 
     public string Element1SourceName { get; }
 
@@ -142,22 +107,6 @@ public sealed class ClashItem : INotifyPropertyChanged
             }
 
             comment = normalized;
-            OnPropertyChanged();
-        }
-    }
-
-    public string AssignedTo
-    {
-        get => assignedTo;
-        set
-        {
-            string normalized = value?.Trim() ?? string.Empty;
-            if (assignedTo == normalized)
-            {
-                return;
-            }
-
-            assignedTo = normalized;
             OnPropertyChanged();
         }
     }
@@ -289,29 +238,4 @@ public sealed class ClashItem : INotifyPropertyChanged
         double MaxX,
         double MaxY,
         double MaxZ);
-
-    private static double NormalizeSeverityScore(double value)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-        {
-            return 0;
-        }
-
-        if (value < 0)
-        {
-            return 0;
-        }
-
-        return value > 100 ? 100 : value;
-    }
-
-    private static double? NormalizeOptionalVolume(double? value)
-    {
-        if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
-        {
-            return null;
-        }
-
-        return value.Value < 0 ? 0 : value.Value;
-    }
 }

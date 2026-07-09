@@ -1,151 +1,114 @@
-# RoadMap: Clash Manager для TrueBIM
+# RoadMap: импорт коллизий Clash Manager для TrueBIM
 
-Дата среза: 2026-07-08.
+Дата среза: 2026-07-09.
 
 Исходный ориентир: документ `Создание аналога Clash Manager как надстройки для Autodesk Revit.docx`.
 
 ## Цель
 
-Перевести текущий инструмент `Отчёт коллизий` из формата простого Revit-отчета в рабочий Clash Manager внутри TrueBIM: локальный Revit-first модуль координации, где BIM-координатор запускает проверки, группирует результаты, назначает ответственных, ведет статусы, возвращается к проблеме в 3D и экспортирует управляемый отчет.
+Переделать инструмент `Отчёт коллизий` в простой Revit-навигатор по внешнему списку коллизий. Плагин больше не ищет коллизии сам и не выполняет internal clash detection. Источник данных только файл координатора: CSV или XML.
 
-## Что уже есть
+Пользовательский сценарий:
 
-В TrueBIM уже реализован MVP+:
+1. Открыть Revit-модель.
+2. Нажать `TrueBIM` -> `Координация` -> `Отчёт коллизий`.
+3. Нажать `Добавить файл`.
+4. Выбрать CSV или XML с коллизиями.
+5. Получить список коллизий.
+6. Выбрать строку, проверить привязку ElementId и перейти к ней в 3D.
+7. При необходимости сохранить локальные статусы и комментарии.
 
-- команда `Отчёт коллизий` на панели `Координация`;
-- сканирование видимых элементов текущей модели;
-- сканирование текущей модели против загруженных `RevitLinkInstance`;
-- опциональное сканирование RVT-связей между собой;
-- локальное JSON-состояние;
-- статусы, комментарии и CSV-экспорт;
-- переход к найденной коллизии в служебном 3D-виде `BIM_Clash_Report_3D`;
-- selection и подсветка элементов при навигации.
+## Что входит в MVP
 
-Ограничение текущей версии: это еще broad-phase инструмент по bounding box. Он полезен как ранний coordination report, но не закрывает весь сценарий Clash Manager: нет профилей правил, stable baseline, назначений, групп, истории, точной solid-проверки, пакетных снимков, BCF/PDF/Excel и интеграций.
+- Импорт CSV.
+- Импорт XML.
+- Список импортированных коллизий.
+- Фильтр по ID, имени, ElementId, статусу, комментарию и сообщению.
+- Статусы `New`, `Active`, `Approved`, `Resolved`, `Ignored`.
+- Комментарий координатора.
+- Resolve элементов через `Document.GetElement(ElementId)`.
+- Resolve вложенных элементов связей, если файл содержит `linkedElementId1/2`.
+- Кнопка `Выбрать` для найденных элементов.
+- Кнопка `Показать в 3D` со служебным видом `BIM_Clash_Report_3D`.
+- Section box по найденным элементам, bounds из файла или точке `X/Y/Z`.
+- Подсветка найденных элементов в 3D.
+- Локальное JSON-состояние статуса и комментария по ключу `model + ClashId`.
 
-## Рабочий MVP
+## Что специально удалено
 
-Минимальная рабочая версия Clash Manager для TrueBIM должна включать:
-
-- управление локальным профилем проверки;
-- режимы проверки: current model, current model vs RVT links, RVT links vs RVT links;
-- тип коллизии: `Hard`, далее `Clearance` и `Semantic`;
-- статусы `New`, `Active`, `Approved`, `Resolved`, `Ignored`;
-- назначенного ответственного и комментарий;
-- приоритет и severity score;
-- группировку по источнику и паре категорий, затем spatial/system-zone grouping;
-- стабильный fingerprint для повторного сопоставления результата;
-- сохранение triage-состояния между перезапусками;
-- 3D-навигацию с section box;
-- CSV на первом этапе, затем Excel/PDF;
-- unit-тесты для доменной логики без зависимости от Revit.
+- Сканирование текущей модели.
+- Сканирование Revit-связей.
+- Сравнение RVT-связей между собой.
+- Broad-phase bounding box detection.
+- Типы коллизий `Hard/Clearance/Semantic`.
+- Приоритеты, severity score и расчёт объема пересечения.
+- Группировки и fingerprint.
+- Ответственный `AssignedTo`.
+- JSON import/export профилей проверки.
+- CSV-экспорт отчёта из найденных внутри Revit коллизий.
+- Rule profile, tolerance, minimum overlap и категории проверки.
 
 ## RoadMap работ
 
-### 1. Triage foundation
+### 1. Import-only foundation
 
-Статус: первый рабочий срез готов.
+Статус: готово.
 
-Цель: сделать каждую найденную коллизию управляемой задачей координации.
+Цель: убрать внутреннюю генерацию коллизий и оставить файл как единственный источник списка.
 
-- Добавить доменные поля: `ClashType`, `Priority`, `SeverityScore`, `GroupKey`, `Fingerprint`, `AssignedTo`.
-- Считать priority/severity из приблизительного объема пересечения bounding box.
-- Сохранять `AssignedTo` в JSON вместе со статусом и комментарием.
-- Привязать новое состояние к stable fingerprint с fallback на старый `ClashId`.
-- Расширить CSV-отчет и grid в окне.
+- Удалить `ClashLinkScanner`, scan options и triage-сервисы.
+- Упростить `ClashItem` до импортированной строки: ID, имя, ElementId, linked ElementId, точка, source, status, comment.
+- Упростить profile/storage до последнего файла, section box padding, подсветки, статусов и комментариев.
+- Обновить `ClashReportCommand`, чтобы окно получало import service вместо scanner.
 
-### 2. Rule profile
+### 2. CSV/XML import
 
-Статус: первый рабочий срез готов.
+Статус: готово.
 
-Цель: уйти от одного общего набора чекбоксов к профилю проверки.
+Цель: поддержать практичные выгрузки без жесткой привязки к одному шаблону колонок.
 
-- Ввести rule profile: имя теста, тип проверки, tolerance, minimum overlap, linked model scope.
-- Добавить импорт/экспорт профиля в JSON.
-- Подготовить UI к нескольким сохраненным тестам.
-- Далее: добавить категории A/B и отделить domain profile от WPF-окна.
+- CSV: поддержать `;`, `,` и tab.
+- CSV: поддержать заголовки `ClashId`, `ClashName`, `ElementId1`, `ElementId2`, `X`, `Y`, `Z`, `Status`, `Comment`.
+- CSV: поддержать позиционный fallback без заголовка.
+- XML: поддержать элементы `clash`, `clashresult`, `result`, `item`.
+- XML: поддержать `guid/id`, `name`, `status`, `comment`, `clashpoint x/y/z`.
+- XML: попытаться извлекать Navisworks-like `Element ID` из object attributes.
 
-### 3. Baseline and deduplication
+### 3. Navigation UI
 
-Статус: частично готово: stable fingerprint и дедупликация добавлены, snapshot/baseline еще запланированы.
+Статус: готово.
 
-Цель: после повторного сканирования показывать не шум, а изменение картины.
+Цель: сделать окно похожим на простой Clash Manager: список, статус, комментарий, переход.
 
-- Сделано: stable fingerprint для результата.
-- Сделано: дедупликация и сортировка найденных результатов по priority/severity.
-- Далее: сохранять snapshot последнего запуска.
-- Далее: отмечать `New`, `Existing`, `Resolved candidate`.
-- Далее: добавить summary по группам и статусам.
-- Далее: подготовить baseline compare для будущих batch-сценариев.
+- Кнопка `Добавить файл`.
+- Кнопка `Проверить` для повторного resolve ElementId в текущей модели.
+- Кнопка `Выбрать`.
+- Кнопка `Показать в 3D`.
+- Список с колонками source, ID, имя, ElementId 1/2, точка, статус, комментарий, resolve, сообщение.
+- Журнал импорта и навигации.
 
-### 4. Better grouping
+### 4. Validation and release
 
-Статус: первый рабочий срез готов.
+Статус: в работе перед выпуском.
 
-Цель: сократить тысячи строк до читаемых coordination buckets.
+- Unit-тесты import service.
+- Unit-тесты storage.
+- `dotnet format --verify-no-changes`.
+- `dotnet build --configuration Release`.
+- `dotnet test --configuration Release`.
+- `git diff --check`.
+- Conventional commit.
 
-- Группировка по паре элементов.
-- Группировка по source/category pair.
-- Spatial grouping по центрам коллизий.
-- Позже: system-zone grouping по level/zone/system/workset.
+## Ручная проверка
 
-### 5. Exact detection contract
-
-Статус: запланировано.
-
-Цель: подготовить переход от broad-phase bounding box к точным проверкам.
-
-- Оставить текущий collector как coarse stage.
-- Ввести engine contract для exact stage.
-- Добавить безопасную обработку `Solid`, `ElementIntersectsSolidFilter` и `BooleanOperationsUtils`.
-- Сохранять причину пропуска элементов без solid-геометрии.
-- Не блокировать Revit на больших моделях: лимиты, прогресс, отмена.
-
-### 6. Reporting package
-
-Статус: запланировано.
-
-Цель: сделать отчет пригодным для передачи участникам проекта.
-
-- Улучшенный CSV с fingerprint, группой, ответственным, статусом и severity.
-- Excel-экспорт.
-- PDF-сводка.
-- Снимок 3D-вида или placeholder-контракт для будущих snapshots.
-- Manual QA сценарий для экспорта и повторного открытия состояния.
-
-### 7. Revit pane and external events
-
-Статус: запланировано после стабилизации core.
-
-Цель: перейти от отдельного окна к полноценному coordination workspace.
-
-- DockablePane для постоянной панели Clash Manager.
-- ExternalEvent gateway для действий из UI.
-- Отдельные команды: open pane, run scan, zoom/select, save state.
-- Безопасная подготовка к будущим `Create Issue` и `Apply Suggestion`.
-
-### 8. Production extensions
-
-Статус: вне первого MVP.
-
-- DataStorage markers внутри RVT.
-- SQLite вместо одного JSON для больших проектов.
-- BCF import/export.
-- APS/BIM 360/ACC issue sync.
-- Dynamo package.
-- Navisworks companion.
-- Suggestion engine с preview/confirm.
-
-## Порядок ручной проверки
-
-1. Закрыть Revit перед local deploy или installer smoke.
-2. Открыть проект с несколькими model categories и загруженными RVT-связями.
+1. Закрыть Revit перед local deploy или установкой новой сборки.
+2. Открыть модель Revit.
 3. `TrueBIM` -> `Координация` -> `Отчёт коллизий`.
-4. Запустить `Сканировать` для текущей модели и RVT-связей.
-5. Проверить колонки type, priority, group, responsible, severity.
-6. Назначить ответственного, поменять статус и комментарий.
-7. Нажать `Сохранить`, закрыть и снова открыть окно.
-8. Убедиться, что состояние подтянулось по fingerprint.
-9. Экспортировать и импортировать JSON-профиль.
-10. Проверить `Выбрать` и `Показать в 3D`.
-11. Экспортировать CSV и проверить новые поля отчета.
+4. Нажать `Добавить файл`, выбрать CSV.
+5. Проверить, что строки появились в списке.
+6. Нажать `Проверить` и убедиться, что колонка `Resolve` обновилась.
+7. Выбрать строку с найденными ElementId и нажать `Выбрать`.
+8. Нажать `Показать в 3D`.
+9. Проверить вид `BIM_Clash_Report_3D`, section box и подсветку.
+10. Изменить статус/комментарий, нажать `Сохранить`, закрыть и открыть окно повторно.
+11. Повторить импорт XML и проверить тот же сценарий перехода.

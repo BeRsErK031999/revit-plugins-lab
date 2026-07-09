@@ -2,25 +2,11 @@ namespace TrueBIM.App.Modules.BimTools.ClashReport.Models;
 
 public sealed class ClashReportProfile
 {
-    public string Name { get; set; } = "Координационная проверка";
+    public string Name { get; set; } = "Импорт коллизий";
 
-    public string LastCsvPath { get; set; } = string.Empty;
+    public string LastImportPath { get; set; } = string.Empty;
 
     public double SectionBoxPaddingMm { get; set; } = 1500;
 
-    public double MinimumOverlapMm { get; set; }
-
-    public ClashType ClashType { get; set; } = ClashType.Hard;
-
-    public ClashGroupingStrategy GroupingStrategy { get; set; } = ClashGroupingStrategy.SourceCategoryPair;
-
-    public string DefaultAssignee { get; set; } = string.Empty;
-
     public bool HighlightOnNavigate { get; set; } = true;
-
-    public bool ScanCurrentModel { get; set; } = true;
-
-    public bool ScanRvtLinks { get; set; } = true;
-
-    public bool ScanLinksAgainstEachOther { get; set; }
 }

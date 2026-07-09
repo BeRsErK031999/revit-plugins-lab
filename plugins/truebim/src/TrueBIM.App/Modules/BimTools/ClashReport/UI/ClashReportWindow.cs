@@ -2,17 +2,14 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Xml;
 using Autodesk.Revit.DB;
 using Microsoft.Win32;
 using TrueBIM.App.Modules.BimTools.ClashReport.Models;
 using TrueBIM.App.Modules.BimTools.ClashReport.Services;
-using TrueBIM.App.Modules.BimTools.Common.Services.Export;
 using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
@@ -28,74 +25,37 @@ public sealed class ClashReportWindow : Window
     private static readonly IReadOnlyList<ClashStatus> StatusOptions =
         Enum.GetValues(typeof(ClashStatus)).Cast<ClashStatus>().ToList();
 
-    private static readonly JsonSerializerOptions ProfileSerializerOptions = new()
-    {
-        WriteIndented = true,
-        Converters =
-        {
-            new JsonStringEnumConverter()
-        }
-    };
-
     private readonly RevitUIDocument uiDocument;
     private readonly RevitDocument document;
-    private readonly ClashLinkScanner linkScanner;
+    private readonly ClashReportFileImportService importService;
     private readonly ClashElementResolver elementResolver;
     private readonly ClashViewNavigator viewNavigator;
     private readonly ClashReportStorage storage;
     private readonly ITrueBimLogger logger;
-    private readonly CsvExportService csvExportService = new();
-    private readonly ClashReportCsvService reportCsvService = new();
     private readonly ObservableCollection<ClashItem> clashRows = new();
     private readonly ObservableCollection<ClashReportRow> reportRows = new();
     private readonly TextBox profileNameInput = new();
     private readonly TextBox filterInput = new();
     private readonly TextBox paddingInput = new();
-    private readonly TextBox minimumOverlapInput = new();
-    private readonly TextBox defaultAssigneeInput = new();
-    private readonly ComboBox clashTypeInput = new()
-    {
-        ItemsSource = new[] { ClashType.Hard }
-    };
-    private readonly ComboBox groupingStrategyInput = new()
-    {
-        ItemsSource = Enum.GetValues(typeof(ClashGroupingStrategy)).Cast<ClashGroupingStrategy>().ToList()
-    };
-    private readonly CheckBox scanCurrentModelInput = new()
-    {
-        Content = "Текущая модель",
-        IsChecked = true,
-        ToolTip = "Искать пересечения между видимыми элементами активного вида текущего файла."
-    };
-    private readonly CheckBox scanRvtLinksInput = new()
-    {
-        Content = "Модель ↔ RVT-связи",
-        IsChecked = true,
-        ToolTip = "Искать пересечения между текущей моделью и загруженными RVT-связями."
-    };
-    private readonly CheckBox scanLinksAgainstEachOtherInput = new()
-    {
-        Content = "RVT-связи между собой",
-        ToolTip = "Дополнительно сравнить загруженные RVT-связи друг с другом."
-    };
     private readonly CheckBox highlightInput = new()
     {
         Content = "Подсветка в 3D",
         IsChecked = true,
         ToolTip = "При переходе в 3D подсвечивать найденные элементы коллизии служебными overrides."
     };
+    private readonly TextBlock fileText = new();
     private readonly DataGrid clashGrid = new();
     private readonly DataGrid reportGrid = new();
     private readonly TextBlock statusText = new();
     private readonly Button selectButton = CreateButton("Выбрать", TrueBimIcon.Apply, 105);
     private readonly Button navigateButton = CreateButton("Показать в 3D", TrueBimIcon.ClashReport, 140);
     private readonly Button saveStateButton = CreateButton("Сохранить", TrueBimIcon.Apply, 110);
-    private readonly Button exportReportButton = CreateButton("Отчёт CSV", TrueBimIcon.Export, 120);
     private readonly string modelKey;
+    private string currentImportPath = string.Empty;
 
     public ClashReportWindow(
         RevitUIDocument uiDocument,
-        ClashLinkScanner linkScanner,
+        ClashReportFileImportService importService,
         ClashElementResolver elementResolver,
         ClashViewNavigator viewNavigator,
         ClashReportStorage storage,
@@ -103,7 +63,7 @@ public sealed class ClashReportWindow : Window
     {
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
         document = uiDocument.Document;
-        this.linkScanner = linkScanner ?? throw new ArgumentNullException(nameof(linkScanner));
+        this.importService = importService ?? throw new ArgumentNullException(nameof(importService));
         this.elementResolver = elementResolver ?? throw new ArgumentNullException(nameof(elementResolver));
         this.viewNavigator = viewNavigator ?? throw new ArgumentNullException(nameof(viewNavigator));
         this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
@@ -114,16 +74,16 @@ public sealed class ClashReportWindow : Window
 
         Title = "Отчёт коллизий";
         Icon = IconFactory.CreateImage(TrueBimIcon.ClashReport, 32);
-        Width = 1220;
-        Height = 760;
-        MinWidth = 1040;
-        MinHeight = 640;
+        Width = 1180;
+        Height = 720;
+        MinWidth = 980;
+        MinHeight = 600;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        UpdateStatus("Нажмите «Сканировать», чтобы проверить текущую модель и загруженные RVT-связи.");
-        logger.Info($"Clash Report window opened for '{document.Title}'.");
+        UpdateStatus("Добавьте CSV или XML файл коллизий.");
+        logger.Info($"Clash Report import window opened for '{document.Title}'.");
     }
 
     protected override void OnClosed(EventArgs e)
@@ -135,15 +95,10 @@ public sealed class ClashReportWindow : Window
     private void ApplyProfile(ClashReportProfile profile)
     {
         profileNameInput.Text = profile.Name;
+        currentImportPath = profile.LastImportPath;
         paddingInput.Text = profile.SectionBoxPaddingMm.ToString("0.##", CultureInfo.InvariantCulture);
-        minimumOverlapInput.Text = profile.MinimumOverlapMm.ToString("0.##", CultureInfo.InvariantCulture);
-        defaultAssigneeInput.Text = profile.DefaultAssignee;
-        clashTypeInput.SelectedItem = profile.ClashType == ClashType.Hard ? profile.ClashType : ClashType.Hard;
-        groupingStrategyInput.SelectedItem = profile.GroupingStrategy;
-        scanCurrentModelInput.IsChecked = profile.ScanCurrentModel;
-        scanRvtLinksInput.IsChecked = profile.ScanRvtLinks;
-        scanLinksAgainstEachOtherInput.IsChecked = profile.ScanLinksAgainstEachOther;
         highlightInput.IsChecked = profile.HighlightOnNavigate;
+        UpdateFileText();
     }
 
     private UIElement CreateContent()
@@ -170,7 +125,7 @@ public sealed class ClashReportWindow : Window
         });
         tabs.Items.Add(new TabItem
         {
-            Header = "Отчёт",
+            Header = "Журнал",
             Content = CreateReportGrid()
         });
         root.Children.Add(tabs);
@@ -190,13 +145,11 @@ public sealed class ClashReportWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         AddLabel(root, $"Модель: {document.Title}", 0, 0);
         profileNameInput.Height = 32;
         profileNameInput.Margin = new Thickness(8, 0, 12, 8);
-        profileNameInput.ToolTip = "Имя локального профиля отчёта коллизий.";
+        profileNameInput.ToolTip = "Имя локального набора импортированных коллизий.";
         WpfGrid.SetColumn(profileNameInput, 1);
         root.Children.Add(profileNameInput);
 
@@ -205,17 +158,10 @@ public sealed class ClashReportWindow : Window
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        Button scanButton = CreateButton("Сканировать", TrueBimIcon.Preview, 135);
-        scanButton.Click += (_, _) => ScanLinks();
-        actions.Children.Add(scanButton);
 
-        Button importProfileButton = CreateButton("Импорт", TrueBimIcon.Open, 105);
-        importProfileButton.Click += (_, _) => ImportProfile();
-        actions.Children.Add(importProfileButton);
-
-        Button exportProfileButton = CreateButton("Экспорт", TrueBimIcon.Export, 105);
-        exportProfileButton.Click += (_, _) => ExportProfile();
-        actions.Children.Add(exportProfileButton);
+        Button importButton = CreateButton("Добавить файл", TrueBimIcon.Open, 135);
+        importButton.Click += (_, _) => ImportFile();
+        actions.Children.Add(importButton);
 
         Button refreshButton = CreateButton("Проверить", TrueBimIcon.Preview, 115);
         refreshButton.Click += (_, _) => ResolveRows();
@@ -230,9 +176,6 @@ public sealed class ClashReportWindow : Window
         saveStateButton.Click += (_, _) => SaveState(showDialog: true);
         actions.Children.Add(saveStateButton);
 
-        exportReportButton.Click += (_, _) => ExportReport();
-        actions.Children.Add(exportReportButton);
-
         Button closeButton = CreateButton("Закрыть", TrueBimIcon.Close, 110);
         closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
@@ -241,41 +184,16 @@ public sealed class ClashReportWindow : Window
         WpfGrid.SetColumn(actions, 2);
         root.Children.Add(actions);
 
-        AddLabel(root, "Источник", 0, 1);
-        TextBlock sourceText = new()
-        {
-            Text = "Текущая модель активного вида и загруженные RVT-связи. CSV используется только для экспорта отчёта.",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 12, 8),
-            Foreground = System.Windows.Media.Brushes.DimGray
-        };
-        WpfGrid.SetRow(sourceText, 1);
-        WpfGrid.SetColumn(sourceText, 1);
-        root.Children.Add(sourceText);
+        AddLabel(root, "Файл", 0, 1);
+        fileText.VerticalAlignment = VerticalAlignment.Center;
+        fileText.Margin = new Thickness(8, 0, 12, 8);
+        fileText.Foreground = System.Windows.Media.Brushes.DimGray;
+        fileText.TextWrapping = TextWrapping.Wrap;
+        WpfGrid.SetRow(fileText, 1);
+        WpfGrid.SetColumn(fileText, 1);
+        root.Children.Add(fileText);
 
-        AddLabel(root, "Проверять", 0, 2);
-        StackPanel modes = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        modes.Children.Add(scanCurrentModelInput);
-        modes.Children.Add(scanRvtLinksInput);
-        modes.Children.Add(scanLinksAgainstEachOtherInput);
-        foreach (UIElement child in modes.Children)
-        {
-            if (child is CheckBox checkBox)
-            {
-                checkBox.Margin = new Thickness(8, 0, 18, 8);
-                checkBox.VerticalAlignment = VerticalAlignment.Center;
-            }
-        }
-
-        WpfGrid.SetRow(modes, 2);
-        WpfGrid.SetColumn(modes, 1);
-        root.Children.Add(modes);
-
-        AddLabel(root, "Параметры", 0, 3);
+        AddLabel(root, "Параметры", 0, 2);
         StackPanel options = new()
         {
             Orientation = Orientation.Horizontal,
@@ -285,46 +203,15 @@ public sealed class ClashReportWindow : Window
         paddingInput.Width = 90;
         paddingInput.Height = 32;
         paddingInput.Margin = new Thickness(8, 0, 18, 8);
-        paddingInput.ToolTip = "Запас вокруг bounding box найденного пересечения.";
+        paddingInput.ToolTip = "Запас вокруг импортированной точки или найденных элементов при переходе в 3D.";
         options.Children.Add(paddingInput);
-        options.Children.Add(CreateOptionLabel("Мин. пересечение, мм"));
-        minimumOverlapInput.Width = 90;
-        minimumOverlapInput.Height = 32;
-        minimumOverlapInput.Margin = new Thickness(8, 0, 18, 8);
-        minimumOverlapInput.ToolTip = "Минимальный размер пересечения по X/Y/Z. 0 показывает все пересекающиеся bounding box.";
-        options.Children.Add(minimumOverlapInput);
+        highlightInput.Margin = new Thickness(0, 0, 18, 8);
+        highlightInput.VerticalAlignment = VerticalAlignment.Center;
         options.Children.Add(highlightInput);
 
-        WpfGrid.SetRow(options, 3);
+        WpfGrid.SetRow(options, 2);
         WpfGrid.SetColumn(options, 1);
         root.Children.Add(options);
-
-        AddLabel(root, "Triage", 0, 4);
-        StackPanel triage = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        triage.Children.Add(CreateOptionLabel("Тип"));
-        clashTypeInput.Width = 110;
-        clashTypeInput.Height = 32;
-        clashTypeInput.Margin = new Thickness(8, 0, 18, 8);
-        triage.Children.Add(clashTypeInput);
-        triage.Children.Add(CreateOptionLabel("Группировка"));
-        groupingStrategyInput.Width = 160;
-        groupingStrategyInput.Height = 32;
-        groupingStrategyInput.Margin = new Thickness(8, 0, 18, 8);
-        triage.Children.Add(groupingStrategyInput);
-        triage.Children.Add(CreateOptionLabel("Ответственный"));
-        defaultAssigneeInput.Width = 180;
-        defaultAssigneeInput.Height = 32;
-        defaultAssigneeInput.Margin = new Thickness(8, 0, 18, 8);
-        defaultAssigneeInput.ToolTip = "Ответственный по умолчанию для новых результатов без сохранённого состояния.";
-        triage.Children.Add(defaultAssigneeInput);
-
-        WpfGrid.SetRow(triage, 4);
-        WpfGrid.SetColumn(triage, 1);
-        root.Children.Add(triage);
 
         return root;
     }
@@ -363,23 +250,18 @@ public sealed class ClashReportWindow : Window
         clashGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
         clashGrid.ItemsSource = clashRows;
         clashGrid.Columns.Add(CreateTextColumn("Источник", nameof(ClashItem.Source), 145));
-        clashGrid.Columns.Add(CreateTextColumn("Тип", nameof(ClashItem.ClashTypeDisplay), 85));
-        clashGrid.Columns.Add(CreateTextColumn("Приоритет", nameof(ClashItem.PriorityDisplay), 95));
-        clashGrid.Columns.Add(CreateTextColumn("Группа", nameof(ClashItem.GroupKey), 170));
         clashGrid.Columns.Add(CreateTextColumn("ID", nameof(ClashItem.ClashId), 110));
         clashGrid.Columns.Add(CreateTextColumn("Имя", nameof(ClashItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         clashGrid.Columns.Add(CreateTextColumn("ElementId 1", nameof(ClashItem.ElementId1Text), 105));
-        clashGrid.Columns.Add(CreateTextColumn("Element 1", nameof(ClashItem.Element1Name), 170));
+        clashGrid.Columns.Add(CreateTextColumn("Element 1", nameof(ClashItem.Element1Name), 190));
         clashGrid.Columns.Add(CreateTextColumn("ElementId 2", nameof(ClashItem.ElementId2Text), 105));
-        clashGrid.Columns.Add(CreateTextColumn("Element 2", nameof(ClashItem.Element2Name), 170));
+        clashGrid.Columns.Add(CreateTextColumn("Element 2", nameof(ClashItem.Element2Name), 190));
         clashGrid.Columns.Add(CreateTextColumn("Точка", nameof(ClashItem.PointText), 150));
-        clashGrid.Columns.Add(CreateTextColumn("Severity", nameof(ClashItem.SeverityDisplay), 80));
         clashGrid.Columns.Add(CreateStatusColumn());
-        clashGrid.Columns.Add(CreateEditableTextColumn("Ответственный", nameof(ClashItem.AssignedTo), 150));
         clashGrid.Columns.Add(CreateEditableTextColumn("Комментарий", nameof(ClashItem.Comment), 220));
-        clashGrid.Columns.Add(CreateTextColumn("Resolve", nameof(ClashItem.ResolvedDisplay), 85));
-        clashGrid.Columns.Add(CreateTextColumn("Сообщение", nameof(ClashItem.Message), 220));
-        clashGrid.MouseDoubleClick += (_, _) => SelectSelectedClashElements(showDialogWhenMissing: true);
+        clashGrid.Columns.Add(CreateTextColumn("Resolve", nameof(ClashItem.ResolvedDisplay), 90));
+        clashGrid.Columns.Add(CreateTextColumn("Сообщение", nameof(ClashItem.Message), 260));
+        clashGrid.MouseDoubleClick += (_, _) => NavigateToSelectedClash();
 
         ICollectionView view = CollectionViewSource.GetDefaultView(clashGrid.ItemsSource);
         view.Filter = MatchesFilter;
@@ -402,30 +284,64 @@ public sealed class ClashReportWindow : Window
         return reportGrid;
     }
 
-    private void ScanLinks()
+    private void ImportFile()
     {
-        ClashReportProfile profile = ReadProfile();
-        ClashLinkScanResult result = linkScanner.Scan(document, uiDocument.ActiveView, CreateScanOptions(profile));
-        clashRows.Clear();
-        reportRows.Clear();
-
-        foreach (ClashItem item in result.Items)
+        CommitGridEdits();
+        SaveState(showDialog: false);
+        OpenFileDialog dialog = new()
         {
-            ApplyDefaultAssignee(profile, item);
-            storage.ApplyState(modelKey, item);
-            elementResolver.Resolve(document, item);
-            clashRows.Add(item);
+            Title = "Добавить файл коллизий",
+            Filter = "CSV/XML files (*.csv;*.xml)|*.csv;*.xml|CSV files (*.csv)|*.csv|XML files (*.xml)|*.xml|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(currentImportPath))
+        {
+            string? directory = Path.GetDirectoryName(currentImportPath);
+            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+            {
+                dialog.InitialDirectory = directory;
+            }
         }
 
-        foreach (string message in result.Messages)
+        if (dialog.ShowDialog(this) != true)
         {
-            reportRows.Add(new ClashReportRow("Сканирование", string.Empty, string.Empty, "Info", message));
+            return;
         }
 
-        storage.SaveProfile(profile);
-        RefreshFilter();
-        UpdateStatus($"Сканирование: найдено {result.Items.Count} коллизий.");
-        logger.Info($"Clash Report scan found {result.Items.Count} rows with {result.Messages.Count} messages.");
+        try
+        {
+            ClashImportResult result = importService.Import(dialog.FileName);
+            clashRows.Clear();
+            reportRows.Clear();
+            currentImportPath = dialog.FileName;
+            UpdateFileText();
+
+            foreach (ClashItem item in result.Items)
+            {
+                storage.ApplyState(modelKey, item);
+                elementResolver.Resolve(document, item);
+                clashRows.Add(item);
+            }
+
+            foreach (string importMessage in result.Messages)
+            {
+                AddReport("Импорт", string.Empty, string.Empty, "Info", importMessage);
+            }
+
+            storage.SaveProfile(ReadProfile());
+            RefreshFilter();
+            UpdateStatus($"Загружен файл: {Path.GetFileName(dialog.FileName)}.");
+            logger.Info($"Clash Report imported {result.Items.Count} rows from '{dialog.FileName}'.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or XmlException or InvalidOperationException)
+        {
+            string message = $"Не удалось импортировать файл: {exception.Message}";
+            AddReport("Импорт", string.Empty, string.Empty, "Error", message);
+            UpdateStatus();
+            logger.Warning(message);
+            TaskDialog("Отчёт коллизий", message);
+        }
     }
 
     private void ResolveRows()
@@ -461,7 +377,7 @@ public sealed class ClashReportWindow : Window
             .ToList();
         if (elementIds.Count == 0)
         {
-            string message = "Нет найденных ElementId для выбора. Нажмите «Проверить» или пересканируйте модель.";
+            string message = "Нет найденных ElementId для выбора. Нажмите «Проверить» или используйте строку с координатами для перехода в 3D.";
             AddReport("Выбор", item.ClashId, item.Name, "Error", message);
             UpdateStatus();
             if (showDialogWhenMissing)
@@ -534,37 +450,8 @@ public sealed class ClashReportWindow : Window
         storage.SaveStates(modelKey, clashRows, ReadProfile());
         if (showDialog)
         {
-            TaskDialog("Отчёт коллизий", "Состояние коллизий сохранено в локальный JSON профиля.");
+            TaskDialog("Отчёт коллизий", "Состояние импортированных коллизий сохранено в локальный JSON.");
         }
-    }
-
-    private void ExportReport()
-    {
-        CommitGridEdits();
-        SaveState(showDialog: false);
-        if (clashRows.Count == 0)
-        {
-            TaskDialog("Отчёт коллизий", "Нет найденных коллизий для экспорта.");
-            return;
-        }
-
-        SaveFileDialog dialog = new()
-        {
-            Title = "Экспорт отчёта коллизий",
-            Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
-            FileName = "truebim-clash-report.csv",
-            OverwritePrompt = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        string csv = reportCsvService.Format(clashRows);
-        csvExportService.WriteUtf8WithBom(dialog.FileName, csv);
-        AddReport("Экспорт", string.Empty, string.Empty, "OK", $"CSV сохранён: {dialog.FileName}");
-        UpdateStatus();
     }
 
     private ClashReportProfile ReadProfile()
@@ -572,108 +459,10 @@ public sealed class ClashReportWindow : Window
         return ClashReportStorage.NormalizeProfile(new ClashReportProfile
         {
             Name = profileNameInput.Text,
-            LastCsvPath = string.Empty,
+            LastImportPath = currentImportPath,
             SectionBoxPaddingMm = ParseDouble(paddingInput.Text, 1500),
-            MinimumOverlapMm = ParseDouble(minimumOverlapInput.Text, 0),
-            ClashType = clashTypeInput.SelectedItem is ClashType clashType ? clashType : ClashType.Hard,
-            GroupingStrategy = groupingStrategyInput.SelectedItem is ClashGroupingStrategy groupingStrategy
-                ? groupingStrategy
-                : ClashGroupingStrategy.SourceCategoryPair,
-            DefaultAssignee = defaultAssigneeInput.Text,
-            HighlightOnNavigate = highlightInput.IsChecked == true,
-            ScanCurrentModel = scanCurrentModelInput.IsChecked == true,
-            ScanRvtLinks = scanRvtLinksInput.IsChecked == true,
-            ScanLinksAgainstEachOther = scanLinksAgainstEachOtherInput.IsChecked == true
+            HighlightOnNavigate = highlightInput.IsChecked == true
         });
-    }
-
-    private static ClashScanOptions CreateScanOptions(ClashReportProfile profile)
-    {
-        return new ClashScanOptions
-        {
-            ScanCurrentModel = profile.ScanCurrentModel,
-            ScanRvtLinks = profile.ScanRvtLinks,
-            ScanLinksAgainstEachOther = profile.ScanLinksAgainstEachOther,
-            MinimumOverlapMm = profile.MinimumOverlapMm,
-            ClashType = profile.ClashType,
-            GroupingStrategy = profile.GroupingStrategy
-        };
-    }
-
-    private void ImportProfile()
-    {
-        OpenFileDialog dialog = new()
-        {
-            Title = "Импорт профиля проверки коллизий",
-            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
-            CheckFileExists = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        try
-        {
-            string json = File.ReadAllText(dialog.FileName, Encoding.UTF8);
-            ClashReportProfile? imported = JsonSerializer.Deserialize<ClashReportProfile>(json, ProfileSerializerOptions);
-            ClashReportProfile profile = ClashReportStorage.NormalizeProfile(imported);
-            ApplyProfile(profile);
-            storage.SaveProfile(profile);
-            UpdateStatus($"Профиль импортирован: {Path.GetFileName(dialog.FileName)}.");
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
-        {
-            string message = $"Не удалось импортировать профиль: {exception.Message}";
-            AddReport("Импорт", string.Empty, string.Empty, "Error", message);
-            UpdateStatus();
-            logger.Warning(message);
-            TaskDialog("Отчёт коллизий", message);
-        }
-    }
-
-    private void ExportProfile()
-    {
-        ClashReportProfile profile = ReadProfile();
-        SaveFileDialog dialog = new()
-        {
-            Title = "Экспорт профиля проверки коллизий",
-            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
-            FileName = "truebim-clash-profile.json",
-            DefaultExt = ".json",
-            OverwritePrompt = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        try
-        {
-            storage.SaveProfile(profile);
-            string json = JsonSerializer.Serialize(profile, ProfileSerializerOptions);
-            File.WriteAllText(dialog.FileName, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-            AddReport("Экспорт", string.Empty, string.Empty, "OK", $"Профиль сохранён: {dialog.FileName}");
-            UpdateStatus();
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
-        {
-            string message = $"Не удалось экспортировать профиль: {exception.Message}";
-            AddReport("Экспорт", string.Empty, string.Empty, "Error", message);
-            UpdateStatus();
-            logger.Warning(message);
-            TaskDialog("Отчёт коллизий", message);
-        }
-    }
-
-    private static void ApplyDefaultAssignee(ClashReportProfile profile, ClashItem item)
-    {
-        if (string.IsNullOrWhiteSpace(item.AssignedTo) && !string.IsNullOrWhiteSpace(profile.DefaultAssignee))
-        {
-            item.AssignedTo = profile.DefaultAssignee;
-        }
     }
 
     private void RefreshFilter()
@@ -697,17 +486,13 @@ public sealed class ClashReportWindow : Window
 
         return Contains(item.ClashId, filter)
             || Contains(item.Source, filter)
-            || Contains(item.ClashTypeDisplay, filter)
-            || Contains(item.PriorityDisplay, filter)
-            || Contains(item.GroupKey, filter)
-            || Contains(item.Fingerprint, filter)
             || Contains(item.Name, filter)
             || Contains(item.ElementId1Text, filter)
             || Contains(item.ElementId2Text, filter)
             || Contains(item.Element1Name, filter)
             || Contains(item.Element2Name, filter)
+            || Contains(item.PointText, filter)
             || Contains(item.StatusDisplay, filter)
-            || Contains(item.AssignedTo, filter)
             || Contains(item.Comment, filter)
             || Contains(item.Message, filter);
     }
@@ -716,15 +501,20 @@ public sealed class ClashReportWindow : Window
     {
         int resolved = clashRows.Count(item => item.GetResolvedElementIds().Count > 0);
         int open = clashRows.Count(item => item.Status == ClashStatus.Open);
-        int urgent = clashRows.Count(item => item.Priority is ClashPriority.High or ClashPriority.Critical);
         int filtered = CollectionViewSource.GetDefaultView(clashGrid.ItemsSource)?.Cast<object>().Count() ?? clashRows.Count;
-        string text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; New: {open}; High/Critical: {urgent}; отчётных событий: {reportRows.Count}.";
+        string text = $"Коллизий: {clashRows.Count}; показано: {filtered}; с найденными элементами: {resolved}; New: {open}; событий журнала: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         bool hasRows = clashRows.Count > 0;
         selectButton.IsEnabled = hasRows;
         navigateButton.IsEnabled = hasRows;
         saveStateButton.IsEnabled = hasRows;
-        exportReportButton.IsEnabled = hasRows;
+    }
+
+    private void UpdateFileText()
+    {
+        fileText.Text = string.IsNullOrWhiteSpace(currentImportPath)
+            ? "Файл не выбран. Поддерживаются CSV и XML."
+            : currentImportPath;
     }
 
     private void AddReport(string operation, string clashId, string clashName, string status, string message)

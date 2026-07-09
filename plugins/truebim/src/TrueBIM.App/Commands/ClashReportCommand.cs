@@ -26,7 +26,7 @@ public sealed class ClashReportCommand : IExternalCommand
 
             ClashReportWindow window = new(
                 uiDocument,
-                new ClashLinkScanner(),
+                new ClashReportFileImportService(),
                 new ClashElementResolver(),
                 new ClashViewNavigator(logger),
                 new ClashReportStorage(logger),

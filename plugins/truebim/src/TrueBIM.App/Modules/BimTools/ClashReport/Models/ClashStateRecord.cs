@@ -6,7 +6,5 @@ public sealed class ClashStateRecord
 
     public string Comment { get; set; } = string.Empty;
 
-    public string AssignedTo { get; set; } = string.Empty;
-
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

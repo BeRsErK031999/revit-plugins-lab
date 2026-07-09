@@ -42,14 +42,13 @@ public sealed class ClashReportStorage
         Guard.NotNullOrWhiteSpace(modelKey, nameof(modelKey));
         Guard.NotNull(item, nameof(item));
 
-        if (!TryGetState(modelKey, item, out ClashStateRecord? record) || record is null)
+        if (!settings.States.TryGetValue(BuildStateKey(modelKey, item.StableId), out ClashStateRecord? record))
         {
             return;
         }
 
         item.Status = record.Status;
         item.Comment = record.Comment;
-        item.AssignedTo = record.AssignedTo;
     }
 
     public void SaveStates(string modelKey, IEnumerable<ClashItem> items, ClashReportProfile profile)
@@ -64,7 +63,6 @@ public sealed class ClashReportStorage
             {
                 Status = item.Status,
                 Comment = item.Comment,
-                AssignedTo = item.AssignedTo,
                 UpdatedAtUtc = DateTime.UtcNow
             };
         }
@@ -114,7 +112,6 @@ public sealed class ClashReportStorage
         foreach (ClashStateRecord record in settings.States.Values)
         {
             record.Comment = record.Comment?.Trim() ?? string.Empty;
-            record.AssignedTo = record.AssignedTo?.Trim() ?? string.Empty;
         }
 
         return settings;
@@ -125,19 +122,10 @@ public sealed class ClashReportStorage
         ClashReportProfile source = profile ?? new ClashReportProfile();
         return new ClashReportProfile
         {
-            Name = string.IsNullOrWhiteSpace(source.Name) ? "Координационная проверка" : source.Name.Trim(),
-            LastCsvPath = source.LastCsvPath?.Trim() ?? string.Empty,
+            Name = string.IsNullOrWhiteSpace(source.Name) ? "Импорт коллизий" : source.Name.Trim(),
+            LastImportPath = source.LastImportPath?.Trim() ?? string.Empty,
             SectionBoxPaddingMm = ClampNumeric(source.SectionBoxPaddingMm, 100, 10000, 1500),
-            MinimumOverlapMm = ClampNumeric(source.MinimumOverlapMm, 0, 1000, 0),
-            ClashType = Enum.IsDefined(typeof(ClashType), source.ClashType) ? source.ClashType : ClashType.Hard,
-            GroupingStrategy = Enum.IsDefined(typeof(ClashGroupingStrategy), source.GroupingStrategy)
-                ? source.GroupingStrategy
-                : ClashGroupingStrategy.SourceCategoryPair,
-            DefaultAssignee = source.DefaultAssignee?.Trim() ?? string.Empty,
-            HighlightOnNavigate = source.HighlightOnNavigate,
-            ScanCurrentModel = source.ScanCurrentModel,
-            ScanRvtLinks = source.ScanRvtLinks,
-            ScanLinksAgainstEachOther = source.ScanLinksAgainstEachOther
+            HighlightOnNavigate = source.HighlightOnNavigate
         };
     }
 
@@ -146,38 +134,14 @@ public sealed class ClashReportStorage
         storage.Save(settingsPath, settings);
     }
 
-    private bool TryGetState(string modelKey, ClashItem item, out ClashStateRecord? record)
-    {
-        if (settings.States.TryGetValue(BuildStateKey(modelKey, item.StableId), out record))
-        {
-            return true;
-        }
-
-        if (!item.StableId.Equals(item.ClashId, StringComparison.OrdinalIgnoreCase)
-            && settings.States.TryGetValue(BuildStateKey(modelKey, item.ClashId), out record))
-        {
-            return true;
-        }
-
-        record = null;
-        return false;
-    }
-
     private static ClashReportProfile Clone(ClashReportProfile profile)
     {
         return new ClashReportProfile
         {
             Name = profile.Name,
-            LastCsvPath = profile.LastCsvPath,
+            LastImportPath = profile.LastImportPath,
             SectionBoxPaddingMm = profile.SectionBoxPaddingMm,
-            MinimumOverlapMm = profile.MinimumOverlapMm,
-            ClashType = profile.ClashType,
-            GroupingStrategy = profile.GroupingStrategy,
-            DefaultAssignee = profile.DefaultAssignee,
-            HighlightOnNavigate = profile.HighlightOnNavigate,
-            ScanCurrentModel = profile.ScanCurrentModel,
-            ScanRvtLinks = profile.ScanRvtLinks,
-            ScanLinksAgainstEachOther = profile.ScanLinksAgainstEachOther
+            HighlightOnNavigate = profile.HighlightOnNavigate
         };
     }
 

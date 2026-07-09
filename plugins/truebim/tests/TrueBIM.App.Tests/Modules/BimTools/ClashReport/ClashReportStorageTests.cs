@@ -13,29 +13,15 @@ public sealed class ClashReportStorageTests
         ClashReportProfile profile = ClashReportStorage.NormalizeProfile(new ClashReportProfile
         {
             Name = "  ",
-            LastCsvPath = "  C:/tmp/clashes.csv  ",
+            LastImportPath = "  C:/tmp/clashes.xml  ",
             SectionBoxPaddingMm = double.NaN,
-            MinimumOverlapMm = -5,
-            ClashType = ClashType.Clearance,
-            GroupingStrategy = ClashGroupingStrategy.LocationBucket,
-            DefaultAssignee = "  BIM Lead  ",
-            HighlightOnNavigate = false,
-            ScanCurrentModel = true,
-            ScanRvtLinks = false,
-            ScanLinksAgainstEachOther = true
+            HighlightOnNavigate = false
         });
 
-        Assert.Equal("Координационная проверка", profile.Name);
-        Assert.Equal("C:/tmp/clashes.csv", profile.LastCsvPath);
+        Assert.Equal("Импорт коллизий", profile.Name);
+        Assert.Equal("C:/tmp/clashes.xml", profile.LastImportPath);
         Assert.Equal(1500, profile.SectionBoxPaddingMm);
-        Assert.Equal(0, profile.MinimumOverlapMm);
-        Assert.Equal(ClashType.Clearance, profile.ClashType);
-        Assert.Equal(ClashGroupingStrategy.LocationBucket, profile.GroupingStrategy);
-        Assert.Equal("BIM Lead", profile.DefaultAssignee);
         Assert.False(profile.HighlightOnNavigate);
-        Assert.True(profile.ScanCurrentModel);
-        Assert.False(profile.ScanRvtLinks);
-        Assert.True(profile.ScanLinksAgainstEachOther);
     }
 
     [Fact]
@@ -53,14 +39,18 @@ public sealed class ClashReportStorageTests
             null,
             null,
             ClashStatus.Resolved,
-            "Fixed",
-            fingerprint: "CM-STABLE",
-            assignedTo: "Architect");
+            "Fixed");
 
         storage.SaveStates(
             "model-a",
             [item],
-            new ClashReportProfile { Name = "Model A", SectionBoxPaddingMm = 500, HighlightOnNavigate = true });
+            new ClashReportProfile
+            {
+                Name = "Model A",
+                LastImportPath = "C:/tmp/model-a.xml",
+                SectionBoxPaddingMm = 500,
+                HighlightOnNavigate = true
+            });
 
         ClashReportStorage loadedStorage = new(settingsPath, new TestLogger());
         ClashItem loadedItem = new(
@@ -72,58 +62,15 @@ public sealed class ClashReportStorageTests
             null,
             null,
             ClashStatus.Open,
-            string.Empty,
-            fingerprint: "CM-STABLE");
+            string.Empty);
         loadedStorage.ApplyState("model-a", loadedItem);
         ClashReportProfile loadedProfile = loadedStorage.LoadProfile();
 
         Assert.Equal(ClashStatus.Resolved, loadedItem.Status);
         Assert.Equal("Fixed", loadedItem.Comment);
-        Assert.Equal("Architect", loadedItem.AssignedTo);
         Assert.Equal("Model A", loadedProfile.Name);
+        Assert.Equal("C:/tmp/model-a.xml", loadedProfile.LastImportPath);
         Assert.Equal(500, loadedProfile.SectionBoxPaddingMm);
-        Assert.True(loadedProfile.ScanRvtLinks);
-    }
-
-    [Fact]
-    public void ApplyState_FallsBackToLegacyClashId()
-    {
-        ClashReportSettings settings = new()
-        {
-            States =
-            {
-                ["model-a::C-01"] = new ClashStateRecord
-                {
-                    Status = ClashStatus.Approved,
-                    Comment = "Legacy state",
-                    AssignedTo = "Engineer"
-                }
-            }
-        };
-        using TempDirectory temp = new();
-        string settingsPath = Path.Combine(temp.Path, "settings.json");
-        ClashReportStorage storage = new(settingsPath, new TestLogger());
-        System.Text.Json.JsonSerializerOptions options = new() { WriteIndented = true };
-        File.WriteAllText(settingsPath, System.Text.Json.JsonSerializer.Serialize(settings, options));
-
-        ClashReportStorage loadedStorage = new(settingsPath, new TestLogger());
-        ClashItem item = new(
-            "C-01",
-            "Clash 01",
-            10,
-            20,
-            null,
-            null,
-            null,
-            ClashStatus.Open,
-            string.Empty,
-            fingerprint: "CM-NEW");
-
-        loadedStorage.ApplyState("model-a", item);
-
-        Assert.Equal(ClashStatus.Approved, item.Status);
-        Assert.Equal("Legacy state", item.Comment);
-        Assert.Equal("Engineer", item.AssignedTo);
     }
 
     private sealed class TempDirectory : IDisposable
