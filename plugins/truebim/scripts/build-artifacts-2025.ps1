@@ -10,6 +10,7 @@ $trueBimRoot = Join-Path $repoRoot "plugins\truebim"
 $solutionPath = Join-Path $repoRoot "TrueBIM.sln"
 $dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
 $projectOutputDir = Join-Path $trueBimRoot "src\TrueBIM.App\bin\$Configuration\net8.0-windows"
+$toolsOutputDir = Join-Path $projectOutputDir "tools"
 $artifactsDir = Join-Path $trueBimRoot "artifacts"
 $coreArtifactsDir = Join-Path $artifactsDir "Core"
 $printArtifactsDir = Join-Path $artifactsDir "Modules\Print"
@@ -44,6 +45,9 @@ New-Item -ItemType Directory -Path $assetsArtifactsDir -Force | Out-Null
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.dll") -Destination $coreArtifactsDir -Force
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.pdb") -Destination $coreArtifactsDir -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $projectOutputDir "TrueBIM.App.deps.json") -Destination $coreArtifactsDir -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $toolsOutputDir) {
+    Copy-Item -Path $toolsOutputDir -Destination $coreArtifactsDir -Recurse -Force
+}
 
 Copy-Item -Path (Join-Path $trueBimRoot "modules\print\module.json") -Destination $printArtifactsDir -Force
 Copy-Item -Path (Join-Path $trueBimRoot "modules\print\README.md") -Destination $printArtifactsDir -Force

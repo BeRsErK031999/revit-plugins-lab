@@ -79,4 +79,48 @@ public sealed class ScheduleTableJsonReaderTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void ReadParserResult_LoadsWarningsErrorsAndTables()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"schedule-import-{Guid.NewGuid():N}.json");
+        File.WriteAllText(
+            path,
+            """
+            {
+              "tables": [
+                {
+                  "sourceFilePath": "worker.pdf",
+                  "pageNumber": 1,
+                  "columns": ["A", "B"],
+                  "rows": [
+                    ["A", "B"],
+                    ["1", "2"]
+                  ],
+                  "confidence": 0.64,
+                  "warnings": ["table warning"]
+                }
+              ],
+              "warnings": ["worker warning"],
+              "errors": ["worker error"]
+            }
+            """,
+            Encoding.UTF8);
+
+        try
+        {
+            var result = new ScheduleTableJsonReader().ReadParserResult(path);
+
+            var table = Assert.Single(result.Tables);
+            Assert.Equal("worker.pdf", table.SourceFilePath);
+            Assert.Equal(2, table.RowCount);
+            Assert.Equal("worker warning", Assert.Single(result.Warnings));
+            Assert.Equal("worker error", Assert.Single(result.Errors));
+            Assert.Equal("table warning", Assert.Single(table.Warnings));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

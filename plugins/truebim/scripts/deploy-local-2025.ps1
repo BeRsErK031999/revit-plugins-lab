@@ -9,7 +9,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $solutionPath = Join-Path $repoRoot "TrueBIM.sln"
-$projectOutput = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\bin\$Configuration\net8.0-windows\TrueBIM.App.dll"
+$projectOutputDir = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\bin\$Configuration\net8.0-windows"
+$projectOutput = Join-Path $projectOutputDir "TrueBIM.App.dll"
+$toolsOutputDir = Join-Path $projectOutputDir "tools"
 $manifestSource = Join-Path $repoRoot "plugins\truebim\manifests\2025\TrueBIM.addin"
 $printModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\print"
 $sheetNumberingModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\sheet-numbering"
@@ -53,6 +55,9 @@ New-Item -ItemType Directory -Path $addinTargetDir -Force | Out-Null
 $deployedAssemblyPath = [string] (Join-Path $coreTargetDir "TrueBIM.App.dll")
 
 Copy-Item -Path $projectOutput -Destination $deployedAssemblyPath -Force
+if (Test-Path -LiteralPath $toolsOutputDir) {
+    Copy-Item -Path $toolsOutputDir -Destination $coreTargetDir -Recurse -Force
+}
 Copy-Item -Path (Join-Path $printModuleSourceDir "module.json") -Destination $printTargetDir -Force
 Copy-Item -Path (Join-Path $printModuleSourceDir "README.md") -Destination $printTargetDir -Force
 Copy-Item -Path (Join-Path $sheetNumberingModuleSourceDir "module.json") -Destination $sheetNumberingTargetDir -Force

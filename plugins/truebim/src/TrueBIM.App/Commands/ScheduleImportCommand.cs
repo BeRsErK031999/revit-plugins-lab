@@ -44,7 +44,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
             ExternalEvent externalEvent = ExternalEvent.Create(handler);
             ScheduleImportWindow window = new(
                 context,
-                new JsonOrSamplePdfTableParser(new ScheduleTableJsonReader()),
+                ScheduleImportParserFactory.Create(logger),
                 logger,
                 (request, onCompleted, onFailed) =>
                 {

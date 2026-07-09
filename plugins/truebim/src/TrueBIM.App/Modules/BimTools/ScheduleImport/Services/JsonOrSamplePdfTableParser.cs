@@ -1,24 +1,32 @@
 using System.IO;
 using System.Text.Json;
 using TrueBIM.App.Modules.BimTools.ScheduleImport.Models;
+using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 
 public sealed class JsonOrSamplePdfTableParser : IPdfTableParser
 {
     private readonly ScheduleTableJsonReader jsonReader;
+    private readonly IPdfTableParser? pdfParser;
+    private readonly ITrueBimLogger? logger;
 
-    public JsonOrSamplePdfTableParser(ScheduleTableJsonReader jsonReader)
+    public JsonOrSamplePdfTableParser(
+        ScheduleTableJsonReader jsonReader,
+        IPdfTableParser? pdfParser = null,
+        ITrueBimLogger? logger = null)
     {
         this.jsonReader = jsonReader ?? throw new ArgumentNullException(nameof(jsonReader));
+        this.pdfParser = pdfParser;
+        this.logger = logger;
     }
 
-    public Task<PdfParserResult> ParseAsync(string filePath, CancellationToken cancellationToken)
+    public async Task<PdfParserResult> ParseAsync(string filePath, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            return Task.FromResult(PdfParserResult.FromError("Выберите PDF или JSON-файл с таблицей."));
+            return PdfParserResult.FromError("Выберите PDF или JSON-файл с таблицей.");
         }
 
         string extension = Path.GetExtension(filePath);
@@ -26,32 +34,38 @@ public sealed class JsonOrSamplePdfTableParser : IPdfTableParser
         {
             if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
             {
-                IReadOnlyList<ParsedTable> tables = jsonReader.ReadTables(filePath);
-                return Task.FromResult(new PdfParserResult(
-                    tables,
-                    ["Загружена промежуточная JSON-модель таблицы."],
-                    Array.Empty<string>()));
+                PdfParserResult result = jsonReader.ReadParserResult(filePath);
+                return new PdfParserResult(
+                    result.Tables,
+                    ["Загружена промежуточная JSON-модель таблицы.", .. result.Warnings],
+                    result.Errors);
             }
 
             if (extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
             {
+                if (pdfParser is not null)
+                {
+                    return await pdfParser.ParseAsync(filePath, cancellationToken).ConfigureAwait(false);
+                }
+
+                logger?.Warning("Schedule Import PDF parser is not configured. Using sample table.");
                 ParsedTable table = ScheduleImportSampleTables.CreatePipeSchedule(filePath);
-                return Task.FromResult(new PdfParserResult(
+                return new PdfParserResult(
                     [table],
-                    ["Реальный PDF parser пока не подключён: используется тестовая таблица для проверки Revit Drafting Table Mode."],
-                    Array.Empty<string>()));
+                    ["PDF parser не подключён: используется тестовая таблица для проверки Revit Drafting Table Mode."],
+                    Array.Empty<string>());
             }
 
             if (extension.Equals(".dwg", StringComparison.OrdinalIgnoreCase))
             {
-                return Task.FromResult(PdfParserResult.FromError("DWG parsing is planned. Для MVP экспортируйте лист в PDF или загрузите JSON-модель таблицы."));
+                return PdfParserResult.FromError("DWG parsing is planned. Для MVP экспортируйте лист в PDF или загрузите JSON-модель таблицы.");
             }
 
-            return Task.FromResult(PdfParserResult.FromError("Поддерживаются PDF, DWG-заглушка и JSON-модель таблицы."));
+            return PdfParserResult.FromError("Поддерживаются PDF, DWG-заглушка и JSON-модель таблицы.");
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
-            return Task.FromResult(PdfParserResult.FromError(exception.Message));
+            return PdfParserResult.FromError(exception.Message);
         }
     }
 }

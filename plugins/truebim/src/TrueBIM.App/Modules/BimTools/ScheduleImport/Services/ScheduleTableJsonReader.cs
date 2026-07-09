@@ -16,6 +16,17 @@ public sealed class ScheduleTableJsonReader
 
     public IReadOnlyList<ParsedTable> ReadTables(string filePath)
     {
+        PdfParserResult result = ReadParserResult(filePath);
+        if (result.Tables.Count > 0)
+        {
+            return result.Tables;
+        }
+
+        throw new InvalidDataException("Schedule import JSON must contain a table object or a tables array.");
+    }
+
+    public PdfParserResult ReadParserResult(string filePath)
+    {
         if (string.IsNullOrWhiteSpace(filePath))
         {
             throw new ArgumentException("JSON path is required.", nameof(filePath));
@@ -30,15 +41,25 @@ public sealed class ScheduleTableJsonReader
         try
         {
             ScheduleImportContract? root = JsonSerializer.Deserialize<ScheduleImportContract>(json, SerializerOptions);
-            if (root?.Tables is { Count: > 0 })
+            if (root is not null
+                && (root.Tables is not null || root.Warnings is not null || root.Errors is not null))
             {
-                return root.Tables.Select((table, index) => MapTable(table, filePath, index)).ToList();
+                IReadOnlyList<ParsedTable> tables = root.Tables is { Count: > 0 }
+                    ? root.Tables.Select((table, index) => MapTable(table, filePath, index)).ToList()
+                    : Array.Empty<ParsedTable>();
+                return new PdfParserResult(
+                    tables,
+                    NormalizeMessages(root.Warnings),
+                    NormalizeMessages(root.Errors));
             }
 
             ParsedTableContract? singleTable = JsonSerializer.Deserialize<ParsedTableContract>(json, SerializerOptions);
             if (singleTable is not null)
             {
-                return [MapTable(singleTable, filePath, 0)];
+                return new PdfParserResult(
+                    [MapTable(singleTable, filePath, 0)],
+                    Array.Empty<string>(),
+                    Array.Empty<string>());
             }
         }
         catch (JsonException exception)
@@ -47,6 +68,15 @@ public sealed class ScheduleTableJsonReader
         }
 
         throw new InvalidDataException("Schedule import JSON must contain a table object or a tables array.");
+    }
+
+    private static IReadOnlyList<string> NormalizeMessages(List<string>? messages)
+    {
+        return messages?
+            .Where(message => !string.IsNullOrWhiteSpace(message))
+            .Select(message => message.Trim())
+            .Distinct(StringComparer.CurrentCulture)
+            .ToArray() ?? Array.Empty<string>();
     }
 
     private static ParsedTable MapTable(ParsedTableContract contract, string fallbackSourcePath, int tableIndex)
@@ -236,6 +266,10 @@ public sealed class ScheduleTableJsonReader
     private sealed class ScheduleImportContract
     {
         public List<ParsedTableContract>? Tables { get; set; }
+
+        public List<string>? Warnings { get; set; }
+
+        public List<string>? Errors { get; set; }
     }
 
     private sealed class ParsedTableContract

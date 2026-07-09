@@ -156,7 +156,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         filePathInput.Height = 32;
         filePathInput.Margin = new Thickness(8, 0, 12, 8);
         filePathInput.IsReadOnly = true;
-        filePathInput.ToolTip = "PDF использует тестовый parser MVP, JSON загружает промежуточную модель таблицы.";
+        filePathInput.ToolTip = "PDF распознаётся локальным worker, JSON загружает промежуточную модель таблицы.";
         WpfGrid.SetRow(filePathInput, 1);
         WpfGrid.SetColumn(filePathInput, 1);
         root.Children.Add(filePathInput);
