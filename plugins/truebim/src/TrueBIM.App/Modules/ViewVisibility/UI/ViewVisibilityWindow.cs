@@ -23,9 +23,11 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
     private readonly TextBox searchBox = new();
     private readonly ComboBox categoryTypeFilter = new();
     private string? applySummary;
-    private static readonly Brush VisibleBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(220, 245, 230));
-    private static readonly Brush VisibleBadgeBorder = new SolidColorBrush(WpfColor.FromRgb(52, 168, 83));
-    private static readonly Brush VisibleBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(20, 108, 67));
+    private static readonly WpfColor VisibleEyeColor = WpfColor.FromRgb(0, 122, 204);
+    private static readonly WpfColor HiddenEyeColor = WpfColor.FromRgb(142, 151, 163);
+    private static readonly Brush VisibleBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(229, 242, 255));
+    private static readonly Brush VisibleBadgeBorder = new SolidColorBrush(VisibleEyeColor);
+    private static readonly Brush VisibleBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(0, 92, 158));
     private static readonly Brush HiddenBadgeBackground = new SolidColorBrush(WpfColor.FromRgb(239, 242, 246));
     private static readonly Brush HiddenBadgeBorder = new SolidColorBrush(WpfColor.FromRgb(176, 184, 195));
     private static readonly Brush HiddenBadgeForeground = new SolidColorBrush(WpfColor.FromRgb(93, 102, 114));
@@ -309,6 +311,26 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
 
     private static Border CreateVisibilityBadge(bool isVisible)
     {
+        StackPanel content = new()
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        content.Children.Add(IconFactory.Create(
+            TrueBimIcon.Visibility,
+            isVisible ? VisibleEyeColor : HiddenEyeColor,
+            16));
+        content.Children.Add(new TextBlock
+        {
+            Text = isVisible ? "Будет видно" : "Будет скрыто",
+            Foreground = isVisible ? VisibleBadgeForeground : HiddenBadgeForeground,
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            MinWidth = 82,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
         return new Border
         {
             Background = isVisible ? VisibleBadgeBackground : HiddenBadgeBackground,
@@ -318,15 +340,8 @@ public sealed class ViewVisibilityWindow : TrueBimWindow
             Padding = new Thickness(8, 2, 8, 3),
             Margin = new Thickness(8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock
-            {
-                Text = isVisible ? "Включено" : "Выключено",
-                Foreground = isVisible ? VisibleBadgeForeground : HiddenBadgeForeground,
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                MinWidth = 74,
-                TextAlignment = TextAlignment.Center
-            }
+            ToolTip = isVisible ? "Голубой глаз: категория должна быть видна." : "Серый глаз: категория должна быть скрыта.",
+            Child = content
         };
     }
 

@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.ViewVisibility.Models;
 using TrueBIM.App.Modules.ViewVisibility.Services;
+using TrueBIM.App.Modules.ViewVisibility.UI;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -44,10 +45,12 @@ public abstract class ViewVisibilityCommandBase : IExternalCommand
             IReadOnlyList<ViewCategoryVisibilityUpdate> updates = BuildUpdates(document, activeView, service, logger);
             if (updates.Count == 0)
             {
+                ViewVisibilityRibbonState.Update(document, activeView);
                 return Result.Succeeded;
             }
 
             ViewCategoryVisibilityApplyResult result = service.Apply(document, activeView, updates);
+            ViewVisibilityRibbonState.Update(document, activeView);
             logger.Info(
                 $"View Visibility dropdown action '{DisplayName}' applied for view '{activeView.Name}'. Updated: {result.UpdatedCount}; shown: {result.ShownCount}; hidden: {result.HiddenCount}; skipped: {result.SkippedCount}.");
             return Result.Succeeded;

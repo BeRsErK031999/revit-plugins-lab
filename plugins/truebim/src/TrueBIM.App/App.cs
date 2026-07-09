@@ -2,6 +2,7 @@ using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Events;
 using TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
+using TrueBIM.App.Modules.ViewVisibility.UI;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 
@@ -52,6 +53,7 @@ public sealed class App : IExternalApplication
         try
         {
             ScheduleActiveViewTracker.CaptureActivatedView(args.CurrentActiveView);
+            ViewVisibilityRibbonState.Update(args.CurrentActiveView?.Document, args.CurrentActiveView);
         }
         catch
         {
@@ -81,6 +83,10 @@ public sealed class App : IExternalApplication
         pulldown.LargeImage = IconFactory.CreateImage(button.Icon, 32);
         pulldown.ToolTip = button.Tooltip;
         pulldown.LongDescription = button.LongDescription;
+        if (string.Equals(button.Name, "TrueBIM_ViewVisibility", StringComparison.Ordinal))
+        {
+            ViewVisibilityRibbonState.RegisterPulldown(pulldown);
+        }
 
         foreach (TrueBimRibbonPulldownItemDefinition item in button.Items)
         {
@@ -89,7 +95,11 @@ public sealed class App : IExternalApplication
                 pulldown.AddSeparator();
             }
 
-            pulldown.AddPushButton(CreatePushButtonData(item));
+            PushButton pushButton = pulldown.AddPushButton(CreatePushButtonData(item));
+            if (string.Equals(button.Name, "TrueBIM_ViewVisibility", StringComparison.Ordinal))
+            {
+                ViewVisibilityRibbonState.RegisterItem(item, pushButton);
+            }
         }
     }
 
