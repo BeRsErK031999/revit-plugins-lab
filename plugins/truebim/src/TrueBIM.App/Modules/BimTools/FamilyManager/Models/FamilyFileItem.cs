@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization;
 
 namespace TrueBIM.App.Modules.BimTools.FamilyManager.Models;
 
@@ -10,6 +11,7 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
     private static readonly string[] MaterialParameterTokens = ["Material", "Материал"];
 
     private bool isFavorite;
+    private string searchMatchText = string.Empty;
     private string status = string.Empty;
     private string thumbnailPath = string.Empty;
     private DateTimeOffset? thumbnailUpdatedAtUtc;
@@ -61,6 +63,16 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         get => status;
         set => SetField(ref status, value);
     }
+
+    [JsonIgnore]
+    public string SearchMatchText
+    {
+        get => searchMatchText;
+        set => SetField(ref searchMatchText, value ?? string.Empty);
+    }
+
+    [JsonIgnore]
+    public string SearchMatchDisplay => string.IsNullOrWhiteSpace(SearchMatchText) ? "-" : SearchMatchText;
 
     public string SizeDisplay => SizeBytes <= 0
         ? "-"
@@ -121,6 +133,11 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         if (propertyName is nameof(ThumbnailPath) or nameof(ThumbnailUpdatedAtUtc))
         {
             OnPropertyChanged(nameof(ThumbnailDisplay));
+        }
+
+        if (propertyName is nameof(SearchMatchText))
+        {
+            OnPropertyChanged(nameof(SearchMatchDisplay));
         }
     }
 

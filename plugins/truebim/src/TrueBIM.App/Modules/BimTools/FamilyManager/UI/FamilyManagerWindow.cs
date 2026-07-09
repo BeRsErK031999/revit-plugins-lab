@@ -29,6 +29,18 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
 public sealed class FamilyManagerWindow : Window
 {
+    public static readonly DependencyProperty FamilySearchTextProperty = DependencyProperty.Register(
+        nameof(FamilySearchText),
+        typeof(string),
+        typeof(FamilyManagerWindow),
+        new PropertyMetadata(string.Empty));
+
+    public static readonly DependencyProperty ParameterHighlightTextProperty = DependencyProperty.Register(
+        nameof(ParameterHighlightText),
+        typeof(string),
+        typeof(FamilyManagerWindow),
+        new PropertyMetadata(string.Empty));
+
     private const string AllParameterPreset = "Все";
     private const string DimensionParameterPreset = "Размеры";
     private const string MaterialParameterPreset = "Материалы";
@@ -79,6 +91,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly FamilyLibraryScanner scanner;
     private readonly FamilyLibraryTreeBuilder treeBuilder = new();
     private readonly FamilyMetadataBatchSelector metadataBatchSelector = new();
+    private readonly FamilySearchMatchService searchMatchService = new();
     private readonly FamilyLoadService loadService;
     private readonly FamilyMetadataService metadataService;
     private readonly FamilyThumbnailService thumbnailService;
@@ -120,6 +133,18 @@ public sealed class FamilyManagerWindow : Window
     private FamilyFileItem? selectedFamily;
     private FamilyTypeInfo? selectedType;
     private bool isRefreshing;
+
+    public string FamilySearchText
+    {
+        get => (string)GetValue(FamilySearchTextProperty);
+        set => SetValue(FamilySearchTextProperty, value);
+    }
+
+    public string ParameterHighlightText
+    {
+        get => (string)GetValue(ParameterHighlightTextProperty);
+        set => SetValue(ParameterHighlightTextProperty, value);
+    }
 
     public FamilyManagerWindow(
         UIApplication uiApplication,
@@ -313,7 +338,7 @@ public sealed class FamilyManagerWindow : Window
 
         searchInput.Height = 32;
         searchInput.Margin = new Thickness(0, 0, 8, 0);
-        searchInput.ToolTip = "Поиск по имени, категории или пути.";
+        searchInput.ToolTip = "Поиск по имени, категории, типу, параметрам или пути.";
         searchInput.TextChanged += (_, _) => RefreshVisibleFamilies();
         WpfGrid.SetColumn(searchInput, 0);
         filters.Children.Add(searchInput);
@@ -342,8 +367,9 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.ContextMenu = CreateFamilyContextMenu();
         familyGrid.PreviewMouseRightButtonDown += (_, args) => SelectFamilyRowUnderPointer(args.OriginalSource as DependencyObject);
         familyGrid.SelectionChanged += (_, _) => SelectFamily(familyGrid.SelectedItem as FamilyFileItem);
-        familyGrid.Columns.Add(CreateTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        familyGrid.Columns.Add(CreateHighlightedTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star), nameof(FamilySearchText)));
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
+        familyGrid.Columns.Add(CreateHighlightedTextColumn("Совпадение", nameof(FamilyFileItem.SearchMatchDisplay), 170, nameof(FamilySearchText)));
         familyGrid.Columns.Add(CreateTextColumn("Типов", nameof(FamilyFileItem.CachedTypeCountDisplay), 60));
         familyGrid.Columns.Add(CreateTextColumn("Каталог", nameof(FamilyFileItem.TypeCatalogDisplay), 70));
         familyGrid.Columns.Add(CreateTextColumn("Ширина", nameof(FamilyFileItem.WidthParameterDisplay), 76));
@@ -436,7 +462,7 @@ public sealed class FamilyManagerWindow : Window
         panel.Children.Add(typesTitle);
 
         typeList.ItemsSource = familyTypes;
-        typeList.DisplayMemberPath = nameof(FamilyTypeInfo.Name);
+        typeList.ItemTemplate = CreateTypeListTemplate();
         typeList.Height = 120;
         typeList.Margin = new Thickness(0, 0, 0, 12);
         typeList.SelectionChanged += (_, _) => SelectType(typeList.SelectedItem as FamilyTypeInfo);
@@ -482,9 +508,10 @@ public sealed class FamilyManagerWindow : Window
         parameterGrid.ItemsSource = typeParameters;
         parameterGrid.Height = 170;
         parameterGrid.Margin = new Thickness(0, 0, 0, 12);
-        parameterGrid.Columns.Add(CreateTextColumn("Параметр", nameof(FamilyTypeParameterInfo.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
-        parameterGrid.Columns.Add(CreateTextColumn("Значение", nameof(FamilyTypeParameterInfo.ValueDisplay), 95));
-        parameterGrid.Columns.Add(CreateTextColumn("Область", nameof(FamilyTypeParameterInfo.Scope), 80));
+        parameterGrid.Columns.Add(CreateHighlightedTextColumn("Параметр", nameof(FamilyTypeParameterInfo.Name), new DataGridLength(1, DataGridLengthUnitType.Star), nameof(ParameterHighlightText)));
+        parameterGrid.Columns.Add(CreateHighlightedTextColumn("Значение", nameof(FamilyTypeParameterInfo.ValueDisplay), 95, nameof(ParameterHighlightText)));
+        parameterGrid.Columns.Add(CreateHighlightedTextColumn("Формула", nameof(FamilyTypeParameterInfo.FormulaDisplay), 95, nameof(ParameterHighlightText)));
+        parameterGrid.Columns.Add(CreateHighlightedTextColumn("Область", nameof(FamilyTypeParameterInfo.Scope), 80, nameof(ParameterHighlightText)));
         parameterGrid.Columns.Add(CreateTextColumn("Тип", nameof(FamilyTypeParameterInfo.StorageType), 70));
         DockPanel.SetDock(parameterGrid, Dock.Top);
         panel.Children.Add(parameterGrid);
@@ -749,10 +776,15 @@ public sealed class FamilyManagerWindow : Window
             return;
         }
 
-        string search = searchInput.Text.Trim();
+        UpdateHighlightTextState();
+        string search = FamilySearchText;
         string category = categoryInput.SelectedItem as string ?? FamilyManagerDefaults.AllCategories;
         bool favoritesOnly = favoritesOnlyInput.IsChecked == true;
         IEnumerable<FamilyFileItem> families = allFamilies;
+        foreach (FamilyFileItem family in allFamilies)
+        {
+            family.SearchMatchText = searchMatchService.FindMatchText(family, search);
+        }
 
         if (favoritesOnly)
         {
@@ -766,17 +798,7 @@ public sealed class FamilyManagerWindow : Window
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            families = families.Where(family =>
-                family.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
-                || family.Category.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
-                || family.CachedTypes.Any(type => type.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0)
-                || family.TypeCatalogTypeNames.Any(typeName => typeName.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0)
-                || family.CachedTypes.Any(type => type.Parameters.Any(parameter =>
-                    parameter.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
-                    || parameter.Value.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
-                    || parameter.Formula.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0))
-                || family.TypeCatalogPath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
-                || family.FilePath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0);
+            families = families.Where(family => searchMatchService.Matches(family, search));
         }
 
         visibleFamilies.Clear();
@@ -907,6 +929,7 @@ public sealed class FamilyManagerWindow : Window
 
     private void RefreshTypeParameters()
     {
+        UpdateHighlightTextState();
         typeParameters.Clear();
         if (selectedType is null)
         {
@@ -943,6 +966,15 @@ public sealed class FamilyManagerWindow : Window
         {
             typeParameters.Add(parameter);
         }
+    }
+
+    private void UpdateHighlightTextState()
+    {
+        FamilySearchText = searchInput.Text.Trim();
+        string parameterSearch = parameterSearchInput.Text.Trim();
+        ParameterHighlightText = string.IsNullOrWhiteSpace(parameterSearch)
+            ? FamilySearchText
+            : parameterSearch;
     }
 
     private void UpdateThumbnailPreview(FamilyFileItem? family)
@@ -1663,6 +1695,17 @@ public sealed class FamilyManagerWindow : Window
         return template;
     }
 
+    private static DataTemplate CreateTypeListTemplate()
+    {
+        DataTemplate template = new(typeof(FamilyTypeInfo));
+        FrameworkElementFactory text = CreateHighlightedTextFactory(
+            nameof(FamilyTypeInfo.Name),
+            nameof(FamilySearchText));
+        text.SetBinding(FrameworkElement.ToolTipProperty, new WpfBinding(nameof(FamilyTypeInfo.Name)));
+        template.VisualTree = text;
+        return template;
+    }
+
     private static Button CreateButton(string text, TrueBimIcon icon, double minWidth)
     {
         return new Button
@@ -1688,6 +1731,46 @@ public sealed class FamilyManagerWindow : Window
             Width = width,
             IsReadOnly = true
         };
+    }
+
+    private static DataGridTemplateColumn CreateHighlightedTextColumn(
+        string header,
+        string bindingPath,
+        double width,
+        string searchBindingPath)
+    {
+        return CreateHighlightedTextColumn(header, bindingPath, new DataGridLength(width), searchBindingPath);
+    }
+
+    private static DataGridTemplateColumn CreateHighlightedTextColumn(
+        string header,
+        string bindingPath,
+        DataGridLength width,
+        string searchBindingPath)
+    {
+        DataTemplate template = new();
+        template.VisualTree = CreateHighlightedTextFactory(bindingPath, searchBindingPath);
+        return new DataGridTemplateColumn
+        {
+            Header = header,
+            CellTemplate = template,
+            Width = width,
+            IsReadOnly = true
+        };
+    }
+
+    private static FrameworkElementFactory CreateHighlightedTextFactory(string bindingPath, string searchBindingPath)
+    {
+        FrameworkElementFactory text = new(typeof(SearchHighlightTextBlock));
+        text.SetBinding(SearchHighlightTextBlock.HighlightTextProperty, new WpfBinding(bindingPath));
+        text.SetBinding(SearchHighlightTextBlock.SearchTextProperty, new WpfBinding(searchBindingPath)
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(FamilyManagerWindow), 1)
+        });
+        text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+        text.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 4, 0));
+        return text;
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
