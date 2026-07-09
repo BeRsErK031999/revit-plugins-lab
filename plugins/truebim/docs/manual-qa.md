@@ -184,16 +184,19 @@ Status: the first working release is implemented and preflight-verified. Repeat 
 14. Enable `Один PDF`, enter a combined PDF name, export again, and confirm one PDF is created per source document.
 15. Enable DWG and DXF.
 16. If DWG/DXF export setups are available, choose a saved setup; otherwise keep the default setup option.
-17. Export 1-2 safe sheets and confirm DWG/DXF files are created or a clear Revit export error is shown.
-18. Close and reopen `Печать`.
-19. Confirm the saved export folder, filename template, selected formats, PDF settings, combined PDF name, and selected CAD setups are restored from `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`.
-20. Review `%APPDATA%\TrueBIM\Logs\truebim.log`.
+17. Click `Настройки DWG...`, change a safe option such as `FileVersion`, `Colors`, or `SharedCoords`, save the TrueBIM profile, then apply it.
+18. Click `Проверить настройки` and confirm the summary shows sheet count, folder, DWG version, color mode, coordinates, and profile.
+19. Export 1-2 safe sheets and confirm DWG/DXF files are created or a clear Revit export error is shown.
+20. Close and reopen `Печать DWG`.
+21. Confirm the saved export folder, filename template, selected formats, PDF settings, combined PDF name, selected CAD setups, and DWG profile state are restored from `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json` and `%APPDATA%\TrueBIM\<RevitVersion>\dwg-export-profiles.json`.
+22. Review `%APPDATA%\TrueBIM\Logs\truebim.log`.
 
 Expected logs:
 
 - Print module/window startup with sheet/source counts;
 - selected PDF mode and PDF settings;
 - selected DWG/DXF setup or default fallback;
+- applied DWG profile and resulting key `DWGExportOptions`;
 - exported file counts and any per-sheet failures.
 
 Completed first-release tasks:
@@ -203,7 +206,7 @@ Completed first-release tasks:
 - filename template preview and normalization;
 - separate and combined PDF export;
 - PDF color, raster quality, and raster/vector settings;
-- DWG/DXF export setup selection and default fallback;
+- DWG/DXF export setup selection, DWG profile options, and default fallback;
 - persisted print settings;
 - unit-test coverage for clean logic;
 - Revit 2022 and Revit 2025 local deploy/preflight.

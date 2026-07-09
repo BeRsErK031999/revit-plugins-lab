@@ -90,7 +90,9 @@ DWG/DXF:
 - использовать `Document.Export` с `DWGExportOptions` и `DXFExportOptions`;
 - брать существующие export setups из документа через `BaseExportOptions.GetPredefinedSetupNames`;
 - при выборе setup использовать `DWGExportOptions.GetPredefinedOptions` или `DXFExportOptions.GetPredefinedOptions`;
-- если setup не выбран или сохраненных настроек нет, использовать настройки Revit по умолчанию и показывать это в статусе.
+- для DWG применять профиль TrueBIM поверх базового Revit setup: `FileVersion`, `Colors`, `PropOverrides`, `TargetUnit`, `SharedCoords`, `ExportingAreas`, `MergedViews`, hide-флаги, `ExportOfSolids`, `LineScaling`, `TextTreatment`, layer/linetype/pattern files и non-plot/hatch background опции, если они доступны в текущей версии Revit API;
+- если setup не выбран или сохраненных настроек нет, использовать настройки Revit по умолчанию и показывать это в статусе;
+- не мутировать глобальные Revit Export Setup без явного действия пользователя; отдельная кнопка создает новый `ExportDWGSettings` из текущего профиля.
 
 ### Конструктор имени
 
@@ -126,7 +128,7 @@ DWG/DXF:
 - шаг 2 выполнен: окно печати показывает листы активного документа, выбор листов, папку и форматы экспорта;
 - шаг 3 выполнен: конструктор имени файла обновляет preview по маске и предупреждает о проблемах;
 - шаг 4 выполнен для первого релиза: добавлен прямой экспорт отдельных и объединенных PDF с настройками цвета, качества растровых элементов и raster/vector режима;
-- шаг 5 выполнен для первого релиза: добавлен прямой экспорт DWG/DXF, выбор сохраненных Revit export setups и fallback на настройки по умолчанию;
+- шаг 5 выполнен для первого релиза: добавлен прямой экспорт DWG/DXF, выбор сохраненных Revit export setups, расширенный DWG-профиль поверх `DWGExportOptions` и fallback на настройки по умолчанию;
 - шаг 6 выполнен для первого релиза в варианте фильтра источника: окно печати собирает листы из нескольких открытых документов Revit, фильтрует таблицу по источнику, сохраняет выбор при переключении источников и экспортирует выбранные листы через документ-источник;
 - шаг 7 выполнен для первого релиза: базовые настройки печати сохраняются в `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json` и восстанавливаются при следующем открытии окна;
 - шаг 8 выполнен для первого релиза: чистая логика покрыта unit-тестами, Release build/test прошли, local deploy и installer artifacts проверены preflight для Revit 2022 и Revit 2025;
@@ -167,12 +169,16 @@ DWG/DXF:
 
 ### 5. DWG/DXF export
 
-Статус: выполнено для первого релиза.
+Статус: выполнено для первого релиза; расширенный DWG-профиль добавлен поверх Revit Export Setup.
 
 - Реализовать экспорт листов через `Document.Export`.
 - Добавить выбор export setup из сохраненных настроек Revit.
+- Добавить отдельный диалог `Настройки DWG...` с вкладками профиля, общих настроек, единиц/координат, цветов, слоев, линий, штриховок, текста/шрифтов и 3D solids.
+- Сохранять профили в `%APPDATA%\TrueBIM\<RevitVersion>\dwg-export-profiles.json`.
+- Создавать новый Revit DWG Export Setup из текущего профиля через `ExportDWGSettings.Create`.
 - Добавить проверку `CanBePrinted`.
 - Добавить понятные сообщения по отсутствующим CAD-модулям и неверным настройкам.
+- Backlog: добавить безопасный read-only просмотр и последующее редактирование таблиц `ExportLayerTable`, `ExportLinetypeTable`, `ExportPatternTable` и `ExportFontTable`.
 
 ### 6. Несколько источников листов
 

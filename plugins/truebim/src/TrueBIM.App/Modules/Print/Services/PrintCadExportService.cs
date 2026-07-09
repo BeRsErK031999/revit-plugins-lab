@@ -9,15 +9,22 @@ namespace TrueBIM.App.Modules.Print.Services;
 public sealed class PrintCadExportService
 {
     private readonly PrintCadExportSetupService setupService;
+    private readonly DwgExportOptionsFactory dwgOptionsFactory;
 
     public PrintCadExportService()
-        : this(new PrintCadExportSetupService())
+        : this(new PrintCadExportSetupService(), new DwgExportOptionsFactory())
     {
     }
 
     internal PrintCadExportService(PrintCadExportSetupService setupService)
+        : this(setupService, new DwgExportOptionsFactory())
+    {
+    }
+
+    internal PrintCadExportService(PrintCadExportSetupService setupService, DwgExportOptionsFactory dwgOptionsFactory)
     {
         this.setupService = setupService ?? throw new ArgumentNullException(nameof(setupService));
+        this.dwgOptionsFactory = dwgOptionsFactory ?? throw new ArgumentNullException(nameof(dwgOptionsFactory));
     }
 
     public PrintCadExportResult Export(
@@ -37,6 +44,20 @@ public sealed class PrintCadExportService
         IReadOnlyList<PrintCadExportItem> items,
         PrintCadExportFormat format,
         string? setupName,
+        bool mergeViews,
+        string? mergedFileName,
+        ITrueBimLogger logger)
+    {
+        return Export(document, exportFolder, items, format, setupName, dwgProfile: null, mergeViews, mergedFileName, logger);
+    }
+
+    public PrintCadExportResult Export(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintCadExportItem> items,
+        PrintCadExportFormat format,
+        string? setupName,
+        DwgExportProfile? dwgProfile,
         bool mergeViews,
         string? mergedFileName,
         ITrueBimLogger logger)
@@ -67,7 +88,7 @@ public sealed class PrintCadExportService
             return ExportDwf(document, exportFolder, items, mergeViews, mergedFileName, logger, exportedFiles, failures);
         }
 
-        BaseExportOptions options = setupService.CreateOptions(document, format, setupName, logger);
+        BaseExportOptions options = CreateExportOptions(document, format, setupName, dwgProfile, logger);
         if (mergeViews && format == PrintCadExportFormat.Dwg)
         {
             return ExportMergedDwg(document, exportFolder, items, mergedFileName, options, logger, exportedFiles, failures);
@@ -107,6 +128,21 @@ public sealed class PrintCadExportService
         }
 
         return new PrintCadExportResult(format, exportedFiles, failures);
+    }
+
+    private BaseExportOptions CreateExportOptions(
+        Document document,
+        PrintCadExportFormat format,
+        string? setupName,
+        DwgExportProfile? dwgProfile,
+        ITrueBimLogger logger)
+    {
+        if (format == PrintCadExportFormat.Dwg && dwgProfile is not null)
+        {
+            return dwgOptionsFactory.Create(document, dwgProfile, logger);
+        }
+
+        return setupService.CreateOptions(document, format, setupName, logger);
     }
 
     private static PrintCadExportResult ExportMergedDwg(

@@ -33,8 +33,10 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly PrintPdfExportService pdfExportService = new();
     private readonly PrintCadExportService cadExportService = new();
     private readonly PrintCadExportSetupService cadExportSetupService = new();
+    private readonly DwgExportOptionsFactory dwgOptionsFactory = new();
     private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
     private readonly PrintSettingsService? printSettingsService;
+    private readonly DwgExportProfileStorage? dwgProfileStorage;
     private readonly PrintSettings initialSettings;
     private readonly bool hasSavedPrintSettings;
     private readonly PrintFileNameContext fileNameContext;
@@ -108,7 +110,20 @@ public sealed class PrintWindow : TrueBimWindow
     };
     private readonly ComboBox dwgSetupInput = CreateCadSetupInput("Настройка экспорта DWG из сохраненных настроек Revit.");
     private readonly ComboBox dxfSetupInput = CreateCadSetupInput("Настройка экспорта DXF из сохраненных настроек Revit.");
+    private readonly TextBlock dwgProfileSourceText = new()
+    {
+        TextWrapping = TextWrapping.Wrap,
+        VerticalAlignment = VerticalAlignment.Center
+    };
     private readonly Button exportButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
+    private DwgExportProfileStoreState dwgProfileState = new();
+    private DwgExportProfile selectedDwgProfile = DwgExportOptionsFactory.CreateProfileFromOptions(
+        DwgExportProfile.DefaultProfileName,
+        sourceRevitSetupName: null,
+        usePredefinedRevitSetup: false,
+        isUserProfile: false,
+        new Autodesk.Revit.DB.DWGExportOptions());
+    private bool isApplyingDwgProfileToSetupInput;
 
     private bool IsPdfProfile => exportProfile == PrintExportProfile.Pdf;
 
@@ -179,9 +194,18 @@ public sealed class PrintWindow : TrueBimWindow
         this.printSettingsService = printSettingsService;
         hasSavedPrintSettings = printSettingsService?.SettingsFileExists == true;
         initialSettings = printSettingsService?.Load() ?? PrintSettingsService.DefaultSettings;
+        if (IsDwgProfile)
+        {
+            dwgProfileStorage = new DwgExportProfileStorage(
+                DwgExportProfileStorage.CreateStoragePath(GetRevitVersion(document)),
+                logger);
+            dwgProfileState = dwgProfileStorage.Load();
+        }
+
         fileNameContext = CreateFileNameContext(document);
         LoadSourceFilterOptions();
         LoadCadExportSetupOptions();
+        LoadInitialDwgProfile();
         ApplyInitialSettings();
 
         Title = WindowTitle;
@@ -504,7 +528,7 @@ public sealed class PrintWindow : TrueBimWindow
                 Margin = new Thickness(0, 0, 8, 0)
             });
 
-            BindCadSetupInput(dwgSetupInput, initialSettings.DwgSetupName);
+            BindCadSetupInput(dwgSetupInput, selectedDwgProfile.SourceRevitSetupName ?? initialSettings.DwgSetupName);
             Grid.SetColumn(dwgSetupInput, 1);
             cadSetupRow.Children.Add(dwgSetupInput);
 
@@ -523,6 +547,43 @@ public sealed class PrintWindow : TrueBimWindow
 
             Grid.SetRow(cadSetupRow, rowIndex++);
             root.Children.Add(cadSetupRow);
+
+            Grid dwgProfileRow = new()
+            {
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            dwgProfileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
+            dwgProfileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            dwgProfileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            dwgProfileRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            dwgProfileRow.Children.Add(new TextBlock
+            {
+                Text = "DWG профиль",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            });
+
+            UpdateDwgProfileIndicator();
+            Grid.SetColumn(dwgProfileSourceText, 1);
+            dwgProfileRow.Children.Add(dwgProfileSourceText);
+
+            Button dwgSettingsButton = CreateActionButton("Настройки DWG...", TrueBimIcon.Preview, isEnabled: true);
+            dwgSettingsButton.Margin = new Thickness(8, 0, 0, 0);
+            dwgSettingsButton.ToolTip = "Открыть расширенные настройки DWGExportOptions.";
+            dwgSettingsButton.Click += (_, _) => OpenDwgSettings();
+            Grid.SetColumn(dwgSettingsButton, 2);
+            dwgProfileRow.Children.Add(dwgSettingsButton);
+
+            Button validateDwgButton = CreateActionButton("Проверить настройки", TrueBimIcon.Apply, isEnabled: true);
+            validateDwgButton.Margin = new Thickness(8, 0, 0, 0);
+            validateDwgButton.ToolTip = "Показать сводку выбранных листов, папки и DWG-профиля.";
+            validateDwgButton.Click += (_, _) => ShowDwgSettingsSummary();
+            Grid.SetColumn(validateDwgButton, 3);
+            dwgProfileRow.Children.Add(validateDwgButton);
+
+            Grid.SetRow(dwgProfileRow, rowIndex++);
+            root.Children.Add(dwgProfileRow);
         }
 
         DockPanel actionRow = new()
@@ -588,6 +649,11 @@ public sealed class PrintWindow : TrueBimWindow
         setupInput.ItemsSource = cadExportSetupOptions;
         setupInput.SelectionChanged += (_, _) =>
         {
+            if (ReferenceEquals(setupInput, dwgSetupInput))
+            {
+                ApplyDwgSetupSelectionToProfile();
+            }
+
             ResetExportStatuses();
             UpdateExportState();
         };
@@ -619,6 +685,139 @@ public sealed class PrintWindow : TrueBimWindow
 
         return cadExportSetupOptions.FirstOrDefault(option =>
             string.Equals(option.SetupName, normalizedSetupName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void LoadInitialDwgProfile()
+    {
+        if (!IsDwgProfile)
+        {
+            return;
+        }
+
+        DwgExportProfile? savedProfile = dwgProfileState.FindProfile(dwgProfileState.LastSelectedProfileName);
+        if (savedProfile is not null)
+        {
+            selectedDwgProfile = savedProfile.Clone();
+            return;
+        }
+
+        string? setupName = PrintCadExportSetupService.NormalizeSetupName(initialSettings.DwgSetupName);
+        selectedDwgProfile = dwgOptionsFactory.CreateProfile(
+            document,
+            setupName,
+            setupName ?? DwgExportProfile.DefaultProfileName,
+            isUserProfile: false,
+            logger);
+    }
+
+    private void ApplyDwgSetupSelectionToProfile()
+    {
+        if (!IsDwgProfile || isApplyingDwgProfileToSetupInput)
+        {
+            return;
+        }
+
+        string? setupName = GetSelectedSetupName(dwgSetupInput);
+        if (selectedDwgProfile.IsUserProfile)
+        {
+            selectedDwgProfile.SourceRevitSetupName = setupName;
+            selectedDwgProfile.UsePredefinedRevitSetup = setupName is not null && selectedDwgProfile.UsePredefinedRevitSetup;
+        }
+        else
+        {
+            selectedDwgProfile = dwgOptionsFactory.CreateProfile(
+                document,
+                setupName,
+                setupName ?? DwgExportProfile.DefaultProfileName,
+                isUserProfile: false,
+                logger);
+        }
+
+        UpdateDwgProfileIndicator();
+    }
+
+    private void ApplyDwgProfileToSetupInput()
+    {
+        if (!IsDwgProfile)
+        {
+            return;
+        }
+
+        isApplyingDwgProfileToSetupInput = true;
+        dwgSetupInput.SelectedItem = FindCadSetupOption(selectedDwgProfile.SourceRevitSetupName)
+            ?? cadExportSetupOptions.FirstOrDefault();
+        isApplyingDwgProfileToSetupInput = false;
+        UpdateDwgProfileIndicator();
+    }
+
+    private void OpenDwgSettings()
+    {
+        DwgExportSettingsWindow settingsWindow = new(
+            document,
+            GetCurrentDwgProfileForExport(),
+            cadExportSetupOptions.ToList(),
+            dwgProfileState,
+            dwgProfileStorage,
+            logger)
+        {
+            Owner = this
+        };
+
+        if (settingsWindow.ShowDialog() != true)
+        {
+            return;
+        }
+
+        selectedDwgProfile = settingsWindow.SelectedProfile.Clone();
+        dwgProfileState = settingsWindow.StoreState;
+        LoadCadExportSetupOptions();
+        ApplyDwgProfileToSetupInput();
+        ResetExportStatuses();
+        UpdateExportState();
+    }
+
+    private void ShowDwgSettingsSummary()
+    {
+        IReadOnlyList<PrintSheetRow> selectedRows = sheetRows
+            .Where(row => row.IsSelected && row.CanBePrinted)
+            .ToList();
+        DwgExportProfile profile = GetCurrentDwgProfileForExport();
+        string folder = string.IsNullOrWhiteSpace(exportFolderInput.Text) ? "не выбрана" : exportFolderInput.Text;
+        string setup = profile.UsePredefinedRevitSetup && !string.IsNullOrWhiteSpace(profile.SourceRevitSetupName)
+            ? profile.SourceRevitSetupName!
+            : "по умолчанию";
+
+        Autodesk.Revit.UI.TaskDialog.Show(
+            WindowTitle,
+            $"Документ: {document.Title}\nЛистов: {selectedRows.Count}\nФорматы: {GetSelectedFormatsText()}\nПапка: {folder}\nDWG setup: {setup}\nПрофиль: {profile.ProfileName}\nВерсия DWG: {profile.FileVersion}\nЦвета: {profile.Colors}\nКоординаты: {(profile.SharedCoords ? "Shared" : "Project/Internal")}\n3D solids: {profile.ExportOfSolids}");
+    }
+
+    private DwgExportProfile GetCurrentDwgProfileForExport()
+    {
+        DwgExportProfile profile = selectedDwgProfile.Clone();
+        profile.SourceRevitSetupName = GetSelectedSetupName(dwgSetupInput);
+        if (profile.SourceRevitSetupName is null && profile.UsePredefinedRevitSetup)
+        {
+            profile.UsePredefinedRevitSetup = false;
+        }
+
+        return DwgExportProfileStorage.NormalizeProfile(profile);
+    }
+
+    private void UpdateDwgProfileIndicator()
+    {
+        if (!IsDwgProfile)
+        {
+            return;
+        }
+
+        string source = selectedDwgProfile.IsUserProfile
+            ? "Используется пользовательский профиль"
+            : "Используется настройка Revit";
+        string setup = selectedDwgProfile.UsePredefinedRevitSetup && !string.IsNullOrWhiteSpace(selectedDwgProfile.SourceRevitSetupName)
+            ? selectedDwgProfile.SourceRevitSetupName!
+            : "по умолчанию";
+        dwgProfileSourceText.Text = $"{source}: {selectedDwgProfile.ProfileName}. База: {setup}.";
     }
 
     private void UpdatePdfOptionsState()
@@ -955,6 +1154,7 @@ public sealed class PrintWindow : TrueBimWindow
             : "не выбраны";
         string? dwgSetupName = GetSelectedSetupName(dwgSetupInput);
         string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
+        DwgExportProfile? dwgProfile = exportDwg ? GetCurrentDwgProfileForExport() : null;
 
         ExistingFileDecision existingFileDecision = ResolveExistingFileDecision(selectedRows, pdfMode, combineDwg);
         if (existingFileDecision == ExistingFileDecision.Cancel)
@@ -975,7 +1175,7 @@ public sealed class PrintWindow : TrueBimWindow
             }
         }
 
-        logger.Info($"Print export requested for {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
+        logger.Info($"Print export requested for document '{document.Title}' with {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. DWG profile: {(dwgProfile is null ? "not selected" : DwgExportOptionsFactory.GetProfileSummary(dwgProfile))}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row,
             _ => new List<string>());
@@ -1036,6 +1236,7 @@ public sealed class PrintWindow : TrueBimWindow
                         .ToList(),
                     PrintCadExportFormat.Dwg,
                     dwgSetupName,
+                    dwgProfile,
                     combineDwg,
                     BuildMergedCadFileName(source.SourceName, PrintCadExportFormat.Dwg),
                     logger);
@@ -1277,7 +1478,12 @@ public sealed class PrintWindow : TrueBimWindow
             string dwgDisplay = PrintCadExportSetupService.GetSelectionDisplayName(
                 PrintCadExportFormat.Dwg,
                 dwgSetupInput.SelectedItem as PrintCadExportSetupOption);
-            setupDisplays.Add(combineDwgInput.IsChecked == true ? $"{dwgDisplay}, один файл" : dwgDisplay);
+            string profileDisplay = selectedDwgProfile.IsUserProfile
+                ? $"профиль: {selectedDwgProfile.ProfileName}"
+                : "профиль: Revit setup";
+            setupDisplays.Add(combineDwgInput.IsChecked == true
+                ? $"{dwgDisplay}, один файл, {profileDisplay}"
+                : $"{dwgDisplay}, {profileDisplay}");
         }
 
         if (dxfInput.IsChecked == true)
@@ -1334,6 +1540,11 @@ public sealed class PrintWindow : TrueBimWindow
             return savedExportFolder!;
         }
 
+        if (IsDwgProfile && !hasSavedPrintSettings && !string.IsNullOrWhiteSpace(dwgProfileState.LastFolder))
+        {
+            return dwgProfileState.LastFolder!;
+        }
+
         try
         {
             if (!string.IsNullOrWhiteSpace(document.PathName))
@@ -1356,7 +1567,11 @@ public sealed class PrintWindow : TrueBimWindow
     {
         PrintSettings settings = PrintSettingsService.Normalize(initialSettings);
         includePlaceholdersInput.IsChecked = settings.IncludePlaceholders;
-        fileNameMaskInput.Text = settings.FileNameMask;
+        fileNameMaskInput.Text = IsDwgProfile
+            && !hasSavedPrintSettings
+            && !string.IsNullOrWhiteSpace(dwgProfileState.LastNameMask)
+            ? dwgProfileState.LastNameMask!
+            : settings.FileNameMask;
         pdfInput.IsChecked = IsPdfProfile;
         combinePdfInput.IsChecked = settings.CombinePdf;
         combinedPdfNameInput.Text = hasSavedPrintSettings
@@ -1391,6 +1606,27 @@ public sealed class PrintWindow : TrueBimWindow
             IsPdfProfile ? separatePdfWithCombinedInput.IsChecked == true : settings.ExportSeparatePdfWithCombined,
             IsDwgProfile ? GetSelectedSetupName(dwgSetupInput) : settings.DwgSetupName,
             IsDwgProfile ? GetSelectedSetupName(dxfSetupInput) : settings.DxfSetupName));
+        SaveDwgProfileState();
+    }
+
+    private void SaveDwgProfileState()
+    {
+        if (!IsDwgProfile || dwgProfileStorage is null)
+        {
+            return;
+        }
+
+        DwgExportProfile currentProfile = GetCurrentDwgProfileForExport();
+        if (currentProfile.IsUserProfile)
+        {
+            dwgProfileState.UpsertProfile(currentProfile);
+        }
+
+        dwgProfileState.LastSelectedProfileName = currentProfile.ProfileName;
+        dwgProfileState.LastFolder = exportFolderInput.Text;
+        dwgProfileState.LastNameMask = fileNameMaskInput.Text;
+        dwgProfileState.LastFormatSelection = GetSelectedFormatsText();
+        dwgProfileStorage.Save(dwgProfileState);
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)
@@ -1528,6 +1764,23 @@ public sealed class PrintWindow : TrueBimWindow
             Margin = new Thickness(0, 0, 8, 0),
             IsEnabled = isEnabled
         };
+    }
+
+    private static string GetRevitVersion(RevitDocument document)
+    {
+        try
+        {
+            string? version = document.Application?.VersionNumber;
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                return version!;
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return "default";
     }
 
     private static PrintFileNameContext CreateFileNameContext(RevitDocument document)
