@@ -52,6 +52,19 @@ public sealed class FamilyManagerProfileStorage
             .OrderBy(folder => folder.Path, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
+        List<FamilyLibraryFile> libraryFiles = profile.LibraryFiles
+            .Where(file => !string.IsNullOrWhiteSpace(file.Path))
+            .Select(file => new FamilyLibraryFile
+            {
+                Path = FamilyPathNormalizer.Normalize(file.Path),
+                IsEnabled = file.IsEnabled
+            })
+            .Where(file => string.Equals(Path.GetExtension(file.Path), ".rfa", StringComparison.CurrentCultureIgnoreCase))
+            .GroupBy(file => file.Path, FamilyPathNormalizer.Comparer)
+            .Select(group => group.First())
+            .OrderBy(file => file.Path, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
         List<string> favorites = profile.FavoritePaths
             .Concat(profile.CachedFiles.Where(file => file.IsFavorite).Select(file => file.FilePath))
             .Select(FamilyPathNormalizer.Normalize)
@@ -119,6 +132,7 @@ public sealed class FamilyManagerProfileStorage
         return new FamilyManagerProfile
         {
             LibraryFolders = folders,
+            LibraryFiles = libraryFiles,
             FavoritePaths = favorites,
             History = history,
             CachedFiles = cachedFiles,

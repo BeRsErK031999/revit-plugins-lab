@@ -40,6 +40,35 @@ public sealed class FamilyLibraryScannerTests
         Assert.Single(result.Warnings);
     }
 
+    [Fact]
+    public void Scan_IncludesExplicitRfaFilesAndDeduplicatesFolderFiles()
+    {
+        using TempDirectory temp = new();
+        string library = Path.Combine(temp.Path, "Library");
+        Directory.CreateDirectory(library);
+        string folderFamilyPath = Path.Combine(library, "Door A.rfa");
+        string fileFamilyPath = Path.Combine(temp.Path, "Single Chair.rfa");
+        string missingFamilyPath = Path.Combine(temp.Path, "Missing.rfa");
+        File.WriteAllText(folderFamilyPath, "not a real rfa");
+        File.WriteAllText(fileFamilyPath, "not a real rfa");
+
+        FamilyLibraryScanResult result = new FamilyLibraryScanner().Scan(
+            [new FamilyLibraryFolder { Path = library, IsEnabled = true }],
+            [
+                new FamilyLibraryFile { Path = folderFamilyPath, IsEnabled = true },
+                new FamilyLibraryFile { Path = fileFamilyPath, IsEnabled = true },
+                new FamilyLibraryFile { Path = missingFamilyPath, IsEnabled = true }
+            ],
+            new HashSet<string>(FamilyPathNormalizer.Comparer),
+            new Dictionary<string, DateTimeOffset>(FamilyPathNormalizer.Comparer));
+
+        Assert.Equal(["Door A", "Single Chair"], result.Files.Select(file => file.Name).OrderBy(name => name));
+        Assert.Equal(1, result.ScannedFolderCount);
+        Assert.Equal(1, result.ScannedFileCount);
+        Assert.Equal(1, result.MissingFileCount);
+        Assert.Single(result.Warnings);
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public TempDirectory()

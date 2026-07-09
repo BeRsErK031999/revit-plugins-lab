@@ -5,6 +5,10 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.Models;
 
 public sealed class FamilyFileItem : INotifyPropertyChanged
 {
+    private static readonly string[] WidthParameterTokens = ["Width", "Ширина"];
+    private static readonly string[] HeightParameterTokens = ["Height", "Высота"];
+    private static readonly string[] MaterialParameterTokens = ["Material", "Материал"];
+
     private bool isFavorite;
     private string status = string.Empty;
     private string thumbnailPath = string.Empty;
@@ -76,6 +80,12 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         ? "-"
         : ThumbnailUpdatedAtUtc.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
+    public string WidthParameterDisplay => FindPresetParameterDisplay(WidthParameterTokens);
+
+    public string HeightParameterDisplay => FindPresetParameterDisplay(HeightParameterTokens);
+
+    public string MaterialParameterDisplay => FindPresetParameterDisplay(MaterialParameterTokens);
+
     private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
@@ -99,5 +109,28 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private string FindPresetParameterDisplay(IReadOnlyCollection<string> tokens)
+    {
+        List<string> values = CachedTypes
+            .SelectMany(type => type.Parameters)
+            .Where(parameter => ParameterNameMatches(parameter.Name, tokens))
+            .Select(parameter => parameter.ValueDisplay)
+            .Where(value => !string.IsNullOrWhiteSpace(value) && value != "-")
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .Take(3)
+            .ToList();
+
+        return values.Count == 0
+            ? "-"
+            : string.Join(", ", values);
+    }
+
+    private static bool ParameterNameMatches(string parameterName, IEnumerable<string> tokens)
+    {
+        return tokens.Any(token =>
+            parameterName.Equals(token, StringComparison.CurrentCultureIgnoreCase)
+            || parameterName.IndexOf(token, StringComparison.CurrentCultureIgnoreCase) >= 0);
     }
 }

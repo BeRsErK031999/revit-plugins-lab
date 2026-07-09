@@ -17,6 +17,12 @@ public sealed class FamilyManagerProfileStorageTests
                 new FamilyLibraryFolder { Path = @" C:\Lib\Doors\ ", IsEnabled = true },
                 new FamilyLibraryFolder { Path = @"C:\Lib\Doors", IsEnabled = false }
             ],
+            LibraryFiles =
+            [
+                new FamilyLibraryFile { Path = @" C:\Lib\Doors\Door.rfa ", IsEnabled = true },
+                new FamilyLibraryFile { Path = @"C:\Lib\Doors\Door.rfa", IsEnabled = false },
+                new FamilyLibraryFile { Path = @"C:\Lib\Doors\Door.txt", IsEnabled = true }
+            ],
             FavoritePaths = [@"C:\Lib\Doors\Door.rfa"],
             CachedFiles =
             [
@@ -49,6 +55,7 @@ public sealed class FamilyManagerProfileStorageTests
         FamilyManagerProfile normalized = FamilyManagerProfileStorage.Normalize(profile);
 
         Assert.Single(normalized.LibraryFolders);
+        Assert.Single(normalized.LibraryFiles);
         Assert.Single(normalized.FavoritePaths);
         Assert.Single(normalized.CachedFiles);
         Assert.True(normalized.CachedFiles[0].IsFavorite);

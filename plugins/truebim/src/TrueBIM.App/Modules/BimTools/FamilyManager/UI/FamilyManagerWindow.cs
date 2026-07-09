@@ -2,10 +2,13 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -26,6 +29,49 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 
 public sealed class FamilyManagerWindow : Window
 {
+    private const string AllParameterPreset = "Все";
+    private const string DimensionParameterPreset = "Размеры";
+    private const string MaterialParameterPreset = "Материалы";
+    private const string IdentityParameterPreset = "Идентификация";
+    private const uint BrowseInfoReturnOnlyFileSystemDirectories = 0x0001;
+    private const uint BrowseInfoNewDialogStyle = 0x0040;
+    private const uint BrowseInfoNoNewFolderButton = 0x0200;
+    private const int MaxPathLength = 260;
+
+    private static readonly string[] DimensionParameterTokens =
+    [
+        "Width",
+        "Height",
+        "Length",
+        "Depth",
+        "Thickness",
+        "Diameter",
+        "Radius",
+        "Ширина",
+        "Высота",
+        "Длина",
+        "Глубина",
+        "Толщина",
+        "Диаметр",
+        "Радиус"
+    ];
+
+    private static readonly string[] MaterialParameterTokens = ["Material", "Материал"];
+
+    private static readonly string[] IdentityParameterTokens =
+    [
+        "Manufacturer",
+        "Model",
+        "Description",
+        "Code",
+        "Mark",
+        "Производитель",
+        "Модель",
+        "Описание",
+        "Код",
+        "Марка"
+    ];
+
     private readonly UIApplication uiApplication;
     private readonly UIDocument uiDocument;
     private readonly Document document;
@@ -38,6 +84,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly FamilyThumbnailService thumbnailService;
     private readonly ITrueBimLogger logger;
     private readonly ObservableCollection<FamilyLibraryFolder> folders = new();
+    private readonly ObservableCollection<FamilyLibraryFile> libraryFiles = new();
     private readonly ObservableCollection<FamilyFileItem> visibleFamilies = new();
     private readonly ObservableCollection<FamilyLoadHistoryItem> historyItems = new();
     private readonly ObservableCollection<FamilyTypeInfo> familyTypes = new();
@@ -45,6 +92,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly ObservableCollection<FamilyLibraryTreeNode> libraryTreeNodes = new();
     private readonly List<FamilyFileItem> allFamilies = new();
     private readonly ListBox folderList = new();
+    private readonly ListBox fileList = new();
     private readonly TreeView libraryTree = new();
     private readonly DataGrid familyGrid = new();
     private readonly DataGrid parameterGrid = new();
@@ -53,7 +101,9 @@ public sealed class FamilyManagerWindow : Window
     private readonly Image thumbnailImage = new();
     private readonly TextBlock thumbnailPlaceholderText = new();
     private readonly WpfTextBox searchInput = new();
+    private readonly WpfTextBox parameterSearchInput = new();
     private readonly WpfComboBox categoryInput = new();
+    private readonly WpfComboBox parameterPresetInput = new();
     private readonly CheckBox favoritesOnlyInput = new()
     {
         Content = "Избранное"
@@ -68,6 +118,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Button refreshThumbnailButton = CreateButton("Обновить preview", TrueBimIcon.Preview, 220);
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
+    private FamilyTypeInfo? selectedType;
     private bool isRefreshing;
 
     public FamilyManagerWindow(
@@ -157,17 +208,23 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(title, Dock.Top);
         panel.Children.Add(title);
 
-        StackPanel actions = new()
+        WrapPanel actions = new()
         {
-            Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, 0, 0, 8)
         };
-        Button addButton = CreateButton("Добавить", TrueBimIcon.Open, 112);
-        addButton.Click += (_, _) => AddFolder();
-        actions.Children.Add(addButton);
+        Button addFolderButton = CreateButton("Папка", TrueBimIcon.Open, 68);
+        addFolderButton.ToolTip = "Добавить папку библиотеки. Кнопка выбора подтверждает текущую папку, не проваливаясь внутрь.";
+        addFolderButton.Click += (_, _) => AddFolder();
+        actions.Children.Add(addFolderButton);
 
-        Button removeButton = CreateButton("Удалить", TrueBimIcon.Close, 112);
-        removeButton.Click += (_, _) => RemoveSelectedFolder();
+        Button addFileButton = CreateButton("Файл", TrueBimIcon.FamilyManager, 60);
+        addFileButton.ToolTip = "Добавить отдельный .rfa файл в библиотеку.";
+        addFileButton.Click += (_, _) => AddFile();
+        actions.Children.Add(addFileButton);
+
+        Button removeButton = CreateButton("Удалить", TrueBimIcon.Close, 82);
+        removeButton.ToolTip = "Удалить выбранную папку или файл библиотеки.";
+        removeButton.Click += (_, _) => RemoveSelectedLibrarySource();
         actions.Children.Add(removeButton);
         DockPanel.SetDock(actions, Dock.Top);
         panel.Children.Add(actions);
@@ -184,13 +241,43 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(refreshFolderMetadataButton, Dock.Top);
         panel.Children.Add(refreshFolderMetadataButton);
 
+        TextBlock foldersTitle = CreateSubTitle("Папки");
+        DockPanel.SetDock(foldersTitle, Dock.Top);
+        panel.Children.Add(foldersTitle);
+
         folderList.ItemsSource = folders;
         folderList.DisplayMemberPath = nameof(FamilyLibraryFolder.Path);
         folderList.BorderThickness = new Thickness(1);
-        folderList.Height = 150;
-        folderList.Margin = new Thickness(0, 0, 0, 12);
+        folderList.Height = 105;
+        folderList.Margin = new Thickness(0, 0, 0, 8);
+        folderList.SelectionChanged += (_, _) =>
+        {
+            if (folderList.SelectedItem is not null)
+            {
+                fileList.SelectedItem = null;
+            }
+        };
         DockPanel.SetDock(folderList, Dock.Top);
         panel.Children.Add(folderList);
+
+        TextBlock filesTitle = CreateSubTitle("Файлы");
+        DockPanel.SetDock(filesTitle, Dock.Top);
+        panel.Children.Add(filesTitle);
+
+        fileList.ItemsSource = libraryFiles;
+        fileList.DisplayMemberPath = nameof(FamilyLibraryFile.Path);
+        fileList.BorderThickness = new Thickness(1);
+        fileList.Height = 82;
+        fileList.Margin = new Thickness(0, 0, 0, 12);
+        fileList.SelectionChanged += (_, _) =>
+        {
+            if (fileList.SelectedItem is not null)
+            {
+                folderList.SelectedItem = null;
+            }
+        };
+        DockPanel.SetDock(fileList, Dock.Top);
+        panel.Children.Add(fileList);
 
         TextBlock treeTitle = CreateSubTitle("Структура");
         DockPanel.SetDock(treeTitle, Dock.Top);
@@ -258,6 +345,9 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.Columns.Add(CreateTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
         familyGrid.Columns.Add(CreateTextColumn("Типов", nameof(FamilyFileItem.CachedTypeCountDisplay), 60));
+        familyGrid.Columns.Add(CreateTextColumn("Ширина", nameof(FamilyFileItem.WidthParameterDisplay), 76));
+        familyGrid.Columns.Add(CreateTextColumn("Высота", nameof(FamilyFileItem.HeightParameterDisplay), 76));
+        familyGrid.Columns.Add(CreateTextColumn("Материал", nameof(FamilyFileItem.MaterialParameterDisplay), 96));
         familyGrid.Columns.Add(CreateTextColumn("Preview", nameof(FamilyFileItem.ThumbnailDisplay), 88));
         familyGrid.Columns.Add(CreateTextColumn("Избр.", nameof(FamilyFileItem.FavoriteDisplay), 70));
         familyGrid.Columns.Add(CreateTextColumn("Размер", nameof(FamilyFileItem.SizeDisplay), 80));
@@ -356,6 +446,33 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(parametersTitle, Dock.Top);
         panel.Children.Add(parametersTitle);
 
+        WpfGrid parameterFilters = new()
+        {
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        parameterFilters.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        parameterFilters.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(126) });
+
+        parameterSearchInput.Height = 30;
+        parameterSearchInput.Margin = new Thickness(0, 0, 8, 0);
+        parameterSearchInput.ToolTip = "Фильтр параметров по имени, значению, формуле или области.";
+        parameterSearchInput.TextChanged += (_, _) => RefreshTypeParameters();
+        WpfGrid.SetColumn(parameterSearchInput, 0);
+        parameterFilters.Children.Add(parameterSearchInput);
+
+        parameterPresetInput.Height = 30;
+        parameterPresetInput.Items.Add(AllParameterPreset);
+        parameterPresetInput.Items.Add(DimensionParameterPreset);
+        parameterPresetInput.Items.Add(MaterialParameterPreset);
+        parameterPresetInput.Items.Add(IdentityParameterPreset);
+        parameterPresetInput.SelectedItem = AllParameterPreset;
+        parameterPresetInput.SelectionChanged += (_, _) => RefreshTypeParameters();
+        WpfGrid.SetColumn(parameterPresetInput, 1);
+        parameterFilters.Children.Add(parameterPresetInput);
+
+        DockPanel.SetDock(parameterFilters, Dock.Top);
+        panel.Children.Add(parameterFilters);
+
         parameterGrid.AutoGenerateColumns = false;
         parameterGrid.CanUserAddRows = false;
         parameterGrid.CanUserDeleteRows = false;
@@ -390,6 +507,12 @@ public sealed class FamilyManagerWindow : Window
             folders.Add(folder);
         }
 
+        libraryFiles.Clear();
+        foreach (FamilyLibraryFile file in profile.LibraryFiles)
+        {
+            libraryFiles.Add(file);
+        }
+
         allFamilies.Clear();
         foreach (FamilyFileItem family in profile.CachedFiles)
         {
@@ -406,12 +529,24 @@ public sealed class FamilyManagerWindow : Window
 
     private void AddFolder()
     {
+        string? folderPath = SelectFolderPath();
+        if (folderPath is null || string.IsNullOrWhiteSpace(folderPath))
+        {
+            return;
+        }
+
+        AddLibraryFolder(folderPath);
+    }
+
+    private void AddFile()
+    {
         OpenFileDialog dialog = new()
         {
-            Title = "Выберите папку библиотеки семейств",
-            CheckFileExists = false,
+            Title = "Выберите файл семейства",
+            Filter = "Revit families (*.rfa)|*.rfa",
+            CheckFileExists = true,
             CheckPathExists = true,
-            FileName = "Выберите папку"
+            Multiselect = false
         };
 
         if (dialog.ShowDialog(this) != true)
@@ -419,13 +554,18 @@ public sealed class FamilyManagerWindow : Window
             return;
         }
 
-        string? folderPath = Path.GetDirectoryName(dialog.FileName);
-        if (string.IsNullOrWhiteSpace(folderPath))
+        AddLibraryFile(dialog.FileName);
+    }
+
+    private void AddLibraryFolder(string folderPath)
+    {
+        folderPath = FamilyPathNormalizer.Normalize(folderPath);
+        if (!Directory.Exists(folderPath))
         {
+            statusText.Text = "Папка библиотеки не найдена.";
             return;
         }
 
-        folderPath = FamilyPathNormalizer.Normalize(folderPath);
         if (folders.Any(folder => string.Equals(folder.Path, folderPath, StringComparison.CurrentCultureIgnoreCase)))
         {
             statusText.Text = "Эта папка уже есть в списке библиотек.";
@@ -441,17 +581,79 @@ public sealed class FamilyManagerWindow : Window
         ScanLibraries();
     }
 
-    private void RemoveSelectedFolder()
+    private void AddLibraryFile(string filePath)
     {
-        if (folderList.SelectedItem is not FamilyLibraryFolder folder)
+        filePath = FamilyPathNormalizer.Normalize(filePath);
+        if (!File.Exists(filePath) || !string.Equals(Path.GetExtension(filePath), ".rfa", StringComparison.CurrentCultureIgnoreCase))
         {
-            statusText.Text = "Выберите папку для удаления из списка.";
+            statusText.Text = "Выберите существующий .rfa файл.";
             return;
         }
 
-        folders.Remove(folder);
+        if (libraryFiles.Any(file => string.Equals(file.Path, filePath, StringComparison.CurrentCultureIgnoreCase)))
+        {
+            statusText.Text = "Этот файл уже есть в списке библиотек.";
+            return;
+        }
+
+        libraryFiles.Add(new FamilyLibraryFile
+        {
+            Path = filePath,
+            IsEnabled = true
+        });
         SaveProfile();
         ScanLibraries();
+    }
+
+    private void RemoveSelectedLibrarySource()
+    {
+        if (folderList.SelectedItem is FamilyLibraryFolder folder)
+        {
+            folders.Remove(folder);
+            SaveProfile();
+            ScanLibraries();
+            return;
+        }
+
+        if (fileList.SelectedItem is FamilyLibraryFile file)
+        {
+            libraryFiles.Remove(file);
+            SaveProfile();
+            ScanLibraries();
+            return;
+        }
+
+        statusText.Text = "Выберите папку или файл для удаления из списка.";
+    }
+
+    private string? SelectFolderPath()
+    {
+        BrowseInfo browseInfo = new()
+        {
+            HwndOwner = new WindowInteropHelper(this).Handle,
+            Title = "Выберите папку библиотеки семейств",
+            Flags = BrowseInfoReturnOnlyFileSystemDirectories
+                | BrowseInfoNewDialogStyle
+                | BrowseInfoNoNewFolderButton
+        };
+
+        IntPtr itemIdList = SHBrowseForFolder(ref browseInfo);
+        if (itemIdList == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            StringBuilder path = new(MaxPathLength);
+            return SHGetPathFromIDList(itemIdList, path)
+                ? path.ToString()
+                : null;
+        }
+        finally
+        {
+            CoTaskMemFree(itemIdList);
+        }
     }
 
     private void ScanLibraries()
@@ -465,7 +667,7 @@ public sealed class FamilyManagerWindow : Window
             .GroupBy(family => FamilyPathNormalizer.Normalize(family.FilePath), FamilyPathNormalizer.Comparer)
             .ToDictionary(group => group.Key, group => group.First(), FamilyPathNormalizer.Comparer);
 
-        FamilyLibraryScanResult result = scanner.Scan(profile.LibraryFolders, favoritePaths, lastLoadedByPath);
+        FamilyLibraryScanResult result = scanner.Scan(profile.LibraryFolders, profile.LibraryFiles, favoritePaths, lastLoadedByPath);
         allFamilies.Clear();
         foreach (FamilyFileItem family in result.Files)
         {
@@ -483,7 +685,7 @@ public sealed class FamilyManagerWindow : Window
         string warningText = result.Warnings.Count == 0
             ? string.Empty
             : $" Предупреждения: {string.Join(" ", result.Warnings.Take(2))}";
-        statusText.Text = $"Просканировано папок: {result.ScannedFolderCount}. Не найдено папок: {result.MissingFolderCount}. Найдено семейств: {allFamilies.Count}.{warningText}";
+        statusText.Text = $"Просканировано папок: {result.ScannedFolderCount}. Файлов: {result.ScannedFileCount}. Не найдено папок: {result.MissingFolderCount}. Не найдено файлов: {result.MissingFileCount}. Найдено семейств: {allFamilies.Count}.{warningText}";
     }
 
     private static void PreserveCachedMetadata(
@@ -618,6 +820,7 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.SelectedItem = family;
         familyTypes.Clear();
         typeParameters.Clear();
+        selectedType = null;
 
         if (family is null)
         {
@@ -685,13 +888,45 @@ public sealed class FamilyManagerWindow : Window
 
     private void SelectType(FamilyTypeInfo? type)
     {
+        selectedType = type;
+        RefreshTypeParameters();
+    }
+
+    private void RefreshTypeParameters()
+    {
         typeParameters.Clear();
-        if (type is null)
+        if (selectedType is null)
         {
             return;
         }
 
-        foreach (FamilyTypeParameterInfo parameter in type.Parameters)
+        string search = parameterSearchInput.Text.Trim();
+        string preset = parameterPresetInput.SelectedItem as string ?? AllParameterPreset;
+        IEnumerable<FamilyTypeParameterInfo> parameters = selectedType.Parameters;
+
+        if (!string.Equals(preset, AllParameterPreset, StringComparison.CurrentCultureIgnoreCase))
+        {
+            string[] tokens = preset switch
+            {
+                DimensionParameterPreset => DimensionParameterTokens,
+                MaterialParameterPreset => MaterialParameterTokens,
+                IdentityParameterPreset => IdentityParameterTokens,
+                _ => []
+            };
+
+            parameters = parameters.Where(parameter => ParameterNameMatches(parameter.Name, tokens));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            parameters = parameters.Where(parameter =>
+                parameter.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
+                || parameter.Value.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
+                || parameter.Formula.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
+                || parameter.Scope.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0);
+        }
+
+        foreach (FamilyTypeParameterInfo parameter in parameters)
         {
             typeParameters.Add(parameter);
         }
@@ -860,6 +1095,13 @@ public sealed class FamilyManagerWindow : Window
         }
 
         return null;
+    }
+
+    private static bool ParameterNameMatches(string parameterName, IEnumerable<string> tokens)
+    {
+        return tokens.Any(token =>
+            parameterName.Equals(token, StringComparison.CurrentCultureIgnoreCase)
+            || parameterName.IndexOf(token, StringComparison.CurrentCultureIgnoreCase) >= 0);
     }
 
     private void ToggleFavorite()
@@ -1102,6 +1344,7 @@ public sealed class FamilyManagerWindow : Window
     private void SaveProfile()
     {
         profile.LibraryFolders = folders.ToList();
+        profile.LibraryFiles = libraryFiles.ToList();
         profile.CachedFiles = allFamilies.ToList();
         profile.FavoritePaths = allFamilies
             .Where(family => family.IsFavorite)
@@ -1132,7 +1375,7 @@ public sealed class FamilyManagerWindow : Window
             : $"Кэш: {profile.CacheUpdatedAtUtc.Value.ToLocalTime():dd.MM.yyyy HH:mm}.";
         int favoritesCount = allFamilies.Count(family => family.IsFavorite);
         int metadataCount = allFamilies.Count(family => family.MetadataUpdatedAtUtc is not null);
-        statusText.Text = $"Папок: {folders.Count}. Семейств в кэше: {allFamilies.Count}. Показано: {visibleFamilies.Count}. Избранных: {favoritesCount}. Метаданные: {metadataCount}. {cacheText}";
+        statusText.Text = $"Папок: {folders.Count}. Файлов: {libraryFiles.Count}. Семейств в кэше: {allFamilies.Count}. Показано: {visibleFamilies.Count}. Избранных: {favoritesCount}. Метаданные: {metadataCount}. {cacheText}";
     }
 
     private WpfContextMenu CreateTreeContextMenu()
@@ -1338,5 +1581,34 @@ public sealed class FamilyManagerWindow : Window
             Width = width,
             IsReadOnly = true
         };
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SHBrowseForFolder(ref BrowseInfo browseInfo);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SHGetPathFromIDList(IntPtr itemIdList, StringBuilder path);
+
+    [DllImport("ole32.dll")]
+    private static extern void CoTaskMemFree(IntPtr itemIdList);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct BrowseInfo
+    {
+        public IntPtr HwndOwner;
+
+        public IntPtr RootItemIdList;
+
+        public IntPtr DisplayName;
+
+        public string Title;
+
+        public uint Flags;
+
+        public IntPtr Callback;
+
+        public IntPtr Parameter;
+
+        public int Image;
     }
 }
