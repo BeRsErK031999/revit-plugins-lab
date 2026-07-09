@@ -32,7 +32,6 @@ public static class TrueBimRibbon
     public const string BimPanelName = "БИМ";
     public const string BimDocumentationPanelName = "Оформление";
     public const string BimViewsPanelName = "Виды";
-    public const string BimReleasePanelName = "Выпуск";
     public const string BimCoordinationPanelName = "Координация";
     public const string BimLibraryPanelName = "Библиотека";
     public const string ModelReviewPanelName = "Проверка модели";
@@ -289,7 +288,6 @@ public static class TrueBimRibbon
         BimPanelName,
         BimDocumentationPanelName,
         BimViewsPanelName,
-        BimReleasePanelName,
         BimCoordinationPanelName,
         BimLibraryPanelName,
         ModelReviewPanelName,
@@ -376,14 +374,6 @@ public static class TrueBimRibbon
             TrueBimIcon.OpeningViews,
             "Собирает двери и окна на активном плане, показывает предпросмотр и создаёт для них фасадные elevation-виды.",
             "Инструмент для проёмов: сбор дверей и окон активного плана, имена видов BIM_Opening_*, проверка дублей, выбор типа фасада и шаблона вида, crop box вокруг элемента и CSV-отчёт."),
-        new(
-            BimReleasePanelName,
-            "TrueBIM_BatchExport",
-            "Экспорт\nPDF/DWG",
-            $"{CommandNamespace}.{nameof(BatchExportCommand)}",
-            TrueBimIcon.Export,
-            "Открывает каркас инструмента пакетного экспорта PDF/DWG.",
-            "Каркас будущего инструмента выпуска: профиль экспорта, выбор листов, правило имени файла, предпросмотр и отчет."),
         new(
             BimCoordinationPanelName,
             "TrueBIM_ClashReport",

@@ -94,24 +94,6 @@ public static class BimToolPlaceholders
         ],
         "opening-views");
 
-    public static BimToolPlaceholderDefinition BatchExport { get; } = new(
-        "Экспорт PDF/DWG",
-        TrueBimIcon.Export,
-        "Каркас инструмента для будущей пакетной выгрузки листов в PDF и DWG.",
-        [
-            "Профиль экспорта и папка выгрузки.",
-            "Список листов с выбором и фильтром.",
-            "Правило имени файла и предпросмотр итоговых имен.",
-            "Экспорт и отчет по успешным и ошибочным листам."
-        ],
-        [
-            "Сверить с существующим модулем 'Печать' перед реализацией.",
-            "Переиспользовать сбор листов и шаблон имени файла.",
-            "Добавить отдельный профиль BIM Tools в JSON.",
-            "Начать с MVP PDF/DWG без изменения модели."
-        ],
-        "batch-export");
-
     public static BimToolPlaceholderDefinition ClashReport { get; } = new(
         "Отчёт коллизий",
         TrueBimIcon.ClashReport,

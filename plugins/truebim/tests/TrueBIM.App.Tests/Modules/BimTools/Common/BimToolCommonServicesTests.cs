@@ -18,7 +18,7 @@ public sealed class BimToolCommonServicesTests
         JsonSettingsStorage storage = new(new TestLogger());
         BimToolShellState state = new()
         {
-            ToolTitle = "Экспорт PDF/DWG",
+            ToolTitle = "Автомарки",
             DocumentTitle = "Project.rvt",
             LastOpenedAtUtc = DateTimeOffset.Parse("2026-07-08T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
             PreviewRequestCount = 2
@@ -27,7 +27,7 @@ public sealed class BimToolCommonServicesTests
         storage.Save(settingsPath, state);
         BimToolShellState reloaded = storage.LoadOrDefault(settingsPath, () => new BimToolShellState());
 
-        Assert.Equal("Экспорт PDF/DWG", reloaded.ToolTitle);
+        Assert.Equal("Автомарки", reloaded.ToolTitle);
         Assert.Equal("Project.rvt", reloaded.DocumentTitle);
         Assert.Equal(2, reloaded.PreviewRequestCount);
     }
@@ -35,9 +35,9 @@ public sealed class BimToolCommonServicesTests
     [Fact]
     public void JsonSettingsStorage_CreateDefaultSettingsPath_UsesBimToolsFolder()
     {
-        string settingsPath = JsonSettingsStorage.CreateDefaultSettingsPath("batch-export");
+        string settingsPath = JsonSettingsStorage.CreateDefaultSettingsPath("auto-tags");
 
-        Assert.EndsWith(Path.Combine("TrueBIM", "BimTools", "batch-export", "settings.json"), settingsPath);
+        Assert.EndsWith(Path.Combine("TrueBIM", "BimTools", "auto-tags", "settings.json"), settingsPath);
     }
 
     [Fact]

@@ -97,14 +97,6 @@ public sealed class AppRibbonButtonDefinitionTests
             "активном плане"
         },
         {
-            "TrueBIM_BatchExport",
-            "Выпуск",
-            "Экспорт\nPDF/DWG",
-            $"TrueBIM.App.Commands.{nameof(BatchExportCommand)}",
-            TrueBimIcon.Export,
-            "PDF/DWG"
-        },
-        {
             "TrueBIM_ClashReport",
             "Координация",
             "Отчёт\nколлизий",
@@ -202,7 +194,6 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         Assert.Contains("Оформление", TrueBimRibbon.PanelNames);
         Assert.Contains("Виды", TrueBimRibbon.PanelNames);
-        Assert.Contains("Выпуск", TrueBimRibbon.PanelNames);
         Assert.Contains("Координация", TrueBimRibbon.PanelNames);
         Assert.Contains("Библиотека", TrueBimRibbon.PanelNames);
         Assert.Contains("Проверка модели", TrueBimRibbon.PanelNames);
