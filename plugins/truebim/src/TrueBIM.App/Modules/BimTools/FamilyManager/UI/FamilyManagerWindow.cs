@@ -31,6 +31,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly FamilyManagerProfileStorage profileStorage;
     private readonly FamilyLibraryScanner scanner;
     private readonly FamilyLibraryTreeBuilder treeBuilder = new();
+    private readonly FamilyMetadataBatchSelector metadataBatchSelector = new();
     private readonly FamilyLoadService loadService;
     private readonly FamilyMetadataService metadataService;
     private readonly ITrueBimLogger logger;
@@ -59,6 +60,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Button loadButton = CreateButton("Загрузить", TrueBimIcon.Apply, 130);
     private readonly Button loadAndPlaceButton = CreateButton("Загрузить и разместить", TrueBimIcon.FamilyManager, 190);
     private readonly Button refreshMetadataButton = CreateButton("Обновить метаданные", TrueBimIcon.Preview, 220);
+    private readonly Button refreshFolderMetadataButton = CreateButton("Метаданные папки", TrueBimIcon.Preview, 236);
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private bool isRefreshing;
@@ -168,6 +170,12 @@ public sealed class FamilyManagerWindow : Window
         scanButton.Click += (_, _) => ScanLibraries();
         DockPanel.SetDock(scanButton, Dock.Top);
         panel.Children.Add(scanButton);
+
+        refreshFolderMetadataButton.Margin = new Thickness(0, 0, 0, 8);
+        refreshFolderMetadataButton.ToolTip = "Открывает все семейства из выбранной папки библиотеки и обновляет категории, типы и параметры в кэше.";
+        refreshFolderMetadataButton.Click += (_, _) => RefreshSelectedFolderMetadata();
+        DockPanel.SetDock(refreshFolderMetadataButton, Dock.Top);
+        panel.Children.Add(refreshFolderMetadataButton);
 
         folderList.ItemsSource = folders;
         folderList.DisplayMemberPath = nameof(FamilyLibraryFolder.Path);
@@ -763,9 +771,7 @@ public sealed class FamilyManagerWindow : Window
 
         if (result.Succeeded)
         {
-            selectedFamily.Category = result.Category;
-            selectedFamily.CachedTypes = result.Types.ToList();
-            selectedFamily.MetadataUpdatedAtUtc = DateTimeOffset.UtcNow;
+            ApplyMetadataResult(selectedFamily, result);
             SaveProfile();
             RefreshCategories();
             RefreshVisibleFamilies();
@@ -786,6 +792,91 @@ public sealed class FamilyManagerWindow : Window
 
         refreshMetadataButton.IsEnabled = selectedFamily is not null;
         statusText.Text = result.Message;
+    }
+
+    private void RefreshSelectedFolderMetadata()
+    {
+        if (folderList.SelectedItem is not FamilyLibraryFolder folder)
+        {
+            statusText.Text = "Выберите папку библиотеки для пакетного обновления метаданных.";
+            return;
+        }
+
+        IReadOnlyList<FamilyFileItem> families = metadataBatchSelector.SelectFolderScope(allFamilies, folder.Path);
+        if (families.Count == 0)
+        {
+            statusText.Text = "В выбранной папке нет семейств в кэше. Сначала нажмите Сканировать.";
+            return;
+        }
+
+        MessageBoxResult decision = MessageBox.Show(
+            this,
+            $"Обновить метаданные для семейств в выбранной папке?\n\nПапка: {folder.Path}\nСемейств: {families.Count}\n\nОперация последовательно открывает `.rfa` файлы, читает категорию, типы и параметры, затем закрывает файлы без сохранения.",
+            "Диспетчер семейств",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (decision != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        refreshFolderMetadataButton.IsEnabled = false;
+        refreshMetadataButton.IsEnabled = false;
+        int updated = 0;
+        int failed = 0;
+        try
+        {
+            for (int index = 0; index < families.Count; index++)
+            {
+                FamilyFileItem family = families[index];
+                if (!File.Exists(family.FilePath))
+                {
+                    family.Status = "Файл не найден";
+                    failed++;
+                    continue;
+                }
+
+                statusText.Text = $"Чтение метаданных {index + 1}/{families.Count}: {family.Name}...";
+                FamilyMetadataResult result = metadataService.Read(uiApplication.Application, family.FilePath, logger);
+                family.Status = result.Message;
+                if (result.Succeeded)
+                {
+                    ApplyMetadataResult(family, result);
+                    updated++;
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+
+            SaveProfile();
+            RefreshCategories();
+            RefreshVisibleFamilies();
+            if (selectedFamily is not null && visibleFamilies.Contains(selectedFamily))
+            {
+                SelectFamily(selectedFamily);
+            }
+            else
+            {
+                SelectFamily(visibleFamilies.FirstOrDefault());
+            }
+
+            statusText.Text = $"Пакетное обновление завершено. Обновлено: {updated}. Ошибок/пропусков: {failed}.";
+        }
+        finally
+        {
+            refreshFolderMetadataButton.IsEnabled = true;
+            refreshMetadataButton.IsEnabled = selectedFamily is not null;
+        }
+    }
+
+    private static void ApplyMetadataResult(FamilyFileItem family, FamilyMetadataResult result)
+    {
+        family.Category = result.Category;
+        family.CachedTypes = result.Types.ToList();
+        family.MetadataUpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
     private void LoadSelectedFamily(bool placeAfterLoad)
