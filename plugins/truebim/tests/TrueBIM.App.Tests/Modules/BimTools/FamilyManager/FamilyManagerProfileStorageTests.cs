@@ -64,6 +64,8 @@ public sealed class FamilyManagerProfileStorageTests
     {
         using TempDirectory temp = new();
         string settingsPath = Path.Combine(temp.Path, "settings.json");
+        string thumbnailPath = Path.Combine(temp.Path, "thumbnails", "chair.png");
+        DateTimeOffset thumbnailUpdatedAtUtc = new(2026, 7, 8, 7, 30, 0, TimeSpan.Zero);
         FamilyManagerProfileStorage storage = new(settingsPath, new TestLogger());
 
         storage.Save(new FamilyManagerProfile
@@ -78,6 +80,8 @@ public sealed class FamilyManagerProfileStorageTests
                     DirectoryPath = temp.Path,
                     Category = "Мебель",
                     MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 7, 0, 0, TimeSpan.Zero),
+                    ThumbnailPath = thumbnailPath,
+                    ThumbnailUpdatedAtUtc = thumbnailUpdatedAtUtc,
                     CachedTypes =
                     [
                         new FamilyTypeInfo(
@@ -96,6 +100,8 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Single(loaded.CachedFiles);
         Assert.Single(loaded.FavoritePaths);
         Assert.Equal("Chair", loaded.CachedFiles[0].Name);
+        Assert.Equal(thumbnailPath, loaded.CachedFiles[0].ThumbnailPath);
+        Assert.Equal(thumbnailUpdatedAtUtc, loaded.CachedFiles[0].ThumbnailUpdatedAtUtc);
         FamilyTypeInfo loadedType = Assert.Single(loaded.CachedFiles[0].CachedTypes);
         Assert.Equal("Default", loadedType.Name);
         Assert.Equal("Manufacturer", Assert.Single(loadedType.Parameters).Name);

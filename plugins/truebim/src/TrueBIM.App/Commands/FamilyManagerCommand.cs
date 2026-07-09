@@ -31,6 +31,7 @@ public sealed class FamilyManagerCommand : IExternalCommand
                 new FamilyLibraryScanner(),
                 new FamilyLoadService(),
                 new FamilyMetadataService(),
+                new FamilyThumbnailService(),
                 logger);
             window.ShowDialog();
             return Result.Succeeded;

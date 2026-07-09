@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -34,6 +35,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly FamilyMetadataBatchSelector metadataBatchSelector = new();
     private readonly FamilyLoadService loadService;
     private readonly FamilyMetadataService metadataService;
+    private readonly FamilyThumbnailService thumbnailService;
     private readonly ITrueBimLogger logger;
     private readonly ObservableCollection<FamilyLibraryFolder> folders = new();
     private readonly ObservableCollection<FamilyFileItem> visibleFamilies = new();
@@ -48,6 +50,8 @@ public sealed class FamilyManagerWindow : Window
     private readonly DataGrid parameterGrid = new();
     private readonly ListBox historyList = new();
     private readonly ListBox typeList = new();
+    private readonly Image thumbnailImage = new();
+    private readonly TextBlock thumbnailPlaceholderText = new();
     private readonly WpfTextBox searchInput = new();
     private readonly WpfComboBox categoryInput = new();
     private readonly CheckBox favoritesOnlyInput = new()
@@ -61,6 +65,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Button loadAndPlaceButton = CreateButton("Загрузить и разместить", TrueBimIcon.FamilyManager, 190);
     private readonly Button refreshMetadataButton = CreateButton("Обновить метаданные", TrueBimIcon.Preview, 220);
     private readonly Button refreshFolderMetadataButton = CreateButton("Метаданные папки", TrueBimIcon.Preview, 236);
+    private readonly Button refreshThumbnailButton = CreateButton("Обновить preview", TrueBimIcon.Preview, 220);
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private bool isRefreshing;
@@ -72,6 +77,7 @@ public sealed class FamilyManagerWindow : Window
         FamilyLibraryScanner scanner,
         FamilyLoadService loadService,
         FamilyMetadataService metadataService,
+        FamilyThumbnailService thumbnailService,
         ITrueBimLogger logger)
     {
         this.uiApplication = uiApplication ?? throw new ArgumentNullException(nameof(uiApplication));
@@ -81,6 +87,7 @@ public sealed class FamilyManagerWindow : Window
         this.scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
         this.loadService = loadService ?? throw new ArgumentNullException(nameof(loadService));
         this.metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
+        this.thumbnailService = thumbnailService ?? throw new ArgumentNullException(nameof(thumbnailService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         profile = this.profileStorage.Load();
 
@@ -251,6 +258,7 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.Columns.Add(CreateTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
         familyGrid.Columns.Add(CreateTextColumn("Типов", nameof(FamilyFileItem.CachedTypeCountDisplay), 60));
+        familyGrid.Columns.Add(CreateTextColumn("Preview", nameof(FamilyFileItem.ThumbnailDisplay), 88));
         familyGrid.Columns.Add(CreateTextColumn("Избр.", nameof(FamilyFileItem.FavoriteDisplay), 70));
         familyGrid.Columns.Add(CreateTextColumn("Размер", nameof(FamilyFileItem.SizeDisplay), 80));
         familyGrid.Columns.Add(CreateTextColumn("Статус", nameof(FamilyFileItem.Status), 150));
@@ -273,6 +281,41 @@ public sealed class FamilyManagerWindow : Window
         detailsText.Margin = new Thickness(0, 0, 0, 12);
         DockPanel.SetDock(detailsText, Dock.Top);
         panel.Children.Add(detailsText);
+
+        TextBlock previewTitle = CreateSubTitle("Preview");
+        DockPanel.SetDock(previewTitle, Dock.Top);
+        panel.Children.Add(previewTitle);
+
+        Border previewFrame = new()
+        {
+            Height = 160,
+            BorderBrush = Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Background = Brushes.WhiteSmoke,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        WpfGrid previewHost = new();
+        thumbnailImage.Stretch = Stretch.Uniform;
+        thumbnailImage.Margin = new Thickness(8);
+        previewHost.Children.Add(thumbnailImage);
+
+        thumbnailPlaceholderText.Text = "Preview еще не создан.";
+        thumbnailPlaceholderText.TextWrapping = TextWrapping.Wrap;
+        thumbnailPlaceholderText.TextAlignment = TextAlignment.Center;
+        thumbnailPlaceholderText.HorizontalAlignment = HorizontalAlignment.Center;
+        thumbnailPlaceholderText.VerticalAlignment = VerticalAlignment.Center;
+        thumbnailPlaceholderText.Margin = new Thickness(16);
+        thumbnailPlaceholderText.Foreground = Brushes.DimGray;
+        previewHost.Children.Add(thumbnailPlaceholderText);
+
+        previewFrame.Child = previewHost;
+        DockPanel.SetDock(previewFrame, Dock.Top);
+        panel.Children.Add(previewFrame);
+
+        refreshThumbnailButton.Margin = new Thickness(0, 0, 0, 12);
+        refreshThumbnailButton.Click += (_, _) => RefreshSelectedThumbnail();
+        DockPanel.SetDock(refreshThumbnailButton, Dock.Top);
+        panel.Children.Add(refreshThumbnailButton);
 
         StackPanel actions = new()
         {
@@ -448,9 +491,15 @@ public sealed class FamilyManagerWindow : Window
         IReadOnlyDictionary<string, FamilyFileItem> previousFamilies)
     {
         if (!previousFamilies.TryGetValue(FamilyPathNormalizer.Normalize(family.FilePath), out FamilyFileItem? previous)
-            || previous.MetadataUpdatedAtUtc is null
             || previous.SizeBytes != family.SizeBytes
             || previous.LastWriteTimeUtc != family.LastWriteTimeUtc)
+        {
+            return;
+        }
+
+        family.ThumbnailPath = previous.ThumbnailPath;
+        family.ThumbnailUpdatedAtUtc = previous.ThumbnailUpdatedAtUtc;
+        if (previous.MetadataUpdatedAtUtc is null)
         {
             return;
         }
@@ -577,6 +626,8 @@ public sealed class FamilyManagerWindow : Window
             loadButton.IsEnabled = false;
             loadAndPlaceButton.IsEnabled = false;
             refreshMetadataButton.IsEnabled = false;
+            refreshThumbnailButton.IsEnabled = false;
+            UpdateThumbnailPreview(null);
             UpdateStatus();
             return;
         }
@@ -585,6 +636,7 @@ public sealed class FamilyManagerWindow : Window
         loadButton.IsEnabled = true;
         loadAndPlaceButton.IsEnabled = true;
         refreshMetadataButton.IsEnabled = true;
+        refreshThumbnailButton.IsEnabled = true;
         favoriteButton.Content = IconFactory.CreateButtonContent(
             family.IsFavorite ? TrueBimIcon.Close : TrueBimIcon.Apply,
             family.IsFavorite ? "Убрать" : "В избранное");
@@ -593,10 +645,12 @@ public sealed class FamilyManagerWindow : Window
             $"Имя: {family.Name}\n" +
             $"Категория: {family.Category}\n" +
             $"Метаданные: {family.MetadataDisplay}\n" +
+            $"Preview: {family.ThumbnailDisplay}\n" +
             $"Типов в файле: {family.CachedTypes.Count}\n" +
             $"Файл: {family.FilePath}\n" +
             $"Размер: {family.SizeDisplay}\n" +
             $"Изменён: {family.LastWriteDisplay}";
+        UpdateThumbnailPreview(family);
 
         HashSet<string> typeNames = new(StringComparer.CurrentCultureIgnoreCase);
         foreach (FamilyTypeInfo type in family.CachedTypes)
@@ -641,6 +695,78 @@ public sealed class FamilyManagerWindow : Window
         {
             typeParameters.Add(parameter);
         }
+    }
+
+    private void UpdateThumbnailPreview(FamilyFileItem? family)
+    {
+        thumbnailImage.Source = null;
+        if (family is null)
+        {
+            ShowThumbnailPlaceholder("Семейство не выбрано.");
+            return;
+        }
+
+        string? thumbnailPath = thumbnailService.TryGetCachedThumbnail(family);
+        if (string.IsNullOrWhiteSpace(thumbnailPath))
+        {
+            ShowThumbnailPlaceholder("Preview еще не создан.");
+            return;
+        }
+
+        try
+        {
+            BitmapImage bitmap = new();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(thumbnailPath, UriKind.Absolute);
+            bitmap.EndInit();
+            bitmap.Freeze();
+            thumbnailImage.Source = bitmap;
+            thumbnailPlaceholderText.Visibility = System.Windows.Visibility.Collapsed;
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Failed to load family thumbnail '{thumbnailPath}': {exception.Message}");
+            ShowThumbnailPlaceholder("Не удалось прочитать preview.");
+        }
+    }
+
+    private void ShowThumbnailPlaceholder(string text)
+    {
+        thumbnailPlaceholderText.Text = text;
+        thumbnailPlaceholderText.Visibility = System.Windows.Visibility.Visible;
+    }
+
+    private void RefreshSelectedThumbnail()
+    {
+        if (selectedFamily is null)
+        {
+            statusText.Text = "Выберите семейство для обновления preview.";
+            return;
+        }
+
+        if (!File.Exists(selectedFamily.FilePath))
+        {
+            selectedFamily.Status = "Файл не найден";
+            statusText.Text = "Файл семейства не найден. Пересканируйте библиотеку.";
+            UpdateThumbnailPreview(selectedFamily);
+            return;
+        }
+
+        refreshThumbnailButton.IsEnabled = false;
+        statusText.Text = $"Чтение preview: {selectedFamily.Name}...";
+        FamilyThumbnailResult result = thumbnailService.Refresh(uiApplication.Application, selectedFamily, logger);
+        selectedFamily.Status = result.Message;
+        if (result.Succeeded)
+        {
+            selectedFamily.ThumbnailPath = result.ThumbnailPath;
+            selectedFamily.ThumbnailUpdatedAtUtc = DateTimeOffset.UtcNow;
+        }
+
+        SaveProfile();
+        SelectFamily(selectedFamily);
+        refreshThumbnailButton.IsEnabled = selectedFamily is not null;
+        statusText.Text = result.Message;
     }
 
     private void SelectTreeNode(FamilyLibraryTreeNode? node)

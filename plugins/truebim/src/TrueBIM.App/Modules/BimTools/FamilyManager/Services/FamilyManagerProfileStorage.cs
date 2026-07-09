@@ -101,6 +101,10 @@ public sealed class FamilyManagerProfileStorage
                     LastWriteTimeUtc = file.LastWriteTimeUtc,
                     LastLoadedAtUtc = lastLoadedAtUtc == default ? file.LastLoadedAtUtc : lastLoadedAtUtc,
                     MetadataUpdatedAtUtc = file.MetadataUpdatedAtUtc,
+                    ThumbnailPath = string.IsNullOrWhiteSpace(file.ThumbnailPath)
+                        ? string.Empty
+                        : FamilyPathNormalizer.Normalize(file.ThumbnailPath),
+                    ThumbnailUpdatedAtUtc = file.ThumbnailUpdatedAtUtc,
                     CachedTypes = NormalizeTypes(file.CachedTypes),
                     IsFavorite = favorites.Contains(filePath),
                     Status = file.Status ?? string.Empty

@@ -7,6 +7,8 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
 {
     private bool isFavorite;
     private string status = string.Empty;
+    private string thumbnailPath = string.Empty;
+    private DateTimeOffset? thumbnailUpdatedAtUtc;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -25,6 +27,18 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
     public DateTimeOffset? LastLoadedAtUtc { get; set; }
 
     public DateTimeOffset? MetadataUpdatedAtUtc { get; set; }
+
+    public string ThumbnailPath
+    {
+        get => thumbnailPath;
+        set => SetField(ref thumbnailPath, value ?? string.Empty);
+    }
+
+    public DateTimeOffset? ThumbnailUpdatedAtUtc
+    {
+        get => thumbnailUpdatedAtUtc;
+        set => SetField(ref thumbnailUpdatedAtUtc, value);
+    }
 
     public List<FamilyTypeInfo> CachedTypes { get; set; } = [];
 
@@ -58,6 +72,10 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         ? "Не обновлялись"
         : MetadataUpdatedAtUtc.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
+    public string ThumbnailDisplay => ThumbnailUpdatedAtUtc is null
+        ? "-"
+        : ThumbnailUpdatedAtUtc.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+
     private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
@@ -70,6 +88,11 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
         if (propertyName is nameof(IsFavorite))
         {
             OnPropertyChanged(nameof(FavoriteDisplay));
+        }
+
+        if (propertyName is nameof(ThumbnailPath) or nameof(ThumbnailUpdatedAtUtc))
+        {
+            OnPropertyChanged(nameof(ThumbnailDisplay));
         }
     }
 
