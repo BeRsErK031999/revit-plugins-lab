@@ -27,6 +27,7 @@ public sealed class ColorByParameterWindow : Window
     private readonly TextBlock statusText = new();
     private List<BimParameterItem> parameters = [];
     private List<ColorRuleRow> rows = [];
+    private int colorGenerationOffset;
 
     public ColorByParameterWindow(
         Document document,
@@ -319,6 +320,7 @@ public sealed class ColorByParameterWindow : Window
                 parameter,
                 MaxValueCount);
             rows = collection.Rows.ToList();
+            colorGenerationOffset = 0;
             RefreshValueList();
             statusText.Text = collection.WasTruncated
                 ? $"Найдено уникальных значений: {collection.TotalValueCount}. Показаны первые {rows.Count}; сузьте категории перед применением."
@@ -433,7 +435,14 @@ public sealed class ColorByParameterWindow : Window
 
     private void RegenerateColors()
     {
-        service.AssignColors(rows);
+        if (rows.Count == 0)
+        {
+            statusText.Text = "Сначала выберите параметр и обновите значения.";
+            return;
+        }
+
+        colorGenerationOffset++;
+        service.AssignColors(rows, colorGenerationOffset);
         RefreshValueList();
         statusText.Text = $"Цвета пересчитаны для значений: {rows.Count}.";
     }

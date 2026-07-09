@@ -30,16 +30,23 @@ public sealed class ColorPaletteService
 
     public IReadOnlyList<ColorSwatch> Generate(int count)
     {
+        return Generate(count, paletteOffset: 0);
+    }
+
+    public IReadOnlyList<ColorSwatch> Generate(int count, int paletteOffset)
+    {
         if (count <= 0)
         {
             return [];
         }
 
+        int safeOffset = Math.Max(0, paletteOffset);
         List<ColorSwatch> colors = new(count);
         for (int index = 0; index < count; index++)
         {
-            ColorSwatch baseColor = BasePalette[index % BasePalette.Length];
-            int cycle = index / BasePalette.Length;
+            long sequenceIndex = (long)safeOffset + index;
+            ColorSwatch baseColor = BasePalette[(int)(sequenceIndex % BasePalette.Length)];
+            int cycle = (int)(sequenceIndex / BasePalette.Length);
             colors.Add(cycle == 0 ? baseColor : Shift(baseColor, cycle));
         }
 

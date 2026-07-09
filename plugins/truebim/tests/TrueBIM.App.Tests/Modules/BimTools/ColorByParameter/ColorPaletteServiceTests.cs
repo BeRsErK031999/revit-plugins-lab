@@ -18,6 +18,19 @@ public sealed class ColorPaletteServiceTests
     }
 
     [Fact]
+    public void GenerateWithOffsetReturnsDifferentFirstColors()
+    {
+        ColorPaletteService service = new();
+
+        IReadOnlyList<ColorSwatch> firstPass = service.Generate(4);
+        IReadOnlyList<ColorSwatch> regenerated = service.Generate(4, paletteOffset: 1);
+
+        Assert.Equal(4, regenerated.Count);
+        Assert.NotEqual(firstPass.Select(color => color.Hex), regenerated.Select(color => color.Hex));
+        Assert.Equal(firstPass[1].Hex, regenerated[0].Hex);
+    }
+
+    [Fact]
     public void GenerateReturnsEmptyListForZeroCount()
     {
         ColorPaletteService service = new();

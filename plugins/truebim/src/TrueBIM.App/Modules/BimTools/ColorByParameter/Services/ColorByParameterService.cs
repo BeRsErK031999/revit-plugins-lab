@@ -134,9 +134,9 @@ public sealed class ColorByParameterService
         return new ColorValueCollection(rows, totalValueCount);
     }
 
-    public void AssignColors(IReadOnlyList<ColorRuleRow> rows)
+    public void AssignColors(IReadOnlyList<ColorRuleRow> rows, int paletteOffset = 0)
     {
-        IReadOnlyList<ColorSwatch> colors = colorPaletteService.Generate(rows.Count);
+        IReadOnlyList<ColorSwatch> colors = colorPaletteService.Generate(rows.Count, paletteOffset);
         for (int index = 0; index < rows.Count; index++)
         {
             rows[index].SetColor(colors[index]);
