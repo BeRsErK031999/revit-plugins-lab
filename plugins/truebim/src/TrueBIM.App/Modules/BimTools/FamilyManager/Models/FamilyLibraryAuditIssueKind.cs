@@ -8,5 +8,6 @@ public enum FamilyLibraryAuditIssueKind
     DuplicateSignature,
     DuplicateRelativePath,
     EmptyCategory,
-    MissingTypes
+    MissingTypes,
+    BackupFile
 }

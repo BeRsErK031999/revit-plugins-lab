@@ -92,6 +92,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly FamilyLibraryTreeBuilder treeBuilder = new();
     private readonly FamilyMetadataBatchSelector metadataBatchSelector = new();
     private readonly FamilyLibraryAuditService auditService = new();
+    private readonly FamilyBackupCleanupPreviewService backupCleanupPreviewService = new();
     private readonly FamilySearchMatchService searchMatchService = new();
     private readonly FamilyLoadService loadService;
     private readonly FamilyMetadataService metadataService;
@@ -133,6 +134,7 @@ public sealed class FamilyManagerWindow : Window
     private readonly Button refreshFolderMetadataButton = CreateButton("Метаданные папки", TrueBimIcon.Preview, 236);
     private readonly Button refreshThumbnailButton = CreateButton("Обновить preview", TrueBimIcon.Preview, 220);
     private readonly Button auditButton = CreateButton("Аудит библиотеки", TrueBimIcon.Preview, 236);
+    private readonly Button backupPreviewButton = CreateButton("Backup .rfa", TrueBimIcon.Preview, 236);
     private FamilyManagerProfile profile;
     private FamilyFileItem? selectedFamily;
     private FamilyTypeInfo? selectedType;
@@ -276,6 +278,12 @@ public sealed class FamilyManagerWindow : Window
         DockPanel.SetDock(auditButton, Dock.Top);
         panel.Children.Add(auditButton);
 
+        backupPreviewButton.Margin = new Thickness(0, 0, 0, 8);
+        backupPreviewButton.ToolTip = "Находит Revit backup-файлы вида .0001.rfa в включённых источниках. Удаление не выполняется.";
+        backupPreviewButton.Click += (_, _) => PreviewBackupCleanup();
+        DockPanel.SetDock(backupPreviewButton, Dock.Top);
+        panel.Children.Add(backupPreviewButton);
+
         TextBlock foldersTitle = CreateSubTitle("Папки");
         DockPanel.SetDock(foldersTitle, Dock.Top);
         panel.Children.Add(foldersTitle);
@@ -405,7 +413,7 @@ public sealed class FamilyManagerWindow : Window
             Margin = new Thickness(0, 10, 0, 0)
         };
 
-        TextBlock title = CreateSubTitle("Аудит библиотеки");
+        TextBlock title = CreateSubTitle("Проверки библиотеки");
         DockPanel.SetDock(title, Dock.Top);
         panel.Children.Add(title);
 
@@ -421,6 +429,7 @@ public sealed class FamilyManagerWindow : Window
         auditGrid.Columns.Add(CreateTextColumn("Проверка", nameof(FamilyLibraryAuditIssue.KindDisplay), 120));
         auditGrid.Columns.Add(CreateTextColumn("Семейство", nameof(FamilyLibraryAuditIssue.FamilyName), 120));
         auditGrid.Columns.Add(CreateTextColumn("Описание", nameof(FamilyLibraryAuditIssue.Message), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        auditGrid.Columns.Add(CreateTextColumn("Путь", nameof(FamilyLibraryAuditIssue.PathDisplay), 170));
         auditGrid.Columns.Add(CreateTextColumn("Кол.", nameof(FamilyLibraryAuditIssue.CountDisplay), 48));
         panel.Children.Add(auditGrid);
         return panel;
@@ -884,17 +893,46 @@ public sealed class FamilyManagerWindow : Window
 
     private void RunLibraryAudit()
     {
-        auditIssues.Clear();
         IReadOnlyList<FamilyLibraryAuditIssue> issues = auditService.Audit(allFamilies, folders.ToList());
-        foreach (FamilyLibraryAuditIssue issue in issues)
-        {
-            auditIssues.Add(issue);
-        }
+        SetAuditIssues(issues);
 
         int errorCount = issues.Count(issue => issue.Severity == FamilyLibraryAuditSeverity.Error);
         int warningCount = issues.Count(issue => issue.Severity == FamilyLibraryAuditSeverity.Warning);
         int infoCount = issues.Count(issue => issue.Severity == FamilyLibraryAuditSeverity.Info);
         statusText.Text = $"Аудит библиотеки: ошибок {errorCount}, рисков {warningCount}, инфо {infoCount}. Проверено семейств: {allFamilies.Count}.";
+    }
+
+    private void PreviewBackupCleanup()
+    {
+        FamilyBackupCleanupPreviewResult result = backupCleanupPreviewService.Preview(folders.ToList(), libraryFiles.ToList());
+        SetAuditIssues(result.Files.Select(CreateBackupPreviewIssue).ToList());
+
+        string warningText = result.Warnings.Count == 0
+            ? string.Empty
+            : $" Предупреждения: {string.Join(" ", result.Warnings.Take(2))}";
+        statusText.Text = $"Backup preview: найдено файлов: {result.Files.Count}. Размер: {result.TotalSizeDisplay}. Удаление не выполнялось.{warningText}";
+    }
+
+    private void SetAuditIssues(IEnumerable<FamilyLibraryAuditIssue> issues)
+    {
+        auditIssues.Clear();
+        foreach (FamilyLibraryAuditIssue issue in issues)
+        {
+            auditIssues.Add(issue);
+        }
+    }
+
+    private static FamilyLibraryAuditIssue CreateBackupPreviewIssue(FamilyBackupFileItem file)
+    {
+        return new FamilyLibraryAuditIssue
+        {
+            Severity = FamilyLibraryAuditSeverity.Info,
+            Kind = FamilyLibraryAuditIssueKind.BackupFile,
+            FamilyName = file.FamilyName,
+            Message = $"Backup #{file.BackupIndexDisplay}, {file.SizeDisplay}, изменён {file.LastWriteDisplay}. Удаление не выполнялось.",
+            FilePath = file.FilePath,
+            GroupKey = $"Backup: {file.FilePath}{Environment.NewLine}Основной файл: {file.PrimaryFilePath}{Environment.NewLine}Источник: {file.SourcePath}"
+        };
     }
 
     private void SelectAuditIssue(FamilyLibraryAuditIssue? issue)
@@ -911,7 +949,9 @@ public sealed class FamilyManagerWindow : Window
                 StringComparison.CurrentCultureIgnoreCase));
         if (family is null)
         {
-            statusText.Text = issue.GroupKey;
+            statusText.Text = string.IsNullOrWhiteSpace(issue.GroupKey)
+                ? issue.PathDisplay
+                : issue.GroupKey;
             return;
         }
 

@@ -32,6 +32,7 @@ public sealed class FamilyLibraryAuditIssue
         FamilyLibraryAuditIssueKind.DuplicateRelativePath => "Дубль пути",
         FamilyLibraryAuditIssueKind.EmptyCategory => "Категория",
         FamilyLibraryAuditIssueKind.MissingTypes => "Типы",
+        FamilyLibraryAuditIssueKind.BackupFile => "Backup .rfa",
         _ => Kind.ToString()
     };
 
