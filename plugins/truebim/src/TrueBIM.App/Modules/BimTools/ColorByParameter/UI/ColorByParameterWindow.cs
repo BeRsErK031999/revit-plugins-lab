@@ -7,6 +7,7 @@ using TrueBIM.App.Modules.BimTools.ColorByParameter.Models;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 using WpfColor = System.Windows.Media.Color;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfGrid = System.Windows.Controls.Grid;
@@ -50,6 +51,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         MinHeight = 620;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ApplySharedControlStyles();
         Content = CreateContent();
         RefreshCategoryList();
         LoadParameters();
@@ -57,22 +59,22 @@ public sealed class ColorByParameterWindow : TrueBimWindow
 
     private UIElement CreateContent()
     {
-        WpfGrid root = new()
-        {
-            Margin = new Thickness(16)
-        };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        return BuildShell(
+            header: TrueBimUi.CreateHeader(
+                "Цвета по параметрам",
+                $"Активный вид: {activeView.Name}. Фильтры BIM_F_ создаются только для текущего вида.",
+                TrueBimIcon.ColorByParameter),
+            commandBar: null,
+            body: CreateMainPanel(),
+            status: CreateStatus(),
+            footer: CreateFooter());
+    }
 
-        root.Children.Add(CreateHeader());
-
+    private UIElement CreateMainPanel()
+    {
         WpfGrid main = new();
-        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+        main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(340) });
         main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        WpfGrid.SetRow(main, 1);
-        root.Children.Add(main);
 
         UIElement categoriesPanel = CreateCategoriesPanel();
         WpfGrid.SetColumn(categoriesPanel, 0);
@@ -82,43 +84,21 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         WpfGrid.SetColumn(valuesPanel, 1);
         main.Children.Add(valuesPanel);
 
-        statusText.Foreground = Brushes.DimGray;
-        statusText.Margin = new Thickness(0, 10, 0, 10);
-        statusText.TextWrapping = TextWrapping.Wrap;
-        WpfGrid.SetRow(statusText, 2);
-        root.Children.Add(statusText);
-
-        StackPanel footer = CreateFooter();
-        WpfGrid.SetRow(footer, 3);
-        root.Children.Add(footer);
-
-        return root;
+        return main;
     }
 
-    private StackPanel CreateHeader()
+    private UIElement CreateStatus()
     {
-        StackPanel header = new();
-        header.Children.Add(new TextBlock
-        {
-            Text = "Цвета по параметрам",
-            FontSize = 22,
-            FontWeight = FontWeights.SemiBold
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = $"Активный вид: {activeView.Name}. Выберите категории и параметр проекта; инструмент создаёт фильтры вида с префиксом BIM_F_ только для текущего вида.",
-            Foreground = Brushes.DimGray,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 12)
-        });
-        return header;
+        statusText.Foreground = TrueBimBrushes.TextPrimary;
+        statusText.TextWrapping = TextWrapping.Wrap;
+        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
     }
 
     private UIElement CreateCategoriesPanel()
     {
         WpfGrid panel = new()
         {
-            Margin = new Thickness(0, 0, 12, 0)
+            Margin = TrueBimTheme.SectionPadding
         };
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -127,129 +107,133 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         panel.Children.Add(new TextBlock
         {
             Text = "Категории",
+            FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 8)
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         });
 
         StackPanel toolbar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
-        Button selectAllButton = CreateSmallButton("Все", (_, _) => SelectCategories(true));
+        Button selectAllButton = CreateSmallButton("Все", TrueBimIcon.Check, (_, _) => SelectCategories(true), 72);
         toolbar.Children.Add(selectAllButton);
-        Button clearButton = CreateSmallButton("Снять", (_, _) => SelectCategories(false));
-        clearButton.Margin = new Thickness(8, 0, 0, 0);
+        Button clearButton = CreateSmallButton("Снять", TrueBimIcon.Close, (_, _) => SelectCategories(false), 80);
+        clearButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(clearButton);
-        Button refreshButton = CreateSmallButton("Обновить", (_, _) => LoadParameters());
-        refreshButton.Margin = new Thickness(8, 0, 0, 0);
+        Button refreshButton = CreateSmallButton("Обновить", TrueBimIcon.Refresh, (_, _) => LoadParameters(), 112);
+        refreshButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         refreshButton.ToolTip = "Обновить список параметров проекта для выбранных категорий.";
         toolbar.Children.Add(refreshButton);
         WpfGrid.SetRow(toolbar, 1);
         panel.Children.Add(toolbar);
 
-        categoryList.BorderBrush = Brushes.LightGray;
-        categoryList.BorderThickness = new Thickness(1);
+        categoryList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         WpfGrid.SetRow(categoryList, 2);
         panel.Children.Add(categoryList);
 
-        return panel;
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing12, 0),
+            Child = panel
+        };
     }
 
     private UIElement CreateValuesPanel()
     {
-        WpfGrid panel = new();
+        WpfGrid panel = new()
+        {
+            Margin = TrueBimTheme.SectionPadding
+        };
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Значения параметра",
+            FontSize = TrueBimTheme.SectionTitleFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        });
+
         DockPanel parameterBar = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
-        Button valueButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Обновить значения"),
-            Height = 30,
-            MinWidth = 170,
-            Margin = new Thickness(8, 0, 0, 0)
-        };
+        Button valueButton = TrueBimUi.CreateSecondaryButton("Обновить значения", TrueBimIcon.Refresh, minWidth: 170);
+        valueButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         valueButton.Click += (_, _) => LoadValues();
         DockPanel.SetDock(valueButton, Dock.Right);
         parameterBar.Children.Add(valueButton);
 
-        parameterInput.Height = 30;
+        parameterInput.MinHeight = TrueBimTheme.ControlHeight32;
         parameterInput.VerticalContentAlignment = VerticalAlignment.Center;
         parameterInput.ToolTip = "Параметр проекта, по значениям которого будет создана раскраска.";
         parameterInput.SelectionChanged += (_, _) => LoadValues();
         parameterBar.Children.Add(parameterInput);
+        WpfGrid.SetRow(parameterBar, 1);
         panel.Children.Add(parameterBar);
 
         StackPanel toolbar = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 0, 8)
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
-        Button selectAllButton = CreateSmallButton("Все значения", (_, _) => SelectValues(true));
+        Button selectAllButton = CreateSmallButton("Все значения", TrueBimIcon.Check, (_, _) => SelectValues(true), 130);
         toolbar.Children.Add(selectAllButton);
-        Button clearButton = CreateSmallButton("Снять значения", (_, _) => SelectValues(false));
-        clearButton.Margin = new Thickness(8, 0, 0, 0);
+        Button clearButton = CreateSmallButton("Снять значения", TrueBimIcon.Close, (_, _) => SelectValues(false), 142);
+        clearButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(clearButton);
-        Button colorsButton = CreateSmallButton("Сгенерировать цвета", (_, _) => RegenerateColors());
-        colorsButton.Margin = new Thickness(8, 0, 0, 0);
+        Button colorsButton = CreateSmallButton("Сгенерировать цвета", TrueBimIcon.Refresh, (_, _) => RegenerateColors(), 170);
+        colorsButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(colorsButton);
-        WpfGrid.SetRow(toolbar, 1);
+        WpfGrid.SetRow(toolbar, 2);
         panel.Children.Add(toolbar);
 
-        valueList.BorderBrush = Brushes.LightGray;
-        valueList.BorderThickness = new Thickness(1);
         valueList.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        WpfGrid.SetRow(valueList, 2);
+        WpfGrid.SetRow(valueList, 3);
         panel.Children.Add(valueList);
 
-        return panel;
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Child = panel
+        };
     }
 
-    private StackPanel CreateFooter()
+    private UIElement CreateFooter()
     {
-        StackPanel footer = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-
-        Button clearButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Очистить раскраску"),
-            MinWidth = 170,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
+        Button clearButton = TrueBimUi.CreateDangerButton("Очистить раскраску", TrueBimIcon.Close, minWidth: 170);
         clearButton.Click += (_, _) => ClearFilters();
-        footer.Children.Add(clearButton);
 
-        Button applyButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Применить к активному виду"),
-            MinWidth = 230,
-            Height = 32,
-            Margin = new Thickness(0, 0, 8, 0)
-        };
+        Button applyButton = TrueBimUi.CreatePrimaryButton("Применить к активному виду", TrueBimIcon.Apply, minWidth: 230);
         applyButton.Click += (_, _) => ApplyFilters();
-        footer.Children.Add(applyButton);
 
-        Button closeButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть"),
-            MinWidth = 110,
-            Height = 32,
-            IsCancel = true
-        };
+        Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close);
+        closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
-        footer.Children.Add(closeButton);
 
-        return footer;
+        return TrueBimUi.CreateFooter(null, clearButton, applyButton, closeButton);
+    }
+
+    private void ApplySharedControlStyles()
+    {
+        categoryList.Style = TrueBimStyles.CreateListBoxStyle();
+        valueList.Style = TrueBimStyles.CreateListBoxStyle();
+        parameterInput.Style = TrueBimStyles.CreateComboBoxStyle();
     }
 
     private void RefreshCategoryList()
@@ -261,7 +245,8 @@ public sealed class ColorByParameterWindow : TrueBimWindow
             {
                 Content = category.DisplayName,
                 IsChecked = category.IsSelected,
-                Margin = new Thickness(8, 5, 8, 5),
+                Margin = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4),
+                Style = TrueBimStyles.CreateCheckBoxStyle(),
                 Tag = category
             };
             checkBox.Checked += (_, _) => UpdateCategorySelection(category, true);
@@ -349,15 +334,16 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         DockPanel panel = new()
         {
             LastChildFill = true,
-            Margin = new Thickness(8, 6, 8, 6)
+            Margin = new Thickness(TrueBimTheme.Spacing8, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4)
         };
 
         System.Windows.Controls.TextBox hexInput = new()
         {
             Text = row.ColorHex,
-            Width = 80,
-            Height = 24,
-            Foreground = Brushes.DimGray,
+            Width = 88,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Foreground = TrueBimBrushes.TextSecondary,
+            Style = TrueBimStyles.CreateTextBoxStyle(),
             VerticalContentAlignment = VerticalAlignment.Center,
             ToolTip = "Введите цвет вручную в формате #RRGGBB."
         };
@@ -368,9 +354,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         {
             Width = 26,
             Height = 18,
-            Margin = new Thickness(0, 0, 8, 0),
-            BorderBrush = Brushes.Gray,
-            BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0),
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
             Background = new SolidColorBrush(WpfColor.FromRgb(row.Red, row.Green, row.Blue)),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -392,6 +378,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
             Content = row.DisplayValue,
             IsChecked = row.IsSelected,
             VerticalAlignment = VerticalAlignment.Center,
+            Style = TrueBimStyles.CreateCheckBoxStyle(),
             Tag = row
         };
         checkBox.Checked += (_, _) => row.IsSelected = true;
@@ -544,14 +531,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         return dialog.Show() == TaskDialogResult.Yes;
     }
 
-    private static Button CreateSmallButton(string text, RoutedEventHandler clickHandler)
+    private static Button CreateSmallButton(string text, TrueBimIcon icon, RoutedEventHandler clickHandler, double minWidth = 96)
     {
-        Button button = new()
-        {
-            Content = text,
-            Height = 28,
-            MinWidth = 90
-        };
+        Button button = TrueBimUi.CreateSecondaryButton(text, icon, minWidth: minWidth);
         button.Click += clickHandler;
         return button;
     }
