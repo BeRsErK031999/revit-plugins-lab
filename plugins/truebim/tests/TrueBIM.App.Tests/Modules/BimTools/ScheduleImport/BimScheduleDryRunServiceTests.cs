@@ -20,9 +20,38 @@ public sealed class BimScheduleDryRunServiceTests
         Assert.Equal(3, report.SourceColumnCount);
         Assert.Equal(2, report.MatchedColumnCount);
         Assert.Equal(2, report.DataRowCount);
+        Assert.Equal("Марка", report.SuggestedKeyColumnName);
+        Assert.Equal("Марка", report.SuggestedKeyRevitParameterName);
+        Assert.Equal(2, report.RowsWithKeyCount);
+        Assert.Equal(0, report.RowsMissingKeyCount);
+        Assert.Empty(report.DuplicateKeyValues);
         Assert.Equal(["Комментарий"], report.UnmappedColumns);
         Assert.Empty(report.RequiredUnmappedColumns);
         Assert.Contains(report.Warnings, warning => warning.Contains("Dry-run", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CreateReport_WarnsAboutMissingAndDuplicateKeyValues()
+    {
+        ParsedTable table = CreateTable(
+            ["Марка", "Длина, м"],
+            [
+                ["Марка", "Длина, м"],
+                ["A-1", "12.5"],
+                ["", "7.0"],
+                ["A-1", "3.0"]
+            ]);
+        var mappings = new ParameterMappingService().SuggestMappings(table, ["Марка", "Длина"]);
+        ScheduleImportContext context = CreateContext(canUseBimScheduleMode: true, ["Марка", "Длина"]);
+
+        BimScheduleDryRunReport report = new BimScheduleDryRunService().CreateReport(table, mappings, context);
+
+        Assert.True(report.Succeeded);
+        Assert.Equal(2, report.RowsWithKeyCount);
+        Assert.Equal(1, report.RowsMissingKeyCount);
+        Assert.Equal(["A-1"], report.DuplicateKeyValues);
+        Assert.Contains(report.Warnings, warning => warning.Contains("Строки без значения ключа", StringComparison.CurrentCulture));
+        Assert.Contains(report.Warnings, warning => warning.Contains("Повторяющиеся значения ключа", StringComparison.CurrentCulture));
     }
 
     [Fact]
@@ -41,13 +70,17 @@ public sealed class BimScheduleDryRunServiceTests
 
     private static ParsedTable CreateTable()
     {
-        string[] columns = ["Марка", "Длина, м", "Комментарий"];
-        string[][] rows =
-        [
-            columns,
-            ["A-1", "12.5", "Проверить"],
-            ["A-2", "7.0", ""]
-        ];
+        return CreateTable(
+            ["Марка", "Длина, м", "Комментарий"],
+            [
+                ["Марка", "Длина, м", "Комментарий"],
+                ["A-1", "12.5", "Проверить"],
+                ["A-2", "7.0", ""]
+            ]);
+    }
+
+    private static ParsedTable CreateTable(string[] columns, string[][] rows)
+    {
         List<ParsedRow> parsedRows = [];
         List<ParsedCell> cells = [];
         for (int rowIndex = 0; rowIndex < rows.Length; rowIndex++)

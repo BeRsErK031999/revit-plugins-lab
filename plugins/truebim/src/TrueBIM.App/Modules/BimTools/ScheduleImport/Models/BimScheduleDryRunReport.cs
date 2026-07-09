@@ -5,6 +5,11 @@ public sealed record BimScheduleDryRunReport(
     int SourceColumnCount,
     int MatchedColumnCount,
     int DataRowCount,
+    string? SuggestedKeyColumnName,
+    string? SuggestedKeyRevitParameterName,
+    int RowsWithKeyCount,
+    int RowsMissingKeyCount,
+    IReadOnlyList<string> DuplicateKeyValues,
     IReadOnlyList<string> UnmappedColumns,
     IReadOnlyList<string> RequiredUnmappedColumns,
     IReadOnlyList<string> Warnings,
@@ -21,6 +26,18 @@ public sealed record BimScheduleDryRunReport(
             $"Сопоставлено колонок: {MatchedColumnCount} из {SourceColumnCount}",
             $"Строк данных для будущего сопоставления: {DataRowCount}"
         ];
+
+        if (!string.IsNullOrWhiteSpace(SuggestedKeyColumnName))
+        {
+            lines.Add($"Ключ для поиска элементов: {SuggestedKeyColumnName} -> {SuggestedKeyRevitParameterName}");
+            lines.Add($"Строк с ключом: {RowsWithKeyCount}; без ключа: {RowsMissingKeyCount}");
+        }
+
+        if (DuplicateKeyValues.Count > 0)
+        {
+            lines.Add("Повторяющиеся ключи:");
+            lines.AddRange(DuplicateKeyValues.Select(value => $"- {value}"));
+        }
 
         if (UnmappedColumns.Count > 0)
         {
