@@ -44,9 +44,7 @@ public sealed class DatumExtentCommand : IExternalCommand
             DatumExtentWindow window = new(
                 document,
                 activeView,
-                new DatumExtentCollectorService(),
                 datumExtentService,
-                new DatumExtentProfileStorage(logger),
                 logger);
             window.ShowDialog();
             return Result.Succeeded;
@@ -56,6 +54,30 @@ public sealed class DatumExtentCommand : IExternalCommand
             logger.Error("Failed to open Datum Extents window.", exception);
             TaskDialog.Show("Оси 2D/3D", "Не удалось открыть управление осями. Используйте логи для диагностики.");
             return Result.Failed;
+        }
+    }
+}
+
+public sealed class DatumExtentCommandAvailability : IExternalCommandAvailability
+{
+    public bool IsCommandAvailable(UIApplication applicationData, CategorySet selectedCategories)
+    {
+        try
+        {
+            if (!TrueBimRibbon.IsButtonAvailableForRevitVersion(
+                    nameof(DatumExtentCommand),
+                    applicationData.Application.VersionNumber))
+            {
+                return false;
+            }
+
+            UIDocument? uiDocument = applicationData.ActiveUIDocument;
+            return uiDocument is not null
+                && DatumExtentCollectorService.CanUseActiveView(uiDocument.ActiveView, out _);
+        }
+        catch
+        {
+            return false;
         }
     }
 }

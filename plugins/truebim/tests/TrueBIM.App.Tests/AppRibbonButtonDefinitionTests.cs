@@ -86,7 +86,7 @@ public sealed class AppRibbonButtonDefinitionTests
             "Оси\n2D/3D",
             $"TrueBIM.App.Commands.{nameof(DatumExtentCommand)}",
             TrueBimIcon.DatumExtents,
-            "экстентами"
+            "режимами"
         },
         {
             "TrueBIM_OpeningViews",
@@ -242,5 +242,16 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.False(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2021"));
         Assert.True(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2023"));
         Assert.True(TrueBimRibbon.IsButtonAvailableForRevitVersion(button, "2025"));
+    }
+
+    [Fact]
+    public void DatumExtents_UsesActiveViewAvailability()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_DatumExtents", StringComparison.Ordinal));
+
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(DatumExtentCommandAvailability)}", button.AvailabilityClassName);
+        Assert.Contains("2D-виде", button.LongDescription, StringComparison.CurrentCultureIgnoreCase);
     }
 }

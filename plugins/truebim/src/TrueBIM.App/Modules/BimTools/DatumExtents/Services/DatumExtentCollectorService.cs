@@ -51,7 +51,7 @@ public sealed class DatumExtentCollectorService
 
         if (profile.IncludeGrids)
         {
-            foreach (Grid grid in new FilteredElementCollector(document, activeView.Id).OfClass(typeof(Grid)).Cast<Grid>())
+            foreach (Grid grid in CollectVisibleGrids(document, activeView))
             {
                 datums[RevitElementIds.GetValue(grid.Id)] = grid;
             }
@@ -69,6 +69,18 @@ public sealed class DatumExtentCollectorService
             .OrderBy(GetDatumKind, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(datum => datum.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(datum => CreateRow(datum, activeView, targetType, profile.IncludeEnd0, profile.IncludeEnd1, profile.PropagateToViews))
+            .ToList();
+    }
+
+    public static IReadOnlyList<Grid> CollectVisibleGrids(Document document, View activeView)
+    {
+        Guard.NotNull(document, nameof(document));
+        Guard.NotNull(activeView, nameof(activeView));
+
+        return new FilteredElementCollector(document, activeView.Id)
+            .OfClass(typeof(Grid))
+            .Cast<Grid>()
+            .OrderBy(grid => grid.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
 

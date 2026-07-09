@@ -10,7 +10,8 @@ public sealed record TrueBimRibbonButtonDefinition(
     string CommandClassName,
     TrueBimIcon Icon,
     string Tooltip,
-    string LongDescription = "");
+    string LongDescription = "",
+    string AvailabilityClassName = "");
 
 public static class TrueBimRibbon
 {
@@ -108,8 +109,9 @@ public static class TrueBimRibbon
             "Оси\n2D/3D",
             $"{CommandNamespace}.{nameof(DatumExtentCommand)}",
             TrueBimIcon.DatumExtents,
-            "Открывает каркас инструмента управления 2D/3D экстентами осей.",
-            "Каркас будущего инструмента для DatumPlane: выбор осей/уровней, режим экстентов, предпросмотр и отчет без изменения видов в первом срезе."),
+            "Переключает видимые оси активного 2D-вида между 2D и 3D режимами.",
+            "Доступно только при открытом проекте Revit и обычном активном 2D-виде модели: план, разрез, фасад или потолочный план. На листах, 3D-видах, спецификациях и шаблонах кнопка недоступна.",
+            $"{CommandNamespace}.{nameof(DatumExtentCommandAvailability)}"),
         new(
             BimViewsPanelName,
             "TrueBIM_OpeningViews",
