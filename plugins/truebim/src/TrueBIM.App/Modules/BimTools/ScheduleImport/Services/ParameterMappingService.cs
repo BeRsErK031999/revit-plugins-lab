@@ -20,8 +20,7 @@ public sealed class ParameterMappingService
         return table.Columns
             .Select(column =>
             {
-                string key = NormalizeKey(column);
-                parametersByKey.TryGetValue(key, out string? parameterName);
+                string? parameterName = ResolveParameterName(column, parametersByKey);
                 return new ColumnMapping(
                     column,
                     parameterName,
@@ -32,6 +31,40 @@ public sealed class ParameterMappingService
                     IsLikelyRequired(column));
             })
             .ToList();
+    }
+
+    private static string? ResolveParameterName(
+        string columnName,
+        IReadOnlyDictionary<string, string> parametersByKey)
+    {
+        foreach (string key in BuildColumnMatchKeys(columnName))
+        {
+            if (parametersByKey.TryGetValue(key, out string? parameterName))
+            {
+                return parameterName;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> BuildColumnMatchKeys(string columnName)
+    {
+        List<string> keys = [];
+        AddKey(keys, columnName);
+        AddKey(keys, Regex.Replace(columnName, @"\([^)]*\)", string.Empty));
+        AddKey(keys, Regex.Replace(columnName, @"(?:,|\s)+(мм|mm|м|m|м2|m2|м3|m3)$", string.Empty, RegexOptions.IgnoreCase));
+        AddKey(keys, Regex.Replace(columnName, @"(?:,|\s)+(шт|pcs|qty)$", string.Empty, RegexOptions.IgnoreCase));
+        return keys;
+    }
+
+    private static void AddKey(List<string> keys, string value)
+    {
+        string key = NormalizeKey(value);
+        if (key.Length > 0 && !keys.Contains(key, StringComparer.OrdinalIgnoreCase))
+        {
+            keys.Add(key);
+        }
     }
 
     private static ScheduleImportDataType InferDataType(string columnName)

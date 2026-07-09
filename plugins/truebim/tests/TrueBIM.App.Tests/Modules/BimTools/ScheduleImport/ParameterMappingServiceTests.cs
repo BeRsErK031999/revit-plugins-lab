@@ -17,4 +17,23 @@ public sealed class ParameterMappingServiceTests
         Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Длина, м" && mapping.DataType == ScheduleImportDataType.Length && mapping.UnitSource == "m");
         Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Количество" && mapping.DataType == ScheduleImportDataType.Count);
     }
+
+    [Fact]
+    public void SuggestMappings_UsesAvailableScheduleFields()
+    {
+        ParsedTable table = new(
+            "source.pdf",
+            1,
+            Array.Empty<ParsedRow>(),
+            ["System Name", "Length, m", "Unknown"],
+            Array.Empty<ParsedCell>(),
+            1,
+            Array.Empty<string>());
+
+        var mappings = new ParameterMappingService().SuggestMappings(table, ["Length", "System Name"]);
+
+        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "System Name" && mapping.TargetRevitParameterName == "System Name");
+        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Length, m" && mapping.TargetRevitParameterName == "Length");
+        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Unknown" && mapping.TargetRevitParameterName is null);
+    }
 }

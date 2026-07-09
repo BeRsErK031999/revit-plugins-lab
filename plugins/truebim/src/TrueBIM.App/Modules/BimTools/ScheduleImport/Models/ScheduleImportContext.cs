@@ -7,4 +7,5 @@ public sealed record ScheduleImportContext(
     long? ActiveViewId,
     bool CanUseDraftingTableMode,
     bool CanUseBimScheduleMode,
+    IReadOnlyList<string> AvailableBimScheduleParameterNames,
     IReadOnlyList<string> Warnings);

@@ -185,7 +185,16 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         modeInput.Width = 230;
         modeInput.Height = 32;
         modeInput.Margin = new Thickness(0, 0, 12, 0);
-        modeInput.SelectionChanged += (_, _) => UpdateStatus();
+        modeInput.SelectionChanged += (_, _) =>
+        {
+            if (SelectedTable is null)
+            {
+                UpdateStatus();
+                return;
+            }
+
+            ValidateCurrentTable(showDialog: false);
+        };
         options.Children.Add(modeInput);
         createViewInput.Margin = new Thickness(0, 0, 16, 0);
         options.Children.Add(createViewInput);
@@ -336,7 +345,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
         previewGrid.ItemsSource = BuildPreviewTable(table).DefaultView;
         mappings.Clear();
-        foreach (ColumnMapping mapping in mappingService.SuggestMappings(table, Array.Empty<string>()))
+        foreach (ColumnMapping mapping in mappingService.SuggestMappings(table, context.AvailableBimScheduleParameterNames))
         {
             mappings.Add(mapping);
         }
@@ -361,7 +370,9 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         ScheduleImportMode mode = SelectedMode;
         if (mode is ScheduleImportMode.BimSchedule)
         {
-            AddWarnings(["BIM Schedule Mode заложен как основа: произвольные строки нельзя писать в body обычной ViewSchedule. В этом срезе создание доступно только для Drafting Table Mode."]);
+            AddWarnings(context.CanUseBimScheduleMode
+                ? [$"BIM Schedule Mode: доступен read-only предпросмотр сопоставления с активной ViewSchedule. Полей найдено: {context.AvailableBimScheduleParameterNames.Count}. Запись в параметры будет отдельным этапом."]
+                : ["BIM Schedule Mode требует активную ViewSchedule. Для текущего вида используйте Drafting Table Mode."]);
         }
         else if (mode is ScheduleImportMode.KeySchedule)
         {
