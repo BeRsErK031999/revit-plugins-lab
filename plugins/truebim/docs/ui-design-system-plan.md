@@ -31,19 +31,20 @@ Create a lightweight TrueBIM design system on top of native WPF:
 ## Staged implementation
 
 1. Done in `c03b876`: add `UI/DesignSystem`, wire local theme resources through `TrueBimWindow`, migrate `ModuleLauncherWindow` as the first low-risk consumer, and expand `IconFactory` for shared UI states.
-2. In progress: apply shared shell, button, table, footer, and status helpers to `PrintWindow`, then repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`.
-3. Pending: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
-4. Pending: move `VoltageDropWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
-5. Pending: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
-6. Pending: review ribbon grouping after the common window layer is stable.
+2. Done in `4a5f2b9`: apply shared shell, button, table, footer, and status helpers to `PrintWindow`.
+3. Next: repeat the same pattern for `SheetNumberingWindow` and `ViewVisibilityWindow`.
+4. Pending: apply the same patterns to `ColorByParameterWindow`, `FamilyManagerWindow`, and `FamilyManagerCompactPaneControl`.
+5. Pending: move `VoltageDropWindow`, `IsoFieldRebarWindow`, and `IsoFieldRebarGuideWindow` from local palettes to theme tokens.
+6. Pending: convert `JoinCutWindow.xaml` to use local `TrueBimWindow` resources and shared style keys.
+7. Pending: review ribbon grouping after the common window layer is stable.
 
 ## Current readiness
 
 - Design system foundation: done.
 - Local `TrueBimWindow` resource/chrome integration: done.
 - First migrated consumer, `ModuleLauncherWindow`: done.
-- `PrintWindow` migration: in progress.
-- Remaining production windows: pending staged migration.
+- `PrintWindow` migration: done in `4a5f2b9`.
+- Next production windows: `SheetNumberingWindow` and `ViewVisibilityWindow`.
 - Third-party library adoption: intentionally not started.
 - Manual Revit UI smoke: pending because it requires local deploy/restart conditions.
 
