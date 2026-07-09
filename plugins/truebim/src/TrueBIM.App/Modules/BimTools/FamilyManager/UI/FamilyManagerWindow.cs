@@ -345,6 +345,7 @@ public sealed class FamilyManagerWindow : Window
         familyGrid.Columns.Add(CreateTextColumn("Имя", nameof(FamilyFileItem.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
         familyGrid.Columns.Add(CreateTextColumn("Категория", nameof(FamilyFileItem.Category), 120));
         familyGrid.Columns.Add(CreateTextColumn("Типов", nameof(FamilyFileItem.CachedTypeCountDisplay), 60));
+        familyGrid.Columns.Add(CreateTextColumn("Каталог", nameof(FamilyFileItem.TypeCatalogDisplay), 70));
         familyGrid.Columns.Add(CreateTextColumn("Ширина", nameof(FamilyFileItem.WidthParameterDisplay), 76));
         familyGrid.Columns.Add(CreateTextColumn("Высота", nameof(FamilyFileItem.HeightParameterDisplay), 76));
         familyGrid.Columns.Add(CreateTextColumn("Материал", nameof(FamilyFileItem.MaterialParameterDisplay), 96));
@@ -769,10 +770,12 @@ public sealed class FamilyManagerWindow : Window
                 family.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                 || family.Category.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                 || family.CachedTypes.Any(type => type.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                || family.TypeCatalogTypeNames.Any(typeName => typeName.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0)
                 || family.CachedTypes.Any(type => type.Parameters.Any(parameter =>
                     parameter.Name.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                     || parameter.Value.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                     || parameter.Formula.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0))
+                || family.TypeCatalogPath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                 || family.FilePath.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0);
         }
 
@@ -850,6 +853,7 @@ public sealed class FamilyManagerWindow : Window
             $"Метаданные: {family.MetadataDisplay}\n" +
             $"Preview: {family.ThumbnailDisplay}\n" +
             $"Типов в файле: {family.CachedTypes.Count}\n" +
+            $"Каталог типов: {family.TypeCatalogDetailsDisplay}\n" +
             $"Файл: {family.FilePath}\n" +
             $"Размер: {family.SizeDisplay}\n" +
             $"Изменён: {family.LastWriteDisplay}";
@@ -858,20 +862,19 @@ public sealed class FamilyManagerWindow : Window
         HashSet<string> typeNames = new(StringComparer.CurrentCultureIgnoreCase);
         foreach (FamilyTypeInfo type in family.CachedTypes)
         {
-            if (typeNames.Add(type.Name))
-            {
-                familyTypes.Add(type);
-            }
+            AddTypeOption(type, typeNames);
+        }
+
+        foreach (string typeName in family.TypeCatalogTypeNames)
+        {
+            AddTypeOption(new FamilyTypeInfo(0, typeName), typeNames);
         }
 
         try
         {
             foreach (FamilyTypeInfo type in loadService.CollectLoadedTypes(document, family.Name))
             {
-                if (typeNames.Add(type.Name))
-                {
-                    familyTypes.Add(type);
-                }
+                AddTypeOption(type, typeNames);
             }
         }
         catch (Exception exception)
@@ -884,6 +887,16 @@ public sealed class FamilyManagerWindow : Window
         typeList.SelectedItem = preferredType;
         SelectType(preferredType);
         UpdateStatus();
+    }
+
+    private void AddTypeOption(FamilyTypeInfo type, ISet<string> typeNames)
+    {
+        if (string.IsNullOrWhiteSpace(type.Name) || !typeNames.Add(type.Name))
+        {
+            return;
+        }
+
+        familyTypes.Add(type);
     }
 
     private void SelectType(FamilyTypeInfo? type)
@@ -1244,6 +1257,8 @@ public sealed class FamilyManagerWindow : Window
     {
         family.Category = result.Category;
         family.CachedTypes = result.Types.ToList();
+        family.TypeCatalogPath = result.TypeCatalogPath;
+        family.TypeCatalogTypeNames = result.TypeCatalogTypeNames.ToList();
         family.MetadataUpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -1265,8 +1280,115 @@ public sealed class FamilyManagerWindow : Window
         string? requestedTypeName = typeList.SelectedItem is FamilyTypeInfo selectedType
             ? selectedType.Name
             : null;
+        FamilyLoadResult? result;
+        if (string.IsNullOrWhiteSpace(requestedTypeName))
+        {
+            result = LoadWholeFamilyWithOverwritePrompt(selectedFamily);
+        }
+        else
+        {
+            result = LoadRequestedFamilyType(selectedFamily, requestedTypeName!);
+        }
+        if (result is null)
+        {
+            return;
+        }
+
+        selectedFamily.Status = result.Message;
+        statusText.Text = result.Message;
+
+        if (!result.Succeeded)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", result.Message);
+            return;
+        }
+
+        string action = placeAfterLoad ? "Загрузка и размещение" : "Загрузка";
+        if (!string.IsNullOrWhiteSpace(requestedTypeName))
+        {
+            action += $" типа {requestedTypeName}";
+        }
+
+        AddHistory(selectedFamily, action);
+        SelectFamily(selectedFamily);
+        SaveProfile();
+
+        FamilySymbol? confirmedSymbol = null;
+        if (!string.IsNullOrWhiteSpace(requestedTypeName))
+        {
+            confirmedSymbol = loadService.ResolveSymbolExact(document, selectedFamily.Name, requestedTypeName!);
+            if (confirmedSymbol is null)
+            {
+                string message = $"Семейство загружено, но выбранный тип не найден в проекте: {requestedTypeName}.";
+                selectedFamily.Status = message;
+                statusText.Text = message;
+                Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", message);
+                return;
+            }
+        }
+
+        if (placeAfterLoad)
+        {
+            RequestPlacement(selectedFamily, requestedTypeName);
+        }
+
+        string confirmation = confirmedSymbol is null
+            ? result.Message
+            : $"{result.Message}\nТип подтверждён в проекте: {confirmedSymbol.Name}.";
+        Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", confirmation);
+    }
+
+    private FamilyLoadResult? LoadRequestedFamilyType(FamilyFileItem family, string requestedTypeName)
+    {
         bool overwrite = false;
-        if (loadService.FamilyExists(document, selectedFamily.Name))
+        FamilySymbol? existingSymbol = loadService.ResolveSymbolExact(document, family.Name, requestedTypeName);
+        if (existingSymbol is not null)
+        {
+            MessageBoxResult decision = MessageBox.Show(
+                this,
+                $"Тип уже загружен в проект: {requestedTypeName}\n\nДа - перезагрузить тип из файла библиотеки.\nНет - использовать уже загруженный тип.\nОтмена - остановить операцию.",
+                "Диспетчер семейств",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (decision == MessageBoxResult.Cancel)
+            {
+                return null;
+            }
+
+            if (decision == MessageBoxResult.No)
+            {
+                return new FamilyLoadResult(
+                    FamilyLoadStatus.AlreadyLoaded,
+                    family.Name,
+                    $"Тип уже загружен в проект: {requestedTypeName}.");
+            }
+
+            overwrite = true;
+        }
+
+        FamilyLoadResult result = loadService.LoadSymbol(document, family.FilePath, requestedTypeName, overwrite, logger);
+        if (result.Succeeded)
+        {
+            return result;
+        }
+
+        MessageBoxResult fallbackDecision = MessageBox.Show(
+            this,
+            $"{result.Message}\n\nВыполнить полную загрузку семейства как fallback?",
+            "Диспетчер семейств",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        return fallbackDecision == MessageBoxResult.Yes
+            ? LoadWholeFamilyWithOverwritePrompt(family)
+            : result;
+    }
+
+    private FamilyLoadResult? LoadWholeFamilyWithOverwritePrompt(FamilyFileItem family)
+    {
+        bool overwrite = false;
+        if (loadService.FamilyExists(document, family.Name))
         {
             MessageBoxResult decision = MessageBox.Show(
                 this,
@@ -1277,42 +1399,27 @@ public sealed class FamilyManagerWindow : Window
                 MessageBoxResult.No);
             if (decision == MessageBoxResult.Cancel)
             {
-                return;
+                return null;
             }
 
             overwrite = decision == MessageBoxResult.Yes;
         }
 
-        FamilyLoadResult result = loadService.Load(document, selectedFamily.FilePath, overwrite, logger);
-        selectedFamily.Status = result.Message;
-        statusText.Text = result.Message;
-
-        if (!result.Succeeded)
-        {
-            Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", result.Message);
-            return;
-        }
-
-        AddHistory(selectedFamily, placeAfterLoad ? "Загрузка и размещение" : "Загрузка");
-        SelectFamily(selectedFamily);
-        SaveProfile();
-
-        if (placeAfterLoad)
-        {
-            RequestPlacement(selectedFamily, requestedTypeName);
-        }
-
-        Autodesk.Revit.UI.TaskDialog.Show("Диспетчер семейств", result.Message);
+        return loadService.Load(document, family.FilePath, overwrite, logger);
     }
 
     private void RequestPlacement(FamilyFileItem family, string? requestedTypeName)
     {
         try
         {
-            FamilySymbol? symbol = loadService.ResolveSymbol(document, family.Name, requestedTypeName);
+            FamilySymbol? symbol = string.IsNullOrWhiteSpace(requestedTypeName)
+                ? loadService.ResolveSymbol(document, family.Name, null)
+                : loadService.ResolveSymbolExact(document, family.Name, requestedTypeName!);
             if (symbol is null)
             {
-                statusText.Text = "Семейство загружено, но подходящий тип для размещения не найден.";
+                statusText.Text = string.IsNullOrWhiteSpace(requestedTypeName)
+                    ? "Семейство загружено, но подходящий тип для размещения не найден."
+                    : $"Семейство загружено, но выбранный тип для размещения не найден: {requestedTypeName}.";
                 return;
             }
 

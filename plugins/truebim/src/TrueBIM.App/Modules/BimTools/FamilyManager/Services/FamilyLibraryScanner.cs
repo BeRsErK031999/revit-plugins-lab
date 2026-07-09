@@ -6,15 +6,22 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 public sealed class FamilyLibraryScanner
 {
     private readonly FamilyCategoryGuessService categoryGuessService;
+    private readonly FamilyTypeCatalogReader typeCatalogReader;
 
     public FamilyLibraryScanner()
-        : this(new FamilyCategoryGuessService())
+        : this(new FamilyCategoryGuessService(), new FamilyTypeCatalogReader())
     {
     }
 
     public FamilyLibraryScanner(FamilyCategoryGuessService categoryGuessService)
+        : this(categoryGuessService, new FamilyTypeCatalogReader())
+    {
+    }
+
+    public FamilyLibraryScanner(FamilyCategoryGuessService categoryGuessService, FamilyTypeCatalogReader typeCatalogReader)
     {
         this.categoryGuessService = categoryGuessService ?? throw new ArgumentNullException(nameof(categoryGuessService));
+        this.typeCatalogReader = typeCatalogReader ?? throw new ArgumentNullException(nameof(typeCatalogReader));
     }
 
     public FamilyLibraryScanResult Scan(
@@ -121,6 +128,7 @@ public sealed class FamilyLibraryScanner
         }
 
         FileInfo fileInfo = new(filePath);
+        FamilyTypeCatalogInfo typeCatalog = typeCatalogReader.ReadForFamily(filePath);
         lastLoadedByPath.TryGetValue(filePath, out DateTimeOffset lastLoadedAtUtc);
         files.Add(new FamilyFileItem
         {
@@ -131,6 +139,8 @@ public sealed class FamilyLibraryScanner
             SizeBytes = fileInfo.Length,
             LastWriteTimeUtc = fileInfo.LastWriteTimeUtc,
             LastLoadedAtUtc = lastLoadedAtUtc == default ? null : lastLoadedAtUtc,
+            TypeCatalogPath = typeCatalog.Path,
+            TypeCatalogTypeNames = typeCatalog.TypeNames.ToList(),
             IsFavorite = favoritePaths.Contains(filePath)
         });
         return true;

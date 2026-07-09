@@ -46,6 +46,10 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
 
     public List<FamilyTypeInfo> CachedTypes { get; set; } = [];
 
+    public string TypeCatalogPath { get; set; } = string.Empty;
+
+    public List<string> TypeCatalogTypeNames { get; set; } = [];
+
     public bool IsFavorite
     {
         get => isFavorite;
@@ -71,6 +75,20 @@ public sealed class FamilyFileItem : INotifyPropertyChanged
     public string CachedTypeCountDisplay => CachedTypes.Count == 0
         ? "-"
         : CachedTypes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    public bool HasTypeCatalog => !string.IsNullOrWhiteSpace(TypeCatalogPath);
+
+    public string TypeCatalogDisplay => HasTypeCatalog
+        ? TypeCatalogTypeNames.Count == 0
+            ? "Есть"
+            : TypeCatalogTypeNames.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        : "-";
+
+    public string TypeCatalogDetailsDisplay => HasTypeCatalog
+        ? TypeCatalogTypeNames.Count == 0
+            ? $"Есть: {TypeCatalogPath}"
+            : $"{TypeCatalogTypeNames.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} типов: {TypeCatalogPath}"
+        : "Нет";
 
     public string MetadataDisplay => MetadataUpdatedAtUtc is null
         ? "Не обновлялись"

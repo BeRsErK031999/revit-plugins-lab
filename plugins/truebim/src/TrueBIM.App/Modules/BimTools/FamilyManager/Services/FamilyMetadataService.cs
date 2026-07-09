@@ -9,6 +9,18 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 
 public sealed class FamilyMetadataService
 {
+    private readonly FamilyTypeCatalogReader typeCatalogReader;
+
+    public FamilyMetadataService()
+        : this(new FamilyTypeCatalogReader())
+    {
+    }
+
+    public FamilyMetadataService(FamilyTypeCatalogReader typeCatalogReader)
+    {
+        this.typeCatalogReader = typeCatalogReader ?? throw new ArgumentNullException(nameof(typeCatalogReader));
+    }
+
     public FamilyMetadataResult Read(Application application, string filePath, ITrueBimLogger logger)
     {
         Guard.NotNull(application, nameof(application));
@@ -40,12 +52,17 @@ public sealed class FamilyMetadataService
 
             string category = familyDocument.OwnerFamily?.FamilyCategory?.Name ?? FamilyManagerDefaults.UnknownCategory;
             List<FamilyTypeInfo> types = CollectTypes(familyDocument);
+            FamilyTypeCatalogInfo typeCatalog = typeCatalogReader.ReadForFamily(normalizedPath);
             return new FamilyMetadataResult
             {
                 Succeeded = true,
                 Category = string.IsNullOrWhiteSpace(category) ? FamilyManagerDefaults.UnknownCategory : category,
                 Types = types,
-                Message = $"Метаданные обновлены. Типов в файле: {types.Count}."
+                TypeCatalogPath = typeCatalog.Path,
+                TypeCatalogTypeNames = typeCatalog.TypeNames.ToList(),
+                Message = typeCatalog.Exists
+                    ? $"Метаданные обновлены. Типов в файле: {types.Count}. Каталог типов: {typeCatalog.TypeNames.Count}."
+                    : $"Метаданные обновлены. Типов в файле: {types.Count}."
             };
         }
         catch (Exception exception)

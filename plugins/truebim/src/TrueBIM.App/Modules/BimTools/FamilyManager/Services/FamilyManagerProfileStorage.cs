@@ -118,6 +118,10 @@ public sealed class FamilyManagerProfileStorage
                         ? string.Empty
                         : FamilyPathNormalizer.Normalize(file.ThumbnailPath),
                     ThumbnailUpdatedAtUtc = file.ThumbnailUpdatedAtUtc,
+                    TypeCatalogPath = string.IsNullOrWhiteSpace(file.TypeCatalogPath)
+                        ? string.Empty
+                        : FamilyPathNormalizer.Normalize(file.TypeCatalogPath),
+                    TypeCatalogTypeNames = NormalizeTypeCatalogNames(file.TypeCatalogTypeNames),
                     CachedTypes = NormalizeTypes(file.CachedTypes),
                     IsFavorite = favorites.Contains(filePath),
                     Status = file.Status ?? string.Empty
@@ -151,6 +155,16 @@ public sealed class FamilyManagerProfileStorage
             .GroupBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(group => group.First())
             .OrderBy(type => type.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> NormalizeTypeCatalogNames(IEnumerable<string>? typeNames)
+    {
+        return (typeNames ?? [])
+            .Select(typeName => typeName.Trim())
+            .Where(typeName => !string.IsNullOrWhiteSpace(typeName))
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(typeName => typeName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }
 

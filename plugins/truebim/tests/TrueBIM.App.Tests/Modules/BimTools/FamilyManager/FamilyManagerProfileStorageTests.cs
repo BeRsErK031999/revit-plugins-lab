@@ -33,6 +33,8 @@ public sealed class FamilyManagerProfileStorageTests
                     DirectoryPath = @"C:\Lib\Doors",
                     Category = "Двери",
                     MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 6, 0, 0, TimeSpan.Zero),
+                    TypeCatalogPath = @" C:\Lib\Doors\Door.txt ",
+                    TypeCatalogTypeNames = ["1000x2100", "900x2100", "1000x2100", " "],
                     CachedTypes =
                     [
                         new FamilyTypeInfo(
@@ -59,6 +61,8 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Single(normalized.FavoritePaths);
         Assert.Single(normalized.CachedFiles);
         Assert.True(normalized.CachedFiles[0].IsFavorite);
+        Assert.Equal(@"C:\Lib\Doors\Door.txt", normalized.CachedFiles[0].TypeCatalogPath);
+        Assert.Equal(["1000x2100", "900x2100"], normalized.CachedFiles[0].TypeCatalogTypeNames);
         Assert.Equal(["1000x2100", "900x2100"], normalized.CachedFiles[0].CachedTypes.Select(type => type.Name));
         FamilyTypeInfo cachedType = normalized.CachedFiles[0].CachedTypes.Single(type => type.Name == "900x2100");
         Assert.Equal(["Height", "Width"], cachedType.Parameters.Select(parameter => parameter.Name));
@@ -89,6 +93,8 @@ public sealed class FamilyManagerProfileStorageTests
                     MetadataUpdatedAtUtc = new DateTimeOffset(2026, 7, 8, 7, 0, 0, TimeSpan.Zero),
                     ThumbnailPath = thumbnailPath,
                     ThumbnailUpdatedAtUtc = thumbnailUpdatedAtUtc,
+                    TypeCatalogPath = Path.Combine(temp.Path, "Chair.txt"),
+                    TypeCatalogTypeNames = ["Default", "Large"],
                     CachedTypes =
                     [
                         new FamilyTypeInfo(
@@ -109,6 +115,8 @@ public sealed class FamilyManagerProfileStorageTests
         Assert.Equal("Chair", loaded.CachedFiles[0].Name);
         Assert.Equal(thumbnailPath, loaded.CachedFiles[0].ThumbnailPath);
         Assert.Equal(thumbnailUpdatedAtUtc, loaded.CachedFiles[0].ThumbnailUpdatedAtUtc);
+        Assert.Equal(Path.Combine(temp.Path, "Chair.txt"), loaded.CachedFiles[0].TypeCatalogPath);
+        Assert.Equal(["Default", "Large"], loaded.CachedFiles[0].TypeCatalogTypeNames);
         FamilyTypeInfo loadedType = Assert.Single(loaded.CachedFiles[0].CachedTypes);
         Assert.Equal("Default", loadedType.Name);
         Assert.Equal("Manufacturer", Assert.Single(loadedType.Parameters).Name);

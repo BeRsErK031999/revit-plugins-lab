@@ -8,5 +8,9 @@ public sealed class FamilyMetadataResult
 
     public List<FamilyTypeInfo> Types { get; set; } = [];
 
+    public string TypeCatalogPath { get; set; } = string.Empty;
+
+    public List<string> TypeCatalogTypeNames { get; set; } = [];
+
     public string Message { get; set; } = string.Empty;
 }

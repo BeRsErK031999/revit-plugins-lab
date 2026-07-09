@@ -51,6 +51,13 @@ public sealed class FamilyLibraryScannerTests
         string missingFamilyPath = Path.Combine(temp.Path, "Missing.rfa");
         File.WriteAllText(folderFamilyPath, "not a real rfa");
         File.WriteAllText(fileFamilyPath, "not a real rfa");
+        File.WriteAllLines(
+            Path.ChangeExtension(fileFamilyPath, ".txt"),
+            [
+                ",Width##length##millimeters",
+                "Chair 900,900",
+                "Chair 1000,1000"
+            ]);
 
         FamilyLibraryScanResult result = new FamilyLibraryScanner().Scan(
             [new FamilyLibraryFolder { Path = library, IsEnabled = true }],
@@ -63,6 +70,8 @@ public sealed class FamilyLibraryScannerTests
             new Dictionary<string, DateTimeOffset>(FamilyPathNormalizer.Comparer));
 
         Assert.Equal(["Door A", "Single Chair"], result.Files.Select(file => file.Name).OrderBy(name => name));
+        FamilyFileItem explicitFile = result.Files.Single(file => file.Name == "Single Chair");
+        Assert.Equal(["Chair 1000", "Chair 900"], explicitFile.TypeCatalogTypeNames);
         Assert.Equal(1, result.ScannedFolderCount);
         Assert.Equal(1, result.ScannedFileCount);
         Assert.Equal(1, result.MissingFileCount);
