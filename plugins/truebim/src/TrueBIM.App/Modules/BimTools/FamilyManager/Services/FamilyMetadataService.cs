@@ -197,6 +197,7 @@ public sealed class FamilyMetadataService
             return string.Empty;
         }
 
+#if REVIT2022_OR_GREATER
         try
         {
             ForgeTypeId dataType = parameter.Definition?.GetDataType() ?? new ForgeTypeId();
@@ -214,6 +215,7 @@ public sealed class FamilyMetadataService
         {
             return FormatInvariantDouble(value.Value);
         }
+#endif
 
         return FormatInvariantDouble(value.Value);
     }
