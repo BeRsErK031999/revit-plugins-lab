@@ -178,8 +178,9 @@ public sealed class CreateWorksetsWindow : Window
         Button validateButton = CreateSmallButton("Проверить", (_, _) => LoadAndValidate());
         toolbar.Children.Add(validateButton);
 
-        Button templateButton = CreateSmallButton("Экспортировать шаблон", (_, _) => ExportTemplate());
+        Button templateButton = CreateSmallButton("Сохранить шаблон импорта", (_, _) => ExportTemplate());
         templateButton.Margin = new Thickness(8, 0, 0, 0);
+        templateButton.ToolTip = "Сохраняет пустой CSV/XLSX-файл с колонкой WorksetName. Заполните его названиями рабочих наборов и загрузите через «Выбрать файл».";
         toolbar.Children.Add(templateButton);
 
         return toolbar;
