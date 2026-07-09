@@ -10,6 +10,8 @@ namespace TrueBIM.App.Commands;
 [Transaction(TransactionMode.Manual)]
 public sealed class OpeningViewsCommand : IExternalCommand
 {
+    private const string DialogTitle = "Фасады дверей/окон";
+
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
         FileTrueBimLogger logger = new(new TrueBimLogPaths());
@@ -20,7 +22,7 @@ public sealed class OpeningViewsCommand : IExternalCommand
             if (uiDocument is null)
             {
                 logger.Warning("Opening Views requested without an active document.");
-                TaskDialog.Show("Виды дверей/окон", "Откройте документ Revit перед запуском видов дверей/окон.");
+                TaskDialog.Show(DialogTitle, "Откройте документ Revit перед запуском фасадов дверей/окон.");
                 return Result.Succeeded;
             }
 
@@ -30,7 +32,7 @@ public sealed class OpeningViewsCommand : IExternalCommand
                 || activeView is not ViewPlan activePlan)
             {
                 logger.Warning($"Opening Views requested for unsupported view '{activeView?.Name}': {viewMessage}");
-                TaskDialog.Show("Виды дверей/окон", viewMessage);
+                TaskDialog.Show(DialogTitle, viewMessage);
                 return Result.Succeeded;
             }
 
@@ -47,7 +49,7 @@ public sealed class OpeningViewsCommand : IExternalCommand
         catch (Exception exception)
         {
             logger.Error("Failed to open Opening Views window.", exception);
-            TaskDialog.Show("Виды дверей/окон", "Не удалось открыть виды дверей/окон. Используйте логи для диагностики.");
+            TaskDialog.Show(DialogTitle, "Не удалось открыть фасады дверей/окон. Используйте логи для диагностики.");
             return Result.Failed;
         }
     }

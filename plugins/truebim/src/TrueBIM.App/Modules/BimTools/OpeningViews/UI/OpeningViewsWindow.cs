@@ -5,6 +5,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
 using Microsoft.Win32;
 using TrueBIM.App.Modules.BimTools.Common.Services.Export;
 using TrueBIM.App.Modules.BimTools.OpeningViews.Models;
@@ -20,6 +21,8 @@ namespace TrueBIM.App.Modules.BimTools.OpeningViews.UI;
 
 public sealed class OpeningViewsWindow : Window
 {
+    private const string DialogTitle = "Фасады дверей/окон";
+
     private readonly RevitDocument document;
     private readonly RevitViewPlan activePlan;
     private readonly OpeningViewCollectorService collectorService;
@@ -51,12 +54,12 @@ public sealed class OpeningViewsWindow : Window
     {
         Content = "Двери",
         IsChecked = true,
-        ToolTip = "Создавать фасадные виды для дверей, видимых на активном плане."
+        ToolTip = "Включить двери, которые видны на активном плане. Для выбранных строк будет создан отдельный фасадный elevation-вид."
     };
     private readonly CheckBox includeWindowsInput = new()
     {
         Content = "Окна",
-        ToolTip = "Добавить окна к предпросмотру. По умолчанию MVP стартует с дверей."
+        ToolTip = "Включить окна, которые видны на активном плане. Можно создавать фасады только окон или вместе с дверями."
     };
     private readonly DataGrid openingGrid = new();
     private readonly DataGrid reportGrid = new();
@@ -81,7 +84,7 @@ public sealed class OpeningViewsWindow : Window
 
         LoadInitialData();
 
-        Title = "Виды дверей/окон";
+        Title = DialogTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.OpeningViews, 32);
         Width = 1180;
         Height = 760;
@@ -90,6 +93,11 @@ public sealed class OpeningViewsWindow : Window
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
+
+        applyButton.ToolTip = "Создать выбранные фасадные elevation-виды в модели Revit после подтверждения.";
+        exportReportButton.ToolTip = "Сохранить CSV-отчёт по предпросмотру или результатам создания видов.";
+        ToolTipService.SetShowOnDisabled(applyButton, true);
+        ToolTipService.SetShowOnDisabled(exportReportButton, true);
 
         UpdateStatus("Нажмите «Предпросмотр», чтобы собрать двери и окна на активном плане.");
         logger.Info($"Opening Views window opened for '{document.Title}' and plan '{activePlan.Name}'.");
@@ -199,6 +207,7 @@ public sealed class OpeningViewsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right
         };
         Button previewButton = CreateButton("Предпросмотр", TrueBimIcon.Preview, 140);
+        previewButton.ToolTip = "Собрать двери и окна с активного плана, проверить имена будущих видов и показать строки без изменения модели.";
         previewButton.Click += (_, _) => Preview();
         actions.Children.Add(previewButton);
 
@@ -209,8 +218,12 @@ public sealed class OpeningViewsWindow : Window
         exportReportButton.Click += (_, _) => ExportReport();
         actions.Children.Add(exportReportButton);
 
+        Button guideButton = CreateGuideButton();
+        actions.Children.Add(guideButton);
+
         Button closeButton = CreateButton("Закрыть", TrueBimIcon.Close, 110);
         closeButton.IsCancel = true;
+        closeButton.ToolTip = "Закрыть окно и сохранить текущий профиль настроек.";
         closeButton.Click += (_, _) => Close();
         actions.Children.Add(closeButton);
 
@@ -221,6 +234,7 @@ public sealed class OpeningViewsWindow : Window
         elevationTypeInput.Height = 32;
         elevationTypeInput.MinWidth = 280;
         elevationTypeInput.Margin = new Thickness(8, 0, 12, 8);
+        elevationTypeInput.ToolTip = "ViewFamilyType семейства Elevation, через который Revit создаёт фасадный вид для каждого выбранного проёма.";
         elevationTypeInput.SelectionChanged += (_, _) => UpdateStatus();
         WpfGrid.SetRow(elevationTypeInput, 1);
         WpfGrid.SetColumn(elevationTypeInput, 1);
@@ -235,7 +249,7 @@ public sealed class OpeningViewsWindow : Window
         orientationSourceInput.Width = 130;
         orientationSourceInput.Height = 32;
         orientationSourceInput.Margin = new Thickness(0, 0, 16, 0);
-        orientationSourceInput.ToolTip = "По элементу использует FacingOrientation. По стене берёт направление стены-основы и сторону, ближайшую к FacingOrientation.";
+        orientationSourceInput.ToolTip = "По элементу использует FacingOrientation двери или окна. По стене берёт направление стены-основы и сторону, ближайшую к FacingOrientation.";
         orientationSourceInput.SelectionChanged += (_, _) => UpdateStatus();
         categories.Children.Add(orientationSourceInput);
 
@@ -255,6 +269,7 @@ public sealed class OpeningViewsWindow : Window
         viewTemplateInput.Height = 32;
         viewTemplateInput.MinWidth = 280;
         viewTemplateInput.Margin = new Thickness(8, 0, 12, 8);
+        viewTemplateInput.ToolTip = "Необязательный шаблон elevation-вида. Если выбран, применяется к каждому созданному фасаду.";
         WpfGrid.SetRow(viewTemplateInput, 2);
         WpfGrid.SetColumn(viewTemplateInput, 1);
         root.Children.Add(viewTemplateInput);
@@ -268,20 +283,20 @@ public sealed class OpeningViewsWindow : Window
         scaleInput.Width = 70;
         scaleInput.Height = 32;
         scaleInput.Margin = new Thickness(0, 0, 12, 0);
-        scaleInput.ToolTip = "Масштаб создаваемого elevation-вида, от 1 до 500.";
+        scaleInput.ToolTip = "Масштаб каждого создаваемого фасадного elevation-вида, от 1 до 500.";
         numericSettings.Children.Add(scaleInput);
 
         AddInlineLabel(numericSettings, "Crop, мм");
         cropMarginInput.Width = 80;
         cropMarginInput.Height = 32;
         cropMarginInput.Margin = new Thickness(0, 0, 12, 0);
-        cropMarginInput.ToolTip = "Запас crop box вокруг двери или окна по ширине и высоте.";
+        cropMarginInput.ToolTip = "Запас crop box вокруг двери или окна по ширине и высоте. Увеличьте, если в фасад должны попасть откосы или соседняя отделка.";
         numericSettings.Children.Add(cropMarginInput);
 
         AddInlineLabel(numericSettings, "Глубина, мм");
         depthMarginInput.Width = 80;
         depthMarginInput.Height = 32;
-        depthMarginInput.ToolTip = "Запас crop box по направлению взгляда.";
+        depthMarginInput.ToolTip = "Запас crop box по направлению взгляда. Увеличьте, если часть проёма или стены обрезается по глубине.";
         numericSettings.Children.Add(depthMarginInput);
 
         WpfGrid.SetRow(numericSettings, 2);
@@ -291,7 +306,7 @@ public sealed class OpeningViewsWindow : Window
         AddLabel(root, "Имя вида", 0, 3);
         viewNameTemplateInput.Height = 32;
         viewNameTemplateInput.Margin = new Thickness(8, 0, 12, 0);
-        viewNameTemplateInput.ToolTip = "Поддерживаются {ElementId}, {CategoryKey}, {Category}, {Family}, {Type}, {Level}.";
+        viewNameTemplateInput.ToolTip = "Шаблон имени будущего вида. Поддерживаются {ElementId}, {CategoryKey}, {Category}, {Family}, {Type}, {Level}. Дубли имён будут пропущены.";
         WpfGrid.SetRow(viewNameTemplateInput, 3);
         WpfGrid.SetColumn(viewNameTemplateInput, 1);
         WpfGrid.SetColumnSpan(viewNameTemplateInput, 2);
@@ -314,10 +329,12 @@ public sealed class OpeningViewsWindow : Window
             Orientation = Orientation.Horizontal
         };
         Button selectAllButton = CreateButton("Выбрать всё", TrueBimIcon.Apply, 130);
+        selectAllButton.ToolTip = "Отметить все видимые строки, которые готовы к созданию фасадного вида.";
         selectAllButton.Click += (_, _) => SetVisibleRowsSelected(true);
         actions.Children.Add(selectAllButton);
 
         Button clearButton = CreateButton("Снять выбор", TrueBimIcon.Close, 130);
+        clearButton.ToolTip = "Снять отметки с видимых строк предпросмотра.";
         clearButton.Click += (_, _) => SetVisibleRowsSelected(false);
         actions.Children.Add(clearButton);
         DockPanel.SetDock(actions, Dock.Right);
@@ -325,7 +342,7 @@ public sealed class OpeningViewsWindow : Window
 
         filterInput.Height = 32;
         filterInput.Margin = new Thickness(0, 0, 8, 0);
-        filterInput.ToolTip = "Фильтр по ElementId, категории, семейству, типу, уровню, имени вида или статусу.";
+        filterInput.ToolTip = "Фильтр по ElementId, категории, семейству, типу, уровню, будущему имени вида, статусу или сообщению.";
         filterInput.TextChanged += (_, _) => RefreshVisibleRows();
         filterBar.Children.Add(filterInput);
         DockPanel.SetDock(filterBar, Dock.Top);
@@ -416,14 +433,14 @@ public sealed class OpeningViewsWindow : Window
             .ToHashSet();
         if (selectedElementIds.Count == 0)
         {
-            Autodesk.Revit.UI.TaskDialog.Show("Виды дверей/окон", "Нет выбранных проёмов, готовых к созданию видов.");
+            Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, "Нет выбранных проёмов, готовых к созданию фасадных видов.");
             return;
         }
 
         MessageBoxResult decision = MessageBox.Show(
             this,
-            $"Создать elevation-виды для выбранных проёмов: {selectedElementIds.Count}?",
-            "Виды дверей/окон",
+            $"Создать фасадные elevation-виды для выбранных проёмов: {selectedElementIds.Count}?",
+            DialogTitle,
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
@@ -458,7 +475,7 @@ public sealed class OpeningViewsWindow : Window
         }
 
         exportReportButton.IsEnabled = reportRows.Count > 0;
-        Autodesk.Revit.UI.TaskDialog.Show("Виды дверей/окон", result.ToDialogText());
+        Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, result.ToDialogText());
         UpdateStatus($"Создано: {result.CreatedCount}. Пропущено: {result.SkippedCount}. Ошибок: {result.FailedCount}.");
     }
 
@@ -576,6 +593,58 @@ public sealed class OpeningViewsWindow : Window
         applyButton.IsEnabled = selectedRows > 0;
     }
 
+    private Button CreateGuideButton()
+    {
+        Button guideButton = new()
+        {
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(TrueBimIcon.Help, 18),
+                Width = 18,
+                Height = 18,
+                Stretch = Stretch.Uniform
+            },
+            Width = 34,
+            Height = 32,
+            Padding = new Thickness(4),
+            Margin = new Thickness(0, 0, 8, 0),
+            ToolTip = CreateGuideToolTip()
+        };
+        guideButton.Click += (_, _) => ShowGuide();
+        return guideButton;
+    }
+
+    private static ToolTip CreateGuideToolTip()
+    {
+        StackPanel content = new()
+        {
+            Width = 330,
+            Margin = new Thickness(2)
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Методичка по фасадам дверей/окон",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+        content.Children.Add(CreateMutedText("Нажмите, чтобы открыть пошаговое описание: что собирается с активного плана, что делает предпросмотр, как создаются elevation-виды и какие ограничения есть у инструмента."));
+
+        return new ToolTip
+        {
+            Content = content
+        };
+    }
+
+    private void ShowGuide()
+    {
+        logger.Info("Opening Views guide requested from the window header.");
+        OpeningViewsGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
+    }
+
     private static int ParseInt(string text, int fallback)
     {
         return int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out int currentCultureValue)
@@ -615,6 +684,18 @@ public sealed class OpeningViewsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 6, 0)
         });
+    }
+
+    private static TextBlock CreateMutedText(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = Brushes.DimGray,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
     }
 
     private static Button CreateButton(string text, TrueBimIcon icon, double minWidth)

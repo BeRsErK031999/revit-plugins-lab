@@ -77,9 +77,9 @@ public static class BimToolPlaceholders
         "datum-extents");
 
     public static BimToolPlaceholderDefinition OpeningViews { get; } = new(
-        "Виды дверей/окон",
+        "Фасады дверей/окон",
         TrueBimIcon.OpeningViews,
-        "Каркас инструмента для будущего создания фасадных видов дверей, окон и витражей.",
+        "Инструмент для создания фасадных elevation-видов дверей и окон с активного плана.",
         [
             "Выбор категорий и активного плана.",
             "Предпросмотр элементов и будущих имен видов.",

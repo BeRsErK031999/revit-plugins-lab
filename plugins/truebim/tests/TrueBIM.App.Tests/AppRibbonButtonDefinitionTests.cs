@@ -91,10 +91,10 @@ public sealed class AppRibbonButtonDefinitionTests
         {
             "TrueBIM_OpeningViews",
             "Виды",
-            "Виды дверей\n/ окон",
+            "Фасады\nдверей/окон",
             $"TrueBIM.App.Commands.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
-            "дверей"
+            "активном плане"
         },
         {
             "TrueBIM_BatchExport",
@@ -253,5 +253,18 @@ public sealed class AppRibbonButtonDefinitionTests
 
         Assert.Equal($"TrueBIM.App.Commands.{nameof(DatumExtentCommandAvailability)}", button.AvailabilityClassName);
         Assert.Contains("2D-виде", button.LongDescription, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
+    public void OpeningViews_ExplainsFacadeWorkflowInRibbonHelp()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_OpeningViews", StringComparison.Ordinal));
+
+        Assert.Contains("двери и окна", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+        Assert.Contains("фасадные", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+        Assert.Contains("crop box", button.LongDescription, StringComparison.CurrentCultureIgnoreCase);
+        Assert.Contains("CSV-отчёт", button.LongDescription, StringComparison.CurrentCultureIgnoreCase);
     }
 }

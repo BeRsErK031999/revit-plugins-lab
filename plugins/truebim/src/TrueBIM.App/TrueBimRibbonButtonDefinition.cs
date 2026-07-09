@@ -115,11 +115,11 @@ public static class TrueBimRibbon
         new(
             BimViewsPanelName,
             "TrueBIM_OpeningViews",
-            "Виды дверей\n/ окон",
+            "Фасады\nдверей/окон",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
-            "Создает elevation-виды дверей и окон с предпросмотром.",
-            "MVP инструмента для проемов: сбор дверей и окон активного плана, имена видов BIM_Opening_*, проверка дублей, шаблон вида, crop box и CSV-отчет."),
+            "Собирает двери и окна на активном плане, показывает предпросмотр и создаёт для них фасадные elevation-виды.",
+            "Инструмент для проёмов: сбор дверей и окон активного плана, имена видов BIM_Opening_*, проверка дублей, выбор типа фасада и шаблона вида, crop box вокруг элемента и CSV-отчёт."),
         new(
             BimReleasePanelName,
             "TrueBIM_BatchExport",

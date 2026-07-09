@@ -22,7 +22,7 @@ public sealed class OpeningViewCollectorService
 
         if (activeView.IsTemplate)
         {
-            message = "Виды дверей/окон работают только на обычном активном плане, а не на шаблоне вида.";
+            message = "Фасады дверей/окон работают только на обычном активном плане, а не на шаблоне вида.";
             return false;
         }
 
