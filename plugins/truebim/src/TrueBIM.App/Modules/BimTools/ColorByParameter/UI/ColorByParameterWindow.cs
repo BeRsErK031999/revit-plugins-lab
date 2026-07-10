@@ -8,6 +8,9 @@ using TrueBIM.App.Modules.BimTools.ColorByParameter.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
+using DrawingColor = System.Drawing.Color;
+using FormsColorDialog = System.Windows.Forms.ColorDialog;
+using FormsDialogResult = System.Windows.Forms.DialogResult;
 using WpfColor = System.Windows.Media.Color;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfGrid = System.Windows.Controls.Grid;
@@ -343,7 +346,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         }
     }
 
-    private static UIElement CreateValueRow(ColorRuleRow row)
+    private UIElement CreateValueRow(ColorRuleRow row)
     {
         DockPanel panel = new()
         {
@@ -364,6 +367,26 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         DockPanel.SetDock(hexInput, Dock.Right);
         panel.Children.Add(hexInput);
 
+        Button paletteButton = new()
+        {
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(TrueBimIcon.Palette, TrueBimTheme.IconSizeSmall),
+                Width = TrueBimTheme.IconSizeSmall,
+                Height = TrueBimTheme.IconSizeSmall,
+                Stretch = Stretch.Uniform
+            },
+            Width = TrueBimTheme.ControlHeight32,
+            Height = TrueBimTheme.ControlHeight32,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing4, 0),
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Secondary),
+            ToolTip = "Выбрать цвет из палитры. Ручной ввод #RRGGBB остаётся доступен справа."
+        };
+        System.Windows.Automation.AutomationProperties.SetName(paletteButton, $"Выбрать цвет для значения {row.DisplayValue}");
+        DockPanel.SetDock(paletteButton, Dock.Right);
+        panel.Children.Add(paletteButton);
+
         Border swatch = new()
         {
             Width = 26,
@@ -376,6 +399,8 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         };
         DockPanel.SetDock(swatch, Dock.Left);
         panel.Children.Add(swatch);
+
+        paletteButton.Click += (_, _) => ShowColorPicker(row, hexInput, swatch);
 
         hexInput.LostFocus += (_, _) => ApplyManualColor(row, hexInput, swatch);
         hexInput.KeyDown += (_, args) =>
@@ -416,6 +441,35 @@ public sealed class ColorByParameterWindow : TrueBimWindow
             return;
         }
 
+        UpdateColorEditor(row, input, swatch);
+    }
+
+    private void ShowColorPicker(ColorRuleRow row, System.Windows.Controls.TextBox input, Border swatch)
+    {
+        using FormsColorDialog dialog = new()
+        {
+            AllowFullOpen = true,
+            AnyColor = true,
+            Color = DrawingColor.FromArgb(row.Red, row.Green, row.Blue),
+            FullOpen = true,
+            SolidColorOnly = true
+        };
+
+        System.Windows.Interop.WindowInteropHelper windowHelper = new(this);
+        FormsDialogResult result = windowHelper.Handle == IntPtr.Zero
+            ? dialog.ShowDialog()
+            : dialog.ShowDialog(new ColorDialogOwner(windowHelper.Handle));
+        if (result != FormsDialogResult.OK)
+        {
+            return;
+        }
+
+        row.SetColor(new ColorSwatch(dialog.Color.R, dialog.Color.G, dialog.Color.B));
+        UpdateColorEditor(row, input, swatch);
+    }
+
+    private static void UpdateColorEditor(ColorRuleRow row, System.Windows.Controls.TextBox input, Border swatch)
+    {
         input.Text = row.ColorHex;
         swatch.Background = new SolidColorBrush(WpfColor.FromRgb(row.Red, row.Green, row.Blue));
     }
@@ -562,5 +616,15 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         Button button = TrueBimUi.CreateSecondaryButton(text, icon, minWidth: minWidth);
         button.Click += clickHandler;
         return button;
+    }
+
+    private sealed class ColorDialogOwner : System.Windows.Forms.IWin32Window
+    {
+        public ColorDialogOwner(IntPtr handle)
+        {
+            Handle = handle;
+        }
+
+        public IntPtr Handle { get; }
     }
 }

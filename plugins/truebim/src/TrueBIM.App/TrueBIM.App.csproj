@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TrueBIM.App</AssemblyName>
@@ -84,6 +85,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
     <PackageReference Include="ACadSharp" Version="3.6.35" />
     <PackageReference Include="PdfPig" Version="0.1.15" />
   </ItemGroup>
