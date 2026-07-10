@@ -4,6 +4,7 @@ using TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 using TrueBIM.App.Modules.ViewVisibility.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.Services.Runtime;
 using TrueBIM.App.UI;
 
 namespace TrueBIM.App;
@@ -14,6 +15,7 @@ public sealed class App : IExternalApplication
 
     public Result OnStartup(UIControlledApplication application)
     {
+        NetFrameworkAssemblyResolver.Register();
         application.ViewActivated += OnViewActivated;
 
         try
@@ -44,6 +46,7 @@ public sealed class App : IExternalApplication
     {
         application.ViewActivated -= OnViewActivated;
         ScheduleActiveViewTracker.Clear();
+        NetFrameworkAssemblyResolver.Unregister();
 
         return Result.Succeeded;
     }
