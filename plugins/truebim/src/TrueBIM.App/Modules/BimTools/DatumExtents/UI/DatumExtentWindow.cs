@@ -17,6 +17,7 @@ public sealed class DatumExtentWindow : TrueBimWindow
     private readonly RevitView activeView;
     private readonly DatumExtentService datumExtentService;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly List<Button> actionButtons = [];
     private readonly TextBlock statusText = new();
 
@@ -30,6 +31,7 @@ public sealed class DatumExtentWindow : TrueBimWindow
         this.activeView = activeView ?? throw new ArgumentNullException(nameof(activeView));
         this.datumExtentService = datumExtentService ?? throw new ArgumentNullException(nameof(datumExtentService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("режим осей", this.logger);
 
         Title = "РЕЖИМ ОСЕЙ";
         Icon = IconFactory.CreateImage(TrueBimIcon.DatumExtents, 32);
@@ -138,6 +140,13 @@ public sealed class DatumExtentWindow : TrueBimWindow
     }
 
     private void Apply(DatumExtentMode mode)
+    {
+        statusText.Text = "Изменение режима осей поставлено в очередь Revit.";
+        statusText.Visibility = Visibility.Visible;
+        revitActions.Raise(() => ApplyInRevitContext(mode));
+    }
+
+    private void ApplyInRevitContext(DatumExtentMode mode)
     {
         string? disabledReason = TryGetDisabledReason(out _);
         if (disabledReason is not null)

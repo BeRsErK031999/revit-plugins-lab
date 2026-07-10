@@ -31,6 +31,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly PrintSheetSelectionState sheetSelectionState;
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly PrintFileNameTemplateService fileNameTemplateService = new();
     private readonly PrintPdfExportService pdfExportService = new();
     private readonly PrintCadExportService cadExportService = new();
@@ -193,6 +194,7 @@ public sealed class PrintWindow : TrueBimWindow
             source => CreateFileNameContext(source.Document),
             StringComparer.Ordinal);
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("печать и экспорт", this.logger);
         this.printSettingsService = printSettingsService;
         hasSavedPrintSettings = printSettingsService?.SettingsFileExists == true;
         initialSettings = printSettingsService?.Load() ?? PrintSettingsService.DefaultSettings;
@@ -281,19 +283,19 @@ public sealed class PrintWindow : TrueBimWindow
         Button refreshButton = CreateActionButton("Обновить", TrueBimIcon.Refresh, isEnabled: true);
         refreshButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
         refreshButton.ToolTip = "Перечитать список листов, уже собранный при открытии окна.";
-        refreshButton.Click += (_, _) => LoadSheets();
+        refreshButton.Click += (_, _) => RequestLoadSheets();
         selectionActions.Children.Add(refreshButton);
 
         includePlaceholdersInput.VerticalAlignment = VerticalAlignment.Center;
-        includePlaceholdersInput.Checked += (_, _) => LoadSheets();
-        includePlaceholdersInput.Unchecked += (_, _) => LoadSheets();
+        includePlaceholdersInput.Checked += (_, _) => RequestLoadSheets();
+        includePlaceholdersInput.Unchecked += (_, _) => RequestLoadSheets();
         includePlaceholdersInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
         selectionActions.Children.Add(includePlaceholdersInput);
 
         sourceFilterInput.ItemsSource = sourceFilterOptions;
         sourceFilterInput.SelectedItem = FindActiveSourceFilterOption() ?? sourceFilterOptions.FirstOrDefault();
         sourceFilterInput.IsEnabled = sourceFilterOptions.Count > 1;
-        sourceFilterInput.SelectionChanged += (_, _) => LoadSheets();
+        sourceFilterInput.SelectionChanged += (_, _) => RequestLoadSheets();
         selectionActions.Children.Add(sourceFilterInput);
 
         DockPanel.SetDock(selectionActions, Dock.Left);
@@ -783,6 +785,12 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void OpenDwgSettings()
     {
+        statusText.Text = "Открытие настроек DWG поставлено в очередь Revit.";
+        revitActions.Raise(OpenDwgSettingsInRevitContext);
+    }
+
+    private void OpenDwgSettingsInRevitContext()
+    {
         DwgExportSettingsWindow settingsWindow = new(
             document,
             GetCurrentDwgProfileForExport(),
@@ -950,6 +958,12 @@ public sealed class PrintWindow : TrueBimWindow
         }
 
         UpdateFileNamePreviews();
+    }
+
+    private void RequestLoadSheets()
+    {
+        statusText.Text = "Обновление листов поставлено в очередь Revit.";
+        revitActions.Raise(LoadSheets);
     }
 
     private void EnsureSheetsLoaded(PrintSheetSourceFilterOption? selectedSource)
@@ -1164,6 +1178,12 @@ public sealed class PrintWindow : TrueBimWindow
     }
 
     private void StartExport()
+    {
+        statusText.Text = "Экспорт поставлен в очередь Revit.";
+        revitActions.Raise(StartExportInRevitContext);
+    }
+
+    private void StartExportInRevitContext()
     {
         SavePrintSettings();
         List<PrintSheetRow> selectedRows = sheetRows

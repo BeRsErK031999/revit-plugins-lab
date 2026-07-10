@@ -25,6 +25,7 @@ public sealed class AutoTagWindow : TrueBimWindow
     private readonly AutoTagProfileStorage profileStorage;
     private readonly AutoTagPlacementService placementService;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly CsvExportService csvExportService = new();
     private readonly AutoTagReportCsvService reportCsvService = new();
     private readonly ObservableCollection<AutoTagCategoryOption> categories = new();
@@ -69,6 +70,7 @@ public sealed class AutoTagWindow : TrueBimWindow
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.placementService = placementService ?? throw new ArgumentNullException(nameof(placementService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("автомарки", this.logger);
 
         LoadInitialData();
 
@@ -386,6 +388,12 @@ public sealed class AutoTagWindow : TrueBimWindow
 
     private void RefreshCategories()
     {
+        UpdateStatus("Обновление категорий поставлено в очередь Revit.");
+        revitActions.Raise(RefreshCategoriesInRevitContext);
+    }
+
+    private void RefreshCategoriesInRevitContext()
+    {
         HashSet<long> selectedCategoryIds = categories
             .Where(category => category.IsSelected)
             .Select(category => category.CategoryIdValue)
@@ -411,6 +419,12 @@ public sealed class AutoTagWindow : TrueBimWindow
     }
 
     private void Preview()
+    {
+        UpdateStatus("Предпросмотр марок поставлен в очередь Revit.");
+        revitActions.Raise(PreviewInRevitContext);
+    }
+
+    private void PreviewInRevitContext()
     {
         SaveProfile();
         elementRows.Clear();
@@ -453,10 +467,16 @@ public sealed class AutoTagWindow : TrueBimWindow
 
     private void Apply()
     {
+        UpdateStatus("Создание марок поставлено в очередь Revit.");
+        revitActions.Raise(ApplyInRevitContext);
+    }
+
+    private void ApplyInRevitContext()
+    {
         SaveProfile();
         if (elementRows.Count == 0)
         {
-            Preview();
+            PreviewInRevitContext();
         }
 
         List<AutoTagElementRow> selectedRows = elementRows

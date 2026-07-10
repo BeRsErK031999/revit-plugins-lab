@@ -23,6 +23,7 @@ public sealed class CreateWorksetsWindow : TrueBimWindow
     private readonly WorksharingService worksharingService;
     private readonly WorksetCreationService creationService;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly WpfTextBox pathInput = new();
     private readonly TextBlock statusText = new();
     private readonly ListBox rowList = new();
@@ -42,6 +43,7 @@ public sealed class CreateWorksetsWindow : TrueBimWindow
         this.worksharingService = worksharingService ?? throw new ArgumentNullException(nameof(worksharingService));
         this.creationService = creationService ?? throw new ArgumentNullException(nameof(creationService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("создание рабочих наборов", this.logger);
 
         Title = "Рабочие наборы";
         Icon = IconFactory.CreateImage(TrueBimIcon.Worksets, 32);
@@ -206,6 +208,12 @@ public sealed class CreateWorksetsWindow : TrueBimWindow
 
     private void LoadAndValidate()
     {
+        statusText.Text = "Проверка рабочих наборов поставлена в очередь Revit.";
+        revitActions.Raise(LoadAndValidateInRevitContext);
+    }
+
+    private void LoadAndValidateInRevitContext()
+    {
         try
         {
             if (string.IsNullOrWhiteSpace(pathInput.Text) || !File.Exists(pathInput.Text))
@@ -281,6 +289,12 @@ public sealed class CreateWorksetsWindow : TrueBimWindow
     }
 
     private void CreateWorksets()
+    {
+        statusText.Text = "Создание рабочих наборов поставлено в очередь Revit.";
+        revitActions.Raise(CreateWorksetsInRevitContext);
+    }
+
+    private void CreateWorksetsInRevitContext()
     {
         try
         {

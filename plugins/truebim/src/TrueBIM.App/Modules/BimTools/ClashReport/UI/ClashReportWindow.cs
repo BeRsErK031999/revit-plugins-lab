@@ -31,6 +31,7 @@ public sealed class ClashReportWindow : TrueBimWindow
     private readonly ClashViewNavigator viewNavigator;
     private readonly ClashReportStorage storage;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly ObservableCollection<ClashItem> clashRows = new();
     private readonly ObservableCollection<ClashReportRow> reportRows = new();
     private readonly TextBox profileNameInput = new();
@@ -66,6 +67,7 @@ public sealed class ClashReportWindow : TrueBimWindow
         this.viewNavigator = viewNavigator ?? throw new ArgumentNullException(nameof(viewNavigator));
         this.storage = storage ?? throw new ArgumentNullException(nameof(storage));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("отчёт коллизий", this.logger);
         modelKey = ClashReportStorage.BuildModelKey(document);
 
         ApplyProfile(storage.LoadProfile());
@@ -300,12 +302,19 @@ public sealed class ClashReportWindow : TrueBimWindow
             return;
         }
 
+        string importPath = dialog.FileName;
+        UpdateStatus("Импорт и сопоставление элементов поставлены в очередь Revit.");
+        revitActions.Raise(() => ImportFileInRevitContext(importPath));
+    }
+
+    private void ImportFileInRevitContext(string importPath)
+    {
         try
         {
-            ClashImportResult result = importService.Import(dialog.FileName);
+            ClashImportResult result = importService.Import(importPath);
             clashRows.Clear();
             reportRows.Clear();
-            currentImportPath = dialog.FileName;
+            currentImportPath = importPath;
             UpdateFileText();
 
             foreach (ClashItem item in result.Items)
@@ -322,12 +331,12 @@ public sealed class ClashReportWindow : TrueBimWindow
 
             storage.SaveProfile(ReadProfile());
             RefreshFilter();
-            UpdateStatus($"Загружен файл: {Path.GetFileName(dialog.FileName)}.");
-            logger.Info($"Clash Report imported {result.Items.Count} rows from '{dialog.FileName}'.");
+            UpdateStatus($"Загружен файл: {Path.GetFileName(importPath)}.");
+            logger.Info($"Clash Report imported {result.Items.Count} rows from '{importPath}'.");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or XmlException or InvalidOperationException)
         {
-            string message = $"Не удалось импортировать файл: {exception.Message}";
+            string message = $"Не удалось импортировать файл '{Path.GetFileName(importPath)}': {exception.Message}";
             AddReport("Импорт", string.Empty, string.Empty, "Error", message);
             UpdateStatus();
             logger.Warning(message);
@@ -336,6 +345,12 @@ public sealed class ClashReportWindow : TrueBimWindow
     }
 
     private void ResolveRows()
+    {
+        UpdateStatus("Проверка элементов поставлена в очередь Revit.");
+        revitActions.Raise(ResolveRowsInRevitContext);
+    }
+
+    private void ResolveRowsInRevitContext()
     {
         CommitGridEdits();
         foreach (ClashItem item in clashRows)
@@ -347,7 +362,13 @@ public sealed class ClashReportWindow : TrueBimWindow
         UpdateStatus();
     }
 
-    private bool SelectSelectedClashElements(bool showDialogWhenMissing)
+    private void SelectSelectedClashElements(bool showDialogWhenMissing)
+    {
+        UpdateStatus("Выбор элементов поставлен в очередь Revit.");
+        revitActions.Raise(() => SelectSelectedClashElementsInRevitContext(showDialogWhenMissing));
+    }
+
+    private bool SelectSelectedClashElementsInRevitContext(bool showDialogWhenMissing)
     {
         CommitGridEdits();
         if (clashGrid.SelectedItem is not ClashItem item)
@@ -407,6 +428,12 @@ public sealed class ClashReportWindow : TrueBimWindow
     }
 
     private void NavigateToSelectedClash()
+    {
+        UpdateStatus("Переход к коллизии поставлен в очередь Revit.");
+        revitActions.Raise(NavigateToSelectedClashInRevitContext);
+    }
+
+    private void NavigateToSelectedClashInRevitContext()
     {
         CommitGridEdits();
         if (clashGrid.SelectedItem is not ClashItem item)

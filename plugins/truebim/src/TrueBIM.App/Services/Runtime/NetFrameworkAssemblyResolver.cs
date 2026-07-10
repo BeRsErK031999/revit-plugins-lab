@@ -72,7 +72,6 @@ internal static class NetFrameworkAssemblyResolver
         string addInDirectory)
     {
         if (string.IsNullOrWhiteSpace(requestedAssemblyName)
-            || string.IsNullOrWhiteSpace(requestingAssemblyPath)
             || string.IsNullOrWhiteSpace(addInDirectory))
         {
             return null;
@@ -88,12 +87,7 @@ internal static class NetFrameworkAssemblyResolver
             }
 
             string normalizedAddInDirectory = NormalizeDirectory(addInDirectory);
-            string? requestingDirectory = Path.GetDirectoryName(Path.GetFullPath(requestingAssemblyPath));
-            if (string.IsNullOrWhiteSpace(requestingDirectory)
-                || !string.Equals(
-                    NormalizeDirectory(requestingDirectory),
-                    normalizedAddInDirectory,
-                    StringComparison.OrdinalIgnoreCase))
+            if (!IsTrustedRequest(requestingAssemblyPath, normalizedAddInDirectory))
             {
                 return null;
             }
@@ -204,5 +198,27 @@ internal static class NetFrameworkAssemblyResolver
     private static string NormalizeDirectory(string path)
     {
         return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static bool IsTrustedRequest(string? requestingAssemblyPath, string normalizedAddInDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(requestingAssemblyPath))
+        {
+            return true;
+        }
+
+        string fullRequestingPath = Path.GetFullPath(requestingAssemblyPath);
+        string? requestingDirectory = Path.GetDirectoryName(fullRequestingPath);
+        if (!string.IsNullOrWhiteSpace(requestingDirectory)
+            && string.Equals(
+                NormalizeDirectory(requestingDirectory),
+                normalizedAddInDirectory,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string requestingAssemblyName = Path.GetFileNameWithoutExtension(fullRequestingPath);
+        return BundledAssemblyNames.Contains(requestingAssemblyName);
     }
 }

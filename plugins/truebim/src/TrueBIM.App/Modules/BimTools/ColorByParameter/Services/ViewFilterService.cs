@@ -193,7 +193,7 @@ public sealed class ViewFilterService
             switch (parameter.StorageType)
             {
                 case StorageType.String when value.StringValue is not null:
-#if REVIT2024_OR_GREATER
+#if REVIT2023_OR_GREATER
                     rule = ParameterFilterRuleFactory.CreateEqualsRule(parameter.ParameterId, value.StringValue);
 #else
                     rule = ParameterFilterRuleFactory.CreateEqualsRule(parameter.ParameterId, value.StringValue, false);

@@ -25,6 +25,7 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
     private readonly TitleBlockFinderService titleBlockFinder;
     private readonly TitleBlockFillService fillService;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly CsvExportService csvExportService = new();
     private readonly TitleBlockFillReportCsvService reportCsvService = new();
     private readonly ObservableCollection<TitleBlockSheetRow> sheets = new();
@@ -54,6 +55,7 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
         this.titleBlockFinder = titleBlockFinder ?? throw new ArgumentNullException(nameof(titleBlockFinder));
         this.fillService = fillService ?? throw new ArgumentNullException(nameof(fillService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("оформление штампа", this.logger);
 
         foreach (SheetInfo sheetInfo in sheetInfos ?? throw new ArgumentNullException(nameof(sheetInfos)))
         {
@@ -199,11 +201,7 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
         actions.Children.Add(clearButton);
 
         Button refreshButton = CreateButton("Обновить", TrueBimIcon.Preview, 120);
-        refreshButton.Click += (_, _) =>
-        {
-            RefreshTitleBlockStatuses();
-            RefreshVisibleSheets();
-        };
+        refreshButton.Click += (_, _) => RefreshTitleBlockData();
         actions.Children.Add(refreshButton);
         DockPanel.SetDock(actions, Dock.Right);
         filterBar.Children.Add(actions);
@@ -258,11 +256,7 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
         toolbar.Children.Add(saveButton);
 
         Button refreshParametersButton = CreateButton("Параметры", TrueBimIcon.Preview, 120);
-        refreshParametersButton.Click += (_, _) =>
-        {
-            RefreshParameterNameOptions();
-            UpdateStatus("Список параметров обновлён.");
-        };
+        refreshParametersButton.Click += (_, _) => RefreshParameterNames();
         toolbar.Children.Add(refreshParametersButton);
         DockPanel.SetDock(toolbar, Dock.Top);
         panel.Children.Add(toolbar);
@@ -324,6 +318,16 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
         }
     }
 
+    private void RefreshTitleBlockData()
+    {
+        UpdateStatus("Обновление штампов поставлено в очередь Revit.");
+        revitActions.Raise(() =>
+        {
+            RefreshTitleBlockStatuses();
+            RefreshVisibleSheets();
+        });
+    }
+
     private void RefreshVisibleSheets()
     {
         string filter = sheetFilterInput.Text.Trim();
@@ -381,6 +385,12 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
 
     private void Preview()
     {
+        UpdateStatus("Предпросмотр штампов поставлен в очередь Revit.");
+        revitActions.Raise(PreviewInRevitContext);
+    }
+
+    private void PreviewInRevitContext()
+    {
         SaveProfile();
         reportRows.Clear();
         foreach (TitleBlockSheetRow sheet in sheets)
@@ -405,6 +415,12 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
     }
 
     private void Apply()
+    {
+        UpdateStatus("Заполнение штампов поставлено в очередь Revit.");
+        revitActions.Raise(ApplyInRevitContext);
+    }
+
+    private void ApplyInRevitContext()
     {
         SaveProfile();
         if (sheets.Count(row => row.IsSelected && !row.IsPlaceholder) == 0)
@@ -558,6 +574,16 @@ public sealed class TitleBlockFillWindow : TrueBimWindow
         {
             parameterNameOptions.Add(name);
         }
+    }
+
+    private void RefreshParameterNames()
+    {
+        UpdateStatus("Обновление параметров поставлено в очередь Revit.");
+        revitActions.Raise(() =>
+        {
+            RefreshParameterNameOptions();
+            UpdateStatus("Список параметров обновлён.");
+        });
     }
 
     private static void AddWritableParameterNames(Element element, ISet<string> names)

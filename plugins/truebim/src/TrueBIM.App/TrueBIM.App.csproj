@@ -27,6 +27,10 @@
     <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
+    <DefineConstants>$(DefineConstants);REVIT2023_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
     <DefineConstants>$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
   </PropertyGroup>

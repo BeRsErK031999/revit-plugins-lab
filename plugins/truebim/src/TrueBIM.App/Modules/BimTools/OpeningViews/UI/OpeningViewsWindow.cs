@@ -29,6 +29,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
     private readonly OpeningViewCreationService creationService;
     private readonly OpeningViewProfileStorage profileStorage;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly CsvExportService csvExportService = new();
     private readonly OpeningViewReportCsvService reportCsvService = new();
     private readonly ObservableCollection<OpeningViewRow> openingRows = new();
@@ -81,6 +82,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         this.creationService = creationService ?? throw new ArgumentNullException(nameof(creationService));
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("фасады дверей и окон", this.logger);
 
         LoadInitialData();
 
@@ -389,6 +391,12 @@ public sealed class OpeningViewsWindow : TrueBimWindow
 
     private void Preview()
     {
+        UpdateStatus("Предпросмотр поставлен в очередь Revit.");
+        revitActions.Raise(PreviewInRevitContext);
+    }
+
+    private void PreviewInRevitContext()
+    {
         SaveProfile();
         OpeningViewProfile profile = CreateProfileFromInputs();
         openingRows.Clear();
@@ -421,10 +429,16 @@ public sealed class OpeningViewsWindow : TrueBimWindow
 
     private void Apply()
     {
+        UpdateStatus("Создание видов поставлено в очередь Revit.");
+        revitActions.Raise(ApplyInRevitContext);
+    }
+
+    private void ApplyInRevitContext()
+    {
         SaveProfile();
         if (openingRows.Count == 0)
         {
-            Preview();
+            PreviewInRevitContext();
         }
 
         HashSet<long> selectedElementIds = openingRows

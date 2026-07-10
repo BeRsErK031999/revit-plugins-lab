@@ -22,6 +22,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     private readonly IReadOnlyList<BimCategoryItem> categories;
     private readonly ColorByParameterService service;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly ListBox categoryList = new();
     private readonly WpfComboBox parameterInput = new();
     private readonly ListBox valueList = new();
@@ -42,6 +43,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         this.categories = categories ?? throw new ArgumentNullException(nameof(categories));
         this.service = service ?? throw new ArgumentNullException(nameof(service));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("цвета по параметрам", this.logger);
 
         Title = "Цвета по параметрам";
         Icon = IconFactory.CreateImage(TrueBimIcon.ColorByParameter, 32);
@@ -259,6 +261,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
 
     private void LoadParameters()
     {
+        statusText.Text = "Запрос параметров передан в Revit.";
+        revitActions.Raise(LoadParametersInRevitContext);
+    }
+
+    private void LoadParametersInRevitContext()
+    {
         try
         {
             IReadOnlyList<BimCategoryItem> selectedCategories = GetSelectedCategories();
@@ -290,6 +298,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     }
 
     private void LoadValues()
+    {
+        statusText.Text = "Запрос значений передан в Revit.";
+        revitActions.Raise(LoadValuesInRevitContext);
+    }
+
+    private void LoadValuesInRevitContext()
     {
         try
         {
@@ -444,6 +458,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
 
     private void ApplyFilters()
     {
+        statusText.Text = "Применение поставлено в очередь Revit.";
+        revitActions.Raise(ApplyFiltersInRevitContext);
+    }
+
+    private void ApplyFiltersInRevitContext()
+    {
         try
         {
             if (parameterInput.SelectedItem is not BimParameterItem parameter)
@@ -476,6 +496,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     }
 
     private void ClearFilters()
+    {
+        statusText.Text = "Очистка поставлена в очередь Revit.";
+        revitActions.Raise(ClearFiltersInRevitContext);
+    }
+
+    private void ClearFiltersInRevitContext()
     {
         try
         {

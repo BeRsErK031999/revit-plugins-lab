@@ -24,6 +24,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
     private readonly SheetNumberingPreviewWorkflow workflow;
     private readonly SheetNumberApplyService applyService;
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly SheetPreviewOrderService orderService = new();
     private readonly Button applyButton = TrueBimUi.CreatePrimaryButton("Применить", TrueBimIcon.Apply, isEnabled: false);
     private readonly Button exportPreviewButton = CreateActionButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
@@ -60,6 +61,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         this.workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         this.applyService = applyService ?? throw new ArgumentNullException(nameof(applyService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("нумерация листов", this.logger);
         Title = "Нумерация листов";
         Icon = IconFactory.CreateImage(TrueBimIcon.SheetNumbering, 32);
         Width = Math.Min(1360, Math.Max(1000, SystemParameters.WorkArea.Width - 48));
@@ -465,6 +467,12 @@ public sealed class SheetNumberingWindow : TrueBimWindow
     }
 
     private void ApplyPreview()
+    {
+        UpdateStatusSummary("Применение поставлено в очередь Revit.");
+        revitActions.Raise(ApplyPreviewInRevitContext);
+    }
+
+    private void ApplyPreviewInRevitContext()
     {
         IReadOnlyList<SheetNumberChange> changes = CreateApplyChanges();
 

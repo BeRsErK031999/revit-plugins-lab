@@ -22,12 +22,42 @@ public sealed class NetFrameworkAssemblyResolverTests
     }
 
     [Fact]
+    public void FindBundledAssemblyPath_UsesBundledDependencyForPreloadedFrameworkAssembly()
+    {
+        using TempDirectory trueBimDirectory = new();
+        using TempDirectory otherAddInDirectory = new();
+        string bundledAssemblyPath = CreateFile(trueBimDirectory.Path, "System.Runtime.CompilerServices.Unsafe.dll");
+        string requestingAssemblyPath = CreateFile(otherAddInDirectory.Path, "System.Memory.dll");
+
+        string? result = FindBundledAssemblyPath(
+            "System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+            requestingAssemblyPath,
+            trueBimDirectory.Path);
+
+        Assert.Equal(bundledAssemblyPath, result);
+    }
+
+    [Fact]
+    public void FindBundledAssemblyPath_UsesBundledDependencyWhenRequestingAssemblyIsUnavailable()
+    {
+        using TempDirectory temp = new();
+        string bundledAssemblyPath = CreateFile(temp.Path, "System.Runtime.CompilerServices.Unsafe.dll");
+
+        string? result = FindBundledAssemblyPath(
+            "System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
+            requestingAssemblyPath: null,
+            temp.Path);
+
+        Assert.Equal(bundledAssemblyPath, result);
+    }
+
+    [Fact]
     public void FindBundledAssemblyPath_IgnoresRequestsFromOtherAddIns()
     {
         using TempDirectory trueBimDirectory = new();
         using TempDirectory otherAddInDirectory = new();
         CreateFile(trueBimDirectory.Path, "System.Runtime.CompilerServices.Unsafe.dll");
-        string requestingAssemblyPath = CreateFile(otherAddInDirectory.Path, "System.Memory.dll");
+        string requestingAssemblyPath = CreateFile(otherAddInDirectory.Path, "Other.AddIn.dll");
 
         string? result = FindBundledAssemblyPath(
             "System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a",
@@ -68,7 +98,7 @@ public sealed class NetFrameworkAssemblyResolverTests
 
     private static string? FindBundledAssemblyPath(
         string requestedAssemblyName,
-        string requestingAssemblyPath,
+        string? requestingAssemblyPath,
         string addInDirectory)
     {
         Type resolverType = typeof(OpeningViewProfile).Assembly.GetType(

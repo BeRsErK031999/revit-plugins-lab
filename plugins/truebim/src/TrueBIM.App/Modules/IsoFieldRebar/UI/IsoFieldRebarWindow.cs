@@ -31,6 +31,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
     private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
     private readonly TextBlock selectedFileText;
     private readonly TextBlock recognitionStatusText;
     private readonly TextBlock hostStatusText;
@@ -77,6 +78,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         this.hostSelectionService = hostSelectionService ?? throw new ArgumentNullException(nameof(hostSelectionService));
         this.rebarCreationService = rebarCreationService ?? throw new ArgumentNullException(nameof(rebarCreationService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("армирование по изополям", this.logger);
 
         selectedFileText = CreateMutedText("Файл не выбран.");
         recognitionStatusText = CreateMutedText("Распознавание пока не запускалось.");
@@ -546,6 +548,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ShowRevitPreview()
     {
+        footerStatusText.Text = "Предпросмотр поставлен в очередь Revit.";
+        revitActions.Raise(ShowRevitPreviewInRevitContext);
+    }
+
+    private void ShowRevitPreviewInRevitContext()
+    {
         if (uiDocument is null)
         {
             logger.Warning("IsoField Revit preview was requested without an open Revit document.");
@@ -589,6 +597,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ClearRevitPreview()
     {
+        footerStatusText.Text = "Очистка предпросмотра поставлена в очередь Revit.";
+        revitActions.Raise(ClearRevitPreviewInRevitContext);
+    }
+
+    private void ClearRevitPreviewInRevitContext()
+    {
         if (uiDocument is null)
         {
             logger.Warning("IsoField Revit preview clear was requested without an open Revit document.");
@@ -615,6 +629,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     }
 
     private void SelectHostElement()
+    {
+        footerStatusText.Text = "Выбор host-элемента поставлен в очередь Revit.";
+        revitActions.Raise(SelectHostElementInRevitContext);
+    }
+
+    private void SelectHostElementInRevitContext()
     {
         if (uiDocument is null)
         {
@@ -752,6 +772,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     }
 
     private void CreateTestRebar()
+    {
+        rebarCreationStatusText.Text = "Создание тестовой арматуры поставлено в очередь Revit.";
+        revitActions.Raise(CreateTestRebarInRevitContext);
+    }
+
+    private void CreateTestRebarInRevitContext()
     {
         if (uiDocument is null)
         {
