@@ -12,6 +12,10 @@
                   WindowStartupLocation="CenterOwner">
     <Grid Margin="16">
         <Grid.Resources>
+            <SolidColorBrush x:Key="JoinCutBorderBrush" Color="#D2DAE5" />
+            <SolidColorBrush x:Key="JoinCutSurfaceBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="JoinCutSurfaceAltBrush" Color="#EEF2F7" />
+            <SolidColorBrush x:Key="JoinCutTextSecondaryBrush" Color="#485463" />
             <Style TargetType="{x:Type Button}" BasedOn="{StaticResource TrueBim.SecondaryButtonStyle}" />
             <Style TargetType="{x:Type ComboBox}" BasedOn="{StaticResource TrueBim.ComboBoxStyle}" />
             <Style TargetType="{x:Type CheckBox}" BasedOn="{StaticResource TrueBim.CheckBoxStyle}" />
@@ -32,7 +36,7 @@
                        FontSize="{x:Static design:TrueBimTheme.WindowTitleFontSize}"
                        FontWeight="SemiBold" />
             <TextBlock x:Name="DocumentText"
-                       Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
+                       Foreground="{StaticResource JoinCutTextSecondaryBrush}"
                        TextWrapping="Wrap"
                        Margin="0,6,0,0" />
         </StackPanel>
@@ -82,15 +86,15 @@
                              Grid.Row="1"
                              Grid.Column="0"
                              DisplayMemberPath="Name"
-                             BorderBrush="{x:Static design:TrueBimBrushes.Border}"
+                             BorderBrush="{StaticResource JoinCutBorderBrush}"
                              BorderThickness="1"
                              SelectionChanged="JoinRulesList_SelectionChanged" />
 
                     <Border Grid.Row="1"
                             Grid.Column="1"
-                            BorderBrush="{x:Static design:TrueBimBrushes.Border}"
+                            BorderBrush="{StaticResource JoinCutBorderBrush}"
                             BorderThickness="1"
-                            Background="{x:Static design:TrueBimBrushes.Surface}"
+                            Background="{StaticResource JoinCutSurfaceBrush}"
                             CornerRadius="8"
                             Margin="12,0,0,0"
                             Padding="14">
@@ -124,7 +128,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Border BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="0,0,8,0">
+                                <Border BorderBrush="{StaticResource JoinCutBorderBrush}" BorderThickness="1" Background="{StaticResource JoinCutSurfaceAltBrush}" CornerRadius="8" Padding="10" Margin="0,0,8,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="Что присоединять" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -135,10 +139,10 @@
                                                     MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditJoinLeftCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="JoinLeftFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="JoinLeftFilterText" Foreground="{StaticResource JoinCutTextSecondaryBrush}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="8,0,0,0">
+                                <Border Grid.Column="1" BorderBrush="{StaticResource JoinCutBorderBrush}" BorderThickness="1" Background="{StaticResource JoinCutSurfaceAltBrush}" CornerRadius="8" Padding="10" Margin="8,0,0,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="К чему присоединять" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -149,12 +153,12 @@
                                                     MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditJoinRightCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="JoinRightFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="JoinRightFilterText" Foreground="{StaticResource JoinCutTextSecondaryBrush}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
                             <TextBlock Grid.Row="4"
-                                       Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
+                                       Foreground="{StaticResource JoinCutTextSecondaryBrush}"
                                        TextWrapping="Wrap"
                                        Text="Фильтры правила: категории и условия по параметрам." />
                         </Grid>
@@ -186,15 +190,15 @@
                              Grid.Row="1"
                              Grid.Column="0"
                              DisplayMemberPath="Name"
-                             BorderBrush="{x:Static design:TrueBimBrushes.Border}"
+                             BorderBrush="{StaticResource JoinCutBorderBrush}"
                              BorderThickness="1"
                              SelectionChanged="CutRulesList_SelectionChanged" />
 
                     <Border Grid.Row="1"
                             Grid.Column="1"
-                            BorderBrush="{x:Static design:TrueBimBrushes.Border}"
+                            BorderBrush="{StaticResource JoinCutBorderBrush}"
                             BorderThickness="1"
-                            Background="{x:Static design:TrueBimBrushes.Surface}"
+                            Background="{StaticResource JoinCutSurfaceBrush}"
                             CornerRadius="8"
                             Margin="12,0,0,0"
                             Padding="14">
@@ -228,7 +232,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Border BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="0,0,8,0">
+                                <Border BorderBrush="{StaticResource JoinCutBorderBrush}" BorderThickness="1" Background="{StaticResource JoinCutSurfaceAltBrush}" CornerRadius="8" Padding="10" Margin="0,0,8,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="Что вырезает" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -239,10 +243,10 @@
                                                     MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditCuttingCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="CuttingFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="CuttingFilterText" Foreground="{StaticResource JoinCutTextSecondaryBrush}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
-                                <Border Grid.Column="1" BorderBrush="{x:Static design:TrueBimBrushes.Border}" BorderThickness="1" Background="{x:Static design:TrueBimBrushes.SurfaceAlt}" CornerRadius="8" Padding="10" Margin="8,0,0,0">
+                                <Border Grid.Column="1" BorderBrush="{StaticResource JoinCutBorderBrush}" BorderThickness="1" Background="{StaticResource JoinCutSurfaceAltBrush}" CornerRadius="8" Padding="10" Margin="8,0,0,0">
                                     <StackPanel>
                                         <DockPanel Margin="0,0,0,6" LastChildFill="False">
                                             <TextBlock Text="Из чего вырезает" FontWeight="SemiBold" VerticalAlignment="Center" />
@@ -253,12 +257,12 @@
                                                     MinHeight="{x:Static design:TrueBimTheme.ControlHeight32}"
                                                     Click="EditCutElementCategories_Click" />
                                         </DockPanel>
-                                        <TextBlock x:Name="CutElementFilterText" Foreground="{x:Static design:TrueBimBrushes.TextSecondary}" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="CutElementFilterText" Foreground="{StaticResource JoinCutTextSecondaryBrush}" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </Grid>
                             <TextBlock Grid.Row="4"
-                                       Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
+                                       Foreground="{StaticResource JoinCutTextSecondaryBrush}"
                                        TextWrapping="Wrap"
                                        Text="Фильтры правила: чем вырезать и из каких элементов вырезать." />
                         </Grid>
@@ -283,7 +287,7 @@
                              VerticalScrollBarVisibility="Auto"
                              VerticalContentAlignment="Top"
                              Style="{StaticResource TrueBim.TextBoxStyle}"
-                             BorderBrush="{x:Static design:TrueBimBrushes.Border}"
+                             BorderBrush="{StaticResource JoinCutBorderBrush}"
                              BorderThickness="1" />
                 </Grid>
             </TabItem>
@@ -291,7 +295,7 @@
 
         <TextBlock x:Name="StatusText"
                    Grid.Row="3"
-                   Foreground="{x:Static design:TrueBimBrushes.TextSecondary}"
+                   Foreground="{StaticResource JoinCutTextSecondaryBrush}"
                    TextWrapping="Wrap"
                    Margin="0,10,0,10" />
 
