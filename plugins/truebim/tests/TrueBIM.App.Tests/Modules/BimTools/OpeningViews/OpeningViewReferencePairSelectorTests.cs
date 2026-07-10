@@ -30,4 +30,18 @@ public sealed class OpeningViewReferencePairSelectorTests
         Assert.Equal(-1, minimumIndex);
         Assert.Equal(-1, maximumIndex);
     }
+
+    [Fact]
+    public void TrySelect_IgnoresTinyProtrudingFace()
+    {
+        bool selected = OpeningViewReferencePairSelector.TrySelect(
+            [0, 4, 8],
+            [12, 12, 0.01],
+            out int minimumIndex,
+            out int maximumIndex);
+
+        Assert.True(selected);
+        Assert.Equal(0, minimumIndex);
+        Assert.Equal(1, maximumIndex);
+    }
 }

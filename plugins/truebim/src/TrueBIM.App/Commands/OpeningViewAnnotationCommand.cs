@@ -45,6 +45,11 @@ public sealed class OpeningViewAnnotationCommand : IExternalCommand
 
             OpeningViewAnnotationService service = new();
             OpeningViewAnnotationPreview preview = service.Preview(document, viewSection, source);
+            logger.Info(
+                $"Opening view annotation preview for ElementId {source.Id}: "
+                + $"width={preview.CanCreateWidthDimension} ({preview.WidthReferenceSource}); "
+                + $"height={preview.CanCreateHeightDimension} ({preview.HeightReferenceSource}); "
+                + $"warnings={preview.Warnings.Count}.");
             if (!preview.CanApply)
             {
                 TaskDialog.Show(DialogTitle, preview.ToDialogText());
@@ -57,7 +62,7 @@ public sealed class OpeningViewAnnotationCommand : IExternalCommand
                 MainContent = preview.ToDialogText(),
                 CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
                 DefaultButton = TaskDialogResult.No,
-                FooterText = "Дверь/окно: Left/Right и Bottom/Top семейства, суффикс «проём». Витраж: крайние грани стены, панелей и импостов, суффикс «габарит витража»."
+                FooterText = "Дверь/окно: стандартные или именованные planes проёма; при их отсутствии — крайние видимые грани с пометкой «габарит изделия». Витраж: крайние грани конструкции."
             };
             if (confirmation.Show() != TaskDialogResult.Yes)
             {

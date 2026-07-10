@@ -55,6 +55,16 @@ public sealed class OpeningViewAnnotationServiceTests
     }
 
     [Fact]
+    public void ResolveDimensionSuffix_LabelsFamilyGeometryFallbackHonestly()
+    {
+        Assert.Equal(
+            " (габарит изделия)",
+            OpeningViewAnnotationService.ResolveDimensionSuffix(
+                OpeningViewCategoryKeys.Window,
+                usesFamilyGeometry: true));
+    }
+
+    [Fact]
     public void AnnotationPreview_UsesCurtainWallDimensionLabels()
     {
         OpeningViewAnnotationPreview preview = new(
@@ -85,6 +95,24 @@ public sealed class OpeningViewAnnotationServiceTests
         Assert.Contains("Ширина проёма: готов", dialogText);
         Assert.Contains("Высота проёма: готов", dialogText);
         Assert.DoesNotContain("габаритная", dialogText, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    [Fact]
+    public void AnnotationPreview_ExplainsFamilyGeometryFallbackAndReferenceSources()
+    {
+        OpeningViewAnnotationPreview preview = new(
+            "ОК-27",
+            canCreateTitle: true,
+            canCreateWidthDimension: true,
+            canCreateHeightDimension: true,
+            widthUsesFamilyGeometry: true,
+            widthReferenceSource: "крайние видимые грани изделия",
+            heightReferenceSource: "стандартные planes семейства");
+
+        string dialogText = preview.ToDialogText();
+
+        Assert.Contains("Габаритная ширина изделия: готов — крайние видимые грани изделия", dialogText);
+        Assert.Contains("Высота проёма: готов — стандартные planes семейства", dialogText);
     }
 
     [Fact]

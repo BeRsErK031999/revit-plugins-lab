@@ -30,6 +30,8 @@ The release installer is current-user and does not require admin privileges:
 
 The installer defaults to Revit versions detected on the PC. A user can select an undetected version only after explicit confirmation.
 
+Release PDB files are intentionally excluded. The universal Revit 2019-2026 payload uses solid `lzma2/ultra64` compression because the legacy .NET Framework builds contain identical PDF/DWG parser dependencies for several Revit versions.
+
 Local compiler path used on the development workstation:
 
 ```text

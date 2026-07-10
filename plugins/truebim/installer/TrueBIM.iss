@@ -61,7 +61,7 @@ UsePreviousAppDir=no
 DefaultGroupName=TrueBIM
 OutputDir=..\..\..\dist\installer
 OutputBaseFilename=TrueBIM-Setup
-Compression=lzma
+Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -69,14 +69,14 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 
 [Files]
-Source: "..\..\..\dist\revit\2019\*"; DestDir: "{app}\2019"; Check: ShouldInstallYear('2019'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2020\*"; DestDir: "{app}\2020"; Check: ShouldInstallYear('2020'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2021\*"; DestDir: "{app}\2021"; Check: ShouldInstallYear('2021'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2022\*"; DestDir: "{app}\2022"; Check: ShouldInstallYear('2022'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2023\*"; DestDir: "{app}\2023"; Check: ShouldInstallYear('2023'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2024\*"; DestDir: "{app}\2024"; Check: ShouldInstallYear('2024'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2025\*"; DestDir: "{app}\2025"; Check: ShouldInstallYear('2025'); Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\..\dist\revit\2026\*"; DestDir: "{app}\2026"; Check: ShouldInstallYear('2026'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2019\*"; DestDir: "{app}\2019"; Excludes: "*.pdb"; Check: ShouldInstallYear('2019'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2020\*"; DestDir: "{app}\2020"; Excludes: "*.pdb"; Check: ShouldInstallYear('2020'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2021\*"; DestDir: "{app}\2021"; Excludes: "*.pdb"; Check: ShouldInstallYear('2021'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2022\*"; DestDir: "{app}\2022"; Excludes: "*.pdb"; Check: ShouldInstallYear('2022'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2023\*"; DestDir: "{app}\2023"; Excludes: "*.pdb"; Check: ShouldInstallYear('2023'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2024\*"; DestDir: "{app}\2024"; Excludes: "*.pdb"; Check: ShouldInstallYear('2024'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2025\*"; DestDir: "{app}\2025"; Excludes: "*.pdb"; Check: ShouldInstallYear('2025'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2026\*"; DestDir: "{app}\2026"; Excludes: "*.pdb"; Check: ShouldInstallYear('2026'); Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
 Type: files; Name: "{app}\2019\*.dll"; Check: ShouldInstallYear('2019')

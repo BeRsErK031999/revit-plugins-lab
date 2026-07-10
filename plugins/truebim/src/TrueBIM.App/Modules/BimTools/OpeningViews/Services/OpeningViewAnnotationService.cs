@@ -8,6 +8,7 @@ namespace TrueBIM.App.Modules.BimTools.OpeningViews.Services;
 public sealed class OpeningViewAnnotationService
 {
     private const string OpeningSuffix = " (проём)";
+    private const string ProductSuffix = " (габарит изделия)";
     private const string CurtainWallSuffix = " (габарит витража)";
 
     public OpeningViewAnnotationPreview Preview(Document document, ViewSection view, Element source)
@@ -49,6 +50,16 @@ public sealed class OpeningViewAnnotationService
                 : "Семейство не содержит стабильные reference planes Bottom/Top; высота не будет нанесена.");
         }
 
+        if (references.WidthSource == DimensionReferenceSource.VisibleFamilyGeometry)
+        {
+            warnings.Add("Reference planes проёма Left/Right не найдены: ширина будет построена по крайним видимым граням и помечена как габарит изделия.");
+        }
+
+        if (references.HeightSource == DimensionReferenceSource.VisibleFamilyGeometry)
+        {
+            warnings.Add("Reference planes проёма Bottom/Top не найдены: высота будет построена по крайним видимым граням и помечена как габарит изделия.");
+        }
+
         bool isCurtainWall = OpeningViewElementClassifier.IsCurtainWall(source);
         return new OpeningViewAnnotationPreview(
             ResolveTitle(document, source),
@@ -56,7 +67,11 @@ public sealed class OpeningViewAnnotationService
             canCreateWidth,
             canCreateHeight,
             warnings,
-            isCurtainWall);
+            isCurtainWall,
+            references.WidthSource == DimensionReferenceSource.VisibleFamilyGeometry,
+            references.HeightSource == DimensionReferenceSource.VisibleFamilyGeometry,
+            ResolveReferenceSourceDisplay(references.WidthSource),
+            ResolveReferenceSourceDisplay(references.HeightSource));
     }
 
     public OpeningViewAnnotationResult Apply(
@@ -88,8 +103,14 @@ public sealed class OpeningViewAnnotationService
         OpeningViewAnnotationLayout layout = OpeningViewAnnotationLayout.Create(projectedBounds, view.Scale);
         OpeningAnnotationReferences references = ResolveReferences(document, view, source);
         string categoryKey = OpeningViewSourceResolver.GetCategoryKey(source);
-        string dimensionSuffix = ResolveDimensionSuffix(categoryKey);
-        string dimensionTarget = categoryKey == OpeningViewCategoryKeys.CurtainWall ? "габарита витража" : "проёма";
+        string widthDimensionSuffix = ResolveDimensionSuffix(
+            categoryKey,
+            references.WidthSource == DimensionReferenceSource.VisibleFamilyGeometry);
+        string heightDimensionSuffix = ResolveDimensionSuffix(
+            categoryKey,
+            references.HeightSource == DimensionReferenceSource.VisibleFamilyGeometry);
+        string widthDimensionTarget = ResolveDimensionTarget(categoryKey, references.WidthSource);
+        string heightDimensionTarget = ResolveDimensionTarget(categoryKey, references.HeightSource);
         ElementId textTypeId = ResolveTextNoteTypeId(document);
         OpeningViewMetadata? previousMetadata = OpeningViewMetadataService.Read(view);
         List<Element> createdAnnotations = [];
@@ -118,8 +139,8 @@ public sealed class OpeningViewAnnotationService
             {
                 TryCreateAnnotation(
                     document,
-                    () => CreateWidthDimension(document, view, references.Left!, references.Right!, layout, dimensionSuffix),
-                    $"Размер ширины {dimensionTarget} создан.",
+                    () => CreateWidthDimension(document, view, references.Left!, references.Right!, layout, widthDimensionSuffix),
+                    $"Размер ширины {widthDimensionTarget} создан.",
                     "Не удалось создать размер ширины",
                     createdAnnotations,
                     messages,
@@ -130,8 +151,8 @@ public sealed class OpeningViewAnnotationService
             {
                 TryCreateAnnotation(
                     document,
-                    () => CreateHeightDimension(document, view, references.Bottom!, references.Top!, layout, dimensionSuffix),
-                    $"Размер высоты {dimensionTarget} создан.",
+                    () => CreateHeightDimension(document, view, references.Bottom!, references.Top!, layout, heightDimensionSuffix),
+                    $"Размер высоты {heightDimensionTarget} создан.",
                     "Не удалось создать размер высоты",
                     createdAnnotations,
                     messages,
@@ -183,11 +204,14 @@ public sealed class OpeningViewAnnotationService
         return $"{categoryName} {elementId}";
     }
 
-    public static string ResolveDimensionSuffix(string? categoryKey)
+    public static string ResolveDimensionSuffix(string? categoryKey, bool usesFamilyGeometry = false)
     {
-        return OpeningViewCategoryKeys.Normalize(categoryKey) == OpeningViewCategoryKeys.CurtainWall
-            ? CurtainWallSuffix
-            : OpeningSuffix;
+        if (OpeningViewCategoryKeys.Normalize(categoryKey) == OpeningViewCategoryKeys.CurtainWall)
+        {
+            return CurtainWallSuffix;
+        }
+
+        return usesFamilyGeometry ? ProductSuffix : OpeningSuffix;
     }
 
     private static string ResolveTitle(Document document, Element source)
@@ -417,11 +441,7 @@ public sealed class OpeningViewAnnotationService
     {
         if (source is FamilyInstance familyInstance)
         {
-            return new OpeningAnnotationReferences(
-                GetReference(familyInstance, FamilyInstanceReferenceType.Left),
-                GetReference(familyInstance, FamilyInstanceReferenceType.Right),
-                GetReference(familyInstance, FamilyInstanceReferenceType.Bottom),
-                GetReference(familyInstance, FamilyInstanceReferenceType.Top));
+            return ResolveFamilyInstanceReferences(document, view, familyInstance);
         }
 
         return source is Wall wall && OpeningViewElementClassifier.IsCurtainWall(wall)
@@ -429,10 +449,64 @@ public sealed class OpeningViewAnnotationService
             : OpeningAnnotationReferences.Empty;
     }
 
+    private static OpeningAnnotationReferences ResolveFamilyInstanceReferences(
+        Document document,
+        ViewSection view,
+        FamilyInstance familyInstance)
+    {
+        Reference? standardLeft = GetReference(familyInstance, FamilyInstanceReferenceType.Left);
+        Reference? standardRight = GetReference(familyInstance, FamilyInstanceReferenceType.Right);
+        Reference? standardBottom = GetReference(familyInstance, FamilyInstanceReferenceType.Bottom);
+        Reference? standardTop = GetReference(familyInstance, FamilyInstanceReferenceType.Top);
+
+        Reference? semanticLeft = standardLeft ?? GetNamedReference(familyInstance, OpeningViewReferenceSide.Left);
+        Reference? semanticRight = standardRight ?? GetNamedReference(familyInstance, OpeningViewReferenceSide.Right);
+        Reference? semanticBottom = standardBottom ?? GetNamedReference(familyInstance, OpeningViewReferenceSide.Bottom);
+        Reference? semanticTop = standardTop ?? GetNamedReference(familyInstance, OpeningViewReferenceSide.Top);
+
+        bool hasSemanticWidth = IsUsablePair(document, semanticLeft, semanticRight);
+        bool hasSemanticHeight = IsUsablePair(document, semanticBottom, semanticTop);
+        OpeningAnnotationReferences geometry = hasSemanticWidth && hasSemanticHeight
+            ? OpeningAnnotationReferences.Empty
+            : ResolveGeometryReferences(
+                view,
+                [familyInstance],
+                DimensionReferenceSource.VisibleFamilyGeometry);
+
+        Reference? left = hasSemanticWidth ? semanticLeft : geometry.Left;
+        Reference? right = hasSemanticWidth ? semanticRight : geometry.Right;
+        Reference? bottom = hasSemanticHeight ? semanticBottom : geometry.Bottom;
+        Reference? top = hasSemanticHeight ? semanticTop : geometry.Top;
+
+        DimensionReferenceSource widthSource = hasSemanticWidth
+            ? standardLeft is not null && standardRight is not null
+                ? DimensionReferenceSource.StandardFamilyPlanes
+                : DimensionReferenceSource.NamedFamilyPlanes
+            : geometry.WidthSource;
+        DimensionReferenceSource heightSource = hasSemanticHeight
+            ? standardBottom is not null && standardTop is not null
+                ? DimensionReferenceSource.StandardFamilyPlanes
+                : DimensionReferenceSource.NamedFamilyPlanes
+            : geometry.HeightSource;
+
+        return new OpeningAnnotationReferences(left, right, bottom, top, widthSource, heightSource);
+    }
+
     private static OpeningAnnotationReferences ResolveCurtainWallReferences(
         Document document,
         ViewSection view,
         Wall wall)
+    {
+        return ResolveGeometryReferences(
+            view,
+            CollectCurtainWallGeometryElements(document, wall),
+            DimensionReferenceSource.CurtainWallGeometry);
+    }
+
+    private static OpeningAnnotationReferences ResolveGeometryReferences(
+        ViewSection view,
+        IEnumerable<Element> elements,
+        DimensionReferenceSource source)
     {
         Options options = new()
         {
@@ -445,7 +519,7 @@ public sealed class OpeningViewAnnotationService
         List<ReferenceCandidate> horizontal = [];
         List<ReferenceCandidate> vertical = [];
 
-        foreach (Element element in CollectCurtainWallGeometryElements(document, wall))
+        foreach (Element element in elements)
         {
             try
             {
@@ -467,11 +541,17 @@ public sealed class OpeningViewAnnotationService
             }
         }
 
+        Reference? left = SelectReference(horizontal, minimum: true);
+        Reference? rightReference = SelectReference(horizontal, minimum: false);
+        Reference? bottom = SelectReference(vertical, minimum: true);
+        Reference? top = SelectReference(vertical, minimum: false);
         return new OpeningAnnotationReferences(
-            SelectReference(horizontal, minimum: true),
-            SelectReference(horizontal, minimum: false),
-            SelectReference(vertical, minimum: true),
-            SelectReference(vertical, minimum: false));
+            left,
+            rightReference,
+            bottom,
+            top,
+            left is not null && rightReference is not null ? source : DimensionReferenceSource.None,
+            bottom is not null && top is not null ? source : DimensionReferenceSource.None);
     }
 
     private static IReadOnlyList<Element> CollectCurtainWallGeometryElements(Document document, Wall wall)
@@ -552,12 +632,18 @@ public sealed class OpeningViewAnnotationService
             XYZ point = transform.OfPoint(planarFace.Origin);
             if (Math.Abs(normal.DotProduct(right)) >= 0.98)
             {
-                horizontal.Add(new ReferenceCandidate(planarFace.Reference, (point - origin).DotProduct(right)));
+                horizontal.Add(new ReferenceCandidate(
+                    planarFace.Reference,
+                    (point - origin).DotProduct(right),
+                    planarFace.Area));
             }
 
             if (Math.Abs(normal.DotProduct(up)) >= 0.98)
             {
-                vertical.Add(new ReferenceCandidate(planarFace.Reference, (point - origin).DotProduct(up)));
+                vertical.Add(new ReferenceCandidate(
+                    planarFace.Reference,
+                    (point - origin).DotProduct(up),
+                    planarFace.Area));
             }
         }
     }
@@ -566,6 +652,7 @@ public sealed class OpeningViewAnnotationService
     {
         if (!OpeningViewReferencePairSelector.TrySelect(
             candidates.Select(candidate => candidate.Position).ToList(),
+            candidates.Select(candidate => candidate.Area).ToList(),
             out int minimumIndex,
             out int maximumIndex))
         {
@@ -573,6 +660,64 @@ public sealed class OpeningViewAnnotationService
         }
 
         return candidates[minimum ? minimumIndex : maximumIndex].Reference;
+    }
+
+    private static Reference? GetNamedReference(
+        FamilyInstance source,
+        OpeningViewReferenceSide side)
+    {
+        List<NamedReferenceCandidate> candidates = [];
+        CollectNamedReferences(source, FamilyInstanceReferenceType.StrongReference, side, typePriority: 10, candidates);
+        CollectNamedReferences(source, FamilyInstanceReferenceType.WeakReference, side, typePriority: 0, candidates);
+        return candidates
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(candidate => candidate.Reference)
+            .FirstOrDefault();
+    }
+
+    private static void CollectNamedReferences(
+        FamilyInstance source,
+        FamilyInstanceReferenceType referenceType,
+        OpeningViewReferenceSide side,
+        int typePriority,
+        ICollection<NamedReferenceCandidate> candidates)
+    {
+        try
+        {
+            foreach (Reference reference in source.GetReferences(referenceType) ?? [])
+            {
+                string name = source.GetReferenceName(reference) ?? string.Empty;
+                int score = OpeningViewReferenceNameMatcher.Score(name, side);
+                if (score > 0)
+                {
+                    candidates.Add(new NamedReferenceCandidate(reference, name, score + typePriority));
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static bool IsUsablePair(Document document, Reference? first, Reference? second)
+    {
+        if (first is null || second is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return !string.Equals(
+                first.ConvertToStableRepresentation(document),
+                second.ConvertToStableRepresentation(document),
+                StringComparison.Ordinal);
+        }
+        catch (Exception)
+        {
+            return !ReferenceEquals(first, second);
+        }
     }
 
     private static Reference? GetReference(FamilyInstance source, FamilyInstanceReferenceType referenceType)
@@ -585,6 +730,30 @@ public sealed class OpeningViewAnnotationService
         {
             return null;
         }
+    }
+
+    private static string ResolveReferenceSourceDisplay(DimensionReferenceSource source)
+    {
+        return source switch
+        {
+            DimensionReferenceSource.StandardFamilyPlanes => "стандартные planes семейства",
+            DimensionReferenceSource.NamedFamilyPlanes => "именованные planes семейства",
+            DimensionReferenceSource.VisibleFamilyGeometry => "крайние видимые грани изделия",
+            DimensionReferenceSource.CurtainWallGeometry => "крайние грани витража",
+            _ => string.Empty
+        };
+    }
+
+    private static string ResolveDimensionTarget(string categoryKey, DimensionReferenceSource source)
+    {
+        if (OpeningViewCategoryKeys.Normalize(categoryKey) == OpeningViewCategoryKeys.CurtainWall)
+        {
+            return "габарита витража";
+        }
+
+        return source == DimensionReferenceSource.VisibleFamilyGeometry
+            ? "габарита изделия"
+            : "проёма";
     }
 
     private static ElementId ResolveTextNoteTypeId(Document document)
@@ -607,10 +776,29 @@ public sealed class OpeningViewAnnotationService
         Reference? Left,
         Reference? Right,
         Reference? Bottom,
-        Reference? Top)
+        Reference? Top,
+        DimensionReferenceSource WidthSource,
+        DimensionReferenceSource HeightSource)
     {
-        public static OpeningAnnotationReferences Empty { get; } = new(null, null, null, null);
+        public static OpeningAnnotationReferences Empty { get; } = new(
+            null,
+            null,
+            null,
+            null,
+            DimensionReferenceSource.None,
+            DimensionReferenceSource.None);
     }
 
-    private sealed record ReferenceCandidate(Reference Reference, double Position);
+    private sealed record ReferenceCandidate(Reference Reference, double Position, double Area);
+
+    private sealed record NamedReferenceCandidate(Reference Reference, string Name, int Score);
+
+    private enum DimensionReferenceSource
+    {
+        None,
+        StandardFamilyPlanes,
+        NamedFamilyPlanes,
+        VisibleFamilyGeometry,
+        CurtainWallGeometry
+    }
 }

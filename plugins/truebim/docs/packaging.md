@@ -27,6 +27,8 @@ The script:
 - copies documentation Markdown and `plugins/truebim/docs/assets` into each versioned `Docs` payload;
 - validates manifest XML and per-year `Assembly` paths;
 - fails if `RevitAPI.dll` or `RevitAPIUI.dll` are copied into the installer payload;
+- excludes PDB debug symbols from the release installer while keeping them in `dist/revit` for local diagnostics;
+- uses solid `lzma2/ultra64` compression so repeated multi-version dependencies are stored compactly;
 - compiles `plugins/truebim/installer/TrueBIM.iss` with Inno Setup.
 
 By default, the Revit 2026 build uses API assemblies from `C:\Program Files\Autodesk\Revit 2026`. A CI or reference-only API location can be supplied explicitly:
