@@ -61,6 +61,24 @@ public sealed class ModuleManifestLoaderTests
         Assert.Equal("supported", manifest.Id);
     }
 
+    [Fact]
+    public void SupportsRevitVersion_AcceptsRevit2026()
+    {
+        ModuleManifest manifest = ModuleManifestLoader.ParseManifest(
+            """
+            {
+              "id": "truebim.print",
+              "displayName": "Print",
+              "description": "Print sheets.",
+              "version": "0.1.0",
+              "enabledByDefault": true,
+              "revitVersions": ["2025", "2026"]
+            }
+            """);
+
+        Assert.True(ModuleManifestLoader.SupportsRevitVersion(manifest, "2026"));
+    }
+
     private static string ValidManifest(string id, string revitVersion)
     {
         return $$"""

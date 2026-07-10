@@ -29,6 +29,15 @@ Close Revit before deploying. From the repository root, run the full preflight:
 The preflight script builds Release, runs tests, builds artifacts, compiles the installer when `ISCC.exe` is available, deploys locally, and verifies the installed add-in manifest and module manifest.
 It fails before deploy if Revit is still running, because Revit can lock `TrueBIM.App.dll`.
 
+For Revit 2026, build and deploy the matching API payload with:
+
+```powershell
+.\plugins\truebim\scripts\build-artifacts-2026.ps1 -Configuration Release
+.\plugins\truebim\scripts\deploy-local-2026.ps1 -Configuration Release -SkipBuild
+```
+
+Both scripts use `C:\Program Files\Autodesk\Revit 2026` by default and accept `-RevitApiRoot` when the Revit 2026 API reference assemblies are stored elsewhere.
+
 If you only need to redeploy after the full preflight already passed, run:
 
 From the repository root, run:

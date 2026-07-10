@@ -33,12 +33,12 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 
 ## Target Revit versions
 
-Release installer targets: Revit 2019, 2020, 2021, 2022, 2023, 2024, and 2025.
+Release installer targets: Revit 2019, 2020, 2021, 2022, 2023, 2024, 2025, and 2026.
 
 Technical targets:
 
 - Revit 2019-2024: `net48`, `RevitAPI.dll`, and `RevitAPIUI.dll` from the matching Revit version.
-- Revit 2025: `net8.0-windows`, `RevitAPI.dll`, and `RevitAPIUI.dll` from Revit 2025.
+- Revit 2025-2026: `net8.0-windows`, `RevitAPI.dll`, and `RevitAPIUI.dll` from the matching Revit version.
 
 ## Build And Package
 

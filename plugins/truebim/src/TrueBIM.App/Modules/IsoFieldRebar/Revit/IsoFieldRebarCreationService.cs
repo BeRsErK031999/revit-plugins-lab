@@ -307,6 +307,23 @@ public sealed class IsoFieldRebarCreationService
         Element host,
         RebarCreationRequest request)
     {
+#if REVIT2026_OR_GREATER
+        using BarTerminationsData barTerminations = new(document)
+        {
+            TerminationOrientationAtStart = RebarTerminationOrientation.Left,
+            TerminationOrientationAtEnd = RebarTerminationOrientation.Right
+        };
+        Rebar rebar = Rebar.CreateFromCurves(
+            document,
+            RebarStyle.Standard,
+            request.BarType,
+            host,
+            request.Geometry.Normal,
+            request.Geometry.Curves,
+            barTerminations,
+            true,
+            true);
+#else
         Rebar rebar = Rebar.CreateFromCurves(
             document,
             RebarStyle.Standard,
@@ -320,6 +337,7 @@ public sealed class IsoFieldRebarCreationService
             RebarHookOrientation.Right,
             true,
             true);
+#endif
 
         rebar.GetShapeDrivenAccessor().SetLayoutAsSingle();
         return rebar;

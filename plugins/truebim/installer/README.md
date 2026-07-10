@@ -17,7 +17,7 @@ Build all Revit-version payloads and compile the installer from the repository r
 The script emits:
 
 ```text
-dist/revit/2019 ... dist/revit/2025
+dist/revit/2019 ... dist/revit/2026
 dist/installer/TrueBIM-Setup.exe
 ```
 

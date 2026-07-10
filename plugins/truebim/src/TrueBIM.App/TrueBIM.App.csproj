@@ -23,16 +23,20 @@
     <RevitApiRoot>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiRoot>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
     <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
     <DefineConstants>$(DefineConstants);REVIT2023_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
     <DefineConstants>$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RevitVersion)' == '2026'">
+    <DefineConstants>$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
   <Target Name="ValidateRevitApiTarget" BeforeTargets="ResolveReferences">
@@ -40,8 +44,8 @@
       Condition="'$(TargetFramework)' == 'net48' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(RevitVersion)', '^(2019|2020|2021|2022|2023|2024)$'))"
       Text="TargetFramework net48 supports RevitVersion 2019-2024 only. Current RevitVersion='$(RevitVersion)'." />
     <Error
-      Condition="'$(TargetFramework)' == 'net8.0-windows' and '$(RevitVersion)' != '2025'"
-      Text="TargetFramework net8.0-windows is reserved for RevitVersion 2025. Current RevitVersion='$(RevitVersion)'." />
+      Condition="'$(TargetFramework)' == 'net8.0-windows' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(RevitVersion)', '^(2025|2026)$'))"
+      Text="TargetFramework net8.0-windows supports RevitVersion 2025-2026 only. Current RevitVersion='$(RevitVersion)'." />
     <Error
       Condition="!Exists('$(RevitApiRoot)\RevitAPI.dll')"
       Text="RevitAPI.dll was not found for Revit $(RevitVersion) at '$(RevitApiRoot)\RevitAPI.dll'." />

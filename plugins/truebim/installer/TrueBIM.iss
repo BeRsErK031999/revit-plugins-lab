@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.1.1"
+#define AppVersion "0.2.0"
 #define Publisher "TrueBIM"
 
 #if !FileExists("..\..\..\dist\revit\2019\TrueBIM.App.dll")
@@ -44,6 +44,12 @@
 #if !FileExists("..\..\..\dist\revit\2025\TrueBIM.addin")
   #error Missing dist\revit\2025\TrueBIM.addin. Run build-installer.ps1 first.
 #endif
+#if !FileExists("..\..\..\dist\revit\2026\TrueBIM.App.dll")
+  #error Missing dist\revit\2026\TrueBIM.App.dll. Run build-installer.ps1 first.
+#endif
+#if !FileExists("..\..\..\dist\revit\2026\TrueBIM.addin")
+  #error Missing dist\revit\2026\TrueBIM.addin. Run build-installer.ps1 first.
+#endif
 
 [Setup]
 AppId={{8F8E8CC7-D3C9-49BA-8F40-AD0F2F8D32F7}
@@ -70,15 +76,89 @@ Source: "..\..\..\dist\revit\2022\*"; DestDir: "{app}\2022"; Check: ShouldInstal
 Source: "..\..\..\dist\revit\2023\*"; DestDir: "{app}\2023"; Check: ShouldInstallYear('2023'); Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\..\dist\revit\2024\*"; DestDir: "{app}\2024"; Check: ShouldInstallYear('2024'); Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\..\dist\revit\2025\*"; DestDir: "{app}\2025"; Check: ShouldInstallYear('2025'); Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\..\dist\revit\2026\*"; DestDir: "{app}\2026"; Check: ShouldInstallYear('2026'); Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-Type: filesandordirs; Name: "{app}\2019"; Check: ShouldInstallYear('2019')
-Type: filesandordirs; Name: "{app}\2020"; Check: ShouldInstallYear('2020')
-Type: filesandordirs; Name: "{app}\2021"; Check: ShouldInstallYear('2021')
-Type: filesandordirs; Name: "{app}\2022"; Check: ShouldInstallYear('2022')
-Type: filesandordirs; Name: "{app}\2023"; Check: ShouldInstallYear('2023')
-Type: filesandordirs; Name: "{app}\2024"; Check: ShouldInstallYear('2024')
-Type: filesandordirs; Name: "{app}\2025"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{app}\2019\*.dll"; Check: ShouldInstallYear('2019')
+Type: files; Name: "{app}\2019\*.pdb"; Check: ShouldInstallYear('2019')
+Type: files; Name: "{app}\2019\TrueBIM.addin"; Check: ShouldInstallYear('2019')
+Type: files; Name: "{app}\2019\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2019')
+Type: files; Name: "{app}\2019\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2019')
+Type: filesandordirs; Name: "{app}\2019\Core"; Check: ShouldInstallYear('2019')
+Type: filesandordirs; Name: "{app}\2019\Modules"; Check: ShouldInstallYear('2019')
+Type: filesandordirs; Name: "{app}\2019\Assets"; Check: ShouldInstallYear('2019')
+Type: filesandordirs; Name: "{app}\2019\Docs"; Check: ShouldInstallYear('2019')
+Type: filesandordirs; Name: "{app}\2019\tools"; Check: ShouldInstallYear('2019')
+Type: files; Name: "{app}\2020\*.dll"; Check: ShouldInstallYear('2020')
+Type: files; Name: "{app}\2020\*.pdb"; Check: ShouldInstallYear('2020')
+Type: files; Name: "{app}\2020\TrueBIM.addin"; Check: ShouldInstallYear('2020')
+Type: files; Name: "{app}\2020\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2020')
+Type: files; Name: "{app}\2020\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2020')
+Type: filesandordirs; Name: "{app}\2020\Core"; Check: ShouldInstallYear('2020')
+Type: filesandordirs; Name: "{app}\2020\Modules"; Check: ShouldInstallYear('2020')
+Type: filesandordirs; Name: "{app}\2020\Assets"; Check: ShouldInstallYear('2020')
+Type: filesandordirs; Name: "{app}\2020\Docs"; Check: ShouldInstallYear('2020')
+Type: filesandordirs; Name: "{app}\2020\tools"; Check: ShouldInstallYear('2020')
+Type: files; Name: "{app}\2021\*.dll"; Check: ShouldInstallYear('2021')
+Type: files; Name: "{app}\2021\*.pdb"; Check: ShouldInstallYear('2021')
+Type: files; Name: "{app}\2021\TrueBIM.addin"; Check: ShouldInstallYear('2021')
+Type: files; Name: "{app}\2021\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2021')
+Type: files; Name: "{app}\2021\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2021')
+Type: filesandordirs; Name: "{app}\2021\Core"; Check: ShouldInstallYear('2021')
+Type: filesandordirs; Name: "{app}\2021\Modules"; Check: ShouldInstallYear('2021')
+Type: filesandordirs; Name: "{app}\2021\Assets"; Check: ShouldInstallYear('2021')
+Type: filesandordirs; Name: "{app}\2021\Docs"; Check: ShouldInstallYear('2021')
+Type: filesandordirs; Name: "{app}\2021\tools"; Check: ShouldInstallYear('2021')
+Type: files; Name: "{app}\2022\*.dll"; Check: ShouldInstallYear('2022')
+Type: files; Name: "{app}\2022\*.pdb"; Check: ShouldInstallYear('2022')
+Type: files; Name: "{app}\2022\TrueBIM.addin"; Check: ShouldInstallYear('2022')
+Type: files; Name: "{app}\2022\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2022')
+Type: files; Name: "{app}\2022\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2022')
+Type: filesandordirs; Name: "{app}\2022\Core"; Check: ShouldInstallYear('2022')
+Type: filesandordirs; Name: "{app}\2022\Modules"; Check: ShouldInstallYear('2022')
+Type: filesandordirs; Name: "{app}\2022\Assets"; Check: ShouldInstallYear('2022')
+Type: filesandordirs; Name: "{app}\2022\Docs"; Check: ShouldInstallYear('2022')
+Type: filesandordirs; Name: "{app}\2022\tools"; Check: ShouldInstallYear('2022')
+Type: files; Name: "{app}\2023\*.dll"; Check: ShouldInstallYear('2023')
+Type: files; Name: "{app}\2023\*.pdb"; Check: ShouldInstallYear('2023')
+Type: files; Name: "{app}\2023\TrueBIM.addin"; Check: ShouldInstallYear('2023')
+Type: files; Name: "{app}\2023\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2023')
+Type: files; Name: "{app}\2023\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2023')
+Type: filesandordirs; Name: "{app}\2023\Core"; Check: ShouldInstallYear('2023')
+Type: filesandordirs; Name: "{app}\2023\Modules"; Check: ShouldInstallYear('2023')
+Type: filesandordirs; Name: "{app}\2023\Assets"; Check: ShouldInstallYear('2023')
+Type: filesandordirs; Name: "{app}\2023\Docs"; Check: ShouldInstallYear('2023')
+Type: filesandordirs; Name: "{app}\2023\tools"; Check: ShouldInstallYear('2023')
+Type: files; Name: "{app}\2024\*.dll"; Check: ShouldInstallYear('2024')
+Type: files; Name: "{app}\2024\*.pdb"; Check: ShouldInstallYear('2024')
+Type: files; Name: "{app}\2024\TrueBIM.addin"; Check: ShouldInstallYear('2024')
+Type: files; Name: "{app}\2024\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2024')
+Type: files; Name: "{app}\2024\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2024')
+Type: filesandordirs; Name: "{app}\2024\Core"; Check: ShouldInstallYear('2024')
+Type: filesandordirs; Name: "{app}\2024\Modules"; Check: ShouldInstallYear('2024')
+Type: filesandordirs; Name: "{app}\2024\Assets"; Check: ShouldInstallYear('2024')
+Type: filesandordirs; Name: "{app}\2024\Docs"; Check: ShouldInstallYear('2024')
+Type: filesandordirs; Name: "{app}\2024\tools"; Check: ShouldInstallYear('2024')
+Type: files; Name: "{app}\2025\*.dll"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{app}\2025\*.pdb"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{app}\2025\TrueBIM.addin"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{app}\2025\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{app}\2025\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2025')
+Type: filesandordirs; Name: "{app}\2025\Core"; Check: ShouldInstallYear('2025')
+Type: filesandordirs; Name: "{app}\2025\Modules"; Check: ShouldInstallYear('2025')
+Type: filesandordirs; Name: "{app}\2025\Assets"; Check: ShouldInstallYear('2025')
+Type: filesandordirs; Name: "{app}\2025\Docs"; Check: ShouldInstallYear('2025')
+Type: filesandordirs; Name: "{app}\2025\tools"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{app}\2026\*.dll"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2026\*.pdb"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2026\TrueBIM.addin"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2026\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2026\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2026\Core"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2026\Modules"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2026\Assets"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2026\Docs"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2026\tools"; Check: ShouldInstallYear('2026')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"; Check: ShouldInstallYear('2019')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2020\TrueBIM.addin"; Check: ShouldInstallYear('2020')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2021\TrueBIM.addin"; Check: ShouldInstallYear('2021')
@@ -86,6 +166,7 @@ Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"; Che
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"; Check: ShouldInstallYear('2023')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"; Check: ShouldInstallYear('2024')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"; Check: ShouldInstallYear('2025')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2026\TrueBIM.addin"; Check: ShouldInstallYear('2026')
 
 [UninstallDelete]
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"
@@ -95,6 +176,7 @@ Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2022\TrueBIM.addin"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2026\TrueBIM.addin"
 Type: filesandordirs; Name: "{app}\2019"
 Type: filesandordirs; Name: "{app}\2020"
 Type: filesandordirs; Name: "{app}\2021"
@@ -102,6 +184,7 @@ Type: filesandordirs; Name: "{app}\2022"
 Type: filesandordirs; Name: "{app}\2023"
 Type: filesandordirs; Name: "{app}\2024"
 Type: filesandordirs; Name: "{app}\2025"
+Type: filesandordirs; Name: "{app}\2026"
 Type: dirifempty; Name: "{app}"
 
 [Code]
@@ -115,6 +198,7 @@ var
   Index2023: Integer;
   Index2024: Integer;
   Index2025: Integer;
+  Index2026: Integer;
 
 function IsRevitInstalled(Year: String): Boolean;
 begin
@@ -172,6 +256,7 @@ begin
   Index2023 := AddVersion('2023');
   Index2024 := AddVersion('2024');
   Index2025 := AddVersion('2025');
+  Index2026 := AddVersion('2026');
 
   Note := TNewStaticText.Create(VersionPage);
   Note.Parent := VersionPage.Surface;
@@ -201,6 +286,8 @@ begin
     Result := VersionList.Checked[Index2024]
   else if Year = '2025' then
     Result := VersionList.Checked[Index2025]
+  else if Year = '2026' then
+    Result := VersionList.Checked[Index2026]
   else
     Result := False;
 end;
@@ -214,7 +301,8 @@ begin
     ShouldInstallYear('2022') or
     ShouldInstallYear('2023') or
     ShouldInstallYear('2024') or
-    ShouldInstallYear('2025');
+    ShouldInstallYear('2025') or
+    ShouldInstallYear('2026');
 end;
 
 procedure AppendMissingYear(var MissingYears: String; Year: String);
@@ -238,6 +326,7 @@ begin
   AppendMissingYear(Result, '2023');
   AppendMissingYear(Result, '2024');
   AppendMissingYear(Result, '2025');
+  AppendMissingYear(Result, '2026');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -311,5 +400,6 @@ begin
     SaveManifest('2023');
     SaveManifest('2024');
     SaveManifest('2025');
+    SaveManifest('2026');
   end;
 end;

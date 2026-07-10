@@ -98,7 +98,7 @@ These can be added after the first stable multi-version installer workflow.
 
 ## Installer scope
 
-The release installer should install the TrueBIM shell and selected modules for one or more Revit versions from 2019 through 2025.
+The release installer should install the TrueBIM shell and selected modules for one or more Revit versions from 2019 through 2026.
 
 Planned sections:
 

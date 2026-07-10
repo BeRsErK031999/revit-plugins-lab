@@ -1,5 +1,5 @@
 param(
-    [string[]] $Years = @("2019", "2020", "2021", "2022", "2023", "2024", "2025"),
+    [string[]] $Years = @("2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"),
 
     [string] $InstallRoot = "",
 
@@ -83,9 +83,9 @@ $report = foreach ($year in $Years) {
     $isoFieldWindowGuideFound = Test-Path -LiteralPath $isoFieldWindowGuidePath
     $isoFieldExampleFlowFound = Test-Path -LiteralPath $isoFieldExampleFlowPath
     $isoFieldGuideAssetsFound = $isoFieldGuideIconFound -and $isoFieldWindowGuideFound -and $isoFieldExampleFlowFound
-    $revit2025PayloadOk = $year -ne "2025" -or $depsFound
+    $net8PayloadOk = $year -notin @("2025", "2026") -or $depsFound
     $smokeTested = $SmokeTestedYears -contains $year
-    $successful = $manifestInstalled -and $xmlValid -and $assemblyFound -and $payloadDllFound -and $revit2025PayloadOk -and $isoFieldGuideFound -and $isoFieldGuideAssetsFound
+    $successful = $manifestInstalled -and $xmlValid -and $assemblyFound -and $payloadDllFound -and $net8PayloadOk -and $isoFieldGuideFound -and $isoFieldGuideAssetsFound
 
     [pscustomobject]@{
         RevitVersion = $year
@@ -98,8 +98,8 @@ $report = foreach ($year in $Years) {
         ManifestPathEncodingValid = $manifestPathEncodingValid
         AssemblyPath = $assemblyPath
         AssemblyFound = $assemblyFound
-        Revit2025DepsFound = if ($year -eq "2025") { $depsFound } else { $null }
-        Revit2025RuntimeConfigFound = if ($year -eq "2025") { $runtimeConfigFound } else { $null }
+        Net8DepsFound = if ($year -in @("2025", "2026")) { $depsFound } else { $null }
+        Net8RuntimeConfigFound = if ($year -in @("2025", "2026")) { $runtimeConfigFound } else { $null }
         IsoFieldGuideFound = $isoFieldGuideFound
         IsoFieldGuideIconFound = $isoFieldGuideIconFound
         IsoFieldWindowGuideFound = $isoFieldWindowGuideFound

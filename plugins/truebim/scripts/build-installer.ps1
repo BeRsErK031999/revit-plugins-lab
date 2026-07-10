@@ -6,12 +6,14 @@ param(
 
     [switch] $SkipInstaller,
 
-    [switch] $AllowMissingRevitApi
+    [switch] $AllowMissingRevitApi,
+
+    [string] $Revit2026ApiRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$revitYears = @("2019", "2020", "2021", "2022", "2023", "2024", "2025")
+$revitYears = @("2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026")
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $repoRootPath = [System.IO.Path]::GetFullPath([string] $repoRoot)
 $trueBimRoot = Join-Path $repoRootPath "plugins\truebim"
@@ -186,6 +188,26 @@ function Assert-NoRevitApiPayload {
     }
 }
 
+function Assert-ModuleSupportsYear {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $ModuleDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Year
+    )
+
+    $manifestPath = Join-Path $ModuleDirectory "module.json"
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        throw "Module manifest was not found at '$manifestPath'."
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if ($null -eq $manifest.revitVersions -or $manifest.revitVersions -notcontains $Year) {
+        throw "Module '$($manifest.id)' does not declare support for Revit $Year in '$manifestPath'."
+    }
+}
+
 Remove-DirectorySafe -Path $distRoot
 Remove-DirectorySafe -Path $buildTempRoot
 New-Item -ItemType Directory -Path $distRevitRoot -Force | Out-Null
@@ -195,8 +217,13 @@ $results = New-Object System.Collections.Generic.List[object]
 $skipped = New-Object System.Collections.Generic.List[string]
 
 foreach ($year in $revitYears) {
-    $framework = if ($year -eq "2025") { "net8.0-windows" } else { "net48" }
-    $revitApiRoot = Join-Path ${env:ProgramFiles} "Autodesk\Revit $year"
+    $framework = if ($year -in @("2025", "2026")) { "net8.0-windows" } else { "net48" }
+    $revitApiRoot = if ($year -eq "2026" -and -not [string]::IsNullOrWhiteSpace($Revit2026ApiRoot)) {
+        [System.IO.Path]::GetFullPath($Revit2026ApiRoot)
+    }
+    else {
+        Join-Path ${env:ProgramFiles} "Autodesk\Revit $year"
+    }
     $apiPath = Join-Path $revitApiRoot "RevitAPI.dll"
     $apiUiPath = Join-Path $revitApiRoot "RevitAPIUI.dll"
 
@@ -228,6 +255,7 @@ foreach ($year in $revitYears) {
         --nologo `
         --verbosity:minimal `
         "-p:RevitVersion=$year" `
+        "-p:RevitApiRoot=$revitApiRoot" `
         "-p:OutputPath=$tempOutputDir\" `
         "-p:IntermediateOutputPath=$tempObjDir\"
     if ($LASTEXITCODE -ne 0) {
@@ -243,9 +271,15 @@ foreach ($year in $revitYears) {
     New-Item -ItemType Directory -Path $distYearRoot -Force | Out-Null
     Copy-Item -Path (Join-Path $tempOutputDir "*") -Destination $distYearRoot -Recurse -Force
 
-    Copy-DirectoryContents -Source (Join-Path $trueBimRoot "modules\print") -Destination (Join-Path $distYearRoot "Modules\Print")
-    Copy-DirectoryContents -Source (Join-Path $trueBimRoot "modules\sheet-numbering") -Destination (Join-Path $distYearRoot "Modules\SheetNumbering")
-    Copy-DirectoryContents -Source (Join-Path $trueBimRoot "modules\schedule-column-collapse") -Destination (Join-Path $distYearRoot "Modules\ScheduleColumnCollapse")
+    $printModuleRoot = Join-Path $trueBimRoot "modules\print"
+    $sheetNumberingModuleRoot = Join-Path $trueBimRoot "modules\sheet-numbering"
+    $scheduleColumnCollapseModuleRoot = Join-Path $trueBimRoot "modules\schedule-column-collapse"
+    Assert-ModuleSupportsYear -ModuleDirectory $printModuleRoot -Year $year
+    Assert-ModuleSupportsYear -ModuleDirectory $sheetNumberingModuleRoot -Year $year
+    Assert-ModuleSupportsYear -ModuleDirectory $scheduleColumnCollapseModuleRoot -Year $year
+    Copy-DirectoryContents -Source $printModuleRoot -Destination (Join-Path $distYearRoot "Modules\Print")
+    Copy-DirectoryContents -Source $sheetNumberingModuleRoot -Destination (Join-Path $distYearRoot "Modules\SheetNumbering")
+    Copy-DirectoryContents -Source $scheduleColumnCollapseModuleRoot -Destination (Join-Path $distYearRoot "Modules\ScheduleColumnCollapse")
     Copy-DirectoryContents -Source (Join-Path $trueBimRoot "assets\icons") -Destination (Join-Path $distYearRoot "Assets\icons")
 
     $docsDir = Join-Path $distYearRoot "Docs"

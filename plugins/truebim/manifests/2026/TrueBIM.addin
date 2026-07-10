@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>TrueBIM</Name>
+    <Assembly>%APPDATA%\TrueBIM\2026\Core\TrueBIM.App.dll</Assembly>
+    <AddInId>8F8E8CC7-D3C9-49BA-8F40-AD0F2F8D32F7</AddInId>
+    <FullClassName>TrueBIM.App.App</FullClassName>
+    <VendorId>TRBM</VendorId>
+    <VendorDescription>TrueBIM</VendorDescription>
+  </AddIn>
+</RevitAddIns>
