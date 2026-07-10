@@ -41,7 +41,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
     private readonly TextBox suffixInput = new() { ToolTip = "Текст после номера листа." };
     private readonly TextBox startNumberInput = new() { Text = "1", ToolTip = "Первое число в новой нумерации." };
     private readonly TextBox incrementInput = new() { Text = "1", ToolTip = "На сколько увеличивать номер для следующего листа." };
-    private readonly TextBox paddingInput = new() { Text = "2", ToolTip = "Минимальное количество цифр, например 01 или 001." };
+    private readonly ComboBox numberFormatInput = CreateNumberFormatInput();
     private bool suppressSelectionLogging;
     private bool isPreviewCurrent;
     private IReadOnlyList<SheetInfo> sheets;
@@ -73,6 +73,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         selectionLogTimer = CreateSelectionLogTimer();
         ApplySharedControlStyles();
         Content = CreateContent();
+        numberFormatInput.SelectionChanged += (_, _) => OnNumberFormatChanged();
         logger.Info($"Sheet Numbering window opened with {sheets.Count} sheets.");
         LoadCurrentSheets();
     }
@@ -118,7 +119,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         AddRuleField(rules, "Суффикс", suffixInput, 1);
         AddRuleField(rules, "Стартовый номер", startNumberInput, 2);
         AddRuleField(rules, "Шаг", incrementInput, 3);
-        AddRuleField(rules, "Разрядность", paddingInput, 4);
+        AddRuleField(rules, "Формат номера", numberFormatInput, 4);
 
         Border card = TrueBimUi.CreateSectionCard("Правила нумерации", rules);
         card.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
@@ -336,7 +337,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         suffixInput.Style = TrueBimStyles.CreateTextBoxStyle();
         startNumberInput.Style = TrueBimStyles.CreateTextBoxStyle();
         incrementInput.Style = TrueBimStyles.CreateTextBoxStyle();
-        paddingInput.Style = TrueBimStyles.CreateTextBoxStyle();
+        numberFormatInput.Style = TrueBimStyles.CreateComboBoxStyle();
         positionInput.Style = TrueBimStyles.CreateTextBoxStyle();
         orderInput.Style = TrueBimStyles.CreateComboBoxStyle();
     }
@@ -637,6 +638,14 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         }
 
         UpdateStatusSummary(message);
+    }
+
+    private void OnNumberFormatChanged()
+    {
+        if (isPreviewCurrent)
+        {
+            InvalidatePreview("Формат номера изменен. Выполните предпросмотр заново.");
+        }
     }
 
     private void ReloadSheetsFromDocument()
@@ -1001,9 +1010,10 @@ public sealed class SheetNumberingWindow : TrueBimWindow
             return false;
         }
 
-        if (!int.TryParse(paddingInput.Text, out int padding))
+        if (numberFormatInput.SelectedItem is not ComboBoxItem selectedFormat
+            || selectedFormat.Tag is not int padding)
         {
-            error = "Разрядность должна быть целым числом.";
+            error = "Выберите формат номера.";
             return false;
         }
 
@@ -1023,7 +1033,21 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         return true;
     }
 
-    private static void AddRuleField(Grid grid, string label, TextBox input, int column)
+    private static ComboBox CreateNumberFormatInput()
+    {
+        ComboBox input = new()
+        {
+            ToolTip = "Выберите обычные номера 1, 2, 3 или формат с ведущими нулями."
+        };
+
+        input.Items.Add(new ComboBoxItem { Content = "1, 2, 3", Tag = 0 });
+        input.Items.Add(new ComboBoxItem { Content = "01, 02, 03", Tag = 2 });
+        input.Items.Add(new ComboBoxItem { Content = "001, 002, 003", Tag = 3 });
+        input.SelectedIndex = 0;
+        return input;
+    }
+
+    private static void AddRuleField(Grid grid, string label, Control input, int column)
     {
         StackPanel field = new()
         {

@@ -36,6 +36,18 @@ public sealed class NumberingRulesTests
     }
 
     [Fact]
+    public void FormatNumber_NoPaddingProducesPlainSequence()
+    {
+        NumberingRules rules = new(string.Empty, string.Empty, 1, 1, 0);
+
+        string[] result = Enumerable.Range(0, 3)
+            .Select(rules.FormatNumber)
+            .ToArray();
+
+        Assert.Equal(["1", "2", "3"], result);
+    }
+
+    [Fact]
     public void FormatNumber_RejectsNegativeIndex()
     {
         NumberingRules rules = new(string.Empty, string.Empty, 1, 1, 1);
