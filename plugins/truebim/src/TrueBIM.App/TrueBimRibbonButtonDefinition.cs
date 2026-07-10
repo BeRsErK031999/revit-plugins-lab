@@ -25,7 +25,8 @@ public sealed record TrueBimRibbonPulldownItemDefinition(
     string CommandClassName,
     TrueBimIcon Icon,
     string Tooltip,
-    bool BeginsGroup = false);
+    bool BeginsGroup = false,
+    string AvailabilityClassName = "");
 
 public static class TrueBimRibbon
 {
@@ -283,6 +284,23 @@ public static class TrueBimRibbon
             "Переключает видимость аннотаций на активном виде.")
     ];
 
+    public static IReadOnlyList<TrueBimRibbonPulldownItemDefinition> OpeningViewsPulldownItems { get; } =
+    [
+        new(
+            "TrueBIM_OpeningViews_Create",
+            "Создать фасады",
+            $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
+            TrueBimIcon.OpeningViews,
+            "Собирает двери и окна активного плана и создаёт фасадные elevation-виды."),
+        new(
+            "TrueBIM_OpeningViews_Annotate",
+            "Оформить активный фасад",
+            $"{CommandNamespace}.{nameof(OpeningViewAnnotationCommand)}",
+            TrueBimIcon.OpeningViews,
+            "Добавляет марку и ассоциативные размеры проёма на активный фасад TrueBIM.",
+            AvailabilityClassName: $"{CommandNamespace}.{nameof(OpeningViewAnnotationCommandAvailability)}")
+    ];
+
     public static IReadOnlyList<string> PanelNames { get; } =
     [
         BimDocumentationPanelName,
@@ -361,8 +379,9 @@ public static class TrueBimRibbon
             "Фасады\nдверей/окон",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
-            "Собирает двери и окна на активном плане, показывает предпросмотр и создаёт для них фасадные elevation-виды.",
-            "Инструмент для проёмов: сбор дверей и окон активного плана, имена видов BIM_Opening_*, проверка дублей, выбор типа фасада и шаблона вида, crop box вокруг элемента и CSV-отчёт."),
+            "Собирает двери и окна на активном плане, создаёт фасадные elevation-виды и оформляет открытый фасад по эталону.",
+            "Меню проёмов: создание BIM_Opening_* с crop box по полной геометрии и CSV-отчётом; оформление активного фасада маркой и ассоциативными размерами проёма.",
+            PulldownItems: OpeningViewsPulldownItems),
         new(
             BimCoordinationPanelName,
             "TrueBIM_ClashReport",

@@ -124,6 +124,28 @@ public sealed class AppRibbonButtonDefinitionTests
     }
 
     [Fact]
+    public void RibbonButtons_GroupsOpeningViewCreationAndAnnotation()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons,
+            button => string.Equals(button.Name, "TrueBIM_OpeningViews", StringComparison.Ordinal));
+
+        Assert.True(button.IsPulldown);
+        TrueBimRibbonPulldownItemDefinition createItem = Assert.Single(
+            button.Items,
+            item => string.Equals(item.Name, "TrueBIM_OpeningViews_Create", StringComparison.Ordinal));
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpeningViewsCommand)}", createItem.CommandClassName);
+
+        TrueBimRibbonPulldownItemDefinition annotateItem = Assert.Single(
+            button.Items,
+            item => string.Equals(item.Name, "TrueBIM_OpeningViews_Annotate", StringComparison.Ordinal));
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpeningViewAnnotationCommand)}", annotateItem.CommandClassName);
+        Assert.Equal(
+            $"TrueBIM.App.Commands.{nameof(OpeningViewAnnotationCommandAvailability)}",
+            annotateItem.AvailabilityClassName);
+    }
+
+    [Fact]
     public void RibbonButtons_IncludesSheetNumberingOnDocumentationPanel()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(

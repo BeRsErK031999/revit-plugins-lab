@@ -135,6 +135,10 @@ public sealed class App : IExternalApplication
         buttonData.Image = IconFactory.CreateImage(item.Icon, 16);
         buttonData.LargeImage = IconFactory.CreateImage(item.Icon, 32);
         buttonData.ToolTip = item.Tooltip;
+        if (!string.IsNullOrWhiteSpace(item.AvailabilityClassName))
+        {
+            buttonData.AvailabilityClassName = item.AvailabilityClassName;
+        }
 
         return buttonData;
     }

@@ -62,6 +62,7 @@ public sealed class OpeningViewCreationService
                 view.Name = candidate.ViewName;
                 ApplyTemplate(view, candidate.ViewTemplateId);
                 ConfigureCrop(view, candidate, profile);
+                TryWriteSourceMetadata(document, view, candidate, logger);
                 subTransaction.Commit();
                 existingViewNames.Add(candidate.ViewName);
 
@@ -95,6 +96,26 @@ public sealed class OpeningViewCreationService
         }
 
         view.ViewTemplateId = RevitElementIds.Create(templateId.Value);
+    }
+
+    private static void TryWriteSourceMetadata(
+        Document document,
+        ViewSection view,
+        OpeningViewCandidate candidate,
+        ITrueBimLogger logger)
+    {
+        try
+        {
+            Element? source = document.GetElement(RevitElementIds.Create(candidate.ElementId));
+            if (source is not null)
+            {
+                OpeningViewMetadataService.WriteSource(view, source, candidate.CategoryKey);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Opening view metadata was not written for ElementId {candidate.ElementId}: {exception.Message}");
+        }
     }
 
     private static void AlignMarkerToDirection(
