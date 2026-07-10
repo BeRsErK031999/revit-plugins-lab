@@ -9,7 +9,7 @@ namespace TrueBIM.App.Modules.BimTools.OpeningViews.Services;
 public static class OpeningViewSourceResolver
 {
     private static readonly Regex DefaultNamePattern = new(
-        @"(?:^|_)Opening_(?:(?:Door|Window)_)?(?<id>\d+)(?:_|$)",
+        @"(?:^|_)Opening_(?:(?:Door|Window|CurtainWall)_)?(?<id>\d+)(?:_|$)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public static bool CanUseActiveView(View? activeView, out string message)
@@ -28,7 +28,7 @@ public static class OpeningViewSourceResolver
 
         if (activeView is not ViewSection || activeView.ViewType != ViewType.Elevation)
         {
-            message = "Откройте созданный TrueBIM фасад двери или окна в Project Browser.";
+            message = "Откройте созданный TrueBIM фасад двери, окна или витража в Project Browser.";
             return false;
         }
 
@@ -39,7 +39,7 @@ public static class OpeningViewSourceResolver
     public static bool TryResolve(
         Document document,
         View activeView,
-        out FamilyInstance? source,
+        out Element? source,
         out string message)
     {
         Guard.NotNull(document, nameof(document));
@@ -49,7 +49,7 @@ public static class OpeningViewSourceResolver
         if (metadata is not null)
         {
             source = ResolveMetadataElement(document, metadata);
-            if (IsDoorOrWindow(source))
+            if (OpeningViewElementClassifier.IsSupported(source))
             {
                 message = "Источник найден по метаданным TrueBIM.";
                 return true;
@@ -60,8 +60,8 @@ public static class OpeningViewSourceResolver
         {
             try
             {
-                source = document.GetElement(RevitElementIds.Create(elementId)) as FamilyInstance;
-                if (IsDoorOrWindow(source))
+                source = document.GetElement(RevitElementIds.Create(elementId));
+                if (OpeningViewElementClassifier.IsSupported(source))
                 {
                     message = "Источник найден по ElementId в имени вида.";
                     return true;
@@ -72,23 +72,29 @@ public static class OpeningViewSourceResolver
             }
         }
 
-        List<FamilyInstance> visibleOpenings = new FilteredElementCollector(document, activeView.Id)
+        List<Element> visibleOpenings = new FilteredElementCollector(document, activeView.Id)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(IsDoorOrWindow)
+            .Where(OpeningViewElementClassifier.IsSupported)
+            .Cast<Element>()
             .ToList();
+        visibleOpenings.AddRange(new FilteredElementCollector(document, activeView.Id)
+            .OfClass(typeof(Wall))
+            .WhereElementIsNotElementType()
+            .Cast<Wall>()
+            .Where(OpeningViewElementClassifier.IsCurtainWall));
         if (visibleOpenings.Count == 1)
         {
             source = visibleOpenings[0];
-            message = "Источник найден как единственная видимая дверь или окно.";
+            message = "Источник найден как единственная видимая дверь, окно или витраж.";
             return true;
         }
 
         source = null;
         message = visibleOpenings.Count == 0
-            ? "На активном фасаде не найдена видимая дверь или окно."
-            : "На активном фасаде видно несколько дверей/окон, а связь TrueBIM отсутствует. Пересоздайте вид или оставьте в crop один проём.";
+            ? "На активном фасаде не найдена видимая дверь, окно или витраж."
+            : "На активном фасаде видно несколько дверей, окон или витражей, а связь TrueBIM отсутствует. Пересоздайте вид или оставьте в crop один элемент.";
         return false;
     }
 
@@ -100,19 +106,16 @@ public static class OpeningViewSourceResolver
             && long.TryParse(match.Groups["id"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out elementId);
     }
 
-    public static string GetCategoryKey(FamilyInstance source)
+    public static string GetCategoryKey(Element source)
     {
-        Guard.NotNull(source, nameof(source));
-        return IsCategory(source, BuiltInCategory.OST_Windows)
-            ? OpeningViewCategoryKeys.Window
-            : OpeningViewCategoryKeys.Door;
+        return OpeningViewElementClassifier.GetCategoryKey(source);
     }
 
-    private static FamilyInstance? ResolveMetadataElement(Document document, OpeningViewMetadata metadata)
+    private static Element? ResolveMetadataElement(Document document, OpeningViewMetadata metadata)
     {
         if (!string.IsNullOrWhiteSpace(metadata.SourceElementUniqueId))
         {
-            FamilyInstance? byUniqueId = document.GetElement(metadata.SourceElementUniqueId) as FamilyInstance;
+            Element? byUniqueId = document.GetElement(metadata.SourceElementUniqueId);
             if (byUniqueId is not null)
             {
                 return byUniqueId;
@@ -126,23 +129,11 @@ public static class OpeningViewSourceResolver
 
         try
         {
-            return document.GetElement(RevitElementIds.Create(metadata.SourceElementId)) as FamilyInstance;
+            return document.GetElement(RevitElementIds.Create(metadata.SourceElementId));
         }
         catch (Exception)
         {
             return null;
         }
-    }
-
-    private static bool IsDoorOrWindow(FamilyInstance? source)
-    {
-        return source is not null
-            && (IsCategory(source, BuiltInCategory.OST_Doors) || IsCategory(source, BuiltInCategory.OST_Windows));
-    }
-
-    private static bool IsCategory(FamilyInstance source, BuiltInCategory category)
-    {
-        return source.Category is not null
-            && RevitElementIds.GetValue(source.Category.Id) == (long)category;
     }
 }

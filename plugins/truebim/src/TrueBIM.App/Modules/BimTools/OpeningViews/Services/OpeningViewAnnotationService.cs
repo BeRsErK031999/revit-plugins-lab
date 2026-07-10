@@ -9,7 +9,7 @@ public sealed class OpeningViewAnnotationService
 {
     private const string OpeningSuffix = " (проём)";
 
-    public OpeningViewAnnotationPreview Preview(Document document, ViewSection view, FamilyInstance source)
+    public OpeningViewAnnotationPreview Preview(Document document, ViewSection view, Element source)
     {
         Guard.NotNull(document, nameof(document));
         Guard.NotNull(view, nameof(view));
@@ -17,16 +17,13 @@ public sealed class OpeningViewAnnotationService
 
         List<string> warnings = [];
         bool hasBounds = OpeningViewBoundsResolver.Resolve(source, view) is not null;
-        Reference? left = GetReference(source, FamilyInstanceReferenceType.Left);
-        Reference? right = GetReference(source, FamilyInstanceReferenceType.Right);
-        Reference? bottom = GetReference(source, FamilyInstanceReferenceType.Bottom);
-        Reference? top = GetReference(source, FamilyInstanceReferenceType.Top);
+        OpeningAnnotationReferences references = ResolveReferences(document, view, source);
         ElementId textTypeId = ResolveTextNoteTypeId(document);
 
         bool hasTextType = textTypeId != ElementId.InvalidElementId;
         bool canCreateTitle = hasTextType && hasBounds;
-        bool canCreateWidth = left is not null && right is not null && hasBounds;
-        bool canCreateHeight = bottom is not null && top is not null && hasBounds;
+        bool canCreateWidth = references.Left is not null && references.Right is not null && hasBounds;
+        bool canCreateHeight = references.Bottom is not null && references.Top is not null && hasBounds;
         if (!hasBounds)
         {
             warnings.Add("Не найден полный bounding box проёма.");
@@ -39,16 +36,20 @@ public sealed class OpeningViewAnnotationService
 
         if (!canCreateWidth)
         {
-            warnings.Add("Семейство не содержит стабильные reference planes Left/Right; ширина не будет нанесена.");
+            warnings.Add(OpeningViewElementClassifier.IsCurtainWall(source)
+                ? "Не найдены крайние вертикальные грани панелей, импостов или стены витража; ширина не будет нанесена."
+                : "Семейство не содержит стабильные reference planes Left/Right; ширина не будет нанесена.");
         }
 
         if (!canCreateHeight)
         {
-            warnings.Add("Семейство не содержит стабильные reference planes Bottom/Top; высота не будет нанесена.");
+            warnings.Add(OpeningViewElementClassifier.IsCurtainWall(source)
+                ? "Не найдены крайние горизонтальные грани панелей, импостов или стены витража; высота не будет нанесена."
+                : "Семейство не содержит стабильные reference planes Bottom/Top; высота не будет нанесена.");
         }
 
         return new OpeningViewAnnotationPreview(
-            ResolveTitle(source),
+            ResolveTitle(document, source),
             canCreateTitle,
             canCreateWidth,
             canCreateHeight,
@@ -58,7 +59,7 @@ public sealed class OpeningViewAnnotationService
     public OpeningViewAnnotationResult Apply(
         Document document,
         ViewSection view,
-        FamilyInstance source,
+        Element source,
         ITrueBimLogger logger)
     {
         Guard.NotNull(document, nameof(document));
@@ -82,10 +83,7 @@ public sealed class OpeningViewAnnotationService
 
         OpeningViewProjectedBounds projectedBounds = ProjectBounds(boundsResult.Bounds, view);
         OpeningViewAnnotationLayout layout = OpeningViewAnnotationLayout.Create(projectedBounds, view.Scale);
-        Reference? left = GetReference(source, FamilyInstanceReferenceType.Left);
-        Reference? right = GetReference(source, FamilyInstanceReferenceType.Right);
-        Reference? bottom = GetReference(source, FamilyInstanceReferenceType.Bottom);
-        Reference? top = GetReference(source, FamilyInstanceReferenceType.Top);
+        OpeningAnnotationReferences references = ResolveReferences(document, view, source);
         ElementId textTypeId = ResolveTextNoteTypeId(document);
         OpeningViewMetadata? previousMetadata = OpeningViewMetadataService.Read(view);
         List<Element> createdAnnotations = [];
@@ -110,11 +108,11 @@ public sealed class OpeningViewAnnotationService
                     logger);
             }
 
-            if (preview.CanCreateWidthDimension && left is not null && right is not null)
+            if (preview.CanCreateWidthDimension && references.Left is not null && references.Right is not null)
             {
                 TryCreateAnnotation(
                     document,
-                    () => CreateWidthDimension(document, view, left, right, layout),
+                    () => CreateWidthDimension(document, view, references.Left!, references.Right!, layout),
                     "Размер ширины проёма создан.",
                     "Не удалось создать размер ширины",
                     createdAnnotations,
@@ -122,11 +120,11 @@ public sealed class OpeningViewAnnotationService
                     logger);
             }
 
-            if (preview.CanCreateHeightDimension && bottom is not null && top is not null)
+            if (preview.CanCreateHeightDimension && references.Bottom is not null && references.Top is not null)
             {
                 TryCreateAnnotation(
                     document,
-                    () => CreateHeightDimension(document, view, bottom, top, layout),
+                    () => CreateHeightDimension(document, view, references.Bottom!, references.Top!, layout),
                     "Размер высоты проёма создан.",
                     "Не удалось создать размер высоты",
                     createdAnnotations,
@@ -171,19 +169,22 @@ public sealed class OpeningViewAnnotationService
             }
         }
 
-        string categoryName = OpeningViewCategoryKeys.Normalize(categoryKey) == OpeningViewCategoryKeys.Window
-            ? "Окно"
-            : "Дверь";
+        string categoryName = OpeningViewCategoryKeys.Normalize(categoryKey) switch
+        {
+            OpeningViewCategoryKeys.Window => "Окно",
+            OpeningViewCategoryKeys.CurtainWall => "Витраж",
+            _ => "Дверь"
+        };
         return $"{categoryName} {elementId}";
     }
 
-    private static string ResolveTitle(FamilyInstance source)
+    private static string ResolveTitle(Document document, Element source)
     {
-        FamilySymbol? symbol = source.Symbol;
+        ElementType? type = document.GetElement(source.GetTypeId()) as ElementType;
         return ResolveTitle(
-            GetParameterText(symbol?.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_MARK)),
+            GetParameterText(type?.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_MARK)),
             GetParameterText(source.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)),
-            symbol?.Name,
+            type?.Name,
             OpeningViewSourceResolver.GetCategoryKey(source),
             RevitElementIds.GetValue(source.Id));
     }
@@ -395,6 +396,171 @@ public sealed class OpeningViewAnnotationService
             + view.UpDirection.Normalize().Multiply(vertical);
     }
 
+    private static OpeningAnnotationReferences ResolveReferences(
+        Document document,
+        ViewSection view,
+        Element source)
+    {
+        if (source is FamilyInstance familyInstance)
+        {
+            return new OpeningAnnotationReferences(
+                GetReference(familyInstance, FamilyInstanceReferenceType.Left),
+                GetReference(familyInstance, FamilyInstanceReferenceType.Right),
+                GetReference(familyInstance, FamilyInstanceReferenceType.Bottom),
+                GetReference(familyInstance, FamilyInstanceReferenceType.Top));
+        }
+
+        return source is Wall wall && OpeningViewElementClassifier.IsCurtainWall(wall)
+            ? ResolveCurtainWallReferences(document, view, wall)
+            : OpeningAnnotationReferences.Empty;
+    }
+
+    private static OpeningAnnotationReferences ResolveCurtainWallReferences(
+        Document document,
+        ViewSection view,
+        Wall wall)
+    {
+        Options options = new()
+        {
+            ComputeReferences = true,
+            IncludeNonVisibleObjects = false,
+            View = view
+        };
+        XYZ right = view.RightDirection.Normalize();
+        XYZ up = view.UpDirection.Normalize();
+        List<ReferenceCandidate> horizontal = [];
+        List<ReferenceCandidate> vertical = [];
+
+        foreach (Element element in CollectCurtainWallGeometryElements(document, wall))
+        {
+            try
+            {
+                GeometryElement? geometry = element.get_Geometry(options);
+                if (geometry is not null)
+                {
+                    CollectReferenceCandidates(
+                        geometry,
+                        Transform.Identity,
+                        view.Origin,
+                        right,
+                        up,
+                        horizontal,
+                        vertical);
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        return new OpeningAnnotationReferences(
+            SelectReference(horizontal, minimum: true),
+            SelectReference(horizontal, minimum: false),
+            SelectReference(vertical, minimum: true),
+            SelectReference(vertical, minimum: false));
+    }
+
+    private static IReadOnlyList<Element> CollectCurtainWallGeometryElements(Document document, Wall wall)
+    {
+        List<Element> elements = [wall];
+        HashSet<long> elementIds = [RevitElementIds.GetValue(wall.Id)];
+        CurtainGrid? grid = wall.CurtainGrid;
+        if (grid is null)
+        {
+            return elements;
+        }
+
+        foreach (ElementId elementId in grid.GetPanelIds().Concat(grid.GetMullionIds()))
+        {
+            long value = RevitElementIds.GetValue(elementId);
+            if (elementIds.Add(value) && document.GetElement(elementId) is Element element)
+            {
+                elements.Add(element);
+            }
+        }
+
+        return elements;
+    }
+
+    private static void CollectReferenceCandidates(
+        GeometryElement geometry,
+        Transform transform,
+        XYZ origin,
+        XYZ right,
+        XYZ up,
+        ICollection<ReferenceCandidate> horizontal,
+        ICollection<ReferenceCandidate> vertical)
+    {
+        foreach (GeometryObject geometryObject in geometry)
+        {
+            switch (geometryObject)
+            {
+                case Solid solid:
+                    CollectSolidReferenceCandidates(solid, transform, origin, right, up, horizontal, vertical);
+                    break;
+                case GeometryInstance instance:
+                    GeometryElement symbolGeometry = instance.GetSymbolGeometry();
+                    CollectReferenceCandidates(
+                        symbolGeometry,
+                        transform.Multiply(instance.Transform),
+                        origin,
+                        right,
+                        up,
+                        horizontal,
+                        vertical);
+                    break;
+            }
+        }
+    }
+
+    private static void CollectSolidReferenceCandidates(
+        Solid solid,
+        Transform transform,
+        XYZ origin,
+        XYZ right,
+        XYZ up,
+        ICollection<ReferenceCandidate> horizontal,
+        ICollection<ReferenceCandidate> vertical)
+    {
+        if (solid.Faces.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (Face face in solid.Faces)
+        {
+            if (face is not PlanarFace planarFace || planarFace.Reference is null)
+            {
+                continue;
+            }
+
+            XYZ normal = transform.OfVector(planarFace.FaceNormal).Normalize();
+            XYZ point = transform.OfPoint(planarFace.Origin);
+            if (Math.Abs(normal.DotProduct(right)) >= 0.98)
+            {
+                horizontal.Add(new ReferenceCandidate(planarFace.Reference, (point - origin).DotProduct(right)));
+            }
+
+            if (Math.Abs(normal.DotProduct(up)) >= 0.98)
+            {
+                vertical.Add(new ReferenceCandidate(planarFace.Reference, (point - origin).DotProduct(up)));
+            }
+        }
+    }
+
+    private static Reference? SelectReference(IReadOnlyList<ReferenceCandidate> candidates, bool minimum)
+    {
+        if (!OpeningViewReferencePairSelector.TrySelect(
+            candidates.Select(candidate => candidate.Position).ToList(),
+            out int minimumIndex,
+            out int maximumIndex))
+        {
+            return null;
+        }
+
+        return candidates[minimum ? minimumIndex : maximumIndex].Reference;
+    }
+
     private static Reference? GetReference(FamilyInstance source, FamilyInstanceReferenceType referenceType)
     {
         try
@@ -422,4 +588,15 @@ public sealed class OpeningViewAnnotationService
             .Select(type => type.Id)
             .FirstOrDefault() ?? ElementId.InvalidElementId;
     }
+
+    private sealed record OpeningAnnotationReferences(
+        Reference? Left,
+        Reference? Right,
+        Reference? Bottom,
+        Reference? Top)
+    {
+        public static OpeningAnnotationReferences Empty { get; } = new(null, null, null, null);
+    }
+
+    private sealed record ReferenceCandidate(Reference Reference, double Position);
 }

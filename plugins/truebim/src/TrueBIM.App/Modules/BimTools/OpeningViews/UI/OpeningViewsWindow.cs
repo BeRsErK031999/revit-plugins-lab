@@ -21,7 +21,7 @@ namespace TrueBIM.App.Modules.BimTools.OpeningViews.UI;
 
 public sealed class OpeningViewsWindow : TrueBimWindow
 {
-    private const string DialogTitle = "Фасады дверей/окон";
+    private const string DialogTitle = "Фасады проёмов";
 
     private readonly RevitDocument document;
     private readonly RevitViewPlan activePlan;
@@ -62,6 +62,11 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         Content = "Окна",
         ToolTip = "Включить окна, которые видны на активном плане. Можно создавать фасады только окон или вместе с дверями."
     };
+    private readonly CheckBox includeCurtainWallsInput = new()
+    {
+        Content = "Витражи",
+        ToolTip = "Включить прямолинейные стены-витражи активного плана. Фасад строится со стороны наружной ориентации стены и охватывает всю конструкцию."
+    };
     private readonly DataGrid openingGrid = new();
     private readonly DataGrid reportGrid = new();
     private readonly TextBlock statusText = new();
@@ -82,7 +87,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         this.creationService = creationService ?? throw new ArgumentNullException(nameof(creationService));
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        revitActions = new RevitActionDispatcher("фасады дверей и окон", this.logger);
+        revitActions = new RevitActionDispatcher("фасады проёмов", this.logger);
 
         LoadInitialData();
 
@@ -101,7 +106,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         ToolTipService.SetShowOnDisabled(applyButton, true);
         ToolTipService.SetShowOnDisabled(exportReportButton, true);
 
-        UpdateStatus("Нажмите «Предпросмотр», чтобы собрать двери и окна на активном плане.");
+        UpdateStatus("Нажмите «Предпросмотр», чтобы собрать двери, окна и витражи на активном плане.");
         logger.Info($"Opening Views window opened for '{document.Title}' and plan '{activePlan.Name}'.");
     }
 
@@ -144,6 +149,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         profileNameInput.Text = profile.Name;
         includeDoorsInput.IsChecked = profile.IncludeDoors;
         includeWindowsInput.IsChecked = profile.IncludeWindows;
+        includeCurtainWallsInput.IsChecked = profile.IncludeCurtainWalls;
         scaleInput.Text = profile.Scale.ToString(CultureInfo.InvariantCulture);
         cropMarginInput.Text = profile.CropMarginMm.ToString("0.##", CultureInfo.InvariantCulture);
         depthMarginInput.Text = profile.DepthMarginMm.ToString("0.##", CultureInfo.InvariantCulture);
@@ -199,7 +205,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         AddLabel(root, $"План: {activePlan.Name}", 0, 0);
         profileNameInput.Height = 32;
         profileNameInput.Margin = new Thickness(8, 0, 12, 8);
-        profileNameInput.ToolTip = "Имя локального профиля видов дверей/окон.";
+        profileNameInput.ToolTip = "Имя локального профиля фасадов дверей, окон и витражей.";
         WpfGrid.SetColumn(profileNameInput, 1);
         root.Children.Add(profileNameInput);
 
@@ -209,7 +215,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
             HorizontalAlignment = HorizontalAlignment.Right
         };
         Button previewButton = CreateButton("Предпросмотр", TrueBimIcon.Preview, 140);
-        previewButton.ToolTip = "Собрать двери и окна с активного плана, проверить имена будущих видов и показать строки без изменения модели.";
+        previewButton.ToolTip = "Собрать двери, окна и прямолинейные витражи с активного плана, проверить имена будущих видов и показать строки без изменения модели.";
         previewButton.Click += (_, _) => Preview();
         actions.Children.Add(previewButton);
 
@@ -251,18 +257,22 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         orientationSourceInput.Width = 130;
         orientationSourceInput.Height = 32;
         orientationSourceInput.Margin = new Thickness(0, 0, 16, 0);
-        orientationSourceInput.ToolTip = "По элементу использует FacingOrientation двери или окна. По стене берёт направление стены-основы и сторону, ближайшую к FacingOrientation.";
+        orientationSourceInput.ToolTip = "Для двери/окна: по элементу использует FacingOrientation, по стене — стену-основу. Витраж всегда ориентируется по наружной стороне своей стены.";
         orientationSourceInput.SelectionChanged += (_, _) => UpdateStatus();
         categories.Children.Add(orientationSourceInput);
 
         includeDoorsInput.Margin = new Thickness(0, 0, 12, 0);
-        includeWindowsInput.Margin = new Thickness(0, 0, 18, 0);
+        includeWindowsInput.Margin = new Thickness(0, 0, 12, 0);
+        includeCurtainWallsInput.Margin = new Thickness(0, 0, 18, 0);
         includeDoorsInput.Checked += (_, _) => UpdateStatus();
         includeDoorsInput.Unchecked += (_, _) => UpdateStatus();
         includeWindowsInput.Checked += (_, _) => UpdateStatus();
         includeWindowsInput.Unchecked += (_, _) => UpdateStatus();
+        includeCurtainWallsInput.Checked += (_, _) => UpdateStatus();
+        includeCurtainWallsInput.Unchecked += (_, _) => UpdateStatus();
         categories.Children.Add(includeDoorsInput);
         categories.Children.Add(includeWindowsInput);
+        categories.Children.Add(includeCurtainWallsInput);
         WpfGrid.SetRow(categories, 1);
         WpfGrid.SetColumn(categories, 2);
         root.Children.Add(categories);
@@ -292,7 +302,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         cropMarginInput.Width = 80;
         cropMarginInput.Height = 32;
         cropMarginInput.Margin = new Thickness(0, 0, 12, 0);
-        cropMarginInput.ToolTip = "Запас crop box вокруг двери или окна по ширине и высоте. Увеличьте, если в фасад должны попасть откосы или соседняя отделка.";
+        cropMarginInput.ToolTip = "Запас crop box вокруг двери, окна или полного габарита витража. Увеличьте, если в фасад должны попасть откосы или соседняя отделка.";
         numericSettings.Children.Add(cropMarginInput);
 
         AddInlineLabel(numericSettings, "Глубина, мм");
@@ -502,7 +512,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
 
         SaveFileDialog dialog = new()
         {
-            Title = "Сохранить отчёт видов дверей/окон",
+            Title = "Сохранить отчёт фасадов проёмов",
             Filter = "CSV UTF-8 (*.csv)|*.csv",
             FileName = "opening-views-report.csv",
             InitialDirectory = Directory.Exists(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments))
@@ -531,6 +541,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
             Name = profileNameInput.Text,
             IncludeDoors = includeDoorsInput.IsChecked == true,
             IncludeWindows = includeWindowsInput.IsChecked == true,
+            IncludeCurtainWalls = includeCurtainWallsInput.IsChecked == true,
             ElevationViewTypeId = (elevationTypeInput.SelectedItem as OpeningViewTypeOption)?.ElementId,
             ViewTemplateId = (viewTemplateInput.SelectedItem as OpeningViewTemplateOption)?.ElementId,
             Scale = ParseInt(scaleInput.Text, 50),
@@ -596,13 +607,25 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         int readyRows = openingRows.Count(row => row.CanApply);
         int selectedRows = openingRows.Count(row => row.IsSelected && row.CanApply);
         string elevationType = (elevationTypeInput.SelectedItem as OpeningViewTypeOption)?.DisplayName ?? "не выбран";
-        string categories = includeDoorsInput.IsChecked == true && includeWindowsInput.IsChecked == true
-            ? "двери, окна"
-            : includeWindowsInput.IsChecked == true
-                ? "окна"
-                : "двери";
+        List<string> selectedCategories = [];
+        if (includeDoorsInput.IsChecked == true)
+        {
+            selectedCategories.Add("двери");
+        }
+
+        if (includeWindowsInput.IsChecked == true)
+        {
+            selectedCategories.Add("окна");
+        }
+
+        if (includeCurtainWallsInput.IsChecked == true)
+        {
+            selectedCategories.Add("витражи");
+        }
+
+        string categories = selectedCategories.Count == 0 ? "не выбраны" : string.Join(", ", selectedCategories);
         string orientation = OpeningViewOrientationSources.GetDisplayName(orientationSourceInput.SelectedValue as string).ToLowerInvariant();
-        string text = $"Проёмов: {openingRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Ориентация: {orientation}. Тип фасада: {elevationType}. Отчётных строк: {reportRows.Count}.";
+        string text = $"Элементов: {openingRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Ориентация дверей/окон: {orientation}. Тип фасада: {elevationType}. Отчётных строк: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
         applyButton.IsEnabled = selectedRows > 0;
     }
@@ -637,7 +660,7 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         };
         content.Children.Add(new TextBlock
         {
-            Text = "Методичка по фасадам дверей/окон",
+            Text = "Методичка по фасадам проёмов",
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 6)
         });

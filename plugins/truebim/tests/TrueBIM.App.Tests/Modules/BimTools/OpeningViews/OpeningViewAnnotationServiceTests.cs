@@ -33,6 +33,19 @@ public sealed class OpeningViewAnnotationServiceTests
     }
 
     [Fact]
+    public void ResolveTitle_FallsBackToCurtainWallAndElementId()
+    {
+        string title = OpeningViewAnnotationService.ResolveTitle(
+            null,
+            " ",
+            null,
+            OpeningViewCategoryKeys.CurtainWall,
+            126);
+
+        Assert.Equal("Витраж 126", title);
+    }
+
+    [Fact]
     public void Metadata_NormalizesCategoryAndOwnedAnnotationIds()
     {
         OpeningViewMetadata metadata = new(
@@ -44,5 +57,13 @@ public sealed class OpeningViewAnnotationServiceTests
         Assert.Equal("source", metadata.SourceElementUniqueId);
         Assert.Equal(OpeningViewCategoryKeys.Window, metadata.CategoryKey);
         Assert.Equal(["one", "two"], metadata.AnnotationUniqueIds);
+    }
+
+    [Fact]
+    public void Metadata_PreservesCurtainWallCategory()
+    {
+        OpeningViewMetadata metadata = new("source", 321, "curtainwall");
+
+        Assert.Equal(OpeningViewCategoryKeys.CurtainWall, metadata.CategoryKey);
     }
 }

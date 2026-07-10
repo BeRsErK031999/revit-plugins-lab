@@ -45,7 +45,8 @@ public sealed class OpeningViewProfileStorage
         profile ??= CreateDefaultProfile();
         bool includeDoors = profile.IncludeDoors;
         bool includeWindows = profile.IncludeWindows;
-        if (!includeDoors && !includeWindows)
+        bool includeCurtainWalls = profile.IncludeCurtainWalls;
+        if (!includeDoors && !includeWindows && !includeCurtainWalls)
         {
             includeDoors = true;
         }
@@ -55,6 +56,7 @@ public sealed class OpeningViewProfileStorage
             Name = string.IsNullOrWhiteSpace(profile.Name) ? "Активный план" : profile.Name.Trim(),
             IncludeDoors = includeDoors,
             IncludeWindows = includeWindows,
+            IncludeCurtainWalls = includeCurtainWalls,
             ElevationViewTypeId = NormalizePositiveId(profile.ElevationViewTypeId),
             ViewTemplateId = NormalizePositiveId(profile.ViewTemplateId),
             Scale = Clamp(profile.Scale, 1, 500),

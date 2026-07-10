@@ -15,6 +15,7 @@ public sealed class OpeningViewProfileStorageTests
             Name = "  ",
             IncludeDoors = false,
             IncludeWindows = false,
+            IncludeCurtainWalls = false,
             ElevationViewTypeId = -1,
             ViewTemplateId = 0,
             Scale = 900,
@@ -27,6 +28,7 @@ public sealed class OpeningViewProfileStorageTests
         Assert.Equal("Активный план", profile.Name);
         Assert.True(profile.IncludeDoors);
         Assert.False(profile.IncludeWindows);
+        Assert.False(profile.IncludeCurtainWalls);
         Assert.Null(profile.ElevationViewTypeId);
         Assert.Null(profile.ViewTemplateId);
         Assert.Equal(500, profile.Scale);
@@ -48,6 +50,7 @@ public sealed class OpeningViewProfileStorageTests
             Name = "  Двери АР  ",
             IncludeDoors = true,
             IncludeWindows = true,
+            IncludeCurtainWalls = true,
             ElevationViewTypeId = 42,
             ViewTemplateId = 84,
             Scale = 25,
@@ -62,6 +65,7 @@ public sealed class OpeningViewProfileStorageTests
         Assert.Equal("Двери АР", loaded.Name);
         Assert.True(loaded.IncludeDoors);
         Assert.True(loaded.IncludeWindows);
+        Assert.True(loaded.IncludeCurtainWalls);
         Assert.Equal(42, loaded.ElevationViewTypeId);
         Assert.Equal(84, loaded.ViewTemplateId);
         Assert.Equal(25, loaded.Scale);

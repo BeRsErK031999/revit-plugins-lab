@@ -22,13 +22,13 @@ public sealed class OpeningViewCollectorService
 
         if (activeView.IsTemplate)
         {
-            message = "Фасады дверей/окон работают только на обычном активном плане, а не на шаблоне вида.";
+            message = "Фасады проёмов работают только на обычном активном плане, а не на шаблоне вида.";
             return false;
         }
 
         if (activeView is not ViewPlan)
         {
-            message = "Откройте активный план, на котором видны двери или окна.";
+            message = "Откройте активный план, на котором видны двери, окна или витражи.";
             return false;
         }
 
@@ -41,7 +41,7 @@ public sealed class OpeningViewCollectorService
             or ViewType.Legend
             or ViewType.ThreeD)
         {
-            message = "Откройте активный план, на котором видны двери или окна.";
+            message = "Откройте активный план, на котором видны двери, окна или витражи.";
             return false;
         }
 
@@ -101,6 +101,16 @@ public sealed class OpeningViewCollectorService
             }
         }
 
+        if (profile.IncludeCurtainWalls)
+        {
+            candidates.AddRange(new FilteredElementCollector(document, activePlan.Id)
+                .OfClass(typeof(Wall))
+                .WhereElementIsNotElementType()
+                .Cast<Wall>()
+                .Where(OpeningViewElementClassifier.IsCurtainWall)
+                .Select(wall => CreateCurtainWallCandidate(document, activePlan, wall, profile, existingViewNames)));
+        }
+
         return candidates
             .OrderBy(candidate => candidate.CategoryName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(candidate => candidate.LevelName, StringComparer.CurrentCultureIgnoreCase)
@@ -108,6 +118,81 @@ public sealed class OpeningViewCollectorService
             .ThenBy(candidate => candidate.TypeName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(candidate => candidate.ElementId)
             .ToList();
+    }
+
+    private static OpeningViewCandidate CreateCurtainWallCandidate(
+        Document document,
+        ViewPlan activePlan,
+        Wall wall,
+        OpeningViewProfile profile,
+        HashSet<string> existingViewNames)
+    {
+        long elementId = RevitElementIds.GetValue(wall.Id);
+        WallType wallType = wall.WallType;
+        string fallbackName = string.IsNullOrWhiteSpace(wall.Name)
+            ? elementId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : wall.Name;
+        string familyName = string.IsNullOrWhiteSpace(wallType.FamilyName) ? "Витраж" : wallType.FamilyName;
+        string typeName = string.IsNullOrWhiteSpace(wallType.Name) ? fallbackName : wallType.Name;
+        string levelName = GetLevelName(document, wall);
+        string viewName = OpeningViewNameService.Build(
+            profile.ViewNameTemplate,
+            new OpeningViewNameContext(
+                elementId,
+                OpeningViewCategoryKeys.CurtainWall,
+                "Витраж",
+                familyName,
+                typeName,
+                levelName));
+
+        OpeningViewBoundsResult? boundsResult = OpeningViewBoundsResolver.Resolve(wall, activePlan);
+        OpeningViewBounds? bounds = boundsResult?.Bounds;
+        XYZ origin = GetOrigin(wall, bounds);
+        bool isStraight = TryResolveCurtainWallDirection(wall, activePlan.UpDirection, out XYZ direction);
+        string message = isStraight
+            ? "Готово к созданию elevation-вида. Ориентация: по наружной стороне прямолинейного витража."
+            : "Дуговой или вырожденный витраж нельзя представить одним плоским фасадом; для него нужна развёртка.";
+
+        if (boundsResult?.UsedViewSpecificFallback == true)
+        {
+            message += " Полная модельная геометрия недоступна: для crop используется резервный bounding box активного плана.";
+        }
+
+        bool canApply = isStraight;
+        if (profile.ElevationViewTypeId is null)
+        {
+            canApply = false;
+            message = "Выберите тип фасадного вида.";
+        }
+        else if (bounds is null)
+        {
+            canApply = false;
+            message = "Не найден bounding box полной или видовой геометрии витража.";
+        }
+        else if (existingViewNames.Contains(viewName))
+        {
+            canApply = false;
+            message = "Вид с таким именем уже существует.";
+        }
+
+        return new OpeningViewCandidate(
+            elementId,
+            OpeningViewCategoryKeys.CurtainWall,
+            "Витраж",
+            familyName,
+            typeName,
+            levelName,
+            viewName,
+            origin,
+            direction,
+            OpeningViewOrientationSources.HostWall,
+            orientationFallback: false,
+            bounds is null ? XYZ.Zero : new XYZ(bounds.MinX, bounds.MinY, bounds.MinZ),
+            bounds is null ? XYZ.Zero : new XYZ(bounds.MaxX, bounds.MaxY, bounds.MaxZ),
+            profile.ElevationViewTypeId,
+            profile.ViewTemplateId,
+            message,
+            canApply);
     }
 
     private static OpeningViewCandidate CreateCandidate(
@@ -199,11 +284,16 @@ public sealed class OpeningViewCollectorService
             .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
     }
 
-    private static XYZ GetOrigin(FamilyInstance familyInstance, OpeningViewBounds? bounds)
+    private static XYZ GetOrigin(Element element, OpeningViewBounds? bounds)
     {
-        if (familyInstance.Location is LocationPoint locationPoint)
+        if (element.Location is LocationPoint locationPoint)
         {
             return locationPoint.Point;
+        }
+
+        if (element.Location is LocationCurve locationCurve && locationCurve.Curve is Line line)
+        {
+            return (line.GetEndPoint(0) + line.GetEndPoint(1)).Multiply(0.5);
         }
 
         return bounds is null
@@ -214,12 +304,51 @@ public sealed class OpeningViewCollectorService
                 (bounds.MinZ + bounds.MaxZ) * 0.5);
     }
 
-    private static string GetLevelName(Document document, FamilyInstance familyInstance)
+    private static string GetLevelName(Document document, Element element)
     {
-        ElementId levelId = familyInstance.LevelId;
+        ElementId levelId = element.LevelId;
         Element? level = levelId == ElementId.InvalidElementId ? null : document.GetElement(levelId);
         string? levelName = level?.Name;
         return string.IsNullOrWhiteSpace(levelName) ? "Без уровня" : levelName!;
+    }
+
+    private static bool TryResolveCurtainWallDirection(Wall wall, XYZ fallback, out XYZ direction)
+    {
+        direction = NormalizeHorizontal(fallback, XYZ.BasisY);
+        if (wall.Location is not LocationCurve locationCurve || locationCurve.Curve is not Line wallLine)
+        {
+            return false;
+        }
+
+        XYZ start = wallLine.GetEndPoint(0);
+        XYZ end = wallLine.GetEndPoint(1);
+        XYZ wallFacing = NormalizeHorizontal(wall.Orientation, fallback);
+        if (!OpeningViewOrientationResolver.TryResolveWallFacingCoordinates(
+            start.X,
+            start.Y,
+            end.X,
+            end.Y,
+            wallFacing.X,
+            wallFacing.Y,
+            out double x,
+            out double y))
+        {
+            return false;
+        }
+
+        direction = new XYZ(x, y, 0);
+        return true;
+    }
+
+    private static XYZ NormalizeHorizontal(XYZ value, XYZ fallback)
+    {
+        XYZ horizontal = new(value.X, value.Y, 0);
+        if (horizontal.GetLength() < 1e-6)
+        {
+            horizontal = new(fallback.X, fallback.Y, 0);
+        }
+
+        return horizontal.GetLength() < 1e-6 ? XYZ.BasisY : horizontal.Normalize();
     }
 
     private static IEnumerable<CategoryDefinition> GetEnabledCategories(OpeningViewProfile profile)

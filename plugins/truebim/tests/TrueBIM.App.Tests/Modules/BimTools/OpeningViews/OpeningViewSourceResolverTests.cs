@@ -8,6 +8,7 @@ public sealed class OpeningViewSourceResolverTests
     [Theory]
     [InlineData("BIM_Opening_Door_123_Family_Type", 123)]
     [InlineData("BIM_Opening_Window_987", 987)]
+    [InlineData("BIM_Opening_CurtainWall_654_Type", 654)]
     [InlineData("BIM_Opening_456", 456)]
     public void TryExtractElementId_ReadsDefaultOpeningViewNames(string viewName, long expected)
     {

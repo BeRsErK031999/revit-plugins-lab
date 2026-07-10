@@ -291,7 +291,7 @@ public static class TrueBimRibbon
             "Создать фасады",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
-            "Собирает двери и окна активного плана и создаёт фасадные elevation-виды."),
+            "Собирает двери, окна и прямолинейные витражи активного плана и создаёт фасадные elevation-виды."),
         new(
             "TrueBIM_OpeningViews_Annotate",
             "Оформить активный фасад",
@@ -376,11 +376,11 @@ public static class TrueBimRibbon
         new(
             BimViewsPanelName,
             "TrueBIM_OpeningViews",
-            "Фасады\nдверей/окон",
+            "Фасады\nпроёмов",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
-            "Собирает двери и окна на активном плане, создаёт фасадные elevation-виды и оформляет открытый фасад по эталону.",
-            "Меню проёмов: создание BIM_Opening_* с crop box по полной геометрии и CSV-отчётом; оформление активного фасада маркой и ассоциативными размерами проёма.",
+            "Собирает двери, окна и прямолинейные витражи на активном плане, создаёт фасадные elevation-виды и оформляет открытый фасад по эталону.",
+            "Меню проёмов: создание BIM_Opening_* с crop box по полной геометрии и CSV-отчётом; оформление двери/окна по reference planes, витража — по крайним граням конструкции.",
             PulldownItems: OpeningViewsPulldownItems),
         new(
             BimCoordinationPanelName,

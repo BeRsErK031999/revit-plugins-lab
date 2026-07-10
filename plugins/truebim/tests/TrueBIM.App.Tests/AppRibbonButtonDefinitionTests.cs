@@ -75,7 +75,7 @@ public sealed class AppRibbonButtonDefinitionTests
         {
             "TrueBIM_OpeningViews",
             TrueBimRibbon.BimViewsPanelName,
-            "Фасады\nдверей/окон",
+            "Фасады\nпроёмов",
             $"TrueBIM.App.Commands.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
             "активном плане"
@@ -394,7 +394,8 @@ public sealed class AppRibbonButtonDefinitionTests
             TrueBimRibbon.Buttons,
             button => string.Equals(button.Name, "TrueBIM_OpeningViews", StringComparison.Ordinal));
 
-        Assert.Contains("двери и окна", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+        Assert.Contains("двери", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
+        Assert.Contains("витражи", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
         Assert.Contains("фасадные", button.Tooltip, StringComparison.CurrentCultureIgnoreCase);
         Assert.Contains("crop box", button.LongDescription, StringComparison.CurrentCultureIgnoreCase);
         Assert.Contains("CSV-отчёт", button.LongDescription, StringComparison.CurrentCultureIgnoreCase);

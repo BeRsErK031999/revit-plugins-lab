@@ -8,6 +8,8 @@ public sealed class OpeningViewProfile
 
     public bool IncludeWindows { get; set; }
 
+    public bool IncludeCurtainWalls { get; set; }
+
     public long? ElevationViewTypeId { get; set; }
 
     public long? ViewTemplateId { get; set; }

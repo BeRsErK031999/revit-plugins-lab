@@ -35,7 +35,7 @@ public sealed class OpeningViewAnnotationCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            if (!OpeningViewSourceResolver.TryResolve(document, viewSection, out FamilyInstance? source, out string sourceMessage)
+            if (!OpeningViewSourceResolver.TryResolve(document, viewSection, out Element? source, out string sourceMessage)
                 || source is null)
             {
                 logger.Warning($"Opening view source was not resolved for '{viewSection.Name}': {sourceMessage}");
@@ -57,7 +57,7 @@ public sealed class OpeningViewAnnotationCommand : IExternalCommand
                 MainContent = preview.ToDialogText(),
                 CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
                 DefaultButton = TaskDialogResult.No,
-                FooterText = "Эталон MVP: марка над фасадом и габариты проёма по стабильным reference planes семейства."
+                FooterText = "Марка берётся из типа/экземпляра. Габариты семейства строятся по reference planes, витража — по крайним граням конструкции."
             };
             if (confirmation.Show() != TaskDialogResult.Yes)
             {
