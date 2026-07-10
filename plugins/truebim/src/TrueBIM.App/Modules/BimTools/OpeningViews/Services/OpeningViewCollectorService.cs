@@ -136,8 +136,9 @@ public sealed class OpeningViewCollectorService
                 typeName,
                 levelName));
 
-        BoundingBoxXYZ? boundingBox = familyInstance.get_BoundingBox(activePlan) ?? familyInstance.get_BoundingBox(null);
-        XYZ origin = GetOrigin(familyInstance, boundingBox);
+        OpeningViewBoundsResult? boundsResult = OpeningViewBoundsResolver.Resolve(familyInstance, activePlan);
+        OpeningViewBounds? bounds = boundsResult?.Bounds;
+        XYZ origin = GetOrigin(familyInstance, bounds);
         OpeningViewOrientationResult orientation = OpeningViewOrientationResolver.Resolve(familyInstance, activePlan, profile);
 
         string message = $"Готово к созданию elevation-вида. Ориентация: {OpeningViewOrientationSources.GetDisplayName(orientation.Source).ToLowerInvariant()}.";
@@ -146,16 +147,21 @@ public sealed class OpeningViewCollectorService
             message += " Стена-основа не найдена, используется ориентация элемента.";
         }
 
+        if (boundsResult?.UsedViewSpecificFallback == true)
+        {
+            message += " Полная модельная геометрия недоступна: для crop используется резервный bounding box активного плана.";
+        }
+
         bool canApply = true;
         if (profile.ElevationViewTypeId is null)
         {
             canApply = false;
             message = "Выберите тип фасадного вида.";
         }
-        else if (boundingBox is null)
+        else if (bounds is null)
         {
             canApply = false;
-            message = "Не найден bounding box элемента на активном плане.";
+            message = "Не найден bounding box полной или видовой геометрии элемента.";
         }
         else if (existingViewNames.Contains(viewName))
         {
@@ -175,8 +181,8 @@ public sealed class OpeningViewCollectorService
             orientation.Direction,
             orientation.Source,
             orientation.UsedFallback,
-            boundingBox?.Min ?? XYZ.Zero,
-            boundingBox?.Max ?? XYZ.Zero,
+            bounds is null ? XYZ.Zero : new XYZ(bounds.MinX, bounds.MinY, bounds.MinZ),
+            bounds is null ? XYZ.Zero : new XYZ(bounds.MaxX, bounds.MaxY, bounds.MaxZ),
             profile.ElevationViewTypeId,
             profile.ViewTemplateId,
             message,
@@ -193,16 +199,19 @@ public sealed class OpeningViewCollectorService
             .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
     }
 
-    private static XYZ GetOrigin(FamilyInstance familyInstance, BoundingBoxXYZ? boundingBox)
+    private static XYZ GetOrigin(FamilyInstance familyInstance, OpeningViewBounds? bounds)
     {
         if (familyInstance.Location is LocationPoint locationPoint)
         {
             return locationPoint.Point;
         }
 
-        return boundingBox is null
+        return bounds is null
             ? XYZ.Zero
-            : (boundingBox.Min + boundingBox.Max).Multiply(0.5);
+            : new XYZ(
+                (bounds.MinX + bounds.MaxX) * 0.5,
+                (bounds.MinY + bounds.MaxY) * 0.5,
+                (bounds.MinZ + bounds.MaxZ) * 0.5);
     }
 
     private static string GetLevelName(Document document, FamilyInstance familyInstance)
