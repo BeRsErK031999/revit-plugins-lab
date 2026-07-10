@@ -62,10 +62,10 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         Title = "Нумерация листов";
         Icon = IconFactory.CreateImage(TrueBimIcon.SheetNumbering, 32);
-        Width = Math.Min(1180, Math.Max(1000, SystemParameters.WorkArea.Width - 64));
-        Height = Math.Min(760, Math.Max(680, SystemParameters.WorkArea.Height - 64));
-        MinWidth = Math.Min(1100, Width);
-        MinHeight = Math.Min(700, Height);
+        Width = Math.Min(1360, Math.Max(1000, SystemParameters.WorkArea.Width - 48));
+        Height = Math.Min(820, Math.Max(680, SystemParameters.WorkArea.Height - 48));
+        MinWidth = Math.Min(1220, Width);
+        MinHeight = Math.Min(720, Height);
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         selectionLogTimer = CreateSelectionLogTimer();
@@ -184,7 +184,36 @@ public sealed class SheetNumberingWindow : TrueBimWindow
 
     private UIElement CreatePreviewSection()
     {
-        return TrueBimUi.CreateSectionCard("Листы и предпросмотр", CreatePreviewGrid());
+        Grid content = new()
+        {
+            Margin = TrueBimTheme.SectionPadding
+        };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        TextBlock title = new()
+        {
+            Text = "Листы и предпросмотр",
+            FontSize = TrueBimTheme.SectionTitleFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        };
+        Grid.SetRow(title, 0);
+        content.Children.Add(title);
+
+        UIElement grid = CreatePreviewGrid();
+        Grid.SetRow(grid, 1);
+        content.Children.Add(grid);
+
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Child = content
+        };
     }
 
     private UIElement CreatePreviewGrid()
@@ -203,6 +232,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         previewGrid.SelectionMode = DataGridSelectionMode.Single;
         previewGrid.CanUserSortColumns = true;
         previewGrid.GroupStyle.Add(CreateSheetGroupStyle());
+        previewGrid.MinHeight = 280;
         previewGrid.ToolTip = "Список листов. Отметьте листы и задайте порядок перед предпросмотром.";
         previewGrid.SelectionChanged += (_, _) => UpdateManualOrderButtons();
 
@@ -220,7 +250,7 @@ public sealed class SheetNumberingWindow : TrueBimWindow
         previewGrid.Columns.Add(CreateTextColumn("Группа", nameof(PreviewRow.GroupName), 140));
         previewGrid.Columns.Add(CreateTextColumn("Текущий номер", nameof(PreviewRow.CurrentNumber), 130));
         previewGrid.Columns.Add(CreateTextColumn("Предпросмотр", nameof(PreviewRow.PreviewNumber), 130));
-        previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), new DataGridLength(1, DataGridLengthUnitType.Star)));
+        previewGrid.Columns.Add(CreateTextColumn("Название", nameof(PreviewRow.Name), 360));
         previewGrid.Columns.Add(CreateStatusColumn());
 
         return previewGrid;
