@@ -354,8 +354,8 @@ public static class TrueBimRibbon
             "Импорт\nтаблиц",
             $"{CommandNamespace}.{nameof(ScheduleImportCommand)}",
             TrueBimIcon.ScheduleImport,
-            "Открывает импорт таблиц из PDF/JSON с предпросмотром и созданием визуальной таблицы.",
-            "MVP-инструмент: PDF пока использует тестовую JSON-модель, реальные изменения выполняются только в Drafting Table Mode через ExternalEvent и Transaction."),
+            "Распознаёт таблицы из PDF/DWG и записывает их в выбранную спецификацию Revit.",
+            "Выберите PDF или DWG, проверьте предпросмотр и укажите спецификацию. TrueBIM заменит её редактируемую табличную секцию, сохранив сетку, размеры и текст исходника."),
         new(
             KrPanelName,
             "TrueBIM_IsoFieldRebar",

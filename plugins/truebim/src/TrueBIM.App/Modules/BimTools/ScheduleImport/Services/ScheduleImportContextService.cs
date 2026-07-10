@@ -16,6 +16,7 @@ public sealed class ScheduleImportContextService
         List<string> warnings = [];
         bool canUseDrafting = DraftingTableService.IsDraftingCompatible(activeView);
         bool canUseBimSchedule = activeView is ViewSchedule;
+        IReadOnlyList<ScheduleTarget> scheduleTargets = CollectScheduleTargets(document, activeView.Id, warnings);
         IReadOnlyList<string> availableBimScheduleParameterNames = canUseBimSchedule
             ? CollectBimScheduleParameterNames(document, (ViewSchedule)activeView, warnings)
             : Array.Empty<string>();
@@ -25,10 +26,13 @@ public sealed class ScheduleImportContextService
             warnings.Add("Активный вид не подходит для прямого размещения DetailCurve/TextNote. При создании будет предложен новый чертёжный вид.");
         }
 
-        if (canUseBimSchedule)
+        if (scheduleTargets.Count == 0)
         {
-            warnings.Add($"Активная ViewSchedule доступна для BIM Schedule Mode: найдено полей для сопоставления: {availableBimScheduleParameterNames.Count}.");
-            warnings.Add("Обычная ViewSchedule не поддерживает произвольные строки из PDF. В этом срезе BIM Schedule Mode доступен как read-only предпросмотр сопоставления; создание пока выполняется через Drafting Table Mode.");
+            warnings.Add("В документе не найдено доступных спецификаций Revit. Создайте пустую спецификацию, затем снова откройте импорт.");
+        }
+        else
+        {
+            warnings.Add($"Доступно спецификаций Revit для импорта: {scheduleTargets.Count}.");
         }
 
         return new ScheduleImportContext(
@@ -39,7 +43,36 @@ public sealed class ScheduleImportContextService
             canUseDrafting,
             canUseBimSchedule,
             availableBimScheduleParameterNames,
-            warnings);
+            warnings,
+            scheduleTargets);
+    }
+
+    private static IReadOnlyList<ScheduleTarget> CollectScheduleTargets(
+        Document document,
+        ElementId activeViewId,
+        List<string> warnings)
+    {
+        try
+        {
+            return new FilteredElementCollector(document)
+                .OfClass(typeof(ViewSchedule))
+                .Cast<ViewSchedule>()
+                .Where(schedule => !schedule.IsTemplate)
+                .Where(schedule => !schedule.IsTitleblockRevisionSchedule)
+                .Where(schedule => !schedule.IsInternalKeynoteSchedule)
+                .Select(schedule => new ScheduleTarget(
+                    RevitElementIds.GetValue(schedule.Id),
+                    string.IsNullOrWhiteSpace(schedule.Name) ? $"Спецификация {schedule.Id}" : schedule.Name,
+                    schedule.Id == activeViewId))
+                .OrderByDescending(schedule => schedule.IsActive)
+                .ThenBy(schedule => schedule.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+        catch (Exception exception)
+        {
+            warnings.Add($"Не удалось прочитать список спецификаций Revit: {exception.Message}");
+            return Array.Empty<ScheduleTarget>();
+        }
     }
 
     private static IReadOnlyList<string> CollectBimScheduleParameterNames(

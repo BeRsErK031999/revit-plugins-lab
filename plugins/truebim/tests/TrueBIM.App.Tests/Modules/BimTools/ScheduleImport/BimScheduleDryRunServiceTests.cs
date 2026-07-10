@@ -122,6 +122,7 @@ public sealed class BimScheduleDryRunServiceTests
             true,
             canUseBimScheduleMode,
             availableFields,
-            Array.Empty<string>());
+            Array.Empty<string>(),
+            Array.Empty<ScheduleTarget>());
     }
 }

@@ -18,12 +18,12 @@ public sealed class ParsedTableValidationService
 
         if (table.RowCount > 80)
         {
-            warnings.Add("В таблице больше 80 строк: визуальная таблица может получиться слишком крупной для текущего вида.");
+            warnings.Add("В таблице больше 80 строк: проверьте итоговую высоту спецификации на листе.");
         }
 
         if (table.ColumnCount > 12)
         {
-            warnings.Add("В таблице больше 12 колонок: проверьте ширину после создания на виде.");
+            warnings.Add("В таблице больше 12 колонок: проверьте итоговую ширину спецификации на листе.");
         }
 
         foreach (ParsedCell cell in table.Cells)
@@ -42,13 +42,17 @@ public sealed class ParsedTableValidationService
 
             if (cell.RowSpan > 1 || cell.ColumnSpan > 1)
             {
-                warnings.Add($"Ячейка [{cell.RowIndex + 1}; {cell.ColumnIndex + 1}] имеет объединение. MVP нарисует текст в верхней левой позиции объединения.");
+                if (cell.RowIndex + cell.RowSpan > table.RowCount
+                    || cell.ColumnIndex + cell.ColumnSpan > table.ColumnCount)
+                {
+                    errors.Add($"Объединённая ячейка [{cell.RowIndex + 1}; {cell.ColumnIndex + 1}] выходит за границы таблицы.");
+                }
             }
         }
 
         if (table.Confidence > 0 && table.Confidence < 0.6)
         {
-            warnings.Add("Низкая уверенность распознавания: проверьте preview перед созданием визуальной таблицы.");
+            warnings.Add("Низкая уверенность распознавания: проверьте предпросмотр перед обновлением спецификации.");
         }
 
         return new ParsedTableValidationResult(warnings.Distinct().ToList(), errors.Distinct().ToList());

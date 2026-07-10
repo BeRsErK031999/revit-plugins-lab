@@ -84,9 +84,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Tools\ScheduleImport\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>tools\schedule-import\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
-    </Content>
+    <PackageReference Include="ACadSharp" Version="3.6.35" />
+    <PackageReference Include="PdfPig" Version="0.1.15" />
   </ItemGroup>
 </Project>

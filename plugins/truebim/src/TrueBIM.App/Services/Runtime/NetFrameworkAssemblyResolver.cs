@@ -7,7 +7,9 @@ internal static class NetFrameworkAssemblyResolver
 {
     private static readonly HashSet<string> BundledAssemblyNames = new(StringComparer.OrdinalIgnoreCase)
     {
+        "ACadSharp",
         "Microsoft.Bcl.AsyncInterfaces",
+        "Microsoft.Bcl.HashCode",
         "System.Buffers",
         "System.Memory",
         "System.Numerics.Vectors",
@@ -15,7 +17,14 @@ internal static class NetFrameworkAssemblyResolver
         "System.Text.Encodings.Web",
         "System.Text.Json",
         "System.Threading.Tasks.Extensions",
-        "System.ValueTuple"
+        "System.ValueTuple",
+        "UglyToad.PdfPig",
+        "UglyToad.PdfPig.Core",
+        "UglyToad.PdfPig.DocumentLayoutAnalysis",
+        "UglyToad.PdfPig.Fonts",
+        "UglyToad.PdfPig.Package",
+        "UglyToad.PdfPig.Tokenization",
+        "UglyToad.PdfPig.Tokens"
     };
     private static readonly HashSet<string> LegacyUnsafeRequestSources = new(StringComparer.OrdinalIgnoreCase)
     {

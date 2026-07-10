@@ -7,6 +7,20 @@ namespace TrueBIM.App.Tests.Services.Runtime;
 public sealed class NetFrameworkAssemblyResolverTests
 {
     [Fact]
+    public void FindBundledAssemblyPath_ResolvesScheduleImportParserDependency()
+    {
+        using TempDirectory temp = new();
+        string expectedPath = CreateFile(temp.Path, "UglyToad.PdfPig.dll");
+
+        string? result = FindBundledAssemblyPath(
+            "UglyToad.PdfPig, Version=0.1.15.0, Culture=neutral, PublicKeyToken=605d367334e74123",
+            Path.Combine(temp.Path, "TrueBIM.App.dll"),
+            temp.Path);
+
+        Assert.Equal(expectedPath, result);
+    }
+
+    [Fact]
     public void FindBundledAssemblyPath_UsesBundledDependencyForVersionMismatch()
     {
         using TempDirectory temp = new();
