@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -70,7 +71,8 @@ public sealed class OpeningViewsWindow : TrueBimWindow
     private readonly DataGrid openingGrid = new();
     private readonly DataGrid reportGrid = new();
     private readonly TextBlock statusText = new();
-    private readonly Button applyButton = CreateButton("Создать виды", TrueBimIcon.OpeningViews, 140);
+    private readonly Button previewButton = CreateButton("1. Предпросмотр", TrueBimIcon.Preview, 150);
+    private readonly Button applyButton = CreateButton("2. Создать виды", TrueBimIcon.OpeningViews, 150);
     private readonly Button exportReportButton = CreateButton("Отчёт CSV", TrueBimIcon.Export, 120);
 
     public OpeningViewsWindow(
@@ -101,8 +103,10 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
 
-        applyButton.ToolTip = "Создать выбранные фасадные elevation-виды в модели Revit после подтверждения.";
-        exportReportButton.ToolTip = "Сохранить CSV-отчёт по предпросмотру или результатам создания видов.";
+        previewButton.ToolTip = "Собрать выбранные категории с активного плана и проверить будущие виды без изменения модели.";
+        applyButton.ToolTip = "Сначала выполните предпросмотр и отметьте строки, готовые к созданию.";
+        exportReportButton.ToolTip = "Сначала выполните предпросмотр, чтобы сформировать строки отчёта.";
+        ToolTipService.SetShowOnDisabled(previewButton, true);
         ToolTipService.SetShowOnDisabled(applyButton, true);
         ToolTipService.SetShowOnDisabled(exportReportButton, true);
 
@@ -214,8 +218,6 @@ public sealed class OpeningViewsWindow : TrueBimWindow
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        Button previewButton = CreateButton("Предпросмотр", TrueBimIcon.Preview, 140);
-        previewButton.ToolTip = "Собрать двери, окна и прямолинейные витражи с активного плана, проверить имена будущих видов и показать строки без изменения модели.";
         previewButton.Click += (_, _) => Preview();
         actions.Children.Add(previewButton);
 
@@ -401,6 +403,12 @@ public sealed class OpeningViewsWindow : TrueBimWindow
 
     private void Preview()
     {
+        if (!HasSelectedCategory())
+        {
+            UpdateStatus("Выберите хотя бы одну категорию: двери, окна или витражи.");
+            return;
+        }
+
         UpdateStatus("Предпросмотр поставлен в очередь Revit.");
         revitActions.Raise(PreviewInRevitContext);
     }
@@ -434,7 +442,9 @@ public sealed class OpeningViewsWindow : TrueBimWindow
 
         exportReportButton.IsEnabled = reportRows.Count > 0;
         RefreshVisibleRows();
-        UpdateStatus($"Предпросмотр: {openingRows.Count} проёмов.");
+        UpdateStatus(openingRows.Count == 0
+            ? "Ничего не найдено. Проверьте видимость элементов, категории и фильтры активного плана."
+            : $"Предпросмотр: найдено элементов — {openingRows.Count}.");
     }
 
     private void Apply()
@@ -500,7 +510,9 @@ public sealed class OpeningViewsWindow : TrueBimWindow
 
         exportReportButton.IsEnabled = reportRows.Count > 0;
         Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, result.ToDialogText());
-        UpdateStatus($"Создано: {result.CreatedCount}. Пропущено: {result.SkippedCount}. Ошибок: {result.FailedCount}.");
+        UpdateStatus(
+            $"Создано: {result.CreatedCount}. Пропущено: {result.SkippedCount}. Ошибок: {result.FailedCount}. "
+            + "Следующий шаг: откройте созданный фасад и выберите «Шаг 3: оформить активный фасад» в меню плагина.");
     }
 
     private void ExportReport()
@@ -627,7 +639,26 @@ public sealed class OpeningViewsWindow : TrueBimWindow
         string orientation = OpeningViewOrientationSources.GetDisplayName(orientationSourceInput.SelectedValue as string).ToLowerInvariant();
         string text = $"Элементов: {openingRows.Count}. Готово: {readyRows}. Выбрано: {selectedRows}. Категории: {categories}. Ориентация дверей/окон: {orientation}. Тип фасада: {elevationType}. Отчётных строк: {reportRows.Count}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix) ? text : $"{prefix} {text}";
+        previewButton.IsEnabled = selectedCategories.Count > 0;
+        previewButton.ToolTip = previewButton.IsEnabled
+            ? "Собрать выбранные категории с активного плана и проверить будущие виды без изменения модели."
+            : "Выберите хотя бы одну категорию: двери, окна или витражи.";
         applyButton.IsEnabled = selectedRows > 0;
+        applyButton.ToolTip = applyButton.IsEnabled
+            ? $"Создать выбранные фасадные elevation-виды: {selectedRows}. После создания откройте фасад и запустите его оформление."
+            : openingRows.Count == 0
+                ? "Сначала выполните «1. Предпросмотр»."
+                : "Отметьте хотя бы одну строку со статусом «Готово».";
+        exportReportButton.ToolTip = exportReportButton.IsEnabled
+            ? "Сохранить CSV-отчёт по предпросмотру или результатам создания видов."
+            : "Сначала выполните предпросмотр, чтобы сформировать строки отчёта.";
+    }
+
+    private bool HasSelectedCategory()
+    {
+        return includeDoorsInput.IsChecked == true
+            || includeWindowsInput.IsChecked == true
+            || includeCurtainWallsInput.IsChecked == true;
     }
 
     private Button CreateGuideButton()
@@ -647,6 +678,8 @@ public sealed class OpeningViewsWindow : TrueBimWindow
             Margin = new Thickness(0, 0, 8, 0),
             ToolTip = CreateGuideToolTip()
         };
+        AutomationProperties.SetName(guideButton, "Открыть методичку по фасадам проёмов");
+        AutomationProperties.SetHelpText(guideButton, "Пошаговый сценарий создания и оформления фасадов.");
         guideButton.Click += (_, _) => ShowGuide();
         return guideButton;
     }

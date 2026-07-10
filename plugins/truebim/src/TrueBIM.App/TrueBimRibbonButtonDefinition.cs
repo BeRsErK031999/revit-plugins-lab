@@ -288,17 +288,24 @@ public static class TrueBimRibbon
     [
         new(
             "TrueBIM_OpeningViews_Create",
-            "Создать фасады",
+            "Шаги 1–2: создать фасады",
             $"{CommandNamespace}.{nameof(OpeningViewsCommand)}",
             TrueBimIcon.OpeningViews,
             "Собирает двери, окна и прямолинейные витражи активного плана и создаёт фасадные elevation-виды."),
         new(
             "TrueBIM_OpeningViews_Annotate",
-            "Оформить активный фасад",
+            "Шаг 3: оформить активный фасад",
             $"{CommandNamespace}.{nameof(OpeningViewAnnotationCommand)}",
             TrueBimIcon.OpeningViews,
             "Добавляет марку и ассоциативные размеры проёма на активный фасад TrueBIM.",
-            AvailabilityClassName: $"{CommandNamespace}.{nameof(OpeningViewAnnotationCommandAvailability)}")
+            AvailabilityClassName: $"{CommandNamespace}.{nameof(OpeningViewAnnotationCommandAvailability)}"),
+        new(
+            "TrueBIM_OpeningViews_Guide",
+            "Методичка: как работать",
+            $"{CommandNamespace}.{nameof(OpeningViewsGuideCommand)}",
+            TrueBimIcon.Help,
+            "Открывает пошаговую методичку по созданию фасадов и образмериванию дверей, окон и витражей. Доступна на любом активном виде.",
+            BeginsGroup: true)
     ];
 
     public static IReadOnlyList<string> PanelNames { get; } =

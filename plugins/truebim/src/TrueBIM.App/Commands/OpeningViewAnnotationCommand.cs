@@ -57,7 +57,7 @@ public sealed class OpeningViewAnnotationCommand : IExternalCommand
                 MainContent = preview.ToDialogText(),
                 CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
                 DefaultButton = TaskDialogResult.No,
-                FooterText = "Марка берётся из типа/экземпляра. Габариты семейства строятся по reference planes, витража — по крайним граням конструкции."
+                FooterText = "Дверь/окно: Left/Right и Bottom/Top семейства, суффикс «проём». Витраж: крайние грани стены, панелей и импостов, суффикс «габарит витража»."
             };
             if (confirmation.Show() != TaskDialogResult.Yes)
             {

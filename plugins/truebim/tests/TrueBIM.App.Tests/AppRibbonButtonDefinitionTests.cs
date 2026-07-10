@@ -134,15 +134,26 @@ public sealed class AppRibbonButtonDefinitionTests
         TrueBimRibbonPulldownItemDefinition createItem = Assert.Single(
             button.Items,
             item => string.Equals(item.Name, "TrueBIM_OpeningViews_Create", StringComparison.Ordinal));
+        Assert.Equal("Шаги 1–2: создать фасады", createItem.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpeningViewsCommand)}", createItem.CommandClassName);
 
         TrueBimRibbonPulldownItemDefinition annotateItem = Assert.Single(
             button.Items,
             item => string.Equals(item.Name, "TrueBIM_OpeningViews_Annotate", StringComparison.Ordinal));
+        Assert.Equal("Шаг 3: оформить активный фасад", annotateItem.Text);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(OpeningViewAnnotationCommand)}", annotateItem.CommandClassName);
         Assert.Equal(
             $"TrueBIM.App.Commands.{nameof(OpeningViewAnnotationCommandAvailability)}",
             annotateItem.AvailabilityClassName);
+
+        TrueBimRibbonPulldownItemDefinition guideItem = Assert.Single(
+            button.Items,
+            item => string.Equals(item.Name, "TrueBIM_OpeningViews_Guide", StringComparison.Ordinal));
+        Assert.Equal("Методичка: как работать", guideItem.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpeningViewsGuideCommand)}", guideItem.CommandClassName);
+        Assert.Equal(TrueBimIcon.Help, guideItem.Icon);
+        Assert.True(guideItem.BeginsGroup);
+        Assert.Empty(guideItem.AvailabilityClassName);
     }
 
     [Fact]

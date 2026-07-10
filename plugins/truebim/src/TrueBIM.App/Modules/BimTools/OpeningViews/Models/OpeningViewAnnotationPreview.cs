@@ -7,13 +7,15 @@ public sealed class OpeningViewAnnotationPreview
         bool canCreateTitle,
         bool canCreateWidthDimension,
         bool canCreateHeightDimension,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null,
+        bool usesCurtainWallGeometry = false)
     {
         Title = string.IsNullOrWhiteSpace(title) ? "Без марки" : title.Trim();
         CanCreateTitle = canCreateTitle;
         CanCreateWidthDimension = canCreateWidthDimension;
         CanCreateHeightDimension = canCreateHeightDimension;
         Warnings = warnings ?? [];
+        UsesCurtainWallGeometry = usesCurtainWallGeometry;
     }
 
     public string Title { get; }
@@ -26,15 +28,19 @@ public sealed class OpeningViewAnnotationPreview
 
     public IReadOnlyList<string> Warnings { get; }
 
+    public bool UsesCurtainWallGeometry { get; }
+
     public bool CanApply => CanCreateTitle || CanCreateWidthDimension || CanCreateHeightDimension;
 
     public string ToDialogText()
     {
+        string widthLabel = UsesCurtainWallGeometry ? "Габаритная ширина витража" : "Ширина проёма";
+        string heightLabel = UsesCurtainWallGeometry ? "Габаритная высота витража" : "Высота проёма";
         List<string> lines =
         [
             $"Марка над видом: {Title} ({FormatReady(CanCreateTitle)})",
-            $"Размер ширины проёма: {FormatReady(CanCreateWidthDimension)}",
-            $"Размер высоты проёма: {FormatReady(CanCreateHeightDimension)}"
+            $"{widthLabel}: {FormatReady(CanCreateWidthDimension)}",
+            $"{heightLabel}: {FormatReady(CanCreateHeightDimension)}"
         ];
 
         if (Warnings.Count > 0)

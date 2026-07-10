@@ -8,6 +8,7 @@ namespace TrueBIM.App.Modules.BimTools.OpeningViews.Services;
 public sealed class OpeningViewAnnotationService
 {
     private const string OpeningSuffix = " (проём)";
+    private const string CurtainWallSuffix = " (габарит витража)";
 
     public OpeningViewAnnotationPreview Preview(Document document, ViewSection view, Element source)
     {
@@ -48,12 +49,14 @@ public sealed class OpeningViewAnnotationService
                 : "Семейство не содержит стабильные reference planes Bottom/Top; высота не будет нанесена.");
         }
 
+        bool isCurtainWall = OpeningViewElementClassifier.IsCurtainWall(source);
         return new OpeningViewAnnotationPreview(
             ResolveTitle(document, source),
             canCreateTitle,
             canCreateWidth,
             canCreateHeight,
-            warnings);
+            warnings,
+            isCurtainWall);
     }
 
     public OpeningViewAnnotationResult Apply(
@@ -84,6 +87,9 @@ public sealed class OpeningViewAnnotationService
         OpeningViewProjectedBounds projectedBounds = ProjectBounds(boundsResult.Bounds, view);
         OpeningViewAnnotationLayout layout = OpeningViewAnnotationLayout.Create(projectedBounds, view.Scale);
         OpeningAnnotationReferences references = ResolveReferences(document, view, source);
+        string categoryKey = OpeningViewSourceResolver.GetCategoryKey(source);
+        string dimensionSuffix = ResolveDimensionSuffix(categoryKey);
+        string dimensionTarget = categoryKey == OpeningViewCategoryKeys.CurtainWall ? "габарита витража" : "проёма";
         ElementId textTypeId = ResolveTextNoteTypeId(document);
         OpeningViewMetadata? previousMetadata = OpeningViewMetadataService.Read(view);
         List<Element> createdAnnotations = [];
@@ -112,8 +118,8 @@ public sealed class OpeningViewAnnotationService
             {
                 TryCreateAnnotation(
                     document,
-                    () => CreateWidthDimension(document, view, references.Left!, references.Right!, layout),
-                    "Размер ширины проёма создан.",
+                    () => CreateWidthDimension(document, view, references.Left!, references.Right!, layout, dimensionSuffix),
+                    $"Размер ширины {dimensionTarget} создан.",
                     "Не удалось создать размер ширины",
                     createdAnnotations,
                     messages,
@@ -124,15 +130,14 @@ public sealed class OpeningViewAnnotationService
             {
                 TryCreateAnnotation(
                     document,
-                    () => CreateHeightDimension(document, view, references.Bottom!, references.Top!, layout),
-                    "Размер высоты проёма создан.",
+                    () => CreateHeightDimension(document, view, references.Bottom!, references.Top!, layout, dimensionSuffix),
+                    $"Размер высоты {dimensionTarget} создан.",
                     "Не удалось создать размер высоты",
                     createdAnnotations,
                     messages,
                     logger);
             }
 
-            string categoryKey = OpeningViewSourceResolver.GetCategoryKey(source);
             OpeningViewMetadataService.WriteAnnotations(view, source, categoryKey, createdAnnotations);
             transaction.Commit();
         }
@@ -176,6 +181,13 @@ public sealed class OpeningViewAnnotationService
             _ => "Дверь"
         };
         return $"{categoryName} {elementId}";
+    }
+
+    public static string ResolveDimensionSuffix(string? categoryKey)
+    {
+        return OpeningViewCategoryKeys.Normalize(categoryKey) == OpeningViewCategoryKeys.CurtainWall
+            ? CurtainWallSuffix
+            : OpeningSuffix;
     }
 
     private static string ResolveTitle(Document document, Element source)
@@ -225,7 +237,8 @@ public sealed class OpeningViewAnnotationService
         ViewSection view,
         Reference left,
         Reference right,
-        OpeningViewAnnotationLayout layout)
+        OpeningViewAnnotationLayout layout,
+        string suffix)
     {
         ReferenceArray references = new();
         references.Append(left);
@@ -234,7 +247,7 @@ public sealed class OpeningViewAnnotationService
             ToWorldPoint(view, layout.HorizontalStart, layout.HorizontalPosition),
             ToWorldPoint(view, layout.HorizontalEnd, layout.HorizontalPosition));
         Dimension dimension = document.Create.NewDimension(view, line, references);
-        dimension.Suffix = OpeningSuffix;
+        dimension.Suffix = suffix;
         return dimension;
     }
 
@@ -243,7 +256,8 @@ public sealed class OpeningViewAnnotationService
         ViewSection view,
         Reference bottom,
         Reference top,
-        OpeningViewAnnotationLayout layout)
+        OpeningViewAnnotationLayout layout,
+        string suffix)
     {
         ReferenceArray references = new();
         references.Append(bottom);
@@ -252,7 +266,7 @@ public sealed class OpeningViewAnnotationService
             ToWorldPoint(view, layout.VerticalPosition, layout.VerticalStart),
             ToWorldPoint(view, layout.VerticalPosition, layout.VerticalEnd));
         Dimension dimension = document.Create.NewDimension(view, line, references);
-        dimension.Suffix = OpeningSuffix;
+        dimension.Suffix = suffix;
         return dimension;
     }
 

@@ -16,10 +16,10 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
     public OpeningViewsGuideWindow()
     {
         Title = "Методичка: фасады проёмов";
-        Icon = IconFactory.CreateImage(TrueBimIcon.OpeningViews, 32);
-        Width = 880;
+        Icon = IconFactory.CreateImage(TrueBimIcon.Help, 32);
+        Width = 920;
         Height = 720;
-        MinWidth = 760;
+        MinWidth = 880;
         MinHeight = 620;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -65,11 +65,25 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
             CreateNumberedList(
                 "Откройте обычный план, на котором видны нужные двери, окна или стены-витражи.",
                 "Выберите тип фасада, шаблон вида, категории, ориентацию, масштаб и запасы crop box.",
-                "Нажмите «Предпросмотр»: модель не меняется, но таблица покажет будущие имена видов и причины пропуска.",
-                "Оставьте отмеченными только нужные строки и нажмите «Создать виды».",
+                "Нажмите «1. Предпросмотр»: модель не меняется, но таблица покажет будущие имена видов и причины пропуска.",
+                "Оставьте отмеченными только нужные строки и нажмите «2. Создать виды».",
                 "После выполнения проверьте отчёт в окне или сохраните CSV для передачи в задачу/QA.",
-                "Откройте созданный фасад, снова раскройте «Фасады проёмов» и выберите «Оформить активный фасад».",
+                "Откройте созданный фасад, снова раскройте «Фасады проёмов» и выберите «Шаг 3: оформить активный фасад».",
                 "Проверьте preview марки и размеров, затем подтвердите создание аннотаций.")));
+        body.Children.Add(CreateSection(
+            "Как проходит образмеривание",
+            CreateParagraph("Команда оформления сначала находит исходную дверь, окно или витраж по метаданным созданного вида. До подтверждения она показывает, какие аннотации сможет создать, и не меняет модель."),
+            CreateDiagramCard("Схема расположения аннотаций относительно полного габарита элемента.", CreateDimensioningDiagram()),
+            CreateBulletedList(
+                "Марка над фасадом берётся в порядке: Type Mark → Mark экземпляра → имя типа → категория и ElementId.",
+                "Двери и окна: ширина строится между reference planes Left/Right, высота — между Bottom/Top. В семействе эти planes должны совпадать именно с границами проёма; иначе размер будет ассоциативным, но геометрически неверным.",
+                "Витражи: плагин просматривает геометрию стены, панелей и импостов, оставляет грани, параллельные осям фасада, и выбирает две крайние грани по ширине и две по высоте.",
+                "Размер ширины ставится снизу, размер высоты — справа. Смещение равно 4 мм на листе с учётом масштаба вида; марка располагается на 6 мм выше габарита.",
+                "Линейные размеры создаются стандартным default DimensionType проекта, марка — доступным TextNoteType. Выбор отдельных типов оформления будет добавлен на этапе профилей.",
+                "Для дверей и окон размер получает суффикс «(проём)». Для витража используется «(габарит витража)», потому что цепочка строится по крайним граням конструкции.",
+                "Перед созданием аннотаций crop box расширяется так, чтобы в него вошли обе размерные линии и марка; если шаблон вида блокирует crop, плагин сообщает об этом и продолжает доступные операции.",
+                "Если одна из пар references не найдена, соответствующий размер не создаётся, а причина остаётся в preview и итоговом сообщении.",
+                "Повторный запуск удаляет только ранее созданные этим модулем TextNote и Dimension, затем строит их заново. Ручные аннотации не затрагиваются.")));
         body.Children.Add(CreateSection(
             "Что меняет модель",
             CreateSafetyGrid()));
@@ -90,7 +104,8 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
                 "Строка не создаётся, если не выбран тип фасада, нет model/view bounding box или уже существует вид с таким именем.",
                 "Для crop сначала используется полный model bounding box. Bounding box активного плана применяется только как резерв и отмечается в сообщении предпросмотра.",
                 "Если стена-основа не найдена, инструмент использует ориентацию самого элемента и пишет это в сообщении строки.",
-                "Для двери/окна размеры создаются по стабильным reference planes Left/Right и Bottom/Top. Для витража выбираются крайние вертикальные и горизонтальные грани стены, панелей и импостов.",
+                "Для двери/окна размеры создаются по стабильным reference planes Left/Right и Bottom/Top. Если planes обозначают раму, а не проём, сначала исправьте семейство.",
+                "Для витража выбираются крайние вертикальные и горизонтальные грани стены, панелей и импостов; это габарит конструкции, а не отдельная цепочка монтажного проёма.",
                 "Поддерживаются прямолинейные стены-витражи. Дуговые витражи предпросмотр помечает как требующие отдельной развёртки.",
                 "Повторное оформление удаляет и создаёт заново только марку и размеры TrueBIM; ручные аннотации не затрагиваются.",
                 "Для ошибки приложите активный план, ElementId строки, CSV-отчёт и лог `%APPDATA%\\TrueBIM\\Logs\\truebim.log`.")));
@@ -110,7 +125,7 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center
         };
-        titleRow.Children.Add(IconFactory.Create(TrueBimIcon.OpeningViews, 30));
+        titleRow.Children.Add(IconFactory.Create(TrueBimIcon.Help, 30));
         titleRow.Children.Add(new TextBlock
         {
             Text = "Методичка по фасадам проёмов",
@@ -225,18 +240,63 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
         };
 
         Brush arrowBrush = new SolidColorBrush(Color.FromRgb(74, 90, 106));
-        AddNode(canvas, 10, 26, 128, 72, "1. План", "двери, окна, витражи", Color.FromRgb(232, 243, 240), Color.FromRgb(31, 138, 112));
-        AddArrow(canvas, 143, 62, 174, 62, arrowBrush);
-        AddNode(canvas, 180, 26, 128, 72, "2. Preview", "имя, статус, дубли", Color.FromRgb(234, 240, 250), Color.FromRgb(53, 100, 168));
-        AddArrow(canvas, 313, 62, 344, 62, arrowBrush);
-        AddNode(canvas, 350, 26, 128, 72, "3. Выбор", "только отмеченные строки", Color.FromRgb(255, 243, 219), Color.FromRgb(176, 111, 0));
-        AddArrow(canvas, 483, 62, 514, 62, arrowBrush);
-        AddNode(canvas, 520, 26, 128, 72, "4. Создание", "ElevationMarker + crop", Color.FromRgb(246, 238, 250), Color.FromRgb(128, 77, 156));
-        AddArrow(canvas, 653, 62, 684, 62, arrowBrush);
-        AddNode(canvas, 690, 26, 60, 72, "5.", "CSV", Color.FromRgb(252, 235, 235), Color.FromRgb(178, 58, 72));
+        AddNode(canvas, 10, 26, 128, 72, "План", "двери, окна, витражи", Color.FromRgb(232, 243, 240), Color.FromRgb(31, 138, 112));
+        AddArrow(canvas, 143, 62, 158, 62, arrowBrush);
+        AddNode(canvas, 164, 26, 128, 72, "1. Preview", "имя, статус, дубли", Color.FromRgb(234, 240, 250), Color.FromRgb(53, 100, 168));
+        AddArrow(canvas, 297, 62, 312, 62, arrowBrush);
+        AddNode(canvas, 318, 26, 128, 72, "2. Создание", "ElevationMarker + crop", Color.FromRgb(255, 243, 219), Color.FromRgb(176, 111, 0));
+        AddArrow(canvas, 451, 62, 466, 62, arrowBrush);
+        AddNode(canvas, 472, 26, 128, 72, "Открыть вид", "фасад в Project Browser", Color.FromRgb(246, 238, 250), Color.FromRgb(128, 77, 156));
+        AddArrow(canvas, 605, 62, 620, 62, arrowBrush);
+        AddNode(canvas, 626, 26, 124, 72, "3. Оформить", "марка + 2 габарита", Color.FromRgb(252, 235, 235), Color.FromRgb(178, 58, 72));
 
         AddCanvasText(canvas, "Предпросмотр, фильтр и снятие выбора не меняют модель Revit.", 20, 122, 560, 15, FontWeights.SemiBold, TextBrush);
-        AddCanvasText(canvas, "Запись начинается только после «Создать виды» и отдельного подтверждения.", 20, 148, 680, 14, FontWeights.Normal, MutedBrush);
+        AddCanvasText(canvas, "Запись выполняется дважды и только после подтверждений: сначала создаются виды, затем — аннотации активного фасада.", 20, 148, 715, 14, FontWeights.Normal, MutedBrush);
+        return canvas;
+    }
+
+    private static Canvas CreateDimensioningDiagram()
+    {
+        Canvas canvas = new()
+        {
+            Width = 760,
+            Height = 238,
+            ClipToBounds = true
+        };
+        Brush geometryBrush = new SolidColorBrush(Color.FromRgb(53, 100, 168));
+        Brush referenceBrush = new SolidColorBrush(Color.FromRgb(176, 111, 0));
+        Brush dimensionBrush = new SolidColorBrush(Color.FromRgb(178, 58, 72));
+
+        Border element = new()
+        {
+            Width = 300,
+            Height = 120,
+            Background = new SolidColorBrush(Color.FromRgb(234, 240, 250)),
+            BorderBrush = geometryBrush,
+            BorderThickness = new Thickness(2),
+            Child = new TextBlock
+            {
+                Text = "Полный габарит\nдвери / окна / витража",
+                TextAlignment = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = TextBrush,
+                FontWeight = FontWeights.SemiBold
+            }
+        };
+        Canvas.SetLeft(element, 220);
+        Canvas.SetTop(element, 42);
+        canvas.Children.Add(element);
+
+        AddReferenceLine(canvas, 220, 24, 220, 188, referenceBrush, "Left / крайняя грань", 70, 8);
+        AddReferenceLine(canvas, 520, 24, 520, 188, referenceBrush, "Right / крайняя грань", 525, 8);
+        AddReferenceLine(canvas, 198, 42, 548, 42, referenceBrush, "Top", 556, 34);
+        AddReferenceLine(canvas, 198, 162, 548, 162, referenceBrush, "Bottom", 556, 154);
+
+        AddDimensionLine(canvas, 220, 198, 520, 198, dimensionBrush);
+        AddCanvasText(canvas, "ширина — снизу", 310, 204, 150, 13, FontWeights.SemiBold, dimensionBrush);
+        AddDimensionLine(canvas, 574, 42, 574, 162, dimensionBrush);
+        AddCanvasText(canvas, "высота — справа", 590, 92, 145, 13, FontWeights.SemiBold, dimensionBrush);
+        AddCanvasText(canvas, "Марка типа", 320, 18, 120, 14, FontWeights.SemiBold, TextBrush);
         return canvas;
     }
 
@@ -267,7 +327,9 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
             "создание ElevationMarker и ViewSection;",
             "присвоение имени вида;",
             "применение шаблона вида;",
-            "настройка crop box и масштаба.");
+            "настройка crop box и масштаба;",
+            "создание марки и ассоциативных размеров;",
+            "при повторе — удаление и перестроение только TrueBIM-аннотаций.");
         Grid.SetColumn(writeColumn, 1);
         grid.Children.Add(writeColumn);
 
@@ -376,6 +438,63 @@ public sealed class OpeningViewsGuideWindow : TrueBimWindow
                 new(x2 - 8, y2 + 5)
             },
             Fill = brush
+        });
+    }
+
+    private static void AddReferenceLine(
+        Canvas canvas,
+        double x1,
+        double y1,
+        double x2,
+        double y2,
+        Brush brush,
+        string label,
+        double labelX,
+        double labelY)
+    {
+        canvas.Children.Add(new Line
+        {
+            X1 = x1,
+            Y1 = y1,
+            X2 = x2,
+            Y2 = y2,
+            Stroke = brush,
+            StrokeThickness = 1.5,
+            StrokeDashArray = new DoubleCollection { 4, 3 }
+        });
+        AddCanvasText(canvas, label, labelX, labelY, 165, 12, FontWeights.Normal, brush);
+    }
+
+    private static void AddDimensionLine(Canvas canvas, double x1, double y1, double x2, double y2, Brush brush)
+    {
+        canvas.Children.Add(new Line
+        {
+            X1 = x1,
+            Y1 = y1,
+            X2 = x2,
+            Y2 = y2,
+            Stroke = brush,
+            StrokeThickness = 2
+        });
+
+        bool isHorizontal = Math.Abs(y2 - y1) < Math.Abs(x2 - x1);
+        canvas.Children.Add(new Line
+        {
+            X1 = isHorizontal ? x1 : x1 - 6,
+            Y1 = isHorizontal ? y1 - 6 : y1,
+            X2 = isHorizontal ? x1 : x1 + 6,
+            Y2 = isHorizontal ? y1 + 6 : y1,
+            Stroke = brush,
+            StrokeThickness = 2
+        });
+        canvas.Children.Add(new Line
+        {
+            X1 = isHorizontal ? x2 : x2 - 6,
+            Y1 = isHorizontal ? y2 - 6 : y2,
+            X2 = isHorizontal ? x2 : x2 + 6,
+            Y2 = isHorizontal ? y2 + 6 : y2,
+            Stroke = brush,
+            StrokeThickness = 2
         });
     }
 

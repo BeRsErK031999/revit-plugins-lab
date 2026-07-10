@@ -45,6 +45,48 @@ public sealed class OpeningViewAnnotationServiceTests
         Assert.Equal("Витраж 126", title);
     }
 
+    [Theory]
+    [InlineData(OpeningViewCategoryKeys.Door, " (проём)")]
+    [InlineData(OpeningViewCategoryKeys.Window, " (проём)")]
+    [InlineData(OpeningViewCategoryKeys.CurtainWall, " (габарит витража)")]
+    public void ResolveDimensionSuffix_ExplainsMeasuredGeometry(string categoryKey, string expected)
+    {
+        Assert.Equal(expected, OpeningViewAnnotationService.ResolveDimensionSuffix(categoryKey));
+    }
+
+    [Fact]
+    public void AnnotationPreview_UsesCurtainWallDimensionLabels()
+    {
+        OpeningViewAnnotationPreview preview = new(
+            "ВН-4.1",
+            canCreateTitle: true,
+            canCreateWidthDimension: true,
+            canCreateHeightDimension: true,
+            usesCurtainWallGeometry: true);
+
+        string dialogText = preview.ToDialogText();
+
+        Assert.Contains("Габаритная ширина витража: готов", dialogText);
+        Assert.Contains("Габаритная высота витража: готов", dialogText);
+        Assert.DoesNotContain("Ширина проёма", dialogText);
+    }
+
+    [Fact]
+    public void AnnotationPreview_UsesOpeningDimensionLabelsByDefault()
+    {
+        OpeningViewAnnotationPreview preview = new(
+            "ОБ-13.0",
+            canCreateTitle: true,
+            canCreateWidthDimension: true,
+            canCreateHeightDimension: true);
+
+        string dialogText = preview.ToDialogText();
+
+        Assert.Contains("Ширина проёма: готов", dialogText);
+        Assert.Contains("Высота проёма: готов", dialogText);
+        Assert.DoesNotContain("габаритная", dialogText, StringComparison.CurrentCultureIgnoreCase);
+    }
+
     [Fact]
     public void Metadata_NormalizesCategoryAndOwnedAnnotationIds()
     {
