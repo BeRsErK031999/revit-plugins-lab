@@ -4,9 +4,9 @@
                   xmlns:design="clr-namespace:TrueBIM.App.UI.DesignSystem"
                   xmlns:ui="clr-namespace:TrueBIM.App.UI"
                   Title="Соединить / Вырезать"
-                  Width="1040"
-                  Height="720"
-                  MinWidth="940"
+                  Width="1180"
+                  Height="760"
+                  MinWidth="1120"
                   MinHeight="620"
                   ResizeMode="CanResize"
                   WindowStartupLocation="CenterOwner">

@@ -20,10 +20,10 @@ public sealed class ScheduleSourceSelectionWindow : TrueBimWindow
     {
         Title = "Свернуть ВРС";
         Icon = IconFactory.CreateImage(TrueBimIcon.ScheduleCollapse, 32);
-        Width = 520;
-        Height = 360;
-        MinWidth = 460;
-        MinHeight = 320;
+        Width = 600;
+        Height = 430;
+        MinWidth = 600;
+        MinHeight = 430;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent(activeScheduleName, selectedScheduleNames);
@@ -46,7 +46,7 @@ public sealed class ScheduleSourceSelectionWindow : TrueBimWindow
             Margin = TrueBimTheme.WindowPadding
         };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         TextBlock title = new()
@@ -90,13 +90,8 @@ public sealed class ScheduleSourceSelectionWindow : TrueBimWindow
         listSelectionOption.IsChecked = activeScheduleName is null && selectedScheduleNames.Count != 1;
         options.Children.Add(CreateOptionBlock(listSelectionOption));
 
-        ScrollViewer optionsScroller = new()
-        {
-            Content = options,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        };
-        Grid.SetRow(optionsScroller, 1);
-        root.Children.Add(optionsScroller);
+        Grid.SetRow(options, 1);
+        root.Children.Add(options);
 
         StackPanel footer = new()
         {

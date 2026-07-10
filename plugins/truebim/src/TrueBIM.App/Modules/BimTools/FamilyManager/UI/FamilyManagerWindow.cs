@@ -45,10 +45,10 @@ public sealed class FamilyManagerWindow : TrueBimWindow
         FamilyManagerRevitActionDispatcher revitActionDispatcher = new(logger);
         Title = "Диспетчер семейств";
         Icon = IconFactory.CreateImage(TrueBimIcon.FamilyManager, 32);
-        Width = 1180;
-        Height = 760;
-        MinWidth = 1040;
-        MinHeight = 640;
+        Width = 1280;
+        Height = 860;
+        MinWidth = 1180;
+        MinHeight = 760;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = new FamilyManagerControl(
@@ -252,7 +252,7 @@ public sealed class FamilyManagerControl : UserControl
                 TrueBimIcon.FamilyManager),
             commandBar: null,
             body: CreateMainPanel(),
-            status: CreateStatus(),
+            status: null,
             footer: null);
     }
 

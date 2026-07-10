@@ -33,8 +33,9 @@ public sealed class DatumExtentWindow : TrueBimWindow
 
         Title = "РЕЖИМ ОСЕЙ";
         Icon = IconFactory.CreateImage(TrueBimIcon.DatumExtents, 32);
-        Width = 380;
-        MinWidth = 380;
+        Width = 360;
+        MinWidth = 360;
+        MinHeight = 170;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;

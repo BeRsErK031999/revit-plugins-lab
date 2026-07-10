@@ -168,9 +168,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 $"Активный документ: {documentTitle}. Безопасный сценарий: файл, preview, host, правила и тестовая арматура только после подтверждения.",
                 TrueBimIcon.IsoFieldRebar),
             commandBar: TrueBimUi.CreateCommandBar(CreateGuideButton()),
-            body: body,
+            body: CreateScrollableBody(body),
             status: null,
             footer: CreateFooter());
+    }
+
+    private static ScrollViewer CreateScrollableBody(UIElement body)
+    {
+        return new ScrollViewer
+        {
+            Content = body,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
     }
 
     private Button CreateGuideButton()

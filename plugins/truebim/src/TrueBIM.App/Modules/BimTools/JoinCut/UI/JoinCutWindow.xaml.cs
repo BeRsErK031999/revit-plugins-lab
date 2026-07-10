@@ -89,7 +89,7 @@ public sealed partial class JoinCutWindow : TrueBimWindow
         MoveCutUpButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Up, "Вверх");
         MoveCutDownButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Down, "Вниз");
         PreviewButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Предпросмотр");
-        ExecuteButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выполнить");
+        ExecuteButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выполнить", System.Windows.Media.Colors.White);
         CloseButton.Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Закрыть");
     }
 

@@ -19,6 +19,7 @@ public sealed class VoltageDropWindow : TrueBimWindow
     private readonly ComboBox conductorMaterialInput = CreateReferenceComboBox("Материал жилы кабеля.");
     private readonly ComboBox voltageInput = CreateReferenceComboBox("Напряжение сети для расчета выбранного варианта.");
     private readonly TabControl tableTabs = new();
+    private Border? statusBanner;
     private readonly TextBlock statusText = new();
     private readonly StackPanel threePhaseCurrentRows = new();
     private readonly StackPanel singlePhaseCurrentRows = new();
@@ -81,7 +82,9 @@ public sealed class VoltageDropWindow : TrueBimWindow
     {
         statusText.Foreground = TrueBimBrushes.TextPrimary;
         statusText.TextWrapping = TextWrapping.Wrap;
-        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
+        statusBanner = TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
+        statusBanner.Visibility = Visibility.Collapsed;
+        return statusBanner;
     }
 
     private static TabItem CreateTableTab(string header, UIElement content, TableViewport viewport)
@@ -683,6 +686,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
 
             statusText.Text = "Готово";
             statusText.Foreground = TrueBimBrushes.TextSecondary;
+            if (statusBanner is not null)
+            {
+                statusBanner.Visibility = Visibility.Collapsed;
+            }
         }
         catch (VoltageDropValidationException exception)
         {
@@ -869,6 +876,10 @@ public sealed class VoltageDropWindow : TrueBimWindow
 
         statusText.Text = exception.Message;
         statusText.Foreground = TrueBimBrushes.Danger;
+        if (statusBanner is not null)
+        {
+            statusBanner.Visibility = Visibility.Visible;
+        }
     }
 
     private string ResolveInputKey(string fieldKey, IReadOnlyDictionary<string, string> fieldKeyMap)
