@@ -723,7 +723,7 @@ public sealed class LintelsWindow : TrueBimWindow
         TaskDialog confirmation = new(DialogTitle)
         {
             MainInstruction = "Создать и оформить один боковой вид сборки 1:10?",
-            MainContent = $"Сборка: {preparedAssemblyName}{Environment.NewLine}Вид: {preparedViewName}{Environment.NewLine}{Environment.NewLine}TrueBIM создаст или переиспользует вид слева 1:10, нанесёт один габаритный размер и высотную отметку, попробует разместить проектное семейство рамки и нормализует crop. Экспорт изображения и марки компонентов пока не выполняются.",
+            MainContent = $"Сборка: {preparedAssemblyName}{Environment.NewLine}Вид: {preparedViewName}{Environment.NewLine}{Environment.NewLine}TrueBIM создаст или переиспользует вид слева 1:10, нанесёт один габаритный размер и высотную отметку, построит ограничивающую рамку невидимыми линиями и нормализует crop. Экспорт изображения и марки компонентов пока не выполняются.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };

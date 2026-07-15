@@ -50,7 +50,6 @@ public sealed class LintelAssemblyViewAnnotationService
 
         LintelAssemblyViewAnnotationLayout layout = LintelAssemblyViewAnnotationLayout.Create(bounds, view.Scale);
         AnnotationReferences references = ResolveReferences(view, members);
-        FamilySymbol? frameSymbol = FindFrameSymbol(document);
         List<string> messages = [];
         if (!references.HasWidthPair)
         {
@@ -60,11 +59,6 @@ public sealed class LintelAssemblyViewAnnotationService
         if (references.Top is null)
         {
             messages.Add("Не найдена верхняя горизонтальная грань геометрии; высотная отметка пропущена.");
-        }
-
-        if (frameSymbol is null)
-        {
-            messages.Add("В проекте не найдено размещаемое на виде семейство, в имени которого есть «Рамка»; временная рамка пропущена.");
         }
 
         List<Element> createdAnnotations = [];
@@ -107,16 +101,13 @@ public sealed class LintelAssemblyViewAnnotationService
                     messages);
             }
 
-            if (frameSymbol is not null)
-            {
-                frameCreated = TryCreateAnnotation(
-                    document,
-                    () => CreateFrame(document, view, frameSymbol, layout),
-                    $"Рамка размещена семейством «{frameSymbol.Family.Name} : {frameSymbol.Name}».",
-                    "Не удалось разместить рамку",
-                    createdAnnotations,
-                    messages);
-            }
+            frameCreated = TryCreateAnnotations(
+                document,
+                () => CreateFrame(document, view, layout),
+                "Ограничивающая рамка создана четырьмя невидимыми линиями по нормализованной области.",
+                "Не удалось создать ограничивающую рамку",
+                createdAnnotations,
+                messages);
 
             LintelAssemblyViewMetadataService.Write(view, assembly, createdAnnotations);
             EnsureStatus(
@@ -374,12 +365,12 @@ public sealed class LintelAssemblyViewAnnotationService
         int viewScale)
     {
         double leaderRise = 4 * Math.Max(1, viewScale) / 304.8;
-        double leaderRun = 6 * Math.Max(1, viewScale) / 304.8;
+        double leaderRun = 3 * Math.Max(1, viewScale) / 304.8;
         XYZ origin = top.WorldPoint;
         XYZ bend = origin
             + view.UpDirection.Normalize().Multiply(leaderRise)
-            + view.RightDirection.Normalize().Multiply(leaderRun);
-        XYZ end = bend + view.RightDirection.Normalize().Multiply(leaderRun);
+            - view.RightDirection.Normalize().Multiply(leaderRun);
+        XYZ end = bend - view.RightDirection.Normalize().Multiply(leaderRun);
         return document.Create.NewSpotElevation(
             view,
             top.Reference,
@@ -390,62 +381,26 @@ public sealed class LintelAssemblyViewAnnotationService
             true);
     }
 
-    private static FamilyInstance CreateFrame(
+    private static IReadOnlyList<Element> CreateFrame(
         Document document,
         ViewSection view,
-        FamilySymbol symbol,
         LintelAssemblyViewAnnotationLayout layout)
     {
-        if (!symbol.IsActive)
+        GraphicsStyle invisibleLineStyle = Category
+            .GetCategory(document, BuiltInCategory.OST_InvisibleLines)?
+            .GetGraphicsStyle(GraphicsStyleType.Projection)
+            ?? throw new InvalidOperationException("В проекте недоступен системный стиль «Невидимые линии».");
+        List<Element> frame = [];
+        foreach (LintelViewSegment segment in layout.CreateFrameSegments())
         {
-            symbol.Activate();
-            document.Regenerate();
+            XYZ start = ToWorldPoint(view, segment.Start.Horizontal, segment.Start.Vertical);
+            XYZ end = ToWorldPoint(view, segment.End.Horizontal, segment.End.Vertical);
+            DetailCurve line = document.Create.NewDetailCurve(view, Line.CreateBound(start, end));
+            line.LineStyle = invisibleLineStyle;
+            frame.Add(line);
         }
 
-        return document.Create.NewFamilyInstance(
-            ToWorldPoint(view, layout.FrameCenterHorizontal, layout.FrameCenterVertical),
-            symbol,
-            view);
-    }
-
-    private static FamilySymbol? FindFrameSymbol(Document document)
-    {
-        return new FilteredElementCollector(document)
-            .OfClass(typeof(FamilySymbol))
-            .Cast<FamilySymbol>()
-            .Where(symbol => symbol.Family.FamilyPlacementType == FamilyPlacementType.ViewBased)
-            .Where(symbol => ContainsIgnoreCase(symbol.Family.Name, "рамк")
-                || ContainsIgnoreCase(symbol.Name, "рамк"))
-            .OrderByDescending(ScoreFrameSymbol)
-            .ThenBy(symbol => symbol.Family.Name, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(symbol => symbol.Name, StringComparer.CurrentCultureIgnoreCase)
-            .FirstOrDefault();
-    }
-
-    private static int ScoreFrameSymbol(FamilySymbol symbol)
-    {
-        int score = 0;
-        if (ContainsIgnoreCase(symbol.Family.Name, "аннотац"))
-        {
-            score += 100;
-        }
-
-        if (ContainsIgnoreCase(symbol.Family.Name, "рамка"))
-        {
-            score += 50;
-        }
-
-        if (ContainsIgnoreCase(symbol.Name, "рамка"))
-        {
-            score += 25;
-        }
-
-        return score;
-    }
-
-    private static bool ContainsIgnoreCase(string value, string fragment)
-    {
-        return value.IndexOf(fragment, StringComparison.CurrentCultureIgnoreCase) >= 0;
+        return frame;
     }
 
     private bool TryCreateAnnotation(
@@ -486,6 +441,53 @@ public sealed class LintelAssemblyViewAnnotationService
         }
     }
 
+    private bool TryCreateAnnotations(
+        Document document,
+        Func<IReadOnlyList<Element>> factory,
+        string successMessage,
+        string failureMessage,
+        ICollection<Element> created,
+        ICollection<string> messages)
+    {
+        using SubTransaction subTransaction = new(document);
+        try
+        {
+            EnsureStatus(
+                subTransaction.Start(),
+                TransactionStatus.Started,
+                "Revit не начал вложенную транзакцию аннотаций.");
+            IReadOnlyList<Element> annotations = factory();
+            if (annotations.Count == 0)
+            {
+                throw new InvalidOperationException("Фабрика аннотаций не создала ни одного элемента.");
+            }
+
+            EnsureStatus(
+                subTransaction.Commit(),
+                TransactionStatus.Committed,
+                "Revit откатил вложенную транзакцию аннотаций.");
+            foreach (Element annotation in annotations)
+            {
+                created.Add(annotation);
+            }
+
+            messages.Add(successMessage);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            if (subTransaction.GetStatus() == TransactionStatus.Started)
+            {
+                subTransaction.RollBack();
+            }
+
+            string message = $"{failureMessage}: {exception.Message}";
+            messages.Add(message);
+            logger.Warning(message);
+            return false;
+        }
+    }
+
     private int DeleteOwnedAnnotations(Document document, View view)
     {
         int removed = 0;
@@ -496,7 +498,7 @@ public sealed class LintelAssemblyViewAnnotationService
                 Element? annotation = document.GetElement(uniqueId);
                 if (annotation is null
                     || annotation.OwnerViewId != view.Id
-                    || annotation is not (Dimension or FamilyInstance))
+                    || annotation is not (Dimension or FamilyInstance or CurveElement))
                 {
                     continue;
                 }

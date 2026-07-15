@@ -39,4 +39,25 @@ public sealed class LintelAssemblyViewAnnotationLayoutTests
         Assert.InRange(bounds.CenterHorizontal, layout.FrameMinHorizontal, layout.FrameMaxHorizontal);
         Assert.InRange(bounds.CenterVertical, layout.FrameMinVertical, layout.FrameMaxVertical);
     }
+
+    [Fact]
+    public void CreateFrameSegments_ReturnsClosedRectangleAtFrameBounds()
+    {
+        LintelViewProjectedBounds bounds = new(
+            -510 * FeetPerMillimeter,
+            510 * FeetPerMillimeter,
+            0,
+            90 * FeetPerMillimeter);
+        LintelAssemblyViewAnnotationLayout layout = LintelAssemblyViewAnnotationLayout.Create(bounds, 10);
+
+        IReadOnlyList<LintelViewSegment> segments = layout.CreateFrameSegments();
+
+        Assert.Equal(4, segments.Count);
+        Assert.Equal(new LintelViewPoint(layout.FrameMinHorizontal, layout.FrameMinVertical), segments[0].Start);
+        Assert.Equal(new LintelViewPoint(layout.FrameMaxHorizontal, layout.FrameMinVertical), segments[0].End);
+        for (int index = 0; index < segments.Count; index++)
+        {
+            Assert.Equal(segments[index].End, segments[(index + 1) % segments.Count].Start);
+        }
+    }
 }
