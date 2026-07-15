@@ -53,7 +53,7 @@ public sealed class IsoFieldRebarCreationService
         List<long> createdIds = new();
         logger.Info($"IsoField test rebar transaction starting. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}; ValidRules={previewItems.Count}.");
 
-        using Transaction transaction = new(document, "TrueBIM: тестовая арматура по изополям");
+        using Transaction transaction = new(document, "TrueBIM: пробное армирование по изополям");
         transaction.Start();
 
         try
@@ -78,7 +78,7 @@ public sealed class IsoFieldRebarCreationService
         return new IsoFieldRebarCreationResult(
             createdIds.Count,
             createdIds,
-            $"Создана тестовая арматура: {createdIds.Count}. Host: {hostElement.DisplayName}.");
+            $"Создано пробное армирование: {createdIds.Count}. Host: {hostElement.DisplayName}.");
     }
 
     private static IReadOnlyList<RebarRulePreviewItem> ResolvePreviewItems(
@@ -87,7 +87,7 @@ public sealed class IsoFieldRebarCreationService
     {
         if (!rulePreview.CanCreateRebar)
         {
-            throw new InvalidOperationException("Перед созданием тестовой арматуры рассчитайте валидные правила армирования.");
+            throw new InvalidOperationException("Перед созданием пробного армирования рассчитайте валидные правила армирования.");
         }
 
         RebarRulePreviewItem[] validItems = rulePreview.Items
@@ -95,7 +95,7 @@ public sealed class IsoFieldRebarCreationService
             .ToArray();
         if (validItems.Length == 0)
         {
-            throw new InvalidOperationException("Нет валидной зоны для создания тестовой арматуры.");
+            throw new InvalidOperationException("Нет валидной зоны для создания пробного армирования.");
         }
 
         return validItems;
@@ -199,19 +199,19 @@ public sealed class IsoFieldRebarCreationService
             yield break;
         }
 
-        throw new InvalidOperationException("MVP создания тестовой арматуры поддерживает только простые стены и плиты.");
+        throw new InvalidOperationException("MVP пробного армирования поддерживает только простые стены и плиты.");
     }
 
     private static IsoFieldWallPlacementFrame BuildWallPlacementFrame(Wall wall)
     {
         if (wall.Location is not LocationCurve locationCurve)
         {
-            throw new InvalidOperationException("Для тестовой арматуры стены нужна LocationCurve.");
+            throw new InvalidOperationException("Для пробного армирования стены нужна LocationCurve.");
         }
 
         if (locationCurve.Curve is not Line location)
         {
-            throw new InvalidOperationException("MVP создания тестовой арматуры поддерживает только прямые стены.");
+            throw new InvalidOperationException("MVP пробного армирования поддерживает только прямые стены.");
         }
 
         XYZ start = location.GetEndPoint(0);
@@ -220,7 +220,7 @@ public sealed class IsoFieldRebarCreationService
         double lengthFeet = new XYZ(direction.X, direction.Y, 0).GetLength();
         if (lengthFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("LocationCurve стены слишком короткая для тестовой арматуры.");
+            throw new InvalidOperationException("LocationCurve стены слишком короткая для пробного армирования.");
         }
 
         XYZ axis = NormalizeHorizontalDirection(direction);
@@ -229,7 +229,7 @@ public sealed class IsoFieldRebarCreationService
         double heightFeet = boundingBox.Max.Z - boundingBox.Min.Z;
         if (heightFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("Bounding box стены слишком мал для тестовой арматуры.");
+            throw new InvalidOperationException("Bounding box стены слишком мал для пробного армирования.");
         }
 
         XYZ centerOnCurve = location.Evaluate(0.5, true);

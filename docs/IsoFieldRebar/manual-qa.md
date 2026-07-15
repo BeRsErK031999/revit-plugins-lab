@@ -28,7 +28,7 @@ the current MVP behavior without requiring a production recognition worker.
 7. Select the rectangular slab as host.
 8. Click `Рассчитать правила`.
 9. Verify rule preview lists valid slab rules and no model elements are created.
-10. Click `Создать тестовую`, confirm the dialog, and verify test rebar is
+10. Click `Создать пробное армирование`, confirm the dialog, and verify test rebar is
     created. Undo must remove it.
 11. Repeat steps 3-10 with `sample-wall-zones.json` and a straight wall host.
 12. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
@@ -48,15 +48,15 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 
 - Cancel file selection. Expected: footer says selection was canceled, no model
   change, log records the cancellation.
-- Click `Распознать файл` without selecting a file. Expected: user dialog and log
-  warning.
+- Verify `Загрузить зоны` is disabled without a selected source and its tooltip
+  explains what is missing.
 - Click `Показать в Revit` before loading JSON. Expected: user dialog and log
   warning.
 - Click `Рассчитать правила` before selecting a host. Expected: read-only
   diagnostics, no model change.
 - Cancel host selection with `Esc`. Expected: footer says selection was canceled,
   no model change.
-- Click `Создать тестовую` and choose `No` in the confirmation dialog. Expected:
+- Click `Создать пробное армирование` and choose `No` in the confirmation dialog. Expected:
   no rebar is created and log records user cancellation.
 
 ## CLI Worker Smoke
@@ -66,7 +66,7 @@ Only run this section when a real or fake worker is available.
 1. Set `TRUEBIM_ISOFIELD_WORKER`, optional `TRUEBIM_ISOFIELD_WORKER_ARGS`, and
    optional `TRUEBIM_ISOFIELD_WORKER_TIMEOUT_SECONDS` before starting Revit.
 2. Choose an image file rather than JSON.
-3. Click `Распознать файл`.
+3. Click `Распознать изображение`.
 4. Verify the runner logs `Runner=CLI`, prepares temp request/output files, and
    validates output JSON.
 5. Verify timeout or non-zero exit failures show a user-friendly dialog and a

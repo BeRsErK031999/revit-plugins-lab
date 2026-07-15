@@ -54,9 +54,10 @@ public static class TrueBimTheme
     public const double HeaderHeight = 64;
     public const double FooterHeight = 52;
 
-    public const double IconSizeSmall = 16;
-    public const double IconSizeCommand = 20;
-    public const double IconSizeHeader = 24;
+    public const double IconSizeSmall = 18;
+    public const double IconSizeCommand = 22;
+    public const double IconSizeHeader = 28;
+    public const double IconSizeRibbonSmall = 16;
     public const double IconSizeRibbon = 32;
 
     public static readonly Thickness WindowPadding = new(Spacing16);

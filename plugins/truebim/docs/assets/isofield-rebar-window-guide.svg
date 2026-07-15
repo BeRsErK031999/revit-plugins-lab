@@ -1,6 +1,6 @@
 <svg width="960" height="620" viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Окно модуля армирования по изополям с кнопкой методички</title>
-  <desc id="desc">Схема показывает кнопку вопроса в правом верхнем углу окна, подсказку при наведении и основные блоки workflow каркаса изополей.</desc>
+  <desc id="desc">Схема показывает кнопку вопроса в окне, подсказку при наведении и последовательные блоки workflow армирования по изополям.</desc>
   <rect width="960" height="620" rx="22" fill="#F7F9FB"/>
   <rect x="56" y="48" width="848" height="524" rx="14" fill="#FFFFFF" stroke="#D7DEE8" stroke-width="2"/>
 
@@ -19,32 +19,32 @@
     <text x="620" y="235" fill="#4A5A6A" font-size="15">с картинками и примером workflow.</text>
 
     <rect x="80" y="158" width="492" height="76" rx="8" fill="#FFFFFF" stroke="#D7DEE8"/>
-    <text x="104" y="188" fill="#12263A" font-size="18" font-weight="700">Источник изополей</text>
+    <text x="104" y="188" fill="#12263A" font-size="18" font-weight="700">Источник и зоны изополей</text>
     <rect x="104" y="202" width="136" height="26" rx="6" fill="#E8F3F0" stroke="#1F8A70"/>
     <text x="172" y="221" text-anchor="middle" fill="#1F8A70" font-size="14" font-weight="700">Выбрать файл</text>
     <text x="256" y="221" fill="#4A5A6A" font-size="14">JSON или изображение</text>
 
     <rect x="80" y="254" width="492" height="76" rx="8" fill="#FFFFFF" stroke="#D7DEE8"/>
-    <text x="104" y="284" fill="#12263A" font-size="18" font-weight="700">Распознавание и preview</text>
-    <path d="M116 312 C160 268 220 268 264 312 S350 356 430 302" fill="none" stroke="#1F8A70" stroke-width="5" stroke-linecap="round"/>
+    <text x="104" y="284" fill="#12263A" font-size="18" font-weight="700">Проверка зон</text>
+    <path d="M116 316 C160 290 220 290 264 316 S350 344 430 306" fill="none" stroke="#1F8A70" stroke-width="5" stroke-linecap="round"/>
 
     <rect x="80" y="350" width="492" height="76" rx="8" fill="#FFFFFF" stroke="#D7DEE8"/>
-    <text x="104" y="380" fill="#12263A" font-size="18" font-weight="700">Host и калибровка</text>
-    <rect x="290" y="370" width="180" height="34" rx="5" fill="#EAF0FA" stroke="#3564A8"/>
-    <text x="380" y="393" text-anchor="middle" fill="#3564A8" font-size="15">стена или плита</text>
+    <text x="104" y="380" fill="#12263A" font-size="18" font-weight="700">Основа армирования</text>
+    <rect x="330" y="370" width="140" height="34" rx="5" fill="#EAF0FA" stroke="#3564A8"/>
+    <text x="400" y="393" text-anchor="middle" fill="#3564A8" font-size="15">стена / плита</text>
 
     <rect x="80" y="446" width="492" height="76" rx="8" fill="#FFFFFF" stroke="#D7DEE8"/>
-    <text x="104" y="476" fill="#12263A" font-size="18" font-weight="700">Правила и тестовая арматура</text>
-    <rect x="318" y="466" width="152" height="30" rx="6" fill="#FCEBEB" stroke="#B23A48"/>
-    <text x="394" y="486" text-anchor="middle" fill="#B23A48" font-size="14" font-weight="700">Создать тестовую</text>
+    <text x="104" y="476" fill="#12263A" font-size="18" font-weight="700">Правила и пробное армирование</text>
+    <rect x="104" y="486" width="210" height="26" rx="6" fill="#FCEBEB" stroke="#B23A48"/>
+    <text x="209" y="504" text-anchor="middle" fill="#B23A48" font-size="13" font-weight="700">Пробное армирование</text>
 
     <rect x="602" y="284" width="258" height="238" rx="8" fill="#FFF3DB" stroke="#B06F00" stroke-width="2"/>
-    <text x="624" y="316" fill="#12263A" font-size="20" font-weight="700">Встроенная методичка</text>
-    <text x="624" y="350" fill="#4A5A6A" font-size="16">1. Как идет путь данных</text>
-    <text x="624" y="380" fill="#4A5A6A" font-size="16">2. Пример JSON - preview - host</text>
-    <text x="624" y="410" fill="#4A5A6A" font-size="16">3. Что безопасно, а что пишет</text>
-    <text x="624" y="440" fill="#4A5A6A" font-size="16">4. Что приложить к ошибке</text>
-    <path d="M640 478 L704 438 L768 478" fill="none" stroke="#1F8A70" stroke-width="6" stroke-linecap="round"/>
-    <path d="M632 496 H786" stroke="#B23A48" stroke-width="6" stroke-linecap="round"/>
+    <text x="624" y="316" fill="#12263A" font-size="20" font-weight="700">Готовность: 3 из 4</text>
+    <text x="624" y="350" fill="#1F8A70" font-size="16">✓ Источник выбран</text>
+    <text x="624" y="380" fill="#1F8A70" font-size="16">✓ Зоны загружены</text>
+    <text x="624" y="410" fill="#1F8A70" font-size="16">✓ Host выбран</text>
+    <text x="624" y="440" fill="#4A5A6A" font-size="16">○ Правила проверены</text>
+    <text x="624" y="476" fill="#4A5A6A" font-size="14">Следующий шаг понятен</text>
+    <text x="624" y="498" fill="#4A5A6A" font-size="14">до нажатия кнопки</text>
   </g>
 </svg>

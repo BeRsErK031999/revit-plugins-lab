@@ -6,6 +6,7 @@ using TrueBIM.App.Modules.ViewVisibility.UI;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.Services.Runtime;
 using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App;
 
@@ -82,8 +83,8 @@ public sealed class App : IExternalApplication
     {
         PulldownButtonData pulldownData = new(button.Name, button.Text);
         PulldownButton pulldown = (PulldownButton)panel.AddItem(pulldownData);
-        pulldown.Image = IconFactory.CreateImage(button.Icon, 16);
-        pulldown.LargeImage = IconFactory.CreateImage(button.Icon, 32);
+        pulldown.Image = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbonSmall);
+        pulldown.LargeImage = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbon);
         pulldown.ToolTip = button.Tooltip;
         pulldown.LongDescription = button.LongDescription;
         if (string.Equals(button.Name, "TrueBIM_ViewVisibility", StringComparison.Ordinal))
@@ -113,8 +114,8 @@ public sealed class App : IExternalApplication
             button.Text,
             typeof(App).Assembly.Location,
             button.CommandClassName);
-        buttonData.Image = IconFactory.CreateImage(button.Icon, 16);
-        buttonData.LargeImage = IconFactory.CreateImage(button.Icon, 32);
+        buttonData.Image = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbonSmall);
+        buttonData.LargeImage = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbon);
         buttonData.ToolTip = button.Tooltip;
         buttonData.LongDescription = button.LongDescription;
         if (!string.IsNullOrWhiteSpace(button.AvailabilityClassName))
@@ -132,8 +133,8 @@ public sealed class App : IExternalApplication
             item.Text,
             typeof(App).Assembly.Location,
             item.CommandClassName);
-        buttonData.Image = IconFactory.CreateImage(item.Icon, 16);
-        buttonData.LargeImage = IconFactory.CreateImage(item.Icon, 32);
+        buttonData.Image = IconFactory.CreateImage(item.Icon, TrueBimTheme.IconSizeRibbonSmall);
+        buttonData.LargeImage = IconFactory.CreateImage(item.Icon, TrueBimTheme.IconSizeRibbon);
         buttonData.ToolTip = item.Tooltip;
         if (!string.IsNullOrWhiteSpace(item.AvailabilityClassName))
         {

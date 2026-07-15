@@ -41,8 +41,18 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly TextBlock previewStatusText;
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
+    private readonly Button recognizeButton;
     private readonly Button showRevitPreviewButton;
     private readonly Button clearRevitPreviewButton;
+    private readonly Button selectHostButton;
+    private readonly Button clearHostButton;
+    private readonly Button previewRulesButton;
+    private readonly Button createTestRebarButton;
+    private readonly TextBlock workflowSummaryText;
+    private readonly TextBlock sourceStepText;
+    private readonly TextBlock zonesStepText;
+    private readonly TextBlock hostStepText;
+    private readonly TextBlock rulesStepText;
     private readonly WpfTextBox calibrationAnchorXInput;
     private readonly WpfTextBox calibrationAnchorYInput;
     private readonly WpfTextBox calibrationMillimetersPerPixelInput;
@@ -81,7 +91,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         revitActions = new RevitActionDispatcher("армирование по изополям", this.logger);
 
         selectedFileText = CreateMutedText("Файл не выбран.");
-        recognitionStatusText = CreateMutedText("Распознавание пока не запускалось.");
+        recognitionStatusText = CreateMutedText($"JSON загружается сразу. Обработчик изображений: {ResolveRecognitionRunnerName()}.");
         hostStatusText = CreateMutedText("Host-элемент не выбран.");
         calibrationAnchorXInput = CreateCalibrationInput(currentCalibration.ImageAnchor.X);
         calibrationAnchorYInput = CreateCalibrationInput(currentCalibration.ImageAnchor.Y);
@@ -96,23 +106,60 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         };
         calibrationStatusText = CreateMutedText(FormatCalibration(currentCalibration));
         ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
-        rebarCreationStatusText = CreateMutedText("Тестовая арматура пока не создана.");
+        rebarCreationStatusText = CreateMutedText("Пробное армирование пока не создано.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
         previewCanvas = CreatePreviewCanvas();
+        recognizeButton = CreateActionButton(
+            "Загрузить зоны",
+            TrueBimIcon.Preview,
+            176,
+            "Сначала выберите JSON или изображение изополей.",
+            (_, _) => RunRecognition());
         showRevitPreviewButton = CreateRevitPreviewButton();
         clearRevitPreviewButton = CreateClearRevitPreviewButton();
+        selectHostButton = CreateActionButton(
+            "Выбрать стену/плиту",
+            TrueBimIcon.Apply,
+            190,
+            "Выбрать стену или плиту как host для армирования.",
+            (_, _) => SelectHostElement());
+        clearHostButton = CreateActionButton(
+            "Сбросить",
+            TrueBimIcon.Close,
+            116,
+            "Сбросить выбранный host-элемент.",
+            (_, _) => ClearHostElement());
+        previewRulesButton = CreateActionButton(
+            "Рассчитать правила",
+            TrueBimIcon.Preview,
+            176,
+            "Сначала загрузите зоны и выберите host-элемент.",
+            (_, _) => PreviewRebarRules());
+        createTestRebarButton = CreateActionButton(
+            "Создать пробное армирование",
+            TrueBimIcon.Apply,
+            226,
+            "Сначала рассчитайте валидные правила армирования.",
+            (_, _) => CreateTestRebar(),
+            TrueBimButtonStyleKind.Primary);
+        workflowSummaryText = CreateMutedText("Готово 0 из 4 обязательных шагов.");
+        sourceStepText = CreateWorkflowStepText("Источник выбран");
+        zonesStepText = CreateWorkflowStepText("Зоны загружены");
+        hostStepText = CreateWorkflowStepText("Host выбран");
+        rulesStepText = CreateWorkflowStepText("Правила проверены");
         footerStatusText = CreateMutedText("Линии предпросмотра создаются только по явной кнопке.");
 
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
-        Width = 840;
-        Height = 840;
-        MinWidth = 760;
-        MinHeight = 760;
+        Width = 980;
+        Height = 780;
+        MinWidth = 820;
+        MinHeight = 640;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = CreateContent();
         ClearPreview("Контуры пока не загружены.");
+        RefreshWorkflowState();
 
         this.logger.Info("IsoField Rebar window opened.");
     }
@@ -121,8 +168,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         WpfGrid body = new();
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
-        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -133,41 +179,36 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         WpfGrid.SetColumn(filePanel, 0);
         body.Children.Add(filePanel);
 
-        Border nextStepsPanel = CreateNextStepsPanel();
-        WpfGrid.SetColumn(nextStepsPanel, 1);
-        WpfGrid.SetRowSpan(nextStepsPanel, 6);
-        nextStepsPanel.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
-        body.Children.Add(nextStepsPanel);
+        Border workflowPanel = CreateWorkflowPanel();
+        WpfGrid.SetColumn(workflowPanel, 1);
+        WpfGrid.SetRowSpan(workflowPanel, 5);
+        workflowPanel.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
+        body.Children.Add(workflowPanel);
 
-        Border recognitionPanel = CreateRecognitionPanel();
-        WpfGrid.SetRow(recognitionPanel, 1);
-        recognitionPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        body.Children.Add(recognitionPanel);
+        Border previewPanel = CreatePreviewPanel();
+        WpfGrid.SetRow(previewPanel, 1);
+        previewPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
+        body.Children.Add(previewPanel);
 
         Border hostPanel = CreateHostPanel();
         WpfGrid.SetRow(hostPanel, 2);
         hostPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(hostPanel);
 
-        Border calibrationPanel = CreateCalibrationPanel();
-        WpfGrid.SetRow(calibrationPanel, 3);
-        calibrationPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        body.Children.Add(calibrationPanel);
-
         Border rulePanel = CreateRulePanel();
-        WpfGrid.SetRow(rulePanel, 4);
+        WpfGrid.SetRow(rulePanel, 3);
         rulePanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         body.Children.Add(rulePanel);
 
-        Border previewPanel = CreatePreviewPanel();
-        WpfGrid.SetRow(previewPanel, 5);
-        previewPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        body.Children.Add(previewPanel);
+        Border calibrationPanel = CreateCalibrationPanel();
+        WpfGrid.SetRow(calibrationPanel, 4);
+        calibrationPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
+        body.Children.Add(calibrationPanel);
 
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 Title,
-                $"Активный документ: {documentTitle}. Безопасный сценарий: файл, preview, host, правила и тестовая арматура только после подтверждения.",
+                $"Активный документ: {documentTitle}. Последовательный сценарий: источник, зоны, host, правила и пробное армирование после подтверждения.",
                 TrueBimIcon.IsoFieldRebar),
             commandBar: TrueBimUi.CreateCommandBar(CreateGuideButton()),
             body: CreateScrollableBody(body),
@@ -220,8 +261,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 6)
         });
-        content.Children.Add(CreateMutedText("Нажмите, чтобы открыть справку с картинками: входной файл, preview, выбор host, расчет правил и пример тестовой арматуры."));
-        content.Children.Add(CreateMutedText("До кнопки «Создать тестовую» модуль работает в безопасном режиме без записи арматуры в модель."));
+        content.Children.Add(CreateMutedText("Нажмите, чтобы открыть справку с картинками: входной файл, preview, выбор host, расчет правил и пример пробного армирования."));
+        content.Children.Add(CreateMutedText("До кнопки «Создать пробное армирование» модуль работает в безопасном режиме без записи арматуры в модель."));
 
         return new ToolTip
         {
@@ -241,29 +282,39 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private Border CreateFilePanel()
     {
-        StackPanel content = CreatePanelContent("Источник изополей");
+        StackPanel content = CreatePanelContent("1. Источник и зоны изополей");
+
+        StackPanel buttonRow = new()
+        {
+            Orientation = Orientation.Horizontal
+        };
 
         Button chooseButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать файл"),
-            MinWidth = 140,
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать JSON/изображение"),
+            MinWidth = 214,
             MinHeight = TrueBimTheme.ControlHeight32,
             Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Выбрать изображение или JSON-файл изополей."
+            ToolTip = "Выбрать готовый JSON зон или изображение изополей для настроенного worker."
         };
         chooseButton.Click += (_, _) => ChooseSourceFile();
-        content.Children.Add(chooseButton);
+        buttonRow.Children.Add(chooseButton);
+        recognizeButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        buttonRow.Children.Add(recognizeButton);
+        content.Children.Add(buttonRow);
 
         selectedFileText.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         content.Children.Add(selectedFileText);
+        recognitionStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        content.Children.Add(recognitionStatusText);
 
         return CreatePanel(content);
     }
 
     private Border CreatePreviewPanel()
     {
-        StackPanel content = CreatePanelContent("Предпросмотр контуров");
+        StackPanel content = CreatePanelContent("2. Проверка зон");
 
         Border canvasBorder = new()
         {
@@ -292,35 +343,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private Border CreateHostPanel()
     {
-        StackPanel content = CreatePanelContent("Host-элемент");
+        StackPanel content = CreatePanelContent("3. Основа армирования");
 
         StackPanel buttonRow = new()
         {
             Orientation = Orientation.Horizontal
         };
 
-        Button selectHostButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Выбрать стену/плиту"),
-            MinWidth = 180,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Выбрать стену или плиту как будущий host для армирования."
-        };
-        selectHostButton.Click += (_, _) => SelectHostElement();
         buttonRow.Children.Add(selectHostButton);
 
-        Button clearHostButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Сбросить"),
-            MinWidth = 110,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(),
-            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
-            ToolTip = "Сбросить выбранный host-элемент."
-        };
-        clearHostButton.Click += (_, _) => ClearHostElement();
+        clearHostButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         buttonRow.Children.Add(clearHostButton);
 
         content.Children.Add(buttonRow);
@@ -333,14 +365,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private Border CreateCalibrationPanel()
     {
-        StackPanel content = CreatePanelContent("Калибровка");
+        StackPanel content = CreatePanelContent("Дополнительные настройки");
+
+        StackPanel calibrationContent = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
 
         StackPanel rows = new();
         rows.Children.Add(CreateInputRow("Якорь X", calibrationAnchorXInput));
         rows.Children.Add(CreateInputRow("Якорь Y", calibrationAnchorYInput));
         rows.Children.Add(CreateInputRow("Мм/пикс", calibrationMillimetersPerPixelInput));
         rows.Children.Add(calibrationInvertYInput);
-        content.Children.Add(rows);
+        calibrationContent.Children.Add(rows);
 
         Button applyCalibrationButton = new()
         {
@@ -353,46 +390,34 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             ToolTip = "Проверить параметры калибровки."
         };
         applyCalibrationButton.Click += (_, _) => ApplyCalibration(showDialogOnError: true);
-        content.Children.Add(applyCalibrationButton);
+        calibrationContent.Children.Add(applyCalibrationButton);
 
         calibrationStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
-        content.Children.Add(calibrationStatusText);
+        calibrationContent.Children.Add(calibrationStatusText);
+
+        content.Children.Add(new Expander
+        {
+            Header = "Калибровка координат для линий на виде Revit",
+            Content = calibrationContent,
+            IsExpanded = false,
+            ToolTip = "Откройте только если координаты JSON нужно совместить с активным видом Revit."
+        });
 
         return CreatePanel(content);
     }
 
     private Border CreateRulePanel()
     {
-        StackPanel content = CreatePanelContent("Правила армирования");
+        StackPanel content = CreatePanelContent("4. Правила и создание");
 
         StackPanel buttonRow = new()
         {
             Orientation = Orientation.Horizontal
         };
 
-        Button previewRulesButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Рассчитать правила"),
-            MinWidth = 170,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Сформировать read-only preview правил армирования для распознанных зон."
-        };
-        previewRulesButton.Click += (_, _) => PreviewRebarRules();
         buttonRow.Children.Add(previewRulesButton);
 
-        Button createTestRebarButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Создать тестовую"),
-            MinWidth = 160,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Primary),
-            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Создать тестовую арматуру на выбранном host-элементе после явного подтверждения."
-        };
-        createTestRebarButton.Click += (_, _) => CreateTestRebar();
+        createTestRebarButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         buttonRow.Children.Add(createTestRebarButton);
 
         content.Children.Add(buttonRow);
@@ -405,41 +430,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         return CreatePanel(content);
     }
 
-    private Border CreateRecognitionPanel()
+    private Border CreateWorkflowPanel()
     {
-        StackPanel content = CreatePanelContent("Распознавание");
+        StackPanel content = CreatePanelContent("Готовность");
 
-        Button stubButton = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Preview, "Распознать файл"),
-            MinWidth = 170,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Запустить настроенный CLI-worker или безопасную заглушку без изменения модели."
-        };
-        stubButton.Click += (_, _) => RunRecognition();
-        content.Children.Add(stubButton);
+        workflowSummaryText.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        content.Children.Add(TrueBimUi.CreateInfoBanner(workflowSummaryText));
+        content.Children.Add(sourceStepText);
+        content.Children.Add(zonesStepText);
+        content.Children.Add(hostStepText);
+        content.Children.Add(rulesStepText);
 
-        recognitionStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        content.Children.Add(recognitionStatusText);
-
-        return CreatePanel(content);
-    }
-
-    private static Border CreateNextStepsPanel()
-    {
-        StackPanel content = CreatePanelContent("Будущие шаги");
-
-        content.Children.Add(CreateStep("Экранный preview контуров", false, true));
-        content.Children.Add(CreateStep("Линии предпросмотра в Revit", false, true));
-        content.Children.Add(CreateStep("Выбор стены или плиты", false, true));
-        content.Children.Add(CreateStep("Калибровка координат", false, true));
-        content.Children.Add(CreateStep("Правила армирования", false, true));
-        content.Children.Add(CreateStep("Тестовая арматура", false, true));
-
-        TextBlock note = CreateMutedText("Тестовая арматура создается только по отдельной кнопке и после подтверждения пользователя.");
-        note.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
+        TextBlock note = CreateMutedText("Создание доступно только после проверки всех обязательных шагов и отдельного подтверждения. Текущий алгоритм формирует пробное, а не производственное армирование.");
+        note.Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, 0);
         content.Children.Add(note);
 
         return CreatePanel(content);
@@ -475,7 +478,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
             string selectedPath = path!;
             selectedFilePath = selectedPath;
-            selectedFileText.Text = selectedPath;
+            selectedFileText.Text = $"Выбран: {Path.GetFileName(selectedPath)}";
+            selectedFileText.ToolTip = selectedPath;
             logger.Info($"IsoField source file selected: {Path.GetFileName(selectedPath)}.");
             if (IsJsonFile(selectedPath))
             {
@@ -483,7 +487,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             }
             else
             {
-                recognitionStatusText.Text = "Файл выбран. Нажмите «Распознать файл», чтобы запустить настроенный runner.";
+                recognitionStatusText.Text = "Изображение выбрано. Нажмите «Распознать изображение», если CLI worker настроен.";
                 ClearPreview("Выбран файл изображения. Контуры появятся после JSON или распознавания.");
                 footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
                 logger.Info($"IsoField image source is ready for recognition. Extension='{Path.GetExtension(selectedPath)}'.");
@@ -583,6 +587,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 currentCalibration);
             activeRevitPreviewIds = result.CreatedElementIds;
             footerStatusText.Text = result.Message;
+            RefreshWorkflowState();
             logger.Info($"IsoField Revit preview command completed. Created={result.CreatedCount}; Deleted={result.DeletedCount}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
@@ -616,6 +621,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             IsoFieldRevitPreviewResult result = revitPreviewService.Clear(uiDocument, activeRevitPreviewIds);
             activeRevitPreviewIds = Array.Empty<ElementId>();
             footerStatusText.Text = result.Message;
+            RefreshWorkflowState();
             logger.Info($"IsoField Revit preview clear completed. Deleted={result.DeletedCount}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
@@ -763,17 +769,18 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         currentRulePreview = preview;
         ruleStatusText.Text = FormatRulePreview(preview);
         rebarCreationStatusText.Text = preview.CanCreateRebar
-            ? "Готово к созданию тестовой арматуры после подтверждения."
-            : "Тестовая арматура недоступна: проверьте диагностику правил.";
+            ? "Готово к созданию пробного армирования после подтверждения."
+            : "Пробное армирование недоступно: проверьте диагностику правил.";
         footerStatusText.Text = preview.CanCreateRebar
             ? $"Правила армирования рассчитаны: {preview.Items.Count}. Модель Revit не изменялась."
             : "Правила армирования требуют проверки.";
         logger.Info($"IsoField rebar rules preview calculated. Items={preview.Items.Count}; Diagnostics={preview.Diagnostics.Count}; CanCreateRebar={preview.CanCreateRebar}.");
+        RefreshWorkflowState();
     }
 
     private void CreateTestRebar()
     {
-        rebarCreationStatusText.Text = "Создание тестовой арматуры поставлено в очередь Revit.";
+        rebarCreationStatusText.Text = "Создание пробного армирования поставлено в очередь Revit.";
         revitActions.Raise(CreateTestRebarInRevitContext);
     }
 
@@ -782,7 +789,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         if (uiDocument is null)
         {
             logger.Warning("IsoField test rebar creation was requested without an open Revit document.");
-            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием тестовой арматуры.");
+            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием пробного армирования.");
             return;
         }
 
@@ -790,7 +797,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Warning("IsoField test rebar creation was requested without selected host element.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите стену или плиту как host-элемент.");
-            rebarCreationStatusText.Text = "Тестовая арматура не создана: host-элемент не выбран.";
+            rebarCreationStatusText.Text = "Пробное армирование не создано: host-элемент не выбран.";
             return;
         }
 
@@ -798,7 +805,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Warning("IsoField test rebar creation was requested without recognition polylines.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
-            rebarCreationStatusText.Text = "Тестовая арматура не создана: нет контуров изополей.";
+            rebarCreationStatusText.Text = "Пробное армирование не создано: нет контуров изополей.";
             return;
         }
 
@@ -812,15 +819,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         if (preview is null || !preview.CanCreateRebar)
         {
             logger.Warning("IsoField test rebar creation blocked by invalid rule preview.");
-            TaskDialog.Show("Армирование по изополям", "Перед созданием тестовой арматуры исправьте диагностику правил.");
-            rebarCreationStatusText.Text = "Тестовая арматура не создана: правила не готовы.";
+            TaskDialog.Show("Армирование по изополям", "Перед созданием пробного армирования исправьте диагностику правил.");
+            rebarCreationStatusText.Text = "Пробное армирование не создано: правила не готовы.";
             return;
         }
 
         if (!ConfirmCreateTestRebar(preview, selectedHostElement))
         {
-            rebarCreationStatusText.Text = "Создание тестовой арматуры отменено.";
-            footerStatusText.Text = "Создание тестовой арматуры отменено пользователем.";
+            rebarCreationStatusText.Text = "Создание пробного армирования отменено.";
+            footerStatusText.Text = "Создание пробного армирования отменено пользователем.";
             logger.Info("IsoField test rebar creation canceled by user.");
             return;
         }
@@ -841,9 +848,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Error("Failed to create IsoField test rebar.", exception);
             TaskDialog.Show(
                 "Армирование по изополям",
-                "Не удалось создать тестовую арматуру. Проверьте host-элемент, наличие RebarBarType в модели и логи.");
-            rebarCreationStatusText.Text = "Тестовая арматура не создана: см. логи диагностики.";
-            footerStatusText.Text = "Не удалось создать тестовую арматуру.";
+                "Не удалось создать пробное армирование. Проверьте host-элемент, наличие RebarBarType в модели и логи.");
+            rebarCreationStatusText.Text = "Пробное армирование не создано: см. логи диагностики.";
+            footerStatusText.Text = "Не удалось создать пробное армирование.";
         }
     }
 
@@ -852,8 +859,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         RebarRulePreviewItem firstItem = preview.Items.First();
         TaskDialog dialog = new("Армирование по изополям")
         {
-            MainInstruction = "Создать тестовую арматуру в модели Revit?",
-            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Для поддержанной стены или плиты будет создано по одному тестовому элементу на валидную зону. Это действие изменит модель, но его можно отменить через Undo.",
+            MainInstruction = "Создать пробное армирование в модели Revit?",
+            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Будет создано по одному пробному элементу на валидную зону. Это не производственная раскладка. Действие изменит модель, но его можно отменить через Undo.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };
@@ -920,7 +927,88 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         currentRulePreview = null;
         ruleStatusText.Text = message;
-        rebarCreationStatusText.Text = "Тестовая арматура не создана: сначала рассчитайте валидные правила.";
+        rebarCreationStatusText.Text = "Пробное армирование не создано: сначала рассчитайте валидные правила.";
+        RefreshWorkflowState();
+    }
+
+    private void RefreshWorkflowState()
+    {
+        IsoFieldWorkflowState state = BuildWorkflowState();
+        recognizeButton.IsEnabled = state.CanRunRecognition;
+        bool isJsonSource = state.HasSource && IsJsonFile(selectedFilePath!);
+        TrueBimIcon recognitionIcon = !state.HasSource
+            ? TrueBimIcon.Open
+            : isJsonSource ? TrueBimIcon.Refresh : TrueBimIcon.Preview;
+        string recognitionText = !state.HasSource
+            ? "Загрузить зоны"
+            : isJsonSource ? "Перечитать JSON" : "Распознать изображение";
+        recognizeButton.Content = IconFactory.CreateButtonContent(recognitionIcon, recognitionText);
+        recognizeButton.ToolTip = ResolveRecognitionToolTip(state);
+
+        showRevitPreviewButton.IsEnabled = state.CanShowRevitPreview;
+        showRevitPreviewButton.ToolTip = state.CanShowRevitPreview
+            ? "Создать управляемые линии предпросмотра на активном 2D-виде."
+            : "Сначала загрузите зоны из JSON или распознанного изображения.";
+        clearRevitPreviewButton.IsEnabled = state.CanClearRevitPreview;
+        clearRevitPreviewButton.ToolTip = state.CanClearRevitPreview
+            ? "Удалить линии предпросмотра изополей на активном виде."
+            : "В этой сессии нет линий предпросмотра для удаления.";
+
+        selectHostButton.IsEnabled = uiDocument is not null;
+        selectHostButton.ToolTip = uiDocument is null
+            ? "Откройте документ Revit, чтобы выбрать стену или плиту."
+            : "Выбрать стену или плиту как host для армирования.";
+        clearHostButton.IsEnabled = state.HasHost;
+        previewRulesButton.IsEnabled = state.CanCalculateRules;
+        previewRulesButton.ToolTip = state.CanCalculateRules
+            ? "Сформировать read-only preview правил армирования для загруженных зон."
+            : "Сначала загрузите зоны и выберите host-элемент.";
+        createTestRebarButton.IsEnabled = state.CanCreateRebar;
+        createTestRebarButton.ToolTip = state.CanCreateRebar
+            ? "Создать пробное армирование после отдельного подтверждения."
+            : "Сначала рассчитайте правила без ошибок.";
+
+        workflowSummaryText.Text = $"Готово {state.CompletedStepCount} из 4. {state.NextAction}";
+        UpdateWorkflowStep(sourceStepText, state.HasSource, "Источник выбран");
+        UpdateWorkflowStep(zonesStepText, state.HasZones, "Зоны загружены");
+        UpdateWorkflowStep(hostStepText, state.HasHost, "Host выбран");
+        UpdateWorkflowStep(rulesStepText, state.HasValidRules, "Правила проверены");
+    }
+
+    private IsoFieldWorkflowState BuildWorkflowState()
+    {
+        bool hasSource = !string.IsNullOrWhiteSpace(selectedFilePath);
+        bool isJsonSource = hasSource && IsJsonFile(selectedFilePath!);
+        bool hasConfiguredWorker = !string.Equals(ResolveRecognitionRunnerName(), "Stub", StringComparison.OrdinalIgnoreCase);
+        return new IsoFieldWorkflowState(
+            hasSource,
+            currentRecognitionResult?.Polylines.Count > 0,
+            selectedHostElement is not null,
+            currentRulePreview?.CanCreateRebar == true,
+            activeRevitPreviewIds.Count > 0,
+            isJsonSource || hasConfiguredWorker);
+    }
+
+    private static string ResolveRecognitionToolTip(IsoFieldWorkflowState state)
+    {
+        if (!state.HasSource)
+        {
+            return "Сначала выберите JSON или изображение изополей.";
+        }
+
+        if (!state.CanProcessSource)
+        {
+            return "Распознавание изображений не настроено: выберите готовый JSON или настройте CLI worker.";
+        }
+
+        return "Загрузить зоны из JSON или запустить настроенный CLI worker для изображения.";
+    }
+
+    private static void UpdateWorkflowStep(TextBlock textBlock, bool isComplete, string label)
+    {
+        textBlock.Text = $"{(isComplete ? "✓" : "○")} {label}";
+        textBlock.Foreground = isComplete ? TrueBimBrushes.Success : TrueBimBrushes.TextMuted;
+        textBlock.FontWeight = isComplete ? FontWeights.SemiBold : FontWeights.Normal;
     }
 
     private static StackPanel CreatePanelContent(string title)
@@ -953,15 +1041,36 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         };
     }
 
-    private static CheckBox CreateStep(string text, bool isEnabled, bool isChecked = false)
+    private static Button CreateActionButton(
+        string text,
+        TrueBimIcon icon,
+        double minWidth,
+        string toolTip,
+        RoutedEventHandler clickHandler,
+        TrueBimButtonStyleKind styleKind = TrueBimButtonStyleKind.Secondary)
     {
-        return new CheckBox
+        Button button = new()
         {
-            Content = text,
-            IsChecked = isChecked,
-            IsEnabled = isEnabled,
-            Style = TrueBimStyles.CreateCheckBoxStyle(),
-            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+            Content = IconFactory.CreateButtonContent(icon, text),
+            MinWidth = minWidth,
+            MinHeight = TrueBimTheme.ControlHeight36,
+            Style = TrueBimStyles.CreateButtonStyle(styleKind),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = toolTip
+        };
+        button.Click += clickHandler;
+        ToolTipService.SetShowOnDisabled(button, true);
+        return button;
+    }
+
+    private static TextBlock CreateWorkflowStepText(string text)
+    {
+        return new TextBlock
+        {
+            Text = $"○ {text}",
+            Foreground = TrueBimBrushes.TextMuted,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
     }
 
@@ -1021,30 +1130,23 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private Button CreateRevitPreviewButton()
     {
-        Button button = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Apply, "Показать в Revit"),
-            MinWidth = 150,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(),
-            ToolTip = "Создать управляемые линии предпросмотра на активном 2D-виде."
-        };
-        button.Click += (_, _) => ShowRevitPreview();
-        return button;
+        return CreateActionButton(
+            "Показать в Revit",
+            TrueBimIcon.Apply,
+            158,
+            "Сначала загрузите зоны из JSON или распознанного изображения.",
+            (_, _) => ShowRevitPreview());
     }
 
     private Button CreateClearRevitPreviewButton()
     {
-        Button button = new()
-        {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Close, "Очистить"),
-            MinWidth = 110,
-            MinHeight = TrueBimTheme.ControlHeight32,
-            Style = TrueBimStyles.CreateButtonStyle(),
-            Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0),
-            ToolTip = "Удалить линии предпросмотра изополей на активном виде."
-        };
-        button.Click += (_, _) => ClearRevitPreview();
+        Button button = CreateActionButton(
+            "Очистить",
+            TrueBimIcon.Close,
+            116,
+            "В этой сессии нет линий предпросмотра для удаления.",
+            (_, _) => ClearRevitPreview());
+        button.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         return button;
     }
 

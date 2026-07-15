@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using TrueBIM.App.UI.DesignSystem;
 
 namespace TrueBIM.App.UI;
@@ -61,21 +62,19 @@ internal static class IconFactory
     private static readonly Dictionary<(TrueBimIcon Icon, double Size), ImageSource> ImageCache = [];
     private static readonly Dictionary<(TrueBimIcon Icon, Color Color), ImageSource> ColoredImageCache = [];
 
-    public static ImageSource CreateImage(TrueBimIcon icon, double size = 16)
+    public static ImageSource CreateImage(TrueBimIcon icon, double size = TrueBimTheme.IconSizeSmall)
     {
-        if (ImageCache.TryGetValue((icon, size), out ImageSource? cached))
+        int pixelSize = NormalizePixelSize(size);
+        if (ImageCache.TryGetValue((icon, pixelSize), out ImageSource? cached))
         {
             return cached;
         }
 
-        Geometry geometry = Geometry.Parse(GetGeometry(icon));
         Brush brush = icon == TrueBimIcon.App
             ? TrueBimBrushes.Primary
             : TrueBimBrushes.TextSecondary;
-        GeometryDrawing drawing = new(brush, null, geometry);
-        DrawingImage image = new(drawing);
-        image.Freeze();
-        ImageCache[(icon, size)] = image;
+        ImageSource image = RenderPixelAlignedImage(icon, pixelSize, brush);
+        ImageCache[(icon, pixelSize)] = image;
         return image;
     }
 
@@ -94,7 +93,7 @@ internal static class IconFactory
         return image;
     }
 
-    public static UIElement Create(TrueBimIcon icon, double size = 16)
+    public static UIElement Create(TrueBimIcon icon, double size = TrueBimTheme.IconSizeSmall)
     {
         return new Image
         {
@@ -106,7 +105,7 @@ internal static class IconFactory
         };
     }
 
-    public static UIElement Create(TrueBimIcon icon, Color color, double size = 16)
+    public static UIElement Create(TrueBimIcon icon, Color color, double size = TrueBimTheme.IconSizeSmall)
     {
         return new Image
         {
@@ -123,7 +122,11 @@ internal static class IconFactory
         return CreateButtonContent(icon, text, TrueBimTheme.TextSecondaryColor);
     }
 
-    public static object CreateButtonContent(TrueBimIcon icon, string text, Color iconColor, double iconSize = 16)
+    public static object CreateButtonContent(
+        TrueBimIcon icon,
+        string text,
+        Color iconColor,
+        double iconSize = TrueBimTheme.IconSizeSmall)
     {
         StackPanel panel = new()
         {
@@ -137,6 +140,41 @@ internal static class IconFactory
             VerticalAlignment = VerticalAlignment.Center
         });
         return panel;
+    }
+
+    private static int NormalizePixelSize(double size)
+    {
+        if (double.IsNaN(size) || double.IsInfinity(size) || size <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(size), "Icon size must be a positive finite value.");
+        }
+
+        return Math.Max(1, (int)Math.Round(size, MidpointRounding.AwayFromZero));
+    }
+
+    private static ImageSource RenderPixelAlignedImage(TrueBimIcon icon, int pixelSize, Brush brush)
+    {
+        Geometry geometry = Geometry.Parse(GetGeometry(icon));
+        Rect bounds = geometry.Bounds;
+        double padding = Math.Max(1, pixelSize * 0.06);
+        double availableSize = Math.Max(1, pixelSize - (padding * 2));
+        double scale = Math.Min(availableSize / bounds.Width, availableSize / bounds.Height);
+        double offsetX = ((pixelSize - (bounds.Width * scale)) / 2) - (bounds.X * scale);
+        double offsetY = ((pixelSize - (bounds.Height * scale)) / 2) - (bounds.Y * scale);
+
+        DrawingVisual visual = new();
+        using (DrawingContext context = visual.RenderOpen())
+        {
+            context.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, pixelSize, pixelSize));
+            context.PushTransform(new MatrixTransform(new Matrix(scale, 0, 0, scale, offsetX, offsetY)));
+            context.DrawGeometry(brush, null, geometry);
+            context.Pop();
+        }
+
+        RenderTargetBitmap bitmap = new(pixelSize, pixelSize, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        bitmap.Freeze();
+        return bitmap;
     }
 
     private static string GetGeometry(TrueBimIcon icon)

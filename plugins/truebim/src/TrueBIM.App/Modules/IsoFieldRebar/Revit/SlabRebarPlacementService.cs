@@ -82,7 +82,7 @@ public sealed class SlabRebarPlacementService
 
         if (bounds.WidthXFeet < MinimumTestLengthFeet || bounds.WidthYFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("Bounding box плиты слишком мал для тестовой арматуры.");
+            throw new InvalidOperationException("Bounding box плиты слишком мал для пробного армирования.");
         }
     }
 

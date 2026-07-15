@@ -39,7 +39,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 Title,
-                "Справка по безопасному сценарию IsoField Rebar: файл, preview, host, правила и тестовая запись.",
+                "Справка по безопасному сценарию IsoField Rebar: файл, preview, host, правила и пробная запись.",
                 TrueBimIcon.IsoFieldRebar),
             commandBar: null,
             body: viewer,
@@ -55,9 +55,9 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         };
 
         body.Children.Add(CreateSection(
-            "Как работает каркас",
-            CreateParagraph("Каркас модуля ведет пользователя от входного файла изополей к безопасной проверке контуров, выбору host-элемента и только затем к созданию тестовой арматуры. До кнопки «Создать тестовую» модель Revit не должна меняться."),
-            CreateDiagramCard("Путь данных в текущем каркасе модуля.", CreatePipelineDiagram())));
+            "Как работает текущий режим",
+            CreateParagraph("Модуль ведёт пользователя от входного файла изополей к безопасной проверке контуров, выбору host-элемента и только затем к созданию пробного армирования. До кнопки «Создать пробное армирование» модель Revit не должна меняться."),
+            CreateDiagramCard("Путь данных в текущем режиме модуля.", CreatePipelineDiagram())));
         body.Children.Add(CreateSection(
             "Пример с JSON",
             CreateParagraph("Для проверки удобно взять fixture `docs/IsoFieldRebar/examples/sample-wall-zones.json`: он уже содержит контуры зон и не требует внешнего worker-а распознавания."),
@@ -67,7 +67,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 "Проверьте контуры в окне и, при необходимости, покажите временные линии в Revit.",
                 "Выберите простую стену или плиту как host-элемент.",
                 "Рассчитайте правила армирования и прочитайте диагностику.",
-                "Создавайте тестовую арматуру только после подтверждения и сразу проверяйте Undo.")));
+                "Создавайте пробное армирование только после подтверждения и сразу проверяйте Undo.")));
         body.Children.Add(CreateSection(
             "Границы безопасности",
             CreateSafetyGrid()));
@@ -78,7 +78,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 "входной JSON или изображение изополей;",
                 "скриншот этого окна после шага, где возникла проблема;",
                 "лог `%APPDATA%\\TrueBIM\\Logs\\truebim.log`;",
-                "описание шага: файл, preview, host, правила или тестовая запись.")));
+                "описание шага: файл, preview, host, правила или пробная запись.")));
 
         return body;
     }
@@ -196,8 +196,8 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         AddNode(canvas, 690, 28, 60, 70, "5.", "правила", TrueBimBrushes.DangerBackground, TrueBimBrushes.Danger);
 
         AddCanvasText(canvas, "Безопасная часть: чтение, preview, выбор host и расчет правил не создают арматуру.", 20, 128, 510, 15, FontWeights.SemiBold, TextBrush);
-        AddCanvasText(canvas, "Запись в модель начинается только после кнопки «Создать тестовую» и отдельного подтверждения.", 20, 154, 690, 14, FontWeights.Normal, MutedBrush);
-        AddCanvasText(canvas, "Undo должен вернуть модель в исходное состояние после тестовой записи.", 20, 178, 690, 14, FontWeights.Normal, MutedBrush);
+        AddCanvasText(canvas, "Запись в модель начинается только после кнопки «Создать пробное армирование» и отдельного подтверждения.", 20, 154, 690, 14, FontWeights.Normal, MutedBrush);
+        AddCanvasText(canvas, "Undo должен вернуть модель в исходное состояние после пробной записи.", 20, 178, 690, 14, FontWeights.Normal, MutedBrush);
         return canvas;
     }
 
@@ -212,7 +212,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 
         AddCanvasText(canvas, "Входной JSON", 20, 10, 180, 15, FontWeights.SemiBold, TextBrush);
         AddCanvasText(canvas, "Preview в окне", 292, 10, 180, 15, FontWeights.SemiBold, TextBrush);
-        AddCanvasText(canvas, "Host + тестовая арматура", 542, 10, 200, 15, FontWeights.SemiBold, TextBrush);
+        AddCanvasText(canvas, "Host + пробное армирование", 542, 10, 200, 15, FontWeights.SemiBold, TextBrush);
 
         Border jsonBlock = new()
         {
@@ -267,7 +267,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         Canvas.SetTop(hostBorder, 36);
         canvas.Children.Add(hostBorder);
 
-        AddCanvasText(canvas, "В примере контур `wall-zone-a` сначала отображается как полилиния, затем превращается в read-only правило. Тестовый Rebar создается только после подтверждения пользователя.", 20, 226, 710, 14, FontWeights.Normal, MutedBrush);
+        AddCanvasText(canvas, "В примере контур `wall-zone-a` сначала отображается как полилиния, затем превращается в read-only правило. Пробный Rebar создаётся только после подтверждения пользователя.", 20, 226, 710, 14, FontWeights.Normal, MutedBrush);
         return canvas;
     }
 
@@ -388,9 +388,9 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         UIElement writeColumn = CreateChecklistColumn(
             "Меняет модель",
             TrueBimBrushes.Danger,
-            "только команда «Создать тестовую»;",
+            "только команда «Создать пробное армирование»;",
             "только после подтверждения;",
-            "создается тестовый Rebar;",
+            "создаётся пробный Rebar;",
             "проверяется через Revit Undo.");
         Grid.SetColumn(writeColumn, 1);
         grid.Children.Add(writeColumn);
@@ -434,7 +434,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         closeButton.Click += (_, _) => Close();
 
         return TrueBimUi.CreateFooter(
-            CreateParagraph("Подсказка отражает текущий каркас модуля и не описывает другие инструменты TrueBIM."),
+            CreateParagraph("Подсказка отражает текущий безопасный режим модуля и не описывает другие инструменты TrueBIM."),
             closeButton);
     }
 

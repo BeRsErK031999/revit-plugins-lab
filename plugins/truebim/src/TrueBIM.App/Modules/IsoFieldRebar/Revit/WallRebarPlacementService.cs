@@ -101,7 +101,7 @@ public sealed class WallRebarPlacementService
 
         if (frame.LengthFeet < MinimumTestLengthFeet || frame.HeightFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("Геометрия стены слишком мала для тестовой арматуры.");
+            throw new InvalidOperationException("Геометрия стены слишком мала для пробного армирования.");
         }
     }
 
