@@ -207,28 +207,21 @@ public sealed class AppRibbonButtonDefinitionTests
     }
 
     [Fact]
-    public void RibbonButtons_IncludeSeparatePrintPdfAndDwgButtons()
+    public void RibbonButtons_IncludeSingleUnifiedPrintButton()
     {
-        TrueBimRibbonButtonDefinition pdfButton = Assert.Single(
+        TrueBimRibbonButtonDefinition printButton = Assert.Single(
             TrueBimRibbon.Buttons,
-            button => string.Equals(button.Name, "TrueBIM_PrintPdf", StringComparison.Ordinal));
-        TrueBimRibbonButtonDefinition dwgButton = Assert.Single(
-            TrueBimRibbon.Buttons,
-            button => string.Equals(button.Name, "TrueBIM_PrintDwg", StringComparison.Ordinal));
+            button => string.Equals(button.Name, "TrueBIM_Print", StringComparison.Ordinal));
 
-        Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, pdfButton.PanelName);
-        Assert.Equal("Печать\nPDF", pdfButton.Text);
-        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintPdfCommand)}", pdfButton.CommandClassName);
-        Assert.Equal(TrueBimIcon.Print, pdfButton.Icon);
-        Assert.Contains("PDF", pdfButton.Tooltip, StringComparison.Ordinal);
-
-        Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, dwgButton.PanelName);
-        Assert.Equal("Печать\nDWG", dwgButton.Text);
-        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintDwgCommand)}", dwgButton.CommandClassName);
-        Assert.Equal(TrueBimIcon.Print, dwgButton.Icon);
-        Assert.Contains("CAD", dwgButton.Tooltip, StringComparison.Ordinal);
-        Assert.DoesNotContain("DXF", dwgButton.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("DWF", dwgButton.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, printButton.PanelName);
+        Assert.Equal("Печать", printButton.Text);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(OpenPrintCommand)}", printButton.CommandClassName);
+        Assert.Equal(TrueBimIcon.Print, printButton.Icon);
+        Assert.Contains("PDF", printButton.Tooltip, StringComparison.Ordinal);
+        Assert.Contains("DWG", printButton.Tooltip, StringComparison.Ordinal);
+        Assert.DoesNotContain(TrueBimRibbon.Buttons, button =>
+            string.Equals(button.Name, "TrueBIM_PrintPdf", StringComparison.Ordinal)
+            || string.Equals(button.Name, "TrueBIM_PrintDwg", StringComparison.Ordinal));
     }
 
     [Theory]

@@ -179,26 +179,28 @@ Status: the first working release is implemented and preflight-verified. Repeat 
 
 1. Open a sample project with several printable sheets.
 2. Open `TrueBIM`.
-3. Confirm `Печать` is listed from the installed module manifest and is enabled.
-4. Open `Печать`.
+3. Confirm the ribbon contains one `Печать` button and does not contain separate `Печать PDF` / `Печать DWG` buttons.
+4. Open `Печать` and confirm PDF, DWG, DXF, and DWF are selectable in the same window.
 5. Confirm the window lists printable sheets with source, sheet number, sheet name, format, export status, and filename preview columns.
 6. If more than one document is open, change the source filter and confirm selected sheets are preserved when switching back.
 7. Set an export folder.
-8. Change the filename mask and confirm filename previews update.
+8. Click `Настройки...`, change the filename mask, and confirm filename previews update. Collapse the settings and confirm the sheet table and format row remain available.
 9. Use a mask containing `{Номер листа}`, `{Имя листа}`, `{Номер проекта}`, `{Имя проекта}`, `{Имя документа}`, `{Дата:yyyy-MM-dd}`, `{Счетчик}`, and `{Счетчик:000}` as needed. Existing masks with `{SheetNumber}` / `{SheetName}` must keep working.
 10. Confirm invalid Windows filename characters are normalized in previews.
 11. Enable PDF and select separate PDF mode.
 12. Choose PDF color, raster quality, and raster/vector settings.
 13. Export 1-2 safe sheets and confirm separate PDF files are created.
-14. Enable `Один PDF`, enter a combined PDF name, export again, and confirm one PDF is created per source document.
+14. Select the combined PDF mode, enter a combined PDF name, export again, and confirm one PDF is created per source document.
 15. Enable DWG and DXF.
 16. If DWG/DXF export setups are available, choose a saved setup; otherwise keep the default setup option.
 17. Click `Настройки DWG...`, change a safe option such as `FileVersion`, `Colors`, or `SharedCoords`, save the TrueBIM profile, then apply it.
 18. Click `Проверить настройки` and confirm the summary shows sheet count, folder, DWG version, color mode, coordinates, and profile.
 19. Export 1-2 safe sheets and confirm DWG/DXF files are created or a clear Revit export error is shown.
-20. Close and reopen `Печать DWG`.
-21. Confirm the saved export folder, filename template, selected formats, PDF settings, combined PDF name, selected CAD setups, and DWG profile state are restored from `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json` and `%APPDATA%\TrueBIM\<RevitVersion>\dwg-export-profiles.json`.
-22. Review `%APPDATA%\TrueBIM\Logs\truebim.log`.
+20. Enter a customer name in the preset field and click `Сохранить`. Change several formats/settings, select the saved preset again, and confirm the complete configuration is restored.
+21. Delete a temporary preset and confirm another preset remains selected and usable.
+22. Close and reopen `Печать`.
+23. Confirm the last window state and selected preset are restored from `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`, `%APPDATA%\TrueBIM\<RevitVersion>\print-presets.json`, and `%APPDATA%\TrueBIM\<RevitVersion>\dwg-export-profiles.json`.
+24. Review `%APPDATA%\TrueBIM\Logs\truebim.log`.
 
 Expected logs:
 

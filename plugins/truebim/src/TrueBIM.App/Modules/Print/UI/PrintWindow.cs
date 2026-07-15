@@ -40,13 +40,23 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly DwgExportOptionsFactory dwgOptionsFactory = new();
     private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
     private readonly PrintSettingsService? printSettingsService;
-    private readonly DwgExportProfileStorage? dwgProfileStorage;
+    private readonly DwgExportProfileStorage dwgProfileStorage;
+    private readonly PrintPresetStorage printPresetStorage;
     private readonly PrintSettings initialSettings;
+    private readonly string collectedFileNameMask;
     private readonly bool hasSavedPrintSettings;
     private readonly PrintFileNameContext fileNameContext;
-    private readonly PrintExportProfile exportProfile;
     private readonly DataGrid sheetGrid = new();
     private readonly TextBlock statusText = new();
+    private readonly ComboBox presetInput = new()
+    {
+        DisplayMemberPath = nameof(PrintPreset.Name),
+        IsEditable = true,
+        IsTextSearchEnabled = true,
+        MinWidth = 260,
+        Height = 32,
+        ToolTip = "Выберите готовый пресет или введите имя нового пресета заказчика."
+    };
     private readonly ComboBox sourceFilterInput = new()
     {
         DisplayMemberPath = nameof(PrintSheetSourceFilterOption.DisplayName),
@@ -77,6 +87,11 @@ public sealed class PrintWindow : TrueBimWindow
         Content = "Всегда растр",
         ToolTip = "Принудительно растрировать PDF вместо векторного вывода."
     };
+    private readonly CheckBox pdfInput = new()
+    {
+        Content = "PDF",
+        ToolTip = "Добавить PDF в очередь печати."
+    };
     private readonly CheckBox dwgInput = new()
     {
         Content = "DWG",
@@ -104,8 +119,10 @@ public sealed class PrintWindow : TrueBimWindow
         TextWrapping = TextWrapping.Wrap,
         VerticalAlignment = VerticalAlignment.Center
     };
-    private readonly Button exportButton = TrueBimUi.CreatePrimaryButton("Экспорт", TrueBimIcon.Export, isEnabled: false);
+    private readonly Button exportButton = TrueBimUi.CreatePrimaryButton("Печать", TrueBimIcon.Print, isEnabled: false);
+    private readonly List<UIElement> detailedSettingsRows = [];
     private DwgExportProfileStoreState dwgProfileState = new();
+    private PrintPresetStoreState printPresetState = new();
     private DwgExportProfile selectedDwgProfile = DwgExportOptionsFactory.CreateProfileFromOptions(
         DwgExportProfile.DefaultProfileName,
         sourceRevitSetupName: null,
@@ -113,21 +130,19 @@ public sealed class PrintWindow : TrueBimWindow
         isUserProfile: false,
         new Autodesk.Revit.DB.DWGExportOptions());
     private bool isApplyingDwgProfileToSetupInput;
+    private bool isApplyingPreset;
     private bool isBatchUpdatingSelection;
+    private bool reloadInitialSourcesForPreset;
 
-    private bool IsPdfProfile => exportProfile == PrintExportProfile.Pdf;
-
-    private bool IsDwgProfile => exportProfile == PrintExportProfile.Dwg;
-
-    private string WindowTitle => IsPdfProfile ? "Печать PDF" : "Печать DWG";
+    private const string WindowTitle = "Печать";
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetInfo> sheets, ITrueBimLogger logger)
-        : this(document, CreateSingleSource(document, sheets), PrintExportProfile.Pdf, logger)
+        : this(document, CreateSingleSource(document, sheets), printSettingsService: null, logger)
     {
     }
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetSource> sheetSources, ITrueBimLogger logger)
-        : this(document, sheetSources, PrintExportProfile.Pdf, printSettingsService: null, logger)
+        : this(document, sheetSources, printSettingsService: null, logger)
     {
     }
 
@@ -135,32 +150,11 @@ public sealed class PrintWindow : TrueBimWindow
         RevitDocument document,
         IReadOnlyList<PrintSheetSource> sheetSources,
         PrintSettingsService? printSettingsService,
-        ITrueBimLogger logger)
-        : this(document, sheetSources, PrintExportProfile.Pdf, printSettingsService, logger)
-    {
-    }
-
-    public PrintWindow(
-        RevitDocument document,
-        IReadOnlyList<PrintSheetSource> sheetSources,
-        PrintExportProfile exportProfile,
-        ITrueBimLogger logger)
-        : this(document, sheetSources, exportProfile, printSettingsService: null, logger)
-    {
-    }
-
-    public PrintWindow(
-        RevitDocument document,
-        IReadOnlyList<PrintSheetSource> sheetSources,
-        PrintExportProfile exportProfile,
-        PrintSettingsService? printSettingsService,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        string? collectedFileNameMask = null)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
-        this.exportProfile = Enum.IsDefined(typeof(PrintExportProfile), exportProfile)
-            ? exportProfile
-            : PrintExportProfile.Pdf;
         sourceSheetsById = this.sheetSources.ToDictionary(
             source => source.SourceId,
             source =>
@@ -181,7 +175,10 @@ public sealed class PrintWindow : TrueBimWindow
         this.printSettingsService = printSettingsService;
         hasSavedPrintSettings = printSettingsService?.SettingsFileExists == true;
         initialSettings = printSettingsService?.Load() ?? PrintSettingsService.DefaultSettings;
-        IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(initialSettings.FileNameMask);
+        this.collectedFileNameMask = string.IsNullOrWhiteSpace(collectedFileNameMask)
+            ? initialSettings.FileNameMask
+            : collectedFileNameMask!;
+        IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(this.collectedFileNameMask);
         fileNameContext = CreateFileNameContext(document, projectParameterNames);
         fileNameContextsBySourceId = new Dictionary<string, PrintFileNameContext>(StringComparer.Ordinal);
         foreach (PrintSheetSource source in this.sheetSources.Where(source => loadedSourceIds.Contains(source.SourceId)))
@@ -191,19 +188,18 @@ public sealed class PrintWindow : TrueBimWindow
                 : CreateFileNameContext(source.Document, projectParameterNames);
         }
 
-        if (IsDwgProfile)
-        {
-            dwgProfileStorage = new DwgExportProfileStorage(
-                DwgExportProfileStorage.CreateStoragePath(GetRevitVersion(document)),
-                logger);
-            dwgProfileState = dwgProfileStorage.Load();
-        }
+        string revitVersion = GetRevitVersion(document);
+        dwgProfileStorage = new DwgExportProfileStorage(
+            DwgExportProfileStorage.CreateStoragePath(revitVersion),
+            logger);
+        dwgProfileState = dwgProfileStorage.Load();
+        printPresetStorage = new PrintPresetStorage(
+            PrintPresetStorage.CreateStoragePath(revitVersion),
+            logger);
+        printPresetState = printPresetStorage.Load();
 
         LoadSourceFilterOptions();
-        if (IsDwgProfile)
-        {
-            LoadCadExportSetupOptions();
-        }
+        LoadCadExportSetupOptions();
 
         LoadInitialDwgProfile();
         ApplyInitialSettings();
@@ -211,8 +207,8 @@ public sealed class PrintWindow : TrueBimWindow
         Title = WindowTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
         exportButton.Content = IconFactory.CreateButtonContent(
-            TrueBimIcon.Export,
-            IsPdfProfile ? "Экспорт PDF" : "Экспорт DWG",
+            TrueBimIcon.Print,
+            "Печать",
             Colors.White);
         Width = 1120;
         Height = 720;
@@ -223,7 +219,8 @@ public sealed class PrintWindow : TrueBimWindow
         ApplySharedControlStyles();
         Content = CreateContent();
 
-        LoadSheets();
+        InitializePrintPresets();
+        LoadSheets(reloadSources: reloadInitialSourcesForPreset);
         logger.Info($"{WindowTitle} window opened for '{document.Title}' with {GetAllLoadedSheets().Count} loaded sheets from {this.sheetSources.Count} sources.");
     }
 
@@ -238,9 +235,7 @@ public sealed class PrintWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 WindowTitle,
-                IsPdfProfile
-                    ? "Выберите листы, режим файлов и параметры PDF."
-                    : "Выберите листы и профиль DWG. При необходимости добавьте DXF или DWF.",
+                "Выберите листы и форматы. Подробные параметры и пресеты доступны в этом же окне.",
                 TrueBimIcon.Print),
             commandBar: CreateReadSettings(),
             body: CreateSheetsSection(),
@@ -250,20 +245,23 @@ public sealed class PrintWindow : TrueBimWindow
 
     private UIElement CreateSheetsSection()
     {
-        return TrueBimUi.CreateSectionCard("Листы для экспорта", CreateSheetGrid());
+        return TrueBimUi.CreateSectionCard("Листы для печати", CreateSheetGrid());
     }
 
     private UIElement CreateReadSettings()
     {
-        DockPanel controls = new()
+        Grid controls = new()
         {
             Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
         };
+        controls.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        controls.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         StackPanel selectionActions = new()
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 8, 0, 0)
         };
 
         Button selectAllButton = CreateActionButton("Выбрать все", TrueBimIcon.Apply, isEnabled: true);
@@ -285,8 +283,8 @@ public sealed class PrintWindow : TrueBimWindow
         selectionActions.Children.Add(refreshButton);
 
         includePlaceholdersInput.VerticalAlignment = VerticalAlignment.Center;
-        includePlaceholdersInput.Checked += (_, _) => RequestLoadSheets();
-        includePlaceholdersInput.Unchecked += (_, _) => RequestLoadSheets();
+        includePlaceholdersInput.Checked += (_, _) => RequestLoadSheetsUnlessApplyingPreset();
+        includePlaceholdersInput.Unchecked += (_, _) => RequestLoadSheetsUnlessApplyingPreset();
         includePlaceholdersInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
         selectionActions.Children.Add(includePlaceholdersInput);
 
@@ -299,7 +297,39 @@ public sealed class PrintWindow : TrueBimWindow
             selectionActions.Children.Add(sourceFilterInput);
         }
 
-        DockPanel.SetDock(selectionActions, Dock.Left);
+        StackPanel presetActions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        presetActions.Children.Add(new TextBlock
+        {
+            Text = "Пресет",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+
+        presetInput.ItemsSource = printPresetState.Presets;
+        presetInput.SelectionChanged += (_, _) => ApplySelectedPrintPreset();
+        presetActions.Children.Add(presetInput);
+
+        Button savePresetButton = CreateActionButton("Сохранить", TrueBimIcon.Apply, isEnabled: true);
+        savePresetButton.Margin = new Thickness(8, 0, 0, 0);
+        savePresetButton.ToolTip = "Сохранить текущие форматы и настройки под именем из поля пресета.";
+        savePresetButton.Click += (_, _) => SaveCurrentPrintPreset();
+        presetActions.Children.Add(savePresetButton);
+
+        Button deletePresetButton = CreateActionButton("Удалить", TrueBimIcon.Close, isEnabled: true);
+        deletePresetButton.Margin = new Thickness(8, 0, 0, 0);
+        deletePresetButton.ToolTip = "Удалить выбранный локальный пресет.";
+        deletePresetButton.Click += (_, _) => DeleteSelectedPrintPreset();
+        presetActions.Children.Add(deletePresetButton);
+
+        Grid.SetRow(presetActions, 0);
+        controls.Children.Add(presetActions);
+
+        Grid.SetRow(selectionActions, 1);
         controls.Children.Add(selectionActions);
 
         return controls;
@@ -356,7 +386,7 @@ public sealed class PrintWindow : TrueBimWindow
         {
             Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, 0)
         };
-        for (int index = 0; index < 5; index++)
+        for (int index = 0; index < 7; index++)
         {
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
@@ -380,6 +410,11 @@ public sealed class PrintWindow : TrueBimWindow
         exportFolderInput.ToolTip = "Папка назначения для будущего экспорта.";
         exportFolderInput.TextChanged += (_, _) =>
         {
+            if (isApplyingPreset)
+            {
+                return;
+            }
+
             ResetExportStatuses();
             UpdateExportState();
         };
@@ -410,14 +445,14 @@ public sealed class PrintWindow : TrueBimWindow
         });
 
         fileNameMaskInput.Height = 32;
-        fileNameMaskInput.TextChanged += (_, _) => UpdateFileNamePreviews();
+        fileNameMaskInput.TextChanged += (_, _) => UpdateFileNamePreviewsUnlessApplyingPreset();
         Grid.SetColumn(fileNameMaskInput, 1);
         maskRow.Children.Add(fileNameMaskInput);
 
         Grid.SetRow(maskRow, rowIndex++);
         root.Children.Add(maskRow);
+        RegisterDetailedSettingsRow(maskRow);
 
-        if (IsPdfProfile)
         {
             Grid pdfRow = new()
             {
@@ -437,7 +472,7 @@ public sealed class PrintWindow : TrueBimWindow
 
             BindPdfModeInput();
             pdfModeInput.MinWidth = 220;
-            pdfModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
+            pdfModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             Grid.SetColumn(pdfModeInput, 1);
             pdfRow.Children.Add(pdfModeInput);
 
@@ -453,6 +488,11 @@ public sealed class PrintWindow : TrueBimWindow
             combinedPdfNameInput.Height = 32;
             combinedPdfNameInput.TextChanged += (_, _) =>
             {
+                if (isApplyingPreset)
+                {
+                    return;
+                }
+
                 ResetExportStatuses();
                 UpdateExportState();
             };
@@ -461,6 +501,7 @@ public sealed class PrintWindow : TrueBimWindow
 
             Grid.SetRow(pdfRow, rowIndex++);
             root.Children.Add(pdfRow);
+            RegisterDetailedSettingsRow(pdfRow);
 
             Grid pdfSettingsRow = new()
             {
@@ -498,16 +539,16 @@ public sealed class PrintWindow : TrueBimWindow
 
             forceRasterPdfInput.VerticalAlignment = VerticalAlignment.Center;
             forceRasterPdfInput.Margin = new Thickness(16, 0, 0, 0);
-            forceRasterPdfInput.Checked += (_, _) => UpdatePdfOptionsState();
-            forceRasterPdfInput.Unchecked += (_, _) => UpdatePdfOptionsState();
+            forceRasterPdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
+            forceRasterPdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             Grid.SetColumn(forceRasterPdfInput, 4);
             pdfSettingsRow.Children.Add(forceRasterPdfInput);
 
             Grid.SetRow(pdfSettingsRow, rowIndex++);
             root.Children.Add(pdfSettingsRow);
+            RegisterDetailedSettingsRow(pdfSettingsRow);
         }
 
-        if (IsDwgProfile)
         {
             Grid cadSetupRow = new()
             {
@@ -544,6 +585,7 @@ public sealed class PrintWindow : TrueBimWindow
 
             Grid.SetRow(cadSetupRow, rowIndex++);
             root.Children.Add(cadSetupRow);
+            RegisterDetailedSettingsRow(cadSetupRow);
 
             Grid dwgProfileRow = new()
             {
@@ -587,6 +629,7 @@ public sealed class PrintWindow : TrueBimWindow
 
             Grid.SetRow(dwgProfileRow, rowIndex++);
             root.Children.Add(dwgProfileRow);
+            RegisterDetailedSettingsRow(dwgProfileRow);
         }
 
         DockPanel actionRow = new()
@@ -594,7 +637,6 @@ public sealed class PrintWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
-        if (IsDwgProfile)
         {
             StackPanel formatActions = new()
             {
@@ -602,22 +644,32 @@ public sealed class PrintWindow : TrueBimWindow
                 HorizontalAlignment = HorizontalAlignment.Left
             };
 
+            pdfInput.Margin = new Thickness(0, 0, 16, 0);
             dwgInput.Margin = new Thickness(0, 0, 16, 0);
             dxfInput.Margin = new Thickness(0, 0, 16, 0);
             dwfInput.Margin = new Thickness(0, 0, 16, 0);
             combineDwgInput.Margin = new Thickness(0, 0, 16, 0);
-            dwgInput.Checked += (_, _) => UpdateExportState();
-            dwgInput.Unchecked += (_, _) => UpdateExportState();
-            dxfInput.Checked += (_, _) => UpdateExportState();
-            dxfInput.Unchecked += (_, _) => UpdateExportState();
-            dwfInput.Checked += (_, _) => UpdateExportState();
-            dwfInput.Unchecked += (_, _) => UpdateExportState();
-            combineDwgInput.Checked += (_, _) => UpdateExportState();
-            combineDwgInput.Unchecked += (_, _) => UpdateExportState();
+            pdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
+            pdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
+            dwgInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            dwgInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            dxfInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            dxfInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            dwfInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            dwfInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            combineDwgInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            combineDwgInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            formatActions.Children.Add(pdfInput);
             formatActions.Children.Add(dwgInput);
             formatActions.Children.Add(combineDwgInput);
             formatActions.Children.Add(dxfInput);
             formatActions.Children.Add(dwfInput);
+
+            Button settingsButton = CreateActionButton("Настройки...", TrueBimIcon.Settings, isEnabled: true);
+            settingsButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
+            settingsButton.ToolTip = "Показать или скрыть общие параметры PDF и DWG.";
+            settingsButton.Click += (_, _) => ToggleDetailedSettings(settingsButton);
+            formatActions.Children.Add(settingsButton);
 
             DockPanel.SetDock(formatActions, Dock.Left);
             actionRow.Children.Add(formatActions);
@@ -647,8 +699,60 @@ public sealed class PrintWindow : TrueBimWindow
         return root;
     }
 
+    private void RegisterDetailedSettingsRow(UIElement row)
+    {
+        row.Visibility = Visibility.Collapsed;
+        detailedSettingsRows.Add(row);
+    }
+
+    private void ToggleDetailedSettings(Button settingsButton)
+    {
+        bool showSettings = detailedSettingsRows.Any(row => row.Visibility != Visibility.Visible);
+        foreach (UIElement row in detailedSettingsRows)
+        {
+            row.Visibility = showSettings ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        settingsButton.ToolTip = showSettings
+            ? "Скрыть подробные параметры PDF и DWG."
+            : "Показать подробные параметры PDF и DWG.";
+    }
+
+    private void RequestLoadSheetsUnlessApplyingPreset()
+    {
+        if (!isApplyingPreset)
+        {
+            RequestLoadSheets();
+        }
+    }
+
+    private void UpdateFileNamePreviewsUnlessApplyingPreset()
+    {
+        if (!isApplyingPreset)
+        {
+            UpdateFileNamePreviews();
+        }
+    }
+
+    private void UpdatePdfOptionsStateUnlessApplyingPreset()
+    {
+        if (!isApplyingPreset)
+        {
+            UpdatePdfOptionsState();
+        }
+    }
+
+    private void UpdateExportStateUnlessApplyingPreset()
+    {
+        if (!isApplyingPreset)
+        {
+            UpdateExportState();
+        }
+    }
+
     private void ApplySharedControlStyles()
     {
+        presetInput.Style = TrueBimStyles.CreateComboBoxStyle();
         sourceFilterInput.Style = TrueBimStyles.CreateComboBoxStyle();
         exportFolderInput.Style = TrueBimStyles.CreateTextBoxStyle();
         fileNameMaskInput.Style = TrueBimStyles.CreateTextBoxStyle();
@@ -660,6 +764,7 @@ public sealed class PrintWindow : TrueBimWindow
         dxfSetupInput.Style = TrueBimStyles.CreateComboBoxStyle();
         includePlaceholdersInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         forceRasterPdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        pdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dwgInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dxfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dwfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
@@ -675,6 +780,11 @@ public sealed class PrintWindow : TrueBimWindow
             if (ReferenceEquals(setupInput, dwgSetupInput))
             {
                 ApplyDwgSetupSelectionToProfile();
+            }
+
+            if (isApplyingPreset)
+            {
+                return;
             }
 
             ResetExportStatuses();
@@ -698,14 +808,14 @@ public sealed class PrintWindow : TrueBimWindow
     {
         pdfColorModeInput.ItemsSource = GetPdfColorModeOptions();
         pdfColorModeInput.SelectedValue = initialSettings.PdfColorMode;
-        pdfColorModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
+        pdfColorModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
     }
 
     private void BindPdfRasterQualityInput()
     {
         pdfRasterQualityInput.ItemsSource = GetPdfRasterQualityOptions();
         pdfRasterQualityInput.SelectedValue = initialSettings.PdfRasterQuality;
-        pdfRasterQualityInput.SelectionChanged += (_, _) => UpdatePdfOptionsState();
+        pdfRasterQualityInput.SelectionChanged += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
     }
 
     private PrintCadExportSetupOption? FindCadSetupOption(string? setupName)
@@ -722,11 +832,6 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void LoadInitialDwgProfile()
     {
-        if (!IsDwgProfile)
-        {
-            return;
-        }
-
         DwgExportProfile? savedProfile = dwgProfileState.FindProfile(dwgProfileState.LastSelectedProfileName);
         if (savedProfile is not null)
         {
@@ -745,7 +850,7 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void ApplyDwgSetupSelectionToProfile()
     {
-        if (!IsDwgProfile || isApplyingDwgProfileToSetupInput)
+        if (isApplyingDwgProfileToSetupInput || isApplyingPreset)
         {
             return;
         }
@@ -771,11 +876,6 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void ApplyDwgProfileToSetupInput()
     {
-        if (!IsDwgProfile)
-        {
-            return;
-        }
-
         isApplyingDwgProfileToSetupInput = true;
         dwgSetupInput.SelectedItem = FindCadSetupOption(selectedDwgProfile.SourceRevitSetupName)
             ?? cadExportSetupOptions.FirstOrDefault();
@@ -845,11 +945,6 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void UpdateDwgProfileIndicator()
     {
-        if (!IsDwgProfile)
-        {
-            return;
-        }
-
         string source = selectedDwgProfile.IsUserProfile
             ? "Используется пользовательский профиль"
             : "Используется настройка Revit";
@@ -861,8 +956,13 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void UpdatePdfOptionsState()
     {
+        bool exportPdf = pdfInput.IsChecked == true;
         bool combinePdf = GetSelectedPdfMode() is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
-        combinedPdfNameInput.IsEnabled = combinePdf;
+        pdfModeInput.IsEnabled = exportPdf;
+        combinedPdfNameInput.IsEnabled = exportPdf && combinePdf;
+        pdfColorModeInput.IsEnabled = exportPdf;
+        pdfRasterQualityInput.IsEnabled = exportPdf;
+        forceRasterPdfInput.IsEnabled = exportPdf;
         ResetExportStatuses();
         UpdateExportState();
     }
@@ -1166,12 +1266,14 @@ public sealed class PrintWindow : TrueBimWindow
         bool combineDwg)
     {
         string exportFolder = exportFolderInput.Text;
-        if (IsPdfProfile && pdfMode is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined)
+        if (pdfInput.IsChecked == true
+            && pdfMode is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined)
         {
             yield return Path.Combine(exportFolder, PrintPdfExportService.NormalizePdfFileName(row.FileNamePreview));
         }
 
-        if (IsPdfProfile && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined)
+        if (pdfInput.IsChecked == true
+            && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined)
         {
             yield return Path.Combine(exportFolder, PrintPdfExportService.BuildCombinedPdfFileName(BuildSourceCombinedPdfName(row.Sheet.SourceId)));
         }
@@ -1217,7 +1319,7 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void StartExport()
     {
-        statusText.Text = "Экспорт поставлен в очередь Revit.";
+        statusText.Text = "Печать поставлена в очередь Revit.";
         revitActions.Raise(StartExportInRevitContext);
     }
 
@@ -1228,7 +1330,7 @@ public sealed class PrintWindow : TrueBimWindow
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
         string formats = GetSelectedFormatsText();
-        bool exportPdf = IsPdfProfile;
+        bool exportPdf = pdfInput.IsChecked == true;
         bool exportDwg = dwgInput.IsChecked == true;
         bool exportDxf = dxfInput.IsChecked == true;
         bool exportDwf = dwfInput.IsChecked == true;
@@ -1435,13 +1537,19 @@ public sealed class PrintWindow : TrueBimWindow
         int duplicateSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameDuplicate);
         int truncatedSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameTruncated);
         int unknownTokenCount = sheetRows.Count(row => row.HasUnknownFileNameTokens);
-        bool hasFormat = IsPdfProfile || dwgInput.IsChecked == true || dxfInput.IsChecked == true || dwfInput.IsChecked == true;
+        bool hasFormat = pdfInput.IsChecked == true
+            || dwgInput.IsChecked == true
+            || dxfInput.IsChecked == true
+            || dwfInput.IsChecked == true;
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
         bool exportsPerSheetFiles = dwgInput.IsChecked == true && combineDwgInput.IsChecked != true
             || dxfInput.IsChecked == true
             || dwfInput.IsChecked == true
-            || (IsPdfProfile && GetSelectedPdfMode() is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined);
+            || (pdfInput.IsChecked == true
+                && GetSelectedPdfMode() is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined);
         combineDwgInput.IsEnabled = dwgInput.IsChecked == true;
+        dwgSetupInput.IsEnabled = dwgInput.IsChecked == true && cadExportSetupOptions.Count > 1;
+        dxfSetupInput.IsEnabled = dxfInput.IsChecked == true && cadExportSetupOptions.Count > 1;
         foreach (PrintSheetRow row in sheetRows)
         {
             row.ShowFileNameDuplicateWarning = exportsPerSheetFiles;
@@ -1449,10 +1557,8 @@ public sealed class PrintWindow : TrueBimWindow
 
         exportButton.IsEnabled = selectedCount > 0 && hasFormat && hasFolder;
         exportButton.ToolTip = exportButton.IsEnabled
-            ? "Подготовить выбранные листы к экспорту."
-            : IsPdfProfile
-                ? "Выберите листы и папку назначения."
-                : "Выберите листы, формат и папку назначения.";
+            ? "Напечатать выбранные листы в отмеченные форматы."
+            : "Выберите листы, хотя бы один формат и папку назначения.";
 
         string hiddenText = hiddenPlaceholderCount > 0
             ? $" Скрыто листов-заглушек: {hiddenPlaceholderCount}."
@@ -1472,16 +1578,14 @@ public sealed class PrintWindow : TrueBimWindow
         string selectedTotalText = selectedTotalCount == selectedCount
             ? string.Empty
             : $" Всего выбрано: {selectedTotalCount}.";
-        string formatText = IsDwgProfile
-            ? $" Форматы: {GetSelectedFormatsText()}."
-            : string.Empty;
+        string formatText = $" Форматы: {GetSelectedFormatsText()}.";
         statusText.Text = $"Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}";
     }
 
     private string GetSelectedFormatsText()
     {
         List<string> formats = new();
-        if (IsPdfProfile)
+        if (pdfInput.IsChecked == true)
         {
             formats.Add("PDF");
         }
@@ -1605,7 +1709,7 @@ public sealed class PrintWindow : TrueBimWindow
             return savedExportFolder!;
         }
 
-        if (IsDwgProfile && !hasSavedPrintSettings && !string.IsNullOrWhiteSpace(dwgProfileState.LastFolder))
+        if (!hasSavedPrintSettings && !string.IsNullOrWhiteSpace(dwgProfileState.LastFolder))
         {
             return dwgProfileState.LastFolder!;
         }
@@ -1631,53 +1735,74 @@ public sealed class PrintWindow : TrueBimWindow
     private void ApplyInitialSettings()
     {
         PrintSettings settings = PrintSettingsService.Normalize(initialSettings);
-        includePlaceholdersInput.IsChecked = settings.IncludePlaceholders;
-        fileNameMaskInput.Text = IsDwgProfile
-            && !hasSavedPrintSettings
-            && !string.IsNullOrWhiteSpace(dwgProfileState.LastNameMask)
-            ? dwgProfileState.LastNameMask!
-            : settings.FileNameMask;
-        combinedPdfNameInput.Text = hasSavedPrintSettings
-            ? settings.CombinedPdfFileName
-            : PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName);
-        forceRasterPdfInput.IsChecked = settings.AlwaysUseRasterPdf;
-        bool hasSavedCadFormat = settings.ExportDwg || settings.ExportDxf || settings.ExportDwf;
-        dwgInput.IsChecked = IsDwgProfile && (hasSavedCadFormat ? settings.ExportDwg : true);
-        dxfInput.IsChecked = IsDwgProfile && settings.ExportDxf;
-        dwfInput.IsChecked = IsDwgProfile && settings.ExportDwf;
-        combineDwgInput.IsChecked = IsDwgProfile && settings.CombineDwg;
+        if (!hasSavedPrintSettings)
+        {
+            settings = settings with
+            {
+                FileNameMask = !string.IsNullOrWhiteSpace(dwgProfileState.LastNameMask)
+                    ? dwgProfileState.LastNameMask!
+                    : settings.FileNameMask,
+                CombinedPdfFileName = PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName)
+            };
+        }
+
+        ApplySettingsToInputs(settings);
     }
 
     private void SavePrintSettings()
     {
-        PrintSettings settings = PrintSettingsService.Normalize(initialSettings);
-        printSettingsService?.Save(new PrintSettings(
+        printSettingsService?.Save(ReadCurrentPrintSettings());
+        SaveDwgProfileState();
+        SavePrintPresetSelection();
+    }
+
+    private PrintSettings ReadCurrentPrintSettings()
+    {
+        return PrintSettingsService.Normalize(new PrintSettings(
             exportFolderInput.Text,
             fileNameMaskInput.Text,
             includePlaceholdersInput.IsChecked == true,
-            IsPdfProfile ? true : settings.ExportPdf,
-            IsPdfProfile ? GetSelectedPdfMode() is not PrintPdfExportMode.SeparateFiles : settings.CombinePdf,
-            IsPdfProfile ? combinedPdfNameInput.Text : settings.CombinedPdfFileName,
-            IsPdfProfile ? GetSelectedPdfColorMode() : settings.PdfColorMode,
-            IsPdfProfile ? GetSelectedPdfRasterQuality() : settings.PdfRasterQuality,
-            IsPdfProfile ? forceRasterPdfInput.IsChecked == true : settings.AlwaysUseRasterPdf,
-            IsDwgProfile ? dwgInput.IsChecked == true : settings.ExportDwg,
-            IsDwgProfile ? dxfInput.IsChecked == true : settings.ExportDxf,
-            IsDwgProfile ? dwfInput.IsChecked == true : settings.ExportDwf,
-            IsDwgProfile ? combineDwgInput.IsChecked == true : settings.CombineDwg,
-            IsPdfProfile ? GetSelectedPdfMode() == PrintPdfExportMode.SeparateAndCombined : settings.ExportSeparatePdfWithCombined,
-            IsDwgProfile ? GetSelectedSetupName(dwgSetupInput) : settings.DwgSetupName,
-            IsDwgProfile ? GetSelectedSetupName(dxfSetupInput) : settings.DxfSetupName));
-        SaveDwgProfileState();
+            pdfInput.IsChecked == true,
+            GetSelectedPdfMode() is not PrintPdfExportMode.SeparateFiles,
+            combinedPdfNameInput.Text,
+            GetSelectedPdfColorMode(),
+            GetSelectedPdfRasterQuality(),
+            forceRasterPdfInput.IsChecked == true,
+            dwgInput.IsChecked == true,
+            dxfInput.IsChecked == true,
+            dwfInput.IsChecked == true,
+            combineDwgInput.IsChecked == true,
+            GetSelectedPdfMode() == PrintPdfExportMode.SeparateAndCombined,
+            GetSelectedSetupName(dwgSetupInput),
+            GetSelectedSetupName(dxfSetupInput)));
+    }
+
+    private void ApplySettingsToInputs(PrintSettings sourceSettings)
+    {
+        PrintSettings settings = PrintSettingsService.Normalize(sourceSettings);
+        exportFolderInput.Text = settings.ExportFolder ?? GetInitialExportFolder();
+        fileNameMaskInput.Text = settings.FileNameMask;
+        includePlaceholdersInput.IsChecked = settings.IncludePlaceholders;
+        pdfInput.IsChecked = settings.ExportPdf;
+        pdfModeInput.SelectedValue = settings.CombinePdf
+            ? settings.ExportSeparatePdfWithCombined
+                ? PrintPdfExportMode.SeparateAndCombined
+                : PrintPdfExportMode.CombinedFile
+            : PrintPdfExportMode.SeparateFiles;
+        combinedPdfNameInput.Text = settings.CombinedPdfFileName;
+        pdfColorModeInput.SelectedValue = settings.PdfColorMode;
+        pdfRasterQualityInput.SelectedValue = settings.PdfRasterQuality;
+        forceRasterPdfInput.IsChecked = settings.AlwaysUseRasterPdf;
+        dwgInput.IsChecked = settings.ExportDwg;
+        dxfInput.IsChecked = settings.ExportDxf;
+        dwfInput.IsChecked = settings.ExportDwf;
+        combineDwgInput.IsChecked = settings.CombineDwg;
+        dwgSetupInput.SelectedItem = FindCadSetupOption(settings.DwgSetupName) ?? cadExportSetupOptions.FirstOrDefault();
+        dxfSetupInput.SelectedItem = FindCadSetupOption(settings.DxfSetupName) ?? cadExportSetupOptions.FirstOrDefault();
     }
 
     private void SaveDwgProfileState()
     {
-        if (!IsDwgProfile || dwgProfileStorage is null)
-        {
-            return;
-        }
-
         DwgExportProfile currentProfile = GetCurrentDwgProfileForExport();
         if (currentProfile.IsUserProfile)
         {
@@ -1689,6 +1814,145 @@ public sealed class PrintWindow : TrueBimWindow
         dwgProfileState.LastNameMask = fileNameMaskInput.Text;
         dwgProfileState.LastFormatSelection = GetSelectedFormatsText();
         dwgProfileStorage.Save(dwgProfileState);
+    }
+
+    private void InitializePrintPresets()
+    {
+        if (printPresetState.Presets.Count == 0)
+        {
+            printPresetState.UpsertPreset(CaptureCurrentPrintPreset(PrintPreset.DefaultPresetName));
+            printPresetStorage.Save(printPresetState);
+        }
+
+        PrintPreset selectedPreset = printPresetState.FindPreset(printPresetState.LastSelectedPresetName)
+            ?? printPresetState.Presets[0];
+        PrintSettings selectedSettings = PrintSettingsService.Normalize(
+            selectedPreset.Settings ?? PrintSettingsService.DefaultSettings);
+        reloadInitialSourcesForPreset = !string.Equals(
+            selectedSettings.FileNameMask,
+            collectedFileNameMask,
+            StringComparison.Ordinal);
+        RefreshPresetInput(selectedPreset.Name);
+        ApplyPrintPreset(selectedPreset, requestSheetReload: false);
+    }
+
+    private void ApplySelectedPrintPreset()
+    {
+        if (isApplyingPreset || presetInput.SelectedItem is not PrintPreset preset)
+        {
+            return;
+        }
+
+        ApplyPrintPreset(preset, requestSheetReload: true);
+    }
+
+    private void ApplyPrintPreset(PrintPreset preset, bool requestSheetReload)
+    {
+        PrintPreset normalizedPreset = PrintPresetStorage.NormalizePreset(preset);
+        isApplyingPreset = true;
+        try
+        {
+            selectedDwgProfile = normalizedPreset.DwgProfile!.Clone();
+            ApplySettingsToInputs(normalizedPreset.Settings!);
+            ApplyDwgProfileToSetupInput();
+            printPresetState.LastSelectedPresetName = normalizedPreset.Name;
+        }
+        finally
+        {
+            isApplyingPreset = false;
+        }
+
+        UpdateDwgProfileIndicator();
+        UpdatePdfOptionsState();
+        UpdateFileNamePreviews();
+        statusText.Text = $"Пресет применен: {normalizedPreset.Name}.";
+        if (requestSheetReload)
+        {
+            RequestReloadSheets();
+        }
+    }
+
+    private void SaveCurrentPrintPreset()
+    {
+        string presetName = PrintPresetStorage.NormalizePresetName(presetInput.Text);
+        PrintPreset preset = CaptureCurrentPrintPreset(presetName);
+        printPresetState.UpsertPreset(preset);
+        printPresetState = PrintPresetStorage.Normalize(printPresetState);
+        printPresetStorage.Save(printPresetState);
+        RefreshPresetInput(presetName);
+        statusText.Text = $"Пресет сохранен локально: {presetName}.";
+    }
+
+    private void DeleteSelectedPrintPreset()
+    {
+        PrintPreset? preset = printPresetState.FindPreset(presetInput.Text)
+            ?? presetInput.SelectedItem as PrintPreset;
+        if (preset is null)
+        {
+            MessageBox.Show(this, "Выберите сохраненный пресет для удаления.", WindowTitle, MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        MessageBoxResult confirmation = MessageBox.Show(
+            this,
+            $"Удалить локальный пресет «{preset.Name}»?",
+            WindowTitle,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        printPresetState.RemovePreset(preset.Name);
+        if (printPresetState.Presets.Count == 0)
+        {
+            printPresetState.UpsertPreset(CaptureCurrentPrintPreset(PrintPreset.DefaultPresetName));
+        }
+
+        PrintPreset nextPreset = printPresetState.Presets[0];
+        printPresetState.LastSelectedPresetName = nextPreset.Name;
+        printPresetStorage.Save(printPresetState);
+        RefreshPresetInput(nextPreset.Name);
+        ApplyPrintPreset(nextPreset, requestSheetReload: true);
+    }
+
+    private PrintPreset CaptureCurrentPrintPreset(string presetName)
+    {
+        return new PrintPreset
+        {
+            Name = presetName,
+            Settings = ReadCurrentPrintSettings(),
+            DwgProfile = GetCurrentDwgProfileForExport()
+        };
+    }
+
+    private void RefreshPresetInput(string selectedPresetName)
+    {
+        isApplyingPreset = true;
+        try
+        {
+            presetInput.ItemsSource = null;
+            presetInput.ItemsSource = printPresetState.Presets;
+            presetInput.SelectedItem = printPresetState.FindPreset(selectedPresetName);
+            presetInput.Text = selectedPresetName;
+        }
+        finally
+        {
+            isApplyingPreset = false;
+        }
+    }
+
+    private void SavePrintPresetSelection()
+    {
+        PrintPreset? selectedPreset = printPresetState.FindPreset(presetInput.Text)
+            ?? presetInput.SelectedItem as PrintPreset;
+        if (selectedPreset is not null)
+        {
+            printPresetState.LastSelectedPresetName = selectedPreset.Name;
+        }
+
+        printPresetStorage.Save(printPresetState);
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string bindingPath, double width)

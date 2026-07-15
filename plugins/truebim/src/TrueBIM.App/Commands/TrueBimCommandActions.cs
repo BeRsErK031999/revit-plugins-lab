@@ -21,33 +21,28 @@ internal static class TrueBimCommandActions
 {
     public static void OpenPrint(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
-        OpenPrint(commandData, owner, logger, PrintExportProfile.Pdf);
+        OpenPrintWindow(commandData, owner, logger);
     }
 
     public static void OpenPrintPdf(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
-        OpenPrint(commandData, owner, logger, PrintExportProfile.Pdf);
+        OpenPrintWindow(commandData, owner, logger);
     }
 
     public static void OpenPrintDwg(ExternalCommandData commandData, System.Windows.Window? owner, ITrueBimLogger logger)
     {
-        OpenPrint(commandData, owner, logger, PrintExportProfile.Dwg);
+        OpenPrintWindow(commandData, owner, logger);
     }
 
-    private static void OpenPrint(
+    private static void OpenPrintWindow(
         ExternalCommandData commandData,
         System.Windows.Window? owner,
-        ITrueBimLogger logger,
-        PrintExportProfile exportProfile)
+        ITrueBimLogger logger)
     {
         try
         {
-            string windowKey = exportProfile == PrintExportProfile.Pdf
-                ? "truebim.print.pdf"
-                : "truebim.print.dwg";
-            string windowTitle = exportProfile == PrintExportProfile.Pdf
-                ? "Печать PDF"
-                : "Печать DWG";
+            const string windowKey = "truebim.print";
+            const string windowTitle = "Печать";
             if (ModelessWindowService.Activate(windowKey, logger))
             {
                 return;
@@ -67,8 +62,16 @@ internal static class TrueBimCommandActions
                 PrintSettingsService.CreateSettingsPath(commandData.Application.Application.VersionNumber),
                 logger);
             PrintSettings initialSettings = settingsService.Load();
+            PrintPresetStorage presetStorage = new(
+                PrintPresetStorage.CreateStoragePath(commandData.Application.Application.VersionNumber),
+                logger);
+            PrintPresetStoreState presetState = presetStorage.Load();
+            PrintPreset? selectedPreset = presetState.FindPreset(presetState.LastSelectedPresetName);
+            string collectionFileNameMask = selectedPreset is null
+                ? initialSettings.FileNameMask
+                : PrintPresetStorage.NormalizePreset(selectedPreset).Settings!.FileNameMask;
             IReadOnlyCollection<string> sheetParameterNames = new PrintFileNameTemplateService()
-                .GetSheetParameterNames(initialSettings.FileNameMask);
+                .GetSheetParameterNames(collectionFileNameMask);
             Stopwatch collectionTimer = Stopwatch.StartNew();
             IReadOnlyList<PrintSheetSource> sheetSources = CollectPrintSheetSources(
                 commandData.Application.Application.Documents.Cast<Document>().ToList(),
@@ -78,7 +81,7 @@ internal static class TrueBimCommandActions
             int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
             logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents in {collectionTimer.ElapsedMilliseconds} ms. Loaded custom sheet parameters: {sheetParameterNames.Count}.");
             Stopwatch windowTimer = Stopwatch.StartNew();
-            PrintWindow printWindow = new(activeDocument, sheetSources, exportProfile, settingsService, logger)
+            PrintWindow printWindow = new(activeDocument, sheetSources, settingsService, logger, collectionFileNameMask)
             {
                 ShowInTaskbar = true
             };
@@ -88,9 +91,9 @@ internal static class TrueBimCommandActions
         }
         catch (Exception exception)
         {
-            logger.Error($"Failed to open Print module profile '{exportProfile}'.", exception);
+            logger.Error("Failed to open Print module.", exception);
             TaskDialog.Show(
-                exportProfile == PrintExportProfile.Pdf ? "Печать PDF" : "Печать DWG",
+                "Печать",
                 "Не удалось открыть модуль печати. Используйте логи для диагностики.");
         }
     }

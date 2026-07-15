@@ -67,6 +67,8 @@ These can be added after the first stable multi-version installer workflow.
 - Read saved Revit CAD export setup names and use selected DWG/DXF predefined options.
 - Fall back to default DWG/DXF options when no setup is selected or no setups are available.
 - Persist basic window settings in `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`.
+- Expose one `Печать` ribbon entry for PDF/DWG/DXF/DWF and keep detailed format settings collapsible in the same window.
+- Persist named customer presets in `%APPDATA%\TrueBIM\<RevitVersion>\print-presets.json`, including PDF settings, CAD selections, and the active DWG profile snapshot.
 - Cover clean print logic with unit tests.
 - Pass Revit 2022 and Revit 2025 local preflight for build, tests, local deploy, and installer artifacts.
 
@@ -75,7 +77,6 @@ These can be added after the first stable multi-version installer workflow.
 - Source tabs instead of only the current source filter.
 - Linked model sheet sources.
 - Print sets.
-- Named print configurations.
 - Sheet-parameter filters and grouping.
 - Advanced CAD parameters beyond saved Revit export setups.
 

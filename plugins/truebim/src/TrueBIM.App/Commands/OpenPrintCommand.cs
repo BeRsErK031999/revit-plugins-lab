@@ -10,7 +10,7 @@ public sealed class OpenPrintCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
-        TrueBimCommandActions.OpenPrintPdf(
+        TrueBimCommandActions.OpenPrint(
             commandData,
             owner: null,
             new FileTrueBimLogger(new TrueBimLogPaths()));
