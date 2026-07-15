@@ -309,16 +309,25 @@ foreach ($year in $revitYears) {
         }) | Out-Null
 }
 
-if ($skipped.Count -gt 0 -and -not $SkipInstaller) {
+if ($skipped.Where({ $_ -ne "2026" }).Count -gt 0 -and -not $SkipInstaller) {
     $SkipInstaller = $true
     Write-Warning "Installer compilation was skipped because these Revit versions were not built: $($skipped -join ', ')."
+}
+elseif ($skipped -contains "2026" -and -not $SkipInstaller) {
+    Write-Warning "Revit 2026 payload was not built and will be excluded from the installer."
 }
 
 if (-not $SkipInstaller) {
     $innoPath = Resolve-InnoCompiler -RequestedPath $InnoCompilerPath
+    $innoArguments = @()
+    if ($skipped -contains "2026") {
+        $innoArguments += "/DExcludeRevit2026=1"
+    }
+
+    $innoArguments += $installerScriptPath
     Push-Location -LiteralPath (Split-Path -Parent $installerScriptPath)
     try {
-        & $innoPath $installerScriptPath
+        & $innoPath @innoArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup compiler failed."
         }

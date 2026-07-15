@@ -44,11 +44,13 @@
 #if !FileExists("..\..\..\dist\revit\2025\TrueBIM.addin")
   #error Missing dist\revit\2025\TrueBIM.addin. Run build-installer.ps1 first.
 #endif
-#if !FileExists("..\..\..\dist\revit\2026\TrueBIM.App.dll")
-  #error Missing dist\revit\2026\TrueBIM.App.dll. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2026\TrueBIM.addin")
-  #error Missing dist\revit\2026\TrueBIM.addin. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2026
+  #if !FileExists("..\..\..\dist\revit\2026\TrueBIM.App.dll")
+    #error Missing dist\revit\2026\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2026\TrueBIM.addin")
+    #error Missing dist\revit\2026\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
 
 [Setup]
@@ -76,7 +78,9 @@ Source: "..\..\..\dist\revit\2022\*"; DestDir: "{app}\2022"; Excludes: "*.pdb"; 
 Source: "..\..\..\dist\revit\2023\*"; DestDir: "{app}\2023"; Excludes: "*.pdb"; Check: ShouldInstallYear('2023'); Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\..\dist\revit\2024\*"; DestDir: "{app}\2024"; Excludes: "*.pdb"; Check: ShouldInstallYear('2024'); Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\..\dist\revit\2025\*"; DestDir: "{app}\2025"; Excludes: "*.pdb"; Check: ShouldInstallYear('2025'); Flags: ignoreversion recursesubdirs createallsubdirs
+#ifndef ExcludeRevit2026
 Source: "..\..\..\dist\revit\2026\*"; DestDir: "{app}\2026"; Excludes: "*.pdb"; Check: ShouldInstallYear('2026'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
 
 [InstallDelete]
 Type: files; Name: "{app}\2019\*.dll"; Check: ShouldInstallYear('2019')
@@ -198,7 +202,9 @@ var
   Index2023: Integer;
   Index2024: Integer;
   Index2025: Integer;
+#ifndef ExcludeRevit2026
   Index2026: Integer;
+#endif
 
 function IsRevitInstalled(Year: String): Boolean;
 begin
@@ -256,7 +262,9 @@ begin
   Index2023 := AddVersion('2023');
   Index2024 := AddVersion('2024');
   Index2025 := AddVersion('2025');
+#ifndef ExcludeRevit2026
   Index2026 := AddVersion('2026');
+#endif
 
   Note := TNewStaticText.Create(VersionPage);
   Note.Parent := VersionPage.Surface;
@@ -286,8 +294,10 @@ begin
     Result := VersionList.Checked[Index2024]
   else if Year = '2025' then
     Result := VersionList.Checked[Index2025]
+#ifndef ExcludeRevit2026
   else if Year = '2026' then
     Result := VersionList.Checked[Index2026]
+#endif
   else
     Result := False;
 end;
