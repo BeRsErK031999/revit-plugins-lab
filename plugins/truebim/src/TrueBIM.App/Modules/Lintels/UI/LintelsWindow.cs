@@ -1,0 +1,438 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Data;
+using Autodesk.Revit.UI;
+using TrueBIM.App.Modules.Lintels.Models;
+using TrueBIM.App.Modules.Lintels.Revit;
+using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
+using TrueBIM.App.UI.DesignSystem;
+using WpfBinding = System.Windows.Data.Binding;
+
+namespace TrueBIM.App.Modules.Lintels.UI;
+
+public sealed class LintelsWindow : TrueBimWindow
+{
+    private const string DialogTitle = "Перемычки";
+
+    private readonly UIDocument uiDocument;
+    private readonly LintelDiagnosticCollectorService collectorService;
+    private readonly ITrueBimLogger logger;
+    private readonly RevitActionDispatcher revitActions;
+    private readonly ObservableCollection<LintelTypeSelectionItem> typeItems = [];
+    private readonly DataGrid typeGrid = new();
+    private readonly ContentControl summaryHost = new();
+    private readonly StackPanel previewContent = new();
+    private readonly TextBlock footerStatusText = new();
+    private readonly Button refreshButton;
+    private readonly Button createButton;
+    private LintelDiagnosticResult currentResult;
+    private bool isBulkSelectionUpdate;
+
+    public LintelsWindow(
+        UIDocument uiDocument,
+        LintelDiagnosticCollectorService collectorService,
+        LintelDiagnosticResult initialResult,
+        ITrueBimLogger logger)
+    {
+        this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
+        this.collectorService = collectorService ?? throw new ArgumentNullException(nameof(collectorService));
+        currentResult = initialResult ?? throw new ArgumentNullException(nameof(initialResult));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        revitActions = new RevitActionDispatcher("обновление диагностики перемычек", this.logger);
+
+        refreshButton = TrueBimUi.CreateSecondaryButton(
+            "Обновить из Revit",
+            TrueBimIcon.Refresh,
+            (_, _) => RefreshFromRevit(),
+            minWidth: 160);
+        refreshButton.ToolTip = "Повторно прочитать текущее выделение или активный вид в безопасном Revit-контексте.";
+
+        createButton = TrueBimUi.CreatePrimaryButton(
+            "Создать сборки",
+            TrueBimIcon.Apply,
+            isEnabled: false,
+            minWidth: 150);
+        createButton.ToolTip = "Недоступно на этапе preview: сначала требуется проверить рабочий RVT-файл, семейства оформления и правила сборки.";
+        ToolTipService.SetShowOnDisabled(createButton, true);
+        AutomationProperties.SetHelpText(createButton, createButton.ToolTip?.ToString() ?? string.Empty);
+
+        Title = DialogTitle;
+        Icon = IconFactory.CreateImage(TrueBimIcon.Lintels, TrueBimTheme.IconSizeRibbon);
+        Width = 1180;
+        Height = 720;
+        MinWidth = 1080;
+        MinHeight = 620;
+        ResizeMode = ResizeMode.CanResize;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+        ApplyTrueBimShell(
+            TrueBimUi.CreateHeader(
+                DialogTitle,
+                "Выберите готовые типоразмеры и проверьте будущие имена. На этом этапе модель Revit не изменяется.",
+                TrueBimIcon.Lintels),
+            CreateCommandBar(),
+            CreateBody(),
+            footer: CreateFooter());
+
+        ApplyResult(initialResult);
+        logger.Info($"Lintels selection window opened for '{uiDocument.Document.Title}'.");
+    }
+
+    private UIElement CreateCommandBar()
+    {
+        Button selectReadyButton = TrueBimUi.CreateSecondaryButton(
+            "Выбрать готовые",
+            TrueBimIcon.Check,
+            (_, _) => SetReadySelection(true),
+            minWidth: 145);
+        selectReadyButton.ToolTip = "Отметить типоразмеры, у которых найдены вложенные проектные компоненты с геометрией.";
+
+        Button clearSelectionButton = TrueBimUi.CreateSecondaryButton(
+            "Снять выбор",
+            TrueBimIcon.Close,
+            (_, _) => SetReadySelection(false),
+            minWidth: 125);
+        clearSelectionButton.ToolTip = "Снять отметки со всех типоразмеров.";
+
+        Button diagnosticsButton = TrueBimUi.CreateSecondaryButton(
+            "Диагностика",
+            TrueBimIcon.Info,
+            (_, _) => ShowDiagnostics(),
+            minWidth: 130);
+        diagnosticsButton.ToolTip = "Показать причины исключения элементов и подробности временного правила поиска.";
+
+        return TrueBimUi.CreateCommandBar(
+            selectReadyButton,
+            clearSelectionButton,
+            refreshButton,
+            diagnosticsButton);
+    }
+
+    private UIElement CreateBody()
+    {
+        Grid body = new();
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        summaryHost.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        body.Children.Add(summaryHost);
+
+        Grid columns = new();
+        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
+        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TrueBimTheme.Spacing16) });
+        columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+
+        UIElement typesPanel = CreateStretchSection("Типоразмеры", CreateTypeGrid());
+        columns.Children.Add(typesPanel);
+
+        ScrollViewer previewScroll = new()
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = previewContent
+        };
+        UIElement previewPanel = CreateStretchSection("Будущие артефакты", previewScroll);
+        Grid.SetColumn(previewPanel, 2);
+        columns.Children.Add(previewPanel);
+
+        Grid.SetRow(columns, 1);
+        body.Children.Add(columns);
+        return body;
+    }
+
+    private UIElement CreateTypeGrid()
+    {
+        typeGrid.AutoGenerateColumns = false;
+        typeGrid.CanUserAddRows = false;
+        typeGrid.CanUserDeleteRows = false;
+        typeGrid.CanUserReorderColumns = false;
+        typeGrid.IsReadOnly = false;
+        typeGrid.SelectionMode = DataGridSelectionMode.Single;
+        typeGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
+        typeGrid.Style = TrueBimStyles.CreateDataGridStyle();
+        typeGrid.ItemsSource = typeItems;
+        typeGrid.Columns.Add(CreateSelectionColumn());
+        typeGrid.Columns.Add(CreateTextColumn("Семейство", nameof(LintelTypeSelectionItem.FamilyName), 135));
+        typeGrid.Columns.Add(CreateTextColumn("Тип", nameof(LintelTypeSelectionItem.TypeName), 115));
+        typeGrid.Columns.Add(CreateTextColumn("Экз.", nameof(LintelTypeSelectionItem.InstanceCount), 52));
+        typeGrid.Columns.Add(CreateTextColumn("Статус", nameof(LintelTypeSelectionItem.ReadyStatus), 100));
+        typeGrid.Columns.Add(CreateTextColumn("ID", nameof(LintelTypeSelectionItem.RepresentativeElementId), 72));
+        typeGrid.Columns.Add(CreateTextColumn(
+            "Диагностика",
+            nameof(LintelTypeSelectionItem.DiagnosticText),
+            new DataGridLength(1, DataGridLengthUnitType.Star)));
+        AutomationProperties.SetName(typeGrid, "Типоразмеры перемычек");
+        AutomationProperties.SetHelpText(typeGrid, "Отметьте строки со статусом «Готово», чтобы увидеть будущие имена артефактов.");
+        return typeGrid;
+    }
+
+    private UIElement CreateFooter()
+    {
+        footerStatusText.Foreground = TrueBimBrushes.TextSecondary;
+        footerStatusText.TextWrapping = TextWrapping.Wrap;
+        footerStatusText.VerticalAlignment = VerticalAlignment.Center;
+
+        Button closeButton = TrueBimUi.CreateSecondaryButton(
+            "Закрыть",
+            TrueBimIcon.Close,
+            (_, _) => Close(),
+            minWidth: 110);
+        closeButton.IsCancel = true;
+        closeButton.ToolTip = "Закрыть окно без изменений модели Revit.";
+
+        return TrueBimUi.CreateFooter(footerStatusText, createButton, closeButton);
+    }
+
+    private void ApplyResult(LintelDiagnosticResult result)
+    {
+        currentResult = result;
+        typeItems.Clear();
+        foreach (LintelTypeDiagnostic type in result.Types)
+        {
+            LintelTypeSelectionItem item = new(type);
+            item.PropertyChanged += OnTypeItemPropertyChanged;
+            typeItems.Add(item);
+        }
+
+        RefreshSummary();
+        RefreshPreview();
+        UpdateStatus();
+    }
+
+    private void RefreshSummary()
+    {
+        TrueBimUiSeverity severity = !currentResult.HasCandidates || currentResult.ReadyTypeCount == 0
+            ? TrueBimUiSeverity.Warning
+            : currentResult.ReadyTypeCount == currentResult.Types.Count
+                ? TrueBimUiSeverity.Success
+                : TrueBimUiSeverity.Info;
+        summaryHost.Content = TrueBimUi.CreateInfoBanner(currentResult.BuildSummary(), severity);
+    }
+
+    private void RefreshPreview()
+    {
+        previewContent.Children.Clear();
+        LintelTypeSelectionItem[] selectedItems = typeItems
+            .Where(item => item.IsSelected && item.CanSelect)
+            .ToArray();
+        if (selectedItems.Length == 0)
+        {
+            previewContent.Children.Add(TrueBimUi.CreateInfoBanner(
+                typeItems.Count == 0
+                    ? "Нет типоразмеров для preview. Измените выделение или активный вид и нажмите «Обновить из Revit»."
+                    : "Выберите хотя бы один типоразмер со статусом «Готово».",
+                TrueBimUiSeverity.Warning));
+            return;
+        }
+
+        foreach (LintelTypeSelectionItem item in selectedItems)
+        {
+            previewContent.Children.Add(CreatePreviewItem(item));
+        }
+    }
+
+    private static UIElement CreatePreviewItem(LintelTypeSelectionItem item)
+    {
+        StackPanel content = new();
+        Grid title = new();
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        title.Children.Add(new TextBlock
+        {
+            Text = $"{item.FamilyName} : {item.TypeName}",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            TextWrapping = TextWrapping.Wrap
+        });
+        UIElement badge = TrueBimUi.CreateStatusBadge("Готово", TrueBimUiSeverity.Success);
+        Grid.SetColumn(badge, 1);
+        title.Children.Add(badge);
+        content.Children.Add(title);
+
+        content.Children.Add(CreateArtifactLine("Сборка", item.ArtifactPreview.AssemblyName));
+        content.Children.Add(CreateArtifactLine("Вид", item.ArtifactPreview.ViewName));
+        content.Children.Add(CreateArtifactLine("Изображение", item.ArtifactPreview.ImageFileName));
+
+        return new Border
+        {
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(0, 0, 0, TrueBimTheme.BorderWidth),
+            Padding = new Thickness(0, 0, 0, TrueBimTheme.Spacing12),
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12),
+            Child = content
+        };
+    }
+
+    private static UIElement CreateArtifactLine(string label, string value)
+    {
+        Grid row = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(86) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.Children.Add(new TextBlock
+        {
+            Text = label,
+            Foreground = TrueBimBrushes.TextMuted
+        });
+        TextBlock name = new()
+        {
+            Text = value,
+            Foreground = TrueBimBrushes.TextPrimary,
+            TextWrapping = TextWrapping.Wrap,
+            ToolTip = value
+        };
+        Grid.SetColumn(name, 1);
+        row.Children.Add(name);
+        return row;
+    }
+
+    private static Border CreateStretchSection(string title, UIElement content)
+    {
+        Grid layout = new()
+        {
+            Margin = TrueBimTheme.SectionPadding
+        };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layout.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = TrueBimTheme.SectionTitleFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        });
+        Grid.SetRow(content, 1);
+        layout.Children.Add(content);
+
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Child = layout
+        };
+    }
+
+    private void SetReadySelection(bool isSelected)
+    {
+        isBulkSelectionUpdate = true;
+        foreach (LintelTypeSelectionItem item in typeItems.Where(item => item.CanSelect))
+        {
+            item.IsSelected = isSelected;
+        }
+
+        isBulkSelectionUpdate = false;
+        RefreshPreview();
+        UpdateStatus();
+    }
+
+    private void OnTypeItemPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (!isBulkSelectionUpdate && args.PropertyName == nameof(LintelTypeSelectionItem.IsSelected))
+        {
+            RefreshPreview();
+            UpdateStatus();
+        }
+    }
+
+    private void RefreshFromRevit()
+    {
+        footerStatusText.Text = "Обновление диагностики поставлено в очередь Revit…";
+        revitActions.Raise(RefreshInRevitContext);
+    }
+
+    private void RefreshInRevitContext()
+    {
+        try
+        {
+            LintelDiagnosticResult result = collectorService.Collect(uiDocument);
+            ApplyResult(result);
+            logger.Info("Lintels selection preview refreshed from Revit.");
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to refresh Lintels selection preview.", exception);
+            TaskDialog.Show(
+                DialogTitle,
+                "Не удалось обновить диагностику. Проверьте открытый документ и используйте логи для анализа ошибки.");
+            footerStatusText.Text = "Обновление не выполнено. Модель Revit не изменялась.";
+        }
+    }
+
+    private void ShowDiagnostics()
+    {
+        LintelDiagnosticsWindow window = new(currentResult)
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
+    private void UpdateStatus()
+    {
+        int readyCount = typeItems.Count(item => item.CanSelect);
+        int selectedCount = typeItems.Count(item => item.IsSelected && item.CanSelect);
+        string source = currentResult.Source == LintelDiagnosticSource.Selection
+            ? "выделение"
+            : "активный вид";
+        footerStatusText.Text = $"Источник: {source}. Типоразмеров: {typeItems.Count}. Готово: {readyCount}. Выбрано: {selectedCount}. Предпросмотр только для чтения — модель Revit не изменяется.";
+    }
+
+    private static DataGridTextColumn CreateTextColumn(
+        string header,
+        string bindingPath,
+        double width)
+    {
+        return CreateTextColumn(header, bindingPath, new DataGridLength(width));
+    }
+
+    private static DataGridTextColumn CreateTextColumn(
+        string header,
+        string bindingPath,
+        DataGridLength width)
+    {
+        return new DataGridTextColumn
+        {
+            Header = header,
+            Binding = new WpfBinding(bindingPath),
+            Width = width,
+            IsReadOnly = true
+        };
+    }
+
+    private static DataGridTemplateColumn CreateSelectionColumn()
+    {
+        FrameworkElementFactory checkBox = new(typeof(CheckBox));
+        checkBox.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        checkBox.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        checkBox.SetValue(FrameworkElement.StyleProperty, TrueBimStyles.CreateCheckBoxStyle());
+        checkBox.SetBinding(
+            CheckBox.IsCheckedProperty,
+            new WpfBinding(nameof(LintelTypeSelectionItem.IsSelected))
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+            });
+        checkBox.SetBinding(
+            UIElement.IsEnabledProperty,
+            new WpfBinding(nameof(LintelTypeSelectionItem.CanSelect)));
+        checkBox.SetBinding(
+            FrameworkElement.ToolTipProperty,
+            new WpfBinding(nameof(LintelTypeSelectionItem.DiagnosticText)));
+
+        return new DataGridTemplateColumn
+        {
+            Header = "Выбор",
+            CellTemplate = new DataTemplate { VisualTree = checkBox },
+            Width = 58
+        };
+    }
+}

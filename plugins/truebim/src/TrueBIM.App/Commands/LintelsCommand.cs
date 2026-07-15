@@ -4,7 +4,9 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.Lintels;
 using TrueBIM.App.Modules.Lintels.Models;
 using TrueBIM.App.Modules.Lintels.Revit;
+using TrueBIM.App.Modules.Lintels.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -17,6 +19,7 @@ public sealed class LintelsCommand : IExternalCommand
 
         try
         {
+            const string windowKey = "truebim.lintels";
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             if (uiDocument is null)
             {
@@ -26,26 +29,28 @@ public sealed class LintelsCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            logger.Info($"Starting read-only Lintels diagnostic. Document='{uiDocument.Document.Title}'.");
-            LintelDiagnosticResult result = new LintelDiagnosticCollectorService(logger).Collect(uiDocument);
-            TaskDialog dialog = new("Перемычки")
+            if (ModelessWindowService.Activate(windowKey, logger))
             {
-                MainInstruction = result.HasCandidates
-                    ? "Диагностика перемычек завершена"
-                    : "Перемычки не найдены",
-                MainContent = result.BuildSummary(),
-                ExpandedContent = result.BuildDetails(),
-                CommonButtons = TaskDialogCommonButtons.Close
-            };
-            dialog.Show();
+                return Result.Succeeded;
+            }
+
+            logger.Info($"Starting read-only Lintels selection preview. Document='{uiDocument.Document.Title}'.");
+            LintelDiagnosticCollectorService collectorService = new(logger);
+            LintelDiagnosticResult result = collectorService.Collect(uiDocument);
+            LintelsWindow window = new(uiDocument, collectorService, result, logger);
+            ModelessWindowService.Show(
+                windowKey,
+                window,
+                commandData.Application.MainWindowHandle,
+                logger);
             return Result.Succeeded;
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to collect Lintels diagnostic.", exception);
+            logger.Error("Failed to open Lintels selection preview.", exception);
             TaskDialog.Show(
                 "Перемычки",
-                "Не удалось собрать диагностику перемычек. Используйте логи для анализа ошибки.");
+                "Не удалось открыть окно перемычек. Используйте логи для анализа ошибки.");
             return Result.Failed;
         }
     }
