@@ -99,6 +99,28 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void GetSheetParameterNames_ReturnsOnlyUniqueSheetParameterTokens()
+    {
+        IReadOnlyCollection<string> names = service.GetSheetParameterNames(
+            "{Номер листа}_{SheetParameter:Формат листа}_{Параметр листа:Том}_{sheetParameter:ignored}_{Параметр листа: том }");
+
+        Assert.Equal(2, names.Count);
+        Assert.Contains("Формат листа", names);
+        Assert.Contains("Том", names);
+    }
+
+    [Fact]
+    public void GetProjectParameterNames_ReturnsEnglishAndRussianParameterTokens()
+    {
+        IReadOnlyCollection<string> names = service.GetProjectParameterNames(
+            "{ProjectParameter:Шифр}_{Параметр проекта:Стадия}_{Имя проекта}");
+
+        Assert.Equal(2, names.Count);
+        Assert.Contains("Шифр", names);
+        Assert.Contains("Стадия", names);
+    }
+
+    [Fact]
     public void Build_SanitizesWindowsFileNameCharacters()
     {
         PrintFileNamePreview preview = service.Build(

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools;
@@ -62,18 +63,27 @@ internal static class TrueBimCommandActions
                 return;
             }
 
-            IReadOnlyList<PrintSheetSource> sheetSources = CollectPrintSheetSources(
-                commandData.Application.Application.Documents.Cast<Document>().ToList(),
-                activeDocument);
-            int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
-            logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents.");
             PrintSettingsService settingsService = new(
                 PrintSettingsService.CreateSettingsPath(commandData.Application.Application.VersionNumber),
                 logger);
+            PrintSettings initialSettings = settingsService.Load();
+            IReadOnlyCollection<string> sheetParameterNames = new PrintFileNameTemplateService()
+                .GetSheetParameterNames(initialSettings.FileNameMask);
+            Stopwatch collectionTimer = Stopwatch.StartNew();
+            IReadOnlyList<PrintSheetSource> sheetSources = CollectPrintSheetSources(
+                commandData.Application.Application.Documents.Cast<Document>().ToList(),
+                activeDocument,
+                sheetParameterNames);
+            collectionTimer.Stop();
+            int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
+            logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents in {collectionTimer.ElapsedMilliseconds} ms. Loaded custom sheet parameters: {sheetParameterNames.Count}.");
+            Stopwatch windowTimer = Stopwatch.StartNew();
             PrintWindow printWindow = new(activeDocument, sheetSources, exportProfile, settingsService, logger)
             {
                 ShowInTaskbar = true
             };
+            windowTimer.Stop();
+            logger.Info($"{windowTitle} UI prepared in {windowTimer.ElapsedMilliseconds} ms.");
             ModelessWindowService.Show(windowKey, printWindow, commandData.Application.MainWindowHandle, logger);
         }
         catch (Exception exception)
@@ -213,7 +223,8 @@ internal static class TrueBimCommandActions
 
     private static IReadOnlyList<PrintSheetSource> CollectPrintSheetSources(
         IReadOnlyList<Document> openDocuments,
-        Document activeDocument)
+        Document activeDocument,
+        IReadOnlyCollection<string> sheetParameterNames)
     {
         PrintSheetCollectorService collector = new();
         List<Document> orderedDocuments = openDocuments
@@ -235,7 +246,7 @@ internal static class TrueBimCommandActions
                 ? PrintSheetSourceKind.LinkedDocument
                 : PrintSheetSourceKind.OpenDocument;
             IReadOnlyList<PrintSheetInfo> sheets = ReferenceEquals(document, activeDocument)
-                ? collector.Collect(document, sourceId, sourceName, sourceKind)
+                ? collector.Collect(document, sourceId, sourceName, sourceKind, sheetParameterNames)
                 : Array.Empty<PrintSheetInfo>();
             if (sheets.Count == 0 && ReferenceEquals(document, activeDocument))
             {

@@ -27,6 +27,27 @@ public sealed class PrintSheetCollectorService
         string sourceName,
         PrintSheetSourceKind sourceKind)
     {
+        return CollectCore(document, sourceId, sourceName, sourceKind, sheetParameterNames: null);
+    }
+
+    public IReadOnlyList<PrintSheetInfo> Collect(
+        Document document,
+        string sourceId,
+        string sourceName,
+        PrintSheetSourceKind sourceKind,
+        IReadOnlyCollection<string> sheetParameterNames)
+    {
+        Guard.NotNull(sheetParameterNames, nameof(sheetParameterNames));
+        return CollectCore(document, sourceId, sourceName, sourceKind, sheetParameterNames);
+    }
+
+    private static IReadOnlyList<PrintSheetInfo> CollectCore(
+        Document document,
+        string sourceId,
+        string sourceName,
+        PrintSheetSourceKind sourceKind,
+        IReadOnlyCollection<string>? sheetParameterNames)
+    {
         Guard.NotNull(document, nameof(document));
         Guard.NotNullOrWhiteSpace(sourceId, nameof(sourceId));
         Guard.NotNullOrWhiteSpace(sourceName, nameof(sourceName));
@@ -36,7 +57,7 @@ public sealed class PrintSheetCollectorService
             .Cast<ViewSheet>()
             .Select(sheet =>
             {
-                IReadOnlyDictionary<string, string> sheetParameters = CollectSheetParameters(sheet);
+                IReadOnlyDictionary<string, string> sheetParameters = CollectSheetParameters(sheet, sheetParameterNames);
                 return new PrintSheetInfo(
                     RevitElementIds.GetValue(sheet.Id),
                     sourceId,
@@ -104,38 +125,96 @@ public sealed class PrintSheetCollectorService
         }
     }
 
-    private static IReadOnlyDictionary<string, string> CollectSheetParameters(ViewSheet sheet)
+    private static IReadOnlyDictionary<string, string> CollectSheetParameters(
+        ViewSheet sheet,
+        IReadOnlyCollection<string>? requestedParameterNames)
     {
-        Dictionary<string, string> parameters = new(StringComparer.CurrentCultureIgnoreCase);
-        foreach (Parameter parameter in sheet.Parameters)
+        if (requestedParameterNames is null)
         {
-            string name = parameter.Definition?.Name ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(name) || parameters.ContainsKey(name))
+            return CollectAllSheetParameters(sheet);
+        }
+
+        Dictionary<string, string> parameters = new(StringComparer.CurrentCultureIgnoreCase);
+        CollectGroupParameter(sheet, parameters);
+        foreach (string requestedParameterName in requestedParameterNames)
+        {
+            string parameterName = requestedParameterName.Trim();
+            if (string.IsNullOrWhiteSpace(parameterName) || parameters.ContainsKey(parameterName))
             {
                 continue;
             }
 
-            string value = parameter.AsValueString() ?? parameter.AsString() ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(value))
+            Parameter? parameter = sheet.LookupParameter(parameterName);
+            if (parameter is not null)
             {
-                parameters[name] = value.Trim();
+                AddParameterValue(parameters, parameter);
             }
         }
 
         return parameters;
     }
 
+    private static IReadOnlyDictionary<string, string> CollectAllSheetParameters(ViewSheet sheet)
+    {
+        Dictionary<string, string> parameters = new(StringComparer.CurrentCultureIgnoreCase);
+        foreach (Parameter parameter in sheet.Parameters)
+        {
+            AddParameterValue(parameters, parameter);
+        }
+
+        return parameters;
+    }
+
+    private static void CollectGroupParameter(
+        ViewSheet sheet,
+        Dictionary<string, string> parameters)
+    {
+        foreach (Parameter parameter in sheet.Parameters)
+        {
+            string name = parameter.Definition?.Name ?? string.Empty;
+            if (!IsGroupParameterName(name))
+            {
+                continue;
+            }
+
+            AddParameterValue(parameters, parameter);
+            break;
+        }
+    }
+
+    private static void AddParameterValue(
+        Dictionary<string, string> parameters,
+        Parameter parameter)
+    {
+        string name = parameter.Definition?.Name ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(name) || parameters.ContainsKey(name))
+        {
+            return;
+        }
+
+        string value = parameter.AsValueString() ?? parameter.AsString() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            parameters[name] = value.Trim();
+        }
+    }
+
     private static string ResolveGroupName(IReadOnlyDictionary<string, string> sheetParameters)
     {
         foreach (string parameterName in sheetParameters.Keys)
         {
-            string normalizedName = parameterName.Trim().TrimStart('•', '-', ' ');
-            if (string.Equals(normalizedName, "Том", StringComparison.CurrentCultureIgnoreCase))
+            if (IsGroupParameterName(parameterName))
             {
                 return sheetParameters[parameterName];
             }
         }
 
         return "Без группы";
+    }
+
+    private static bool IsGroupParameterName(string parameterName)
+    {
+        string normalizedName = parameterName.Trim().TrimStart('•', '-', ' ');
+        return string.Equals(normalizedName, "Том", StringComparison.CurrentCultureIgnoreCase);
     }
 }

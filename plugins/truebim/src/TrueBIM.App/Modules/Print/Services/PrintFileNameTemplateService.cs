@@ -12,6 +12,22 @@ public sealed class PrintFileNameTemplateService
     private const int MaxFileNameLength = 180;
     private static readonly Regex TokenRegex = new(@"\{([^{}]+)\}", RegexOptions.Compiled);
 
+    public IReadOnlyCollection<string> GetSheetParameterNames(string? template)
+    {
+        return GetDictionaryTokenNames(
+            template,
+            "SheetParameter:",
+            "Параметр листа:");
+    }
+
+    public IReadOnlyCollection<string> GetProjectParameterNames(string? template)
+    {
+        return GetDictionaryTokenNames(
+            template,
+            "ProjectParameter:",
+            "Параметр проекта:");
+    }
+
     public PrintFileNamePreview Build(
         string? template,
         PrintSheetInfo sheet,
@@ -103,6 +119,39 @@ public sealed class PrintFileNameTemplateService
         string key = token.Substring(prefix.Length).Trim();
         return !string.IsNullOrWhiteSpace(key) && values.TryGetValue(key, out string? value)
             ? value
+            : null;
+    }
+
+    private static IReadOnlyCollection<string> GetDictionaryTokenNames(
+        string? template,
+        string englishPrefix,
+        string russianPrefix)
+    {
+        string sourceTemplate = string.IsNullOrWhiteSpace(template)
+            ? DefaultTemplate
+            : template!;
+        HashSet<string> parameterNames = new(StringComparer.CurrentCultureIgnoreCase);
+        foreach (Match match in TokenRegex.Matches(sourceTemplate))
+        {
+            string token = match.Groups[1].Value.Trim();
+            string? parameterName = GetDictionaryTokenName(token, englishPrefix, StringComparison.Ordinal)
+                ?? GetDictionaryTokenName(token, russianPrefix, StringComparison.CurrentCultureIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(parameterName))
+            {
+                parameterNames.Add(parameterName!);
+            }
+        }
+
+        return parameterNames;
+    }
+
+    private static string? GetDictionaryTokenName(
+        string token,
+        string prefix,
+        StringComparison comparison)
+    {
+        return token.StartsWith(prefix, comparison)
+            ? token.Substring(prefix.Length).Trim()
             : null;
     }
 
