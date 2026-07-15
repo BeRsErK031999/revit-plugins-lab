@@ -12,6 +12,10 @@ using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
 using WpfBinding = System.Windows.Data.Binding;
+using AssemblyInstance = Autodesk.Revit.DB.AssemblyInstance;
+using ElementId = Autodesk.Revit.DB.ElementId;
+using View = Autodesk.Revit.DB.View;
+using ViewSection = Autodesk.Revit.DB.ViewSection;
 
 namespace TrueBIM.App.Modules.Lintels.UI;
 
@@ -82,12 +86,12 @@ public sealed class LintelsWindow : TrueBimWindow
         UpdateCreateButtonState();
 
         createViewButton = TrueBimUi.CreateSecondaryButton(
-            "Создать боковой вид 1:10",
+            "Создать и оформить вид 1:10",
             TrueBimIcon.OpeningViews,
             (_, _) => RequestAssemblyViewCreation(),
             isEnabled: false,
             minWidth: 205);
-        createViewButton.ToolTip = "Сначала создайте одну сборку или выберите типоразмер, для которого TrueBIM уже создал сборку.";
+        createViewButton.ToolTip = "Сначала создайте одну сборку, выберите типоразмер с существующей сборкой или откройте боковой вид Assembly, созданный TrueBIM.";
         ToolTipService.SetShowOnDisabled(createViewButton, true);
 
         Title = DialogTitle;
@@ -234,6 +238,7 @@ public sealed class LintelsWindow : TrueBimWindow
         RefreshSummary();
         RefreshPreview();
         UpdateStatus();
+        TryPrepareActiveAssemblyViewRequest();
     }
 
     private void RefreshSummary()
@@ -559,7 +564,7 @@ public sealed class LintelsWindow : TrueBimWindow
             }
 
             footerStatusText.Text = item.Status == LintelAssemblyPreflightStatus.AlreadyExists
-                ? $"Сборка «{item.AssemblyName}» уже существует; дубликат не создавался. Можно создать боковой вид 1:10."
+                ? $"Сборка «{item.AssemblyName}» уже существует; дубликат не создавался. Можно создать или повторно оформить боковой вид 1:10."
                 : $"Состав «{item.AssemblyName}» заблокирован проверкой Revit API. Модель не изменялась.";
             LintelAssemblyPreflightWindow window = new(result)
             {
@@ -643,7 +648,7 @@ public sealed class LintelsWindow : TrueBimWindow
             }
 
             footerStatusText.Text = result.ModelChanged
-                ? $"Создана сборка «{result.AssemblyName}». Теперь можно создать один боковой вид 1:10."
+                ? $"Создана сборка «{result.AssemblyName}». Теперь можно создать и оформить один боковой вид 1:10."
                 : result.Message;
         }
 
@@ -670,9 +675,29 @@ public sealed class LintelsWindow : TrueBimWindow
         preparedAssemblyName = assemblyName;
         preparedViewName = artifact.ViewName;
         createViewButton.IsEnabled = true;
-        string explanation = $"Создать для Assembly «{assemblyName}» один вид «{artifact.ViewName}» слева в масштабе 1:10.";
+        string explanation = $"Создать или повторно оформить для Assembly «{assemblyName}» вид «{artifact.ViewName}» слева в масштабе 1:10.";
         createViewButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createViewButton, explanation);
+    }
+
+    private bool TryPrepareActiveAssemblyViewRequest()
+    {
+        View activeView = uiDocument.ActiveView;
+        if (activeView is not ViewSection
+            || activeView.AssociatedAssemblyInstanceId == ElementId.InvalidElementId
+            || uiDocument.Document.GetElement(activeView.AssociatedAssemblyInstanceId) is not AssemblyInstance assembly
+            || !LintelArtifactNameBuilder.IsTrueBimLintelArtifactName(assembly.AssemblyTypeName))
+        {
+            return false;
+        }
+
+        preparedAssemblyName = assembly.AssemblyTypeName;
+        preparedViewName = activeView.Name;
+        createViewButton.IsEnabled = true;
+        string explanation = $"Повторно оформить текущий боковой вид «{activeView.Name}» Assembly «{assembly.AssemblyTypeName}» без создания дубликата.";
+        createViewButton.ToolTip = explanation;
+        AutomationProperties.SetHelpText(createViewButton, explanation);
+        return true;
     }
 
     private void InvalidateViewCreationRequest()
@@ -680,7 +705,7 @@ public sealed class LintelsWindow : TrueBimWindow
         preparedAssemblyName = null;
         preparedViewName = null;
         createViewButton.IsEnabled = false;
-        string explanation = "Сначала создайте одну сборку или выберите типоразмер, для которого TrueBIM уже создал сборку.";
+        string explanation = "Сначала создайте одну сборку, выберите типоразмер с существующей сборкой или откройте боковой вид Assembly, созданный TrueBIM.";
         createViewButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createViewButton, explanation);
     }
@@ -697,8 +722,8 @@ public sealed class LintelsWindow : TrueBimWindow
 
         TaskDialog confirmation = new(DialogTitle)
         {
-            MainInstruction = "Создать один боковой вид сборки 1:10?",
-            MainContent = $"Сборка: {preparedAssemblyName}{Environment.NewLine}Вид: {preparedViewName}{Environment.NewLine}{Environment.NewLine}Ориентация: слева. Масштаб: 1:10. Аннотации и экспорт пока не выполняются.",
+            MainInstruction = "Создать и оформить один боковой вид сборки 1:10?",
+            MainContent = $"Сборка: {preparedAssemblyName}{Environment.NewLine}Вид: {preparedViewName}{Environment.NewLine}{Environment.NewLine}TrueBIM создаст или переиспользует вид слева 1:10, нанесёт один габаритный размер и высотную отметку, попробует разместить проектное семейство рамки и нормализует crop. Экспорт изображения и марки компонентов пока не выполняются.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };
@@ -709,7 +734,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
         string assemblyName = preparedAssemblyName!;
         string viewName = preparedViewName!;
-        footerStatusText.Text = $"Создание бокового вида «{viewName}» поставлено в очередь Revit…";
+        footerStatusText.Text = $"Создание или оформление бокового вида «{viewName}» поставлено в очередь Revit…";
         revitActions.Raise(() => RunAssemblyViewCreation(assemblyName, viewName));
     }
 
@@ -725,11 +750,11 @@ public sealed class LintelsWindow : TrueBimWindow
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to execute Lintels side assembly view creation.", exception);
+            logger.Error("Failed to execute Lintels side assembly view creation or formatting.", exception);
             TaskDialog.Show(
                 DialogTitle,
-                "Не удалось создать боковой вид сборки. Операция отменена; подробности записаны в лог.");
-            footerStatusText.Text = "Создание бокового вида не выполнено.";
+                "Не удалось создать или оформить боковой вид сборки. Операция отменена; подробности записаны в лог.");
+            footerStatusText.Text = "Создание или оформление бокового вида не выполнено.";
         }
     }
 
@@ -738,7 +763,7 @@ public sealed class LintelsWindow : TrueBimWindow
         if (IsVisible)
         {
             footerStatusText.Text = result.ModelChanged
-                ? $"Создан боковой вид «{result.ViewName}» в масштабе 1:10."
+                ? $"Боковой вид «{result.ViewName}» создан или повторно оформлен."
                 : result.Message;
         }
 
@@ -747,6 +772,7 @@ public sealed class LintelsWindow : TrueBimWindow
             MainInstruction = result.Status switch
             {
                 LintelAssemblyViewCreationStatus.Created => "Боковой вид создан",
+                LintelAssemblyViewCreationStatus.AlreadyExists when result.Formatting?.ModelChanged == true => "Существующий боковой вид оформлен",
                 LintelAssemblyViewCreationStatus.AlreadyExists => "Боковой вид уже существует",
                 LintelAssemblyViewCreationStatus.Blocked => "Создание вида заблокировано",
                 _ => "Создание вида не выполнено"

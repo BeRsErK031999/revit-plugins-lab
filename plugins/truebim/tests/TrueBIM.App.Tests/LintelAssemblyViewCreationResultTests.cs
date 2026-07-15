@@ -38,4 +38,26 @@ public sealed class LintelAssemblyViewCreationResultTests
         Assert.False(result.ModelChanged);
         Assert.Equal(expectedDisplay, result.StatusDisplay);
     }
+
+    [Fact]
+    public void ExistingViewWithFormatting_ReportsModelChangeAndFormattingSummary()
+    {
+        LintelAssemblyViewFormattingResult formatting = new(
+            true,
+            true,
+            false,
+            true,
+            0,
+            ["Frame family missing."]);
+        LintelAssemblyViewCreationResult result = new(
+            LintelAssemblyViewCreationStatus.AlreadyExists,
+            "Assembly",
+            "Side view",
+            321,
+            "Existing view formatted.",
+            formatting);
+
+        Assert.True(result.ModelChanged);
+        Assert.Contains("Оформление:", result.BuildSummary());
+    }
 }

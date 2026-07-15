@@ -13,9 +13,11 @@ public sealed record LintelAssemblyViewCreationResult(
     string AssemblyName,
     string ViewName,
     long? ViewElementId,
-    string Message)
+    string Message,
+    LintelAssemblyViewFormattingResult? Formatting = null)
 {
-    public bool ModelChanged => Status == LintelAssemblyViewCreationStatus.Created;
+    public bool ModelChanged => Status == LintelAssemblyViewCreationStatus.Created
+        || Formatting?.ModelChanged == true;
 
     public string StatusDisplay => Status switch
     {
@@ -30,6 +32,9 @@ public sealed record LintelAssemblyViewCreationResult(
         string elementId = ViewElementId is > 0
             ? $" ElementId: {ViewElementId}."
             : string.Empty;
-        return $"{StatusDisplay}: {ViewName}.{elementId}{Environment.NewLine}{Message}";
+        string summary = $"{StatusDisplay}: {ViewName}.{elementId}{Environment.NewLine}{Message}";
+        return Formatting is null
+            ? summary
+            : $"{summary}{Environment.NewLine}{Environment.NewLine}{Formatting.BuildSummary()}";
     }
 }

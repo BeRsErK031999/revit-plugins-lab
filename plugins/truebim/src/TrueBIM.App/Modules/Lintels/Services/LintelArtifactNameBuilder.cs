@@ -32,6 +32,12 @@ public static class LintelArtifactNameBuilder
             $"{identity}.png");
     }
 
+    public static bool IsTrueBimLintelArtifactName(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && value!.StartsWith(Prefix, StringComparison.CurrentCultureIgnoreCase);
+    }
+
     private static string NormalizeToken(string value)
     {
         StringBuilder builder = new();

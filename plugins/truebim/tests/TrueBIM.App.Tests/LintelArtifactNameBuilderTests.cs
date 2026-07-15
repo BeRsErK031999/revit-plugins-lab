@@ -46,6 +46,16 @@ public sealed class LintelArtifactNameBuilderTests
         Assert.EndsWith("_9001", preview.AssemblyName, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("TB_Перемычка_Сварная_11", true)]
+    [InlineData("tb_перемычка_Сварная_11", true)]
+    [InlineData("Сторонняя сборка", false)]
+    [InlineData(null, false)]
+    public void IsTrueBimLintelArtifactName_RecognizesOnlyOwnedPrefix(string? value, bool expected)
+    {
+        Assert.Equal(expected, LintelArtifactNameBuilder.IsTrueBimLintelArtifactName(value));
+    }
+
     private static LintelTypeDiagnostic CreateType(
         long typeId,
         string familyName = "Перемычки",

@@ -10,10 +10,12 @@ public sealed class LintelAssemblyViewCreationService
     private const int ViewScale = 10;
     private const AssemblyDetailViewOrientation ViewOrientation = AssemblyDetailViewOrientation.ElevationLeft;
     private readonly ITrueBimLogger logger;
+    private readonly LintelAssemblyViewAnnotationService annotationService;
 
     public LintelAssemblyViewCreationService(ITrueBimLogger logger)
     {
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        annotationService = new LintelAssemblyViewAnnotationService(this.logger);
     }
 
     public LintelAssemblyViewCreationResult CreateOne(
@@ -51,15 +53,30 @@ public sealed class LintelAssemblyViewCreationService
         if (sameNameView is not null)
         {
             bool belongsToAssembly = sameNameView.AssociatedAssemblyInstanceId == assembly.Id;
+            if (belongsToAssembly && sameNameView is ViewSection existingView)
+            {
+                LintelAssemblyViewFormattingResult formatting = TryApplyFormatting(
+                    document,
+                    existingView,
+                    assembly);
+                return CreateResult(
+                    LintelAssemblyViewCreationStatus.AlreadyExists,
+                    assemblyName,
+                    viewName,
+                    RevitElementIds.GetValue(sameNameView.Id),
+                    formatting.ModelChanged
+                        ? "Боковой вид уже существовал; базовое оформление TrueBIM применено повторно без создания дубликата вида."
+                        : "Боковой вид уже существовал; новое оформление не создано — проверьте предупреждения ниже.",
+                    formatting);
+            }
+
             return CreateResult(
-                belongsToAssembly
-                    ? LintelAssemblyViewCreationStatus.AlreadyExists
-                    : LintelAssemblyViewCreationStatus.Blocked,
+                LintelAssemblyViewCreationStatus.Blocked,
                 assemblyName,
                 viewName,
                 RevitElementIds.GetValue(sameNameView.Id),
                 belongsToAssembly
-                    ? "Повторный запуск не изменил модель: этот боковой вид уже принадлежит выбранной сборке."
+                    ? "Существующий вид сборки имеет неподдерживаемый тип; базовое оформление не применялось."
                     : "В проекте уже есть вид с таким именем, но он принадлежит другой сборке.");
         }
 
@@ -109,6 +126,7 @@ public sealed class LintelAssemblyViewCreationService
                 "Revit откатил транзакцию создания бокового вида.");
 
             long viewId = RevitElementIds.GetValue(view.Id);
+            LintelAssemblyViewFormattingResult formatting = TryApplyFormatting(document, view, assembly);
             logger.Info(
                 $"Lintels side assembly view created. Assembly='{assemblyName}'; View='{viewName}'; ElementId={viewId}; Orientation={ViewOrientation}; Scale=1:{ViewScale}.");
             return CreateResult(
@@ -116,7 +134,8 @@ public sealed class LintelAssemblyViewCreationService
                 assemblyName,
                 viewName,
                 viewId,
-                $"Ориентация: слева ({ViewOrientation}); масштаб 1:{ViewScale}; уровень детализации — высокий; стиль — скрытая линия.");
+                $"Ориентация: слева ({ViewOrientation}); масштаб 1:{ViewScale}; уровень детализации — высокий; стиль — скрытая линия.",
+                formatting);
         }
         catch (Exception exception)
         {
@@ -171,7 +190,8 @@ public sealed class LintelAssemblyViewCreationService
         string assemblyName,
         string viewName,
         long? viewElementId,
-        string message)
+        string message,
+        LintelAssemblyViewFormattingResult? formatting = null)
     {
         if (status is LintelAssemblyViewCreationStatus.Blocked or LintelAssemblyViewCreationStatus.Failed)
         {
@@ -184,7 +204,27 @@ public sealed class LintelAssemblyViewCreationService
             assemblyName,
             viewName,
             viewElementId,
-            message);
+            message,
+            formatting);
+    }
+
+    private LintelAssemblyViewFormattingResult TryApplyFormatting(
+        Document document,
+        ViewSection view,
+        AssemblyInstance assembly)
+    {
+        try
+        {
+            return annotationService.Apply(document, view, assembly);
+        }
+        catch (Exception exception)
+        {
+            logger.Error(
+                $"Failed to format Lintels side assembly view '{view.Name}' for '{assembly.AssemblyTypeName}'.",
+                exception);
+            return LintelAssemblyViewFormattingResult.Failed(
+                "Оформление вида отменено целиком; геометрия Assembly и сам вид сохранены, подробности записаны в лог.");
+        }
     }
 
     private static void EnsureStatus(
