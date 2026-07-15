@@ -4,6 +4,16 @@ namespace TrueBIM.App.Modules.Lintels.Services;
 
 public static class LintelAssemblyCreationGate
 {
+    public static bool CanStart(IReadOnlyCollection<long> currentTypeIds)
+    {
+        if (currentTypeIds is null)
+        {
+            throw new ArgumentNullException(nameof(currentTypeIds));
+        }
+
+        return currentTypeIds.Count == 1;
+    }
+
     public static bool IsCurrentSelection(
         IReadOnlyCollection<long> checkedTypeIds,
         IReadOnlyCollection<long> currentTypeIds)

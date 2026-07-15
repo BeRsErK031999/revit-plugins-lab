@@ -7,6 +7,14 @@ namespace TrueBIM.App.Tests;
 public sealed class LintelAssemblyCreationGateTests
 {
     [Fact]
+    public void CanStart_AllowsExactlyOneSelectedType()
+    {
+        Assert.True(LintelAssemblyCreationGate.CanStart([100]));
+        Assert.False(LintelAssemblyCreationGate.CanStart([]));
+        Assert.False(LintelAssemblyCreationGate.CanStart([100, 200]));
+    }
+
+    [Fact]
     public void CanCreate_AllowsOneCurrentReadyType()
     {
         Assert.True(LintelAssemblyCreationGate.CanCreate(
