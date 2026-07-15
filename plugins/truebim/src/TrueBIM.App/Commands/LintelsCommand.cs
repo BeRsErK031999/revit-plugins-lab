@@ -2,6 +2,8 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.Lintels;
+using TrueBIM.App.Modules.Lintels.Models;
+using TrueBIM.App.Modules.Lintels.Revit;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -15,15 +17,24 @@ public sealed class LintelsCommand : IExternalCommand
 
         try
         {
-            string? documentTitle = commandData.Application.ActiveUIDocument?.Document?.Title;
-            LintelsModuleStatus status = LintelsModuleStatus.Create(documentTitle);
+            UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
+            if (uiDocument is null)
+            {
+                LintelsModuleStatus status = LintelsModuleStatus.Create(null);
+                logger.Warning("Lintels diagnostic requested without an active document.");
+                TaskDialog.Show("Перемычки", status.ToDialogText());
+                return Result.Succeeded;
+            }
 
-            logger.Info($"Opening Lintels module scaffold. Document='{status.DocumentName}'; CanModifyModel={status.CanModifyModel}.");
+            logger.Info($"Starting read-only Lintels diagnostic. Document='{uiDocument.Document.Title}'.");
+            LintelDiagnosticResult result = new LintelDiagnosticCollectorService(logger).Collect(uiDocument);
             TaskDialog dialog = new("Перемычки")
             {
-                MainInstruction = "Модуль «Перемычки» подключён",
-                MainContent = status.ToDialogText(),
-                ExpandedContent = "Первый этап является безопасным каркасом. Создание сборок, видов, аннотаций и изображений будет добавлено после проверки рабочего RVT-файла и семейств оформления.",
+                MainInstruction = result.HasCandidates
+                    ? "Диагностика перемычек завершена"
+                    : "Перемычки не найдены",
+                MainContent = result.BuildSummary(),
+                ExpandedContent = result.BuildDetails(),
                 CommonButtons = TaskDialogCommonButtons.Close
             };
             dialog.Show();
@@ -31,10 +42,10 @@ public sealed class LintelsCommand : IExternalCommand
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to open Lintels module scaffold.", exception);
+            logger.Error("Failed to collect Lintels diagnostic.", exception);
             TaskDialog.Show(
                 "Перемычки",
-                "Не удалось открыть модуль перемычек. Используйте логи для диагностики.");
+                "Не удалось собрать диагностику перемычек. Используйте логи для анализа ошибки.");
             return Result.Failed;
         }
     }
