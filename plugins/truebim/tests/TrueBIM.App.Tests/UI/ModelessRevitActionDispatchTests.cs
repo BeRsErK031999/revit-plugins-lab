@@ -7,6 +7,7 @@ using TrueBIM.App.Modules.BimTools.OpeningViews.UI;
 using TrueBIM.App.Modules.BimTools.TitleBlockFill.UI;
 using TrueBIM.App.Modules.BimTools.Worksets.UI;
 using TrueBIM.App.Modules.IsoFieldRebar.UI;
+using TrueBIM.App.Modules.Lintels.UI;
 using TrueBIM.App.Modules.Print.UI;
 using TrueBIM.App.Modules.SheetNumbering.UI;
 using Xunit;
@@ -22,6 +23,7 @@ public sealed class ModelessRevitActionDispatchTests
         typeof(ClashReportWindow),
         typeof(AutoTagWindow),
         typeof(IsoFieldRebarWindow),
+        typeof(LintelsWindow),
         typeof(DatumExtentWindow),
         typeof(OpeningViewsWindow),
         typeof(TitleBlockFillWindow),

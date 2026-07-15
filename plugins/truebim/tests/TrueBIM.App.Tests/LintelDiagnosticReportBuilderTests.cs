@@ -27,6 +27,7 @@ public sealed class LintelDiagnosticReportBuilderTests
         Assert.Equal(1, type.ReadyInstanceCount);
         Assert.Equal(10, type.RepresentativeElementId);
         Assert.Equal(1, type.RepresentativeGeometryNestedComponentCount);
+        Assert.Equal([11], type.RepresentativeAssemblyMemberIds);
         Assert.Contains("часть экземпляров", Assert.Single(type.Diagnostics), StringComparison.CurrentCultureIgnoreCase);
     }
 

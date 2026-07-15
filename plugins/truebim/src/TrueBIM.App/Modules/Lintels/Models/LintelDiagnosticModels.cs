@@ -23,6 +23,13 @@ public sealed record LintelInstanceSnapshot(
 {
     public int GeometryNestedComponentCount => NestedComponents.Count(component => component.HasGeometry);
 
+    public IReadOnlyList<long> AssemblyMemberElementIds => NestedComponents
+        .Where(component => component.HasGeometry)
+        .Select(component => component.ElementId)
+        .Distinct()
+        .OrderBy(elementId => elementId)
+        .ToArray();
+
     public bool IsAssemblyReady => GeometryNestedComponentCount > 0;
 }
 
@@ -41,6 +48,7 @@ public sealed record LintelTypeDiagnostic(
     bool RepresentativeHasOwnGeometry,
     int RepresentativeNestedComponentCount,
     int RepresentativeGeometryNestedComponentCount,
+    IReadOnlyList<long> RepresentativeAssemblyMemberIds,
     IReadOnlyList<string> Diagnostics)
 {
     public bool IsAssemblyReady => ReadyInstanceCount > 0;

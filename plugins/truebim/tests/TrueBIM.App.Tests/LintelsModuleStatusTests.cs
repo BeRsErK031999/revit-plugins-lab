@@ -13,7 +13,8 @@ public sealed class LintelsModuleStatusTests
         Assert.Equal("Lintels sample", status.DocumentName);
         Assert.False(status.CanModifyModel);
         Assert.Contains(status.ReadyCapabilities, item => item.Contains("КР", StringComparison.Ordinal));
-        Assert.Contains(status.PendingCapabilities, item => item.Contains("сборок", StringComparison.CurrentCultureIgnoreCase));
+        Assert.Contains(status.ReadyCapabilities, item => item.Contains("Preflight", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(status.PendingCapabilities, item => item.Contains("создание", StringComparison.CurrentCultureIgnoreCase));
         Assert.Contains("изменений модели", status.ToDialogText(), StringComparison.CurrentCultureIgnoreCase);
     }
 

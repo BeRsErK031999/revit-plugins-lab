@@ -66,6 +66,7 @@ public sealed class LintelDiagnosticReportBuilder
             representative.HasOwnGeometry,
             representative.NestedComponents.Count,
             representative.GeometryNestedComponentCount,
+            representative.AssemblyMemberElementIds,
             diagnostics);
     }
 }

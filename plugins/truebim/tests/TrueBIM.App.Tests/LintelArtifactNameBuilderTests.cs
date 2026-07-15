@@ -61,6 +61,7 @@ public sealed class LintelArtifactNameBuilderTests
             false,
             3,
             3,
+            [601, 602, 603],
             Array.Empty<string>());
     }
 }
