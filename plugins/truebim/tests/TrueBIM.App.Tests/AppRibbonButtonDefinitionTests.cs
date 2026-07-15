@@ -25,6 +25,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "изополям"
         },
         {
+            "TrueBIM_Lintels",
+            TrueBimRibbon.KrPanelName,
+            "Перемычки",
+            $"TrueBIM.App.Commands.{nameof(LintelsCommand)}",
+            TrueBimIcon.Lintels,
+            "оформления перемычек"
+        },
+        {
             "TrueBIM_ScheduleImport",
             TrueBimRibbon.BimDocumentationPanelName,
             "Импорт\nтаблиц",
