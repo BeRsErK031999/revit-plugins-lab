@@ -7,6 +7,7 @@ using System.Windows.Data;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.Lintels.Models;
 using TrueBIM.App.Modules.Lintels.Revit;
+using TrueBIM.App.Modules.Lintels.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
@@ -21,6 +22,7 @@ public sealed class LintelsWindow : TrueBimWindow
     private readonly UIDocument uiDocument;
     private readonly LintelDiagnosticCollectorService collectorService;
     private readonly LintelAssemblyPreflightService preflightService;
+    private readonly LintelAssemblyCreationService creationService;
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
     private readonly ObservableCollection<LintelTypeSelectionItem> typeItems = [];
@@ -32,6 +34,8 @@ public sealed class LintelsWindow : TrueBimWindow
     private readonly Button preflightButton;
     private readonly Button createButton;
     private LintelDiagnosticResult currentResult;
+    private LintelTypeDiagnostic? approvedCreationType;
+    private LintelAssemblyPreflightItem? approvedCreationPreflight;
     private bool isBulkSelectionUpdate;
 
     public LintelsWindow(
@@ -45,6 +49,7 @@ public sealed class LintelsWindow : TrueBimWindow
         currentResult = initialResult ?? throw new ArgumentNullException(nameof(initialResult));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         preflightService = new LintelAssemblyPreflightService(this.logger);
+        creationService = new LintelAssemblyCreationService(preflightService, this.logger);
         revitActions = new RevitActionDispatcher("действия окна перемычек", this.logger);
 
         refreshButton = TrueBimUi.CreateSecondaryButton(
@@ -63,13 +68,13 @@ public sealed class LintelsWindow : TrueBimWindow
         ToolTipService.SetShowOnDisabled(preflightButton, true);
 
         createButton = TrueBimUi.CreatePrimaryButton(
-            "Создать сборки",
+            "Создать одну сборку",
             TrueBimIcon.Apply,
+            (_, _) => RequestAssemblyCreation(),
             isEnabled: false,
-            minWidth: 150);
-        createButton.ToolTip = "Недоступно на этапе preview: сначала требуется проверить рабочий RVT-файл, семейства оформления и правила сборки.";
+            minWidth: 185);
         ToolTipService.SetShowOnDisabled(createButton, true);
-        AutomationProperties.SetHelpText(createButton, createButton.ToolTip?.ToString() ?? string.Empty);
+        UpdateCreateButtonState();
 
         Title = DialogTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Lintels, TrueBimTheme.IconSizeRibbon);
@@ -83,7 +88,7 @@ public sealed class LintelsWindow : TrueBimWindow
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader(
                 DialogTitle,
-                "Выберите готовые типоразмеры и проверьте будущие имена. На этом этапе модель Revit не изменяется.",
+                "Проверьте будущие имена и состав. Для первого запуска оставьте один типоразмер и выполните preflight.",
                 TrueBimIcon.Lintels),
             CreateCommandBar(),
             CreateBody(),
@@ -194,13 +199,14 @@ public sealed class LintelsWindow : TrueBimWindow
             (_, _) => Close(),
             minWidth: 110);
         closeButton.IsCancel = true;
-        closeButton.ToolTip = "Закрыть окно без изменений модели Revit.";
+        closeButton.ToolTip = "Закрыть окно перемычек.";
 
         return TrueBimUi.CreateFooter(footerStatusText, createButton, closeButton);
     }
 
     private void ApplyResult(LintelDiagnosticResult result)
     {
+        InvalidateAssemblyApproval();
         currentResult = result;
         typeItems.Clear();
         foreach (LintelTypeDiagnostic type in result.Types)
@@ -335,6 +341,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void SetReadySelection(bool isSelected)
     {
+        InvalidateAssemblyApproval();
         isBulkSelectionUpdate = true;
         foreach (LintelTypeSelectionItem item in typeItems.Where(item => item.CanSelect))
         {
@@ -350,6 +357,7 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         if (!isBulkSelectionUpdate && args.PropertyName == nameof(LintelTypeSelectionItem.IsSelected))
         {
+            InvalidateAssemblyApproval();
             RefreshPreview();
             UpdateStatus();
         }
@@ -357,6 +365,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void RefreshFromRevit()
     {
+        InvalidateAssemblyApproval();
         footerStatusText.Text = "Обновление диагностики поставлено в очередь Revit…";
         revitActions.Raise(RefreshInRevitContext);
     }
@@ -390,10 +399,8 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void RequestAssemblyPreflight()
     {
-        LintelTypeDiagnostic[] selectedTypes = typeItems
-            .Where(item => item.IsSelected && item.CanSelect)
-            .Select(item => item.Diagnostic)
-            .ToArray();
+        InvalidateAssemblyApproval();
+        LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
         if (selectedTypes.Length == 0)
         {
             footerStatusText.Text = "Для проверки выберите хотя бы один типоразмер со статусом «Готово».";
@@ -411,7 +418,7 @@ public sealed class LintelsWindow : TrueBimWindow
             LintelAssemblyPreflightResult result = preflightService.Inspect(
                 uiDocument.Document,
                 selectedTypes);
-            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyPreflightResult(result)));
+            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyPreflightResult(result, selectedTypes)));
         }
         catch (Exception exception)
         {
@@ -423,14 +430,35 @@ public sealed class LintelsWindow : TrueBimWindow
         }
     }
 
-    private void ShowAssemblyPreflightResult(LintelAssemblyPreflightResult result)
+    private void ShowAssemblyPreflightResult(
+        LintelAssemblyPreflightResult result,
+        IReadOnlyCollection<LintelTypeDiagnostic> checkedTypes)
     {
         if (!IsVisible)
         {
             return;
         }
 
-        footerStatusText.Text = $"Preflight завершён: готово {result.ReadyCount}, существует {result.ExistingCount}, заблокировано {result.BlockedCount}. Модель Revit не изменялась.";
+        LintelTypeDiagnostic[] currentSelection = GetSelectedTypes();
+        bool selectionIsCurrent = LintelAssemblyCreationGate.IsCurrentSelection(
+            checkedTypes.Select(type => type.TypeId).ToArray(),
+            currentSelection.Select(type => type.TypeId).ToArray());
+        LintelAssemblyPreflightItem? singleReadyItem = result.Items.Count == 1
+            && result.Items[0].Status == LintelAssemblyPreflightStatus.Ready
+                ? result.Items[0]
+                : null;
+        if (selectionIsCurrent && checkedTypes.Count == 1 && singleReadyItem is not null)
+        {
+            approvedCreationType = checkedTypes.Single();
+            approvedCreationPreflight = singleReadyItem;
+        }
+
+        UpdateCreateButtonState();
+        footerStatusText.Text = createButton.IsEnabled
+            ? $"Preflight успешен для «{singleReadyItem!.AssemblyName}». Можно создать одну сборку; вид и оформление пока не создаются."
+            : result.ReadyCount > 0 && checkedTypes.Count > 1
+                ? "Preflight завершён. Для атомарного создания оставьте выбранным один готовый типоразмер и повторите проверку."
+                : $"Preflight завершён: готово {result.ReadyCount}, существует {result.ExistingCount}, заблокировано {result.BlockedCount}. Модель Revit не изменялась.";
         LintelAssemblyPreflightWindow window = new(result)
         {
             Owner = this
@@ -438,11 +466,123 @@ public sealed class LintelsWindow : TrueBimWindow
         window.ShowDialog();
     }
 
+    private void RequestAssemblyCreation()
+    {
+        if (!createButton.IsEnabled
+            || approvedCreationType is null
+            || approvedCreationPreflight is null)
+        {
+            footerStatusText.Text = "Перед созданием выберите один типоразмер и выполните успешный preflight.";
+            return;
+        }
+
+        TaskDialog confirmation = new(DialogTitle)
+        {
+            MainInstruction = "Создать одну сборку перемычки?",
+            MainContent = $"Сборка: {approvedCreationPreflight.AssemblyName}{Environment.NewLine}Компонентов: {approvedCreationPreflight.MemberCount}{Environment.NewLine}{Environment.NewLine}Будет создана только Assembly. Вид, размеры, марки и изображение на этом этапе не создаются.",
+            ExpandedContent = $"ElementId компонентов:{Environment.NewLine}{approvedCreationPreflight.MemberIdsDisplay}",
+            CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
+            DefaultButton = TaskDialogResult.No
+        };
+        if (confirmation.Show() != TaskDialogResult.Yes)
+        {
+            return;
+        }
+
+        LintelTypeDiagnostic selectedType = approvedCreationType;
+        InvalidateAssemblyApproval();
+        footerStatusText.Text = "Создание одной сборки поставлено в очередь Revit…";
+        revitActions.Raise(() => RunAssemblyCreation(selectedType));
+    }
+
+    private void RunAssemblyCreation(LintelTypeDiagnostic selectedType)
+    {
+        try
+        {
+            LintelAssemblyCreationResult result = creationService.CreateOne(
+                uiDocument.Document,
+                selectedType);
+            LintelDiagnosticResult refreshedDiagnostic = collectorService.Collect(uiDocument);
+            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyCreationResult(
+                result,
+                refreshedDiagnostic)));
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to execute Lintels assembly creation.", exception);
+            TaskDialog.Show(
+                DialogTitle,
+                "Не удалось выполнить создание сборки. Операция отменена; подробности записаны в лог.");
+            footerStatusText.Text = "Создание сборки не выполнено.";
+        }
+    }
+
+    private void ShowAssemblyCreationResult(
+        LintelAssemblyCreationResult result,
+        LintelDiagnosticResult refreshedDiagnostic)
+    {
+        if (IsVisible)
+        {
+            ApplyResult(refreshedDiagnostic);
+            footerStatusText.Text = result.ModelChanged
+                ? $"Создана сборка «{result.AssemblyName}». Следующий этап — боковой вид 1:10."
+                : result.Message;
+        }
+
+        TaskDialog dialog = new(DialogTitle)
+        {
+            MainInstruction = result.Status switch
+            {
+                LintelAssemblyCreationStatus.Created => "Сборка создана",
+                LintelAssemblyCreationStatus.AlreadyExists => "Сборка уже существует",
+                LintelAssemblyCreationStatus.Blocked => "Создание заблокировано",
+                _ => "Создание не выполнено"
+            },
+            MainContent = result.BuildSummary(),
+            CommonButtons = TaskDialogCommonButtons.Close
+        };
+        dialog.Show();
+    }
+
+    private LintelTypeDiagnostic[] GetSelectedTypes()
+    {
+        return typeItems
+            .Where(item => item.IsSelected && item.CanSelect)
+            .Select(item => item.Diagnostic)
+            .ToArray();
+    }
+
+    private void InvalidateAssemblyApproval()
+    {
+        approvedCreationType = null;
+        approvedCreationPreflight = null;
+        UpdateCreateButtonState();
+    }
+
+    private void UpdateCreateButtonState()
+    {
+        long[] selectedTypeIds = typeItems
+            .Where(item => item.IsSelected && item.CanSelect)
+            .Select(item => item.Diagnostic.TypeId)
+            .ToArray();
+        bool canCreate = LintelAssemblyCreationGate.CanCreate(
+            approvedCreationType?.TypeId,
+            approvedCreationPreflight?.Status,
+            selectedTypeIds);
+        createButton.IsEnabled = canCreate;
+        string explanation = canCreate
+            ? $"Создать одну Assembly «{approvedCreationPreflight!.AssemblyName}» из подтверждённого preflight-состава."
+            : "Сначала оставьте один готовый типоразмер и выполните успешный preflight.";
+        createButton.ToolTip = explanation;
+        AutomationProperties.SetHelpText(createButton, explanation);
+    }
+
     private void UpdateStatus()
     {
         int readyCount = typeItems.Count(item => item.CanSelect);
         int selectedCount = typeItems.Count(item => item.IsSelected && item.CanSelect);
         preflightButton.IsEnabled = selectedCount > 0;
+        UpdateCreateButtonState();
         AutomationProperties.SetHelpText(
             preflightButton,
             selectedCount > 0

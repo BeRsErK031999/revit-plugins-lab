@@ -11,20 +11,22 @@ public sealed record LintelsModuleStatus(
         string documentName = string.IsNullOrWhiteSpace(documentTitle)
             ? "Документ Revit не открыт"
             : documentTitle!.Trim();
+        bool canModifyModel = !string.IsNullOrWhiteSpace(documentTitle);
 
         return new LintelsModuleStatus(
             documentName,
-            false,
+            canModifyModel,
             [
                 "Кнопка модуля добавлена во вкладку КР",
                 "Изолированный namespace и RoadMap подключены",
                 "Read-only диагностика выделения и активного вида подключена",
                 "Окно выбора и preview будущих имён подключены без изменений модели",
-                "Preflight состава, категории именования и дубликатов сборки выполняется без транзакции"
+                "Preflight состава, категории именования и дубликатов сборки выполняется без транзакции",
+                "Одна подтверждённая сборка создаётся атомарно с защитой от повторного запуска"
             ],
             [
-                "Проверка диагностики и preflight на рабочем RVT-файле",
-                "Создание одной подтверждённой сборки и бокового вида",
+                "Проверка диагностики, preflight и создания сборки на рабочем RVT-файле",
+                "Создание бокового вида сборки 1:10",
                 "Размеры, отметка, рамка, марки и изображения"
             ]);
     }
