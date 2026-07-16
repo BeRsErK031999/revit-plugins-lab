@@ -57,6 +57,13 @@ public sealed record IsoFieldSourceSet(
                 .Select(file => $"{file.FileName}: {file.ValidationError}")
                 .ToArray();
             messages.AddRange(fileErrors);
+            string[] roleConflicts = Files
+                .Where(file => file.RoleDetection?.Kind == IsoFieldRoleDetectionKind.Conflict)
+                .Select(file =>
+                    $"{file.FileName}: имя файла указывает {file.RoleDetection!.FileNameRole}, "
+                    + $"а заголовок — {file.RoleDetection.HeaderRole}; выберите слой вручную.")
+                .ToArray();
+            messages.AddRange(roleConflicts);
             string[] missingSizeFiles = Files
                 .Where(file => !file.HasValidImageSize && string.IsNullOrWhiteSpace(file.ValidationError))
                 .Select(file => file.FileName)

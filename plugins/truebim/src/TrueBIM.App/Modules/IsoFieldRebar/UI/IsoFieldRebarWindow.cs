@@ -563,7 +563,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     : "Комплект требует исправления назначения файлов.";
                 logger.Info(
                     $"IsoField image source set selected. Files={selectedSourceSet.Files.Count}; "
-                    + $"Complete={selectedSourceSet.IsComplete}; Issues={selectedSourceSet.ValidationMessages.Count}.");
+                    + $"Complete={selectedSourceSet.IsComplete}; Issues={selectedSourceSet.ValidationMessages.Count}; "
+                    + $"HeaderRoles={selectedSourceSet.Files.Count(file => file.RoleDetection?.HeaderRole.HasValue == true)}; "
+                    + $"RoleConflicts={selectedSourceSet.Files.Count(file => file.RoleDetection?.Kind == IsoFieldRoleDetectionKind.Conflict)}.");
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException)
@@ -652,8 +654,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         int assignedCount = selectedSourceSet.Files.Count(file => file.Role.HasValue);
+        int headerRoleCount = selectedSourceSet.Files.Count(file => file.RoleDetection?.HeaderRole.HasValue == true);
         selectedFileText.Text = selectedSourceSet.IsComplete
-            ? "Комплект готов: 4 из 4 слоёв назначены, размеры совпадают."
+            ? $"Комплект готов: 4 из 4 слоёв назначены, заголовком подтверждено {headerRoleCount} из 4."
             : $"Комплект не готов: назначено {assignedCount} из 4 слоёв.";
         selectedFileText.Foreground = selectedSourceSet.IsComplete
             ? TrueBimBrushes.Success
@@ -766,6 +769,11 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             ToolTip = sourceFile.FilePath
         });
         fileInfo.Children.Add(CreateMutedText(sourceFile.ImageSizeText));
+        RoleDetectionPresentation roleDetection = CreateRoleDetectionPresentation(sourceFile);
+        TextBlock roleEvidenceText = CreateMutedText(roleDetection.Label);
+        roleEvidenceText.Foreground = roleDetection.Foreground;
+        roleEvidenceText.ToolTip = roleDetection.ToolTip;
+        fileInfo.Children.Add(roleEvidenceText);
         WpfGrid.SetColumn(fileInfo, 1);
         row.Children.Add(fileInfo);
 
@@ -775,9 +783,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             MinHeight = TrueBimTheme.ControlHeight32,
             VerticalAlignment = VerticalAlignment.Center,
             Style = TrueBimStyles.CreateComboBoxStyle(),
-            ToolTip = sourceFile.Role.HasValue
-                ? "Назначение определено автоматически. При необходимости выберите другой слой."
-                : "Роль не определена по имени файла. Выберите слой вручную."
+            ToolTip = roleDetection.ToolTip
         };
         if (sourceFile.Role.HasValue)
         {
@@ -836,7 +842,50 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Child = row,
             Padding = new Thickness(TrueBimTheme.Spacing8),
             BorderBrush = TrueBimBrushes.Border,
-            BorderThickness = new Thickness(0, 0, 0, TrueBimTheme.BorderWidth)
+            BorderThickness = new Thickness(0, 0, 0, TrueBimTheme.BorderWidth),
+            Background = sourceFile.RoleDetection?.Kind == IsoFieldRoleDetectionKind.Conflict
+                ? TrueBimBrushes.DangerBackground
+                : TrueBimBrushes.Surface
+        };
+    }
+
+    private static RoleDetectionPresentation CreateRoleDetectionPresentation(IsoFieldSourceFile sourceFile)
+    {
+        IsoFieldRoleDetection detection = sourceFile.RoleDetection
+            ?? new IsoFieldRoleDetection(IsoFieldRoleDetectionKind.NotDetected);
+        string confidence = detection.HeaderConfidence.HasValue
+            ? $" Уверенность: {detection.HeaderConfidence.Value:P0}."
+            : string.Empty;
+        return detection.Kind switch
+        {
+            IsoFieldRoleDetectionKind.FileNameAndHeader => new RoleDetectionPresentation(
+                "Роль: имя + заголовок",
+                $"Имя файла и растровый заголовок совпадают: {detection.HeaderRole}.{confidence}",
+                TrueBimBrushes.Success),
+            IsoFieldRoleDetectionKind.Header => new RoleDetectionPresentation(
+                "Роль: по заголовку",
+                $"Имя файла не содержит роли; распознано в заголовке: {detection.HeaderRole}.{confidence}",
+                TrueBimBrushes.Success),
+            IsoFieldRoleDetectionKind.FileName => new RoleDetectionPresentation(
+                "Роль: только по имени",
+                $"Заголовок не распознан; используется роль из имени файла: {detection.FileNameRole}. Проверьте назначение.",
+                TrueBimBrushes.Warning),
+            IsoFieldRoleDetectionKind.Conflict => new RoleDetectionPresentation(
+                "Конфликт имени и заголовка",
+                $"Имя файла: {detection.FileNameRole}; заголовок: {detection.HeaderRole}.{confidence} Выберите слой вручную.",
+                TrueBimBrushes.Danger),
+            IsoFieldRoleDetectionKind.Manual => new RoleDetectionPresentation(
+                "Роль: назначена вручную",
+                "Пользователь вручную подтвердил расчётный слой. При смене исходника проверьте назначение заново.",
+                TrueBimBrushes.Warning),
+            IsoFieldRoleDetectionKind.Manifest => new RoleDetectionPresentation(
+                "Роль: из manifest",
+                "Назначение восстановлено из проверенного manifest комплекта.",
+                TrueBimBrushes.Success),
+            _ => new RoleDetectionPresentation(
+                "Роль не определена",
+                "Роль не найдена ни в имени файла, ни в растровом заголовке. Выберите слой вручную.",
+                TrueBimBrushes.Danger)
         };
     }
 
@@ -1727,4 +1776,6 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     }
 
     private sealed record IsoFieldFaceOption(IsoFieldRebarFace Face, string Label);
+
+    private sealed record RoleDetectionPresentation(string Label, string ToolTip, Brush Foreground);
 }

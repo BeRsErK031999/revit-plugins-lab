@@ -224,7 +224,12 @@ public sealed class IsoFieldSourceSetManifestService
         return sourceFile with
         {
             Role = ParseEnum<IsoFieldLayerRole>(contract.Role!, "file role"),
-            ValidationError = errors.Count == 0 ? null : string.Join("; ", errors)
+            ValidationError = errors.Count == 0 ? null : string.Join("; ", errors),
+            RoleDetection = new IsoFieldRoleDetection(
+                IsoFieldRoleDetectionKind.Manifest,
+                sourceFile.RoleDetection?.FileNameRole,
+                sourceFile.RoleDetection?.HeaderRole,
+                sourceFile.RoleDetection?.HeaderConfidence)
         };
     }
 

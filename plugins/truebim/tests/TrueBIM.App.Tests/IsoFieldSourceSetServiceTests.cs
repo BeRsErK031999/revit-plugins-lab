@@ -85,6 +85,59 @@ public sealed class IsoFieldSourceSetServiceTests
     }
 
     [Fact]
+    public void Build_UsesRecognizedHeaderRoleWhenFileNameHasNoRole()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string path = CreatePngWithAs2XHeader(directory, "second-layer.png");
+
+            IsoFieldSourceFile sourceFile = new IsoFieldSourceSetService().Build([path]).Files.Single();
+
+            Assert.Equal(IsoFieldLayerRole.As2X, sourceFile.Role);
+            Assert.Equal(IsoFieldRoleDetectionKind.Header, sourceFile.RoleDetection?.Kind);
+            Assert.Equal(IsoFieldLayerRole.As2X, sourceFile.RoleDetection?.HeaderRole);
+            Assert.True(sourceFile.RoleDetection?.HeaderConfidence >= 0.99);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Build_BlocksFileNameAndHeaderConflictUntilManualAssignment()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string path = CreatePngWithAs2XHeader(directory, "result_As1X1.png");
+            IsoFieldSourceSetService service = new();
+
+            IsoFieldSourceSet sourceSet = service.Build([path]);
+
+            IsoFieldSourceFile conflictedFile = sourceSet.Files.Single();
+            Assert.Null(conflictedFile.Role);
+            Assert.Equal(IsoFieldRoleDetectionKind.Conflict, conflictedFile.RoleDetection?.Kind);
+            Assert.Contains(
+                sourceSet.ValidationMessages,
+                message => message.Contains("имя файла указывает As1X", StringComparison.Ordinal));
+
+            IsoFieldSourceSet corrected = service.AssignRole(sourceSet, path, IsoFieldLayerRole.As2X);
+
+            Assert.Equal(IsoFieldLayerRole.As2X, corrected.Files.Single().Role);
+            Assert.Equal(IsoFieldRoleDetectionKind.Manual, corrected.Files.Single().RoleDetection?.Kind);
+            Assert.DoesNotContain(
+                corrected.ValidationMessages,
+                message => message.Contains("имя файла указывает", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void RecognitionService_MergesLayersAndKeepsRoleInPolyline()
     {
         IsoFieldSourceFile[] files = IsoFieldSourceSet.RequiredRoles
@@ -240,6 +293,64 @@ public sealed class IsoFieldSourceSetServiceTests
         string path = Path.Combine(directory, fileName);
         int stride = width * 4;
         byte[] pixels = new byte[stride * height];
+        BitmapSource bitmap = BitmapSource.Create(
+            width,
+            height,
+            96,
+            96,
+            PixelFormats.Bgra32,
+            null,
+            pixels,
+            stride);
+        PngBitmapEncoder encoder = new();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using FileStream stream = new(path, FileMode.Create, FileAccess.Write);
+        encoder.Save(stream);
+        return path;
+    }
+
+    private static string CreatePngWithAs2XHeader(string directory, string fileName)
+    {
+        string[] marker =
+        [
+            "............................................",
+            "............................................",
+            "....##...##..........####..##....####.......",
+            "....#....##.........##...#..##..##..#.......",
+            "...#....####.............#...#..#....#.....#",
+            "...#....#..#...####......#....##.....#.....#",
+            "...#....#..#..##..#.....#.....##.....#.....#",
+            "...#...#...##..###.....#.....####....#.....#",
+            "...#...######....##...#......#..#....#.....#",
+            "...#..##....####..##.#......#....#...#.....#",
+            "...#..#.....##.####.######.##....##..#.....#",
+            "....#...............................#.......",
+            "....##.............................##......."
+        ];
+        const int width = 160;
+        const int height = 48;
+        const int offsetX = 24;
+        const int offsetY = 12;
+        int stride = width * 4;
+        byte[] pixels = Enumerable.Repeat((byte)255, stride * height).ToArray();
+        for (int y = 0; y < marker.Length; y++)
+        {
+            for (int x = 0; x < marker[y].Length; x++)
+            {
+                if (marker[y][x] != '#')
+                {
+                    continue;
+                }
+
+                int index = ((offsetY + y) * stride) + ((offsetX + x) * 4);
+                pixels[index] = 0;
+                pixels[index + 1] = 0;
+                pixels[index + 2] = 0;
+                pixels[index + 3] = 255;
+            }
+        }
+
+        string path = Path.Combine(directory, fileName);
         BitmapSource bitmap = BitmapSource.Create(
             width,
             height,

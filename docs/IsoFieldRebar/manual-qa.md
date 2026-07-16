@@ -68,25 +68,32 @@ Only run this section when a real or fake worker is available.
 2. In one file dialog choose four images whose names contain `As1X`, `As2X`,
    `As3Y`, and `As4Y` and whose pixel dimensions match.
 3. Verify four thumbnails, detected roles, and the message that the set is ready.
-4. Assign one `Низ` and one `Верх` layer for each X/Y direction. Verify duplicate
+4. For the four reference PK LIRA images, verify every row says
+   `Роль: имя + заголовок` and its tooltip shows the detected role and confidence.
+5. Assign one `Низ` and one `Верх` layer for each X/Y direction. Verify duplicate
    faces or `Не задано` keep `Создать пробное армирование` disabled.
-5. Change one role to create a duplicate. Verify `Распознать 4 изображения` is
+6. Change one role to create a duplicate. Verify `Распознать 4 изображения` is
    disabled and the exact missing/duplicate role is shown; restore the role.
-6. Save `*.isofield-set.json`, close the window, reopen it, and select the manifest.
+7. Save `*.isofield-set.json`, close the window, reopen it, and select the manifest.
    Verify files, roles, dimensions, and face assignments are restored.
-7. Click `Распознать 4 изображения`.
-8. Verify the runner logs `Runner=CLI`, invokes four source files in role order,
+8. Click `Распознать 4 изображения`.
+9. Verify the runner logs `Runner=CLI`, invokes four source files in role order,
    prepares temp request/output files, and validates every output JSON.
-9. Verify merged contour ids and diagnostics keep their `As*` role prefixes.
-10. Verify timeout or non-zero exit failures show a user-friendly dialog and a
+10. Verify merged contour ids and diagnostics keep their `As*` role prefixes.
+11. Verify timeout or non-zero exit failures show a user-friendly dialog and a
    detailed log entry.
 
 ## Source Set Guard Flows
 
 - Choose fewer or more than four images. Expected: exact selected count is shown
   and recognition remains disabled.
-- Choose four images with an unrecognized filename. Expected: its role selector
-  is empty until the user assigns a role manually.
+- Rename a reference image so its file name has no `As*` marker. Expected: the
+  role is still read from the raster header and the row says `Роль: по заголовку`.
+- Rename the `As2X` reference image so its name contains `As1X`. Expected: the
+  row is highlighted, role remains empty, and the exact name/header conflict is
+  shown until the user chooses a role manually.
+- Choose an image whose name and header contain no supported marker. Expected:
+  its role selector stays empty until the user assigns a role manually.
 - Choose duplicate layer names. Expected: both the duplicate and missing roles
   are named in the source-set state.
 - Choose images with different pixel dimensions. Expected: the set is blocked
@@ -101,7 +108,8 @@ Only run this section when a real or fake worker is available.
 ## Known Limitations
 
 - Real contour recognition is still external to this module.
-- Header-based role detection is not yet implemented; current auto-detection uses file names.
+- Header detection is intentionally limited to the current PK LIRA marker style.
+  A nonstandard font or scaled header falls back to file-name/manual assignment.
 - Current write-flow creates test rebar only; it is not a production reinforcement
   layout engine.
 - Wall placement supports simple straight walls, not curved or stacked walls.

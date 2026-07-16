@@ -7,7 +7,8 @@ public sealed record IsoFieldSourceFile(
     IsoFieldLayerRole? Role,
     int? PixelWidth,
     int? PixelHeight,
-    string? ValidationError = null)
+    string? ValidationError = null,
+    IsoFieldRoleDetection? RoleDetection = null)
 {
     public string FileName => Path.GetFileName(FilePath);
 

@@ -6,6 +6,19 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 
 public sealed class IsoFieldSourceSetService
 {
+    private readonly IsoFieldHeaderRoleRecognizer headerRoleRecognizer;
+
+    public IsoFieldSourceSetService()
+        : this(new IsoFieldHeaderRoleRecognizer())
+    {
+    }
+
+    public IsoFieldSourceSetService(IsoFieldHeaderRoleRecognizer headerRoleRecognizer)
+    {
+        this.headerRoleRecognizer = headerRoleRecognizer
+            ?? throw new ArgumentNullException(nameof(headerRoleRecognizer));
+    }
+
     public IsoFieldSourceSet Build(IEnumerable<string> filePaths)
     {
         if (filePaths is null)
@@ -65,7 +78,15 @@ public sealed class IsoFieldSourceSetService
                 }
 
                 found = true;
-                return file with { Role = role };
+                return file with
+                {
+                    Role = role,
+                    RoleDetection = new IsoFieldRoleDetection(
+                        IsoFieldRoleDetectionKind.Manual,
+                        file.RoleDetection?.FileNameRole,
+                        file.RoleDetection?.HeaderRole,
+                        file.RoleDetection?.HeaderConfidence)
+                };
             })
             .ToArray();
 
@@ -86,14 +107,20 @@ public sealed class IsoFieldSourceSetService
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    private static IsoFieldSourceFile CreateSourceFile(string filePath)
+    private IsoFieldSourceFile CreateSourceFile(string filePath)
     {
-        IsoFieldLayerRole? role = DetectRole(filePath);
+        IsoFieldLayerRole? fileNameRole = DetectRole(filePath);
         try
         {
             if (!File.Exists(filePath))
             {
-                return new IsoFieldSourceFile(filePath, role, null, null, "файл не найден");
+                return new IsoFieldSourceFile(
+                    filePath,
+                    fileNameRole,
+                    null,
+                    null,
+                    "файл не найден",
+                    ResolveRoleDetection(fileNameRole, IsoFieldHeaderRoleRecognition.NotDetected));
             }
 
             using FileStream stream = new(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -102,11 +129,56 @@ public sealed class IsoFieldSourceSetService
                 BitmapCreateOptions.PreservePixelFormat,
                 BitmapCacheOption.OnLoad);
             BitmapFrame frame = decoder.Frames[0];
-            return new IsoFieldSourceFile(filePath, role, frame.PixelWidth, frame.PixelHeight);
+            IsoFieldHeaderRoleRecognition headerRecognition;
+            try
+            {
+                headerRecognition = headerRoleRecognizer.Recognize(frame);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or NotSupportedException)
+            {
+                headerRecognition = IsoFieldHeaderRoleRecognition.NotDetected;
+            }
+
+            IsoFieldRoleDetection roleDetection = ResolveRoleDetection(fileNameRole, headerRecognition);
+            IsoFieldLayerRole? role = roleDetection.Kind == IsoFieldRoleDetectionKind.Conflict
+                ? null
+                : headerRecognition.Role ?? fileNameRole;
+            return new IsoFieldSourceFile(
+                filePath,
+                role,
+                frame.PixelWidth,
+                frame.PixelHeight,
+                RoleDetection: roleDetection);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or FileFormatException)
         {
-            return new IsoFieldSourceFile(filePath, role, null, null, "не удалось прочитать изображение");
+            return new IsoFieldSourceFile(
+                filePath,
+                fileNameRole,
+                null,
+                null,
+                "не удалось прочитать изображение",
+                ResolveRoleDetection(fileNameRole, IsoFieldHeaderRoleRecognition.NotDetected));
         }
+    }
+
+    private static IsoFieldRoleDetection ResolveRoleDetection(
+        IsoFieldLayerRole? fileNameRole,
+        IsoFieldHeaderRoleRecognition headerRecognition)
+    {
+        IsoFieldRoleDetectionKind kind = (fileNameRole, headerRecognition.Role) switch
+        {
+            (null, null) => IsoFieldRoleDetectionKind.NotDetected,
+            (not null, null) => IsoFieldRoleDetectionKind.FileName,
+            (null, not null) => IsoFieldRoleDetectionKind.Header,
+            (not null, not null) when fileNameRole == headerRecognition.Role =>
+                IsoFieldRoleDetectionKind.FileNameAndHeader,
+            _ => IsoFieldRoleDetectionKind.Conflict
+        };
+        return new IsoFieldRoleDetection(
+            kind,
+            fileNameRole,
+            headerRecognition.Role,
+            headerRecognition.Confidence > 0 ? headerRecognition.Confidence : null);
     }
 }

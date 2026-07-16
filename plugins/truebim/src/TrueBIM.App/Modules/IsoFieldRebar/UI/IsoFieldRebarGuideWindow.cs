@@ -60,10 +60,11 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             CreateDiagramCard("Путь данных в текущем режиме модуля.", CreatePipelineDiagram())));
         body.Children.Add(CreateSection(
             "Комплект из четырёх карт",
-            CreateParagraph("Для расчётных изображений выберите вместе As1X, As2X, As3Y и As4Y. Плагин проверит роли, pixel size и покажет миниатюры. Направление X/Y определяется ролью, а верхнюю/нижнюю грань пользователь подтверждает явно."),
+            CreateParagraph("Для расчётных изображений выберите вместе As1X, As2X, As3Y и As4Y. Плагин сверит роль в имени файла с маркером в растровом заголовке ПК ЛИРА, проверит pixel size и покажет миниатюры. Направление X/Y определяется ролью, а верхнюю/нижнюю грань пользователь подтверждает явно."),
             CreateNumberedList(
                 "Выберите четыре изображения одновременно или откройте ранее сохранённый `.isofield-set.json`.",
-                "Исправьте роль файла, если она не определилась по имени.",
+                "Проверьте подпись происхождения роли: «имя + заголовок», «только по имени» или «по заголовку».",
+                "Если имя и заголовок конфликтуют, строка подсветится красным — выберите правильный слой вручную.",
                 "Для направлений X и Y назначьте ровно один слой «Низ» и один слой «Верх».",
                 "Сохраните manifest: он зафиксирует относительные пути, размеры, SHA-256 и назначение слоёв.",
                 "Распознайте четыре изображения и продолжайте к host и правилам.")));
@@ -194,7 +195,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         };
 
         Brush arrowBrush = MutedBrush;
-        AddNode(canvas, 10, 28, 130, 70, "1. Источник", "JSON или комплект + грани", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
+        AddNode(canvas, 10, 28, 130, 70, "1. Источник", "роль из имени + заголовка", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
         AddArrow(canvas, 145, 63, 175, 63, arrowBrush);
         AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "JSON reader или CLI-worker", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
         AddArrow(canvas, 315, 63, 345, 63, arrowBrush);
