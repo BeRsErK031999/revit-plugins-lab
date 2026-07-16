@@ -50,15 +50,18 @@ public sealed class IsoFieldSlabBindingServiceTests
             CreateGeometry(includeHole: false),
             CreateDefaultInput());
 
-        Assert.True(analysis.CanProceed);
+        Assert.True(analysis.CanProceed, string.Join(Environment.NewLine, analysis.Diagnostics));
         Assert.Equal(0, analysis.OutsideZoneCount);
         Assert.Equal(1, analysis.InsideSampleRatio, 8);
         Assert.Single(analysis.MappedZones);
-        Assert.Contains(analysis.Diagnostics, message => message.Contains("read-only", StringComparison.OrdinalIgnoreCase));
+        Assert.Single(analysis.ClippedZones);
+        Assert.True(analysis.IsThirdPointValid);
+        Assert.Equal(0, analysis.ThirdPointDeviationMillimeters, 8);
+        Assert.Contains(analysis.Diagnostics, message => message.Contains("отсечение", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void Analyze_BlocksZoneOutsideSlab()
+    public void Analyze_ClipsPartiallyOutsideZoneAndAllowsWorkflow()
     {
         IsoFieldRecognitionResult recognition = CreateRecognition(
             CreateZone("outside", 75, 25, 125, 75));
@@ -68,11 +71,13 @@ public sealed class IsoFieldSlabBindingServiceTests
             CreateGeometry(includeHole: false),
             CreateDefaultInput());
 
-        Assert.False(analysis.CanProceed);
+        Assert.True(analysis.CanProceed);
         Assert.Equal(1, analysis.OutsideZoneCount);
         Assert.Equal(["outside"], analysis.OutsideZoneIds);
+        Assert.Equal(["outside"], analysis.ClippedZoneIds);
+        Assert.Empty(analysis.RemovedZoneIds);
         Assert.InRange(analysis.InsideSampleRatio, 0, 0.99);
-        Assert.Contains(analysis.Diagnostics, message => message.Contains("За контур", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(analysis.Diagnostics, message => message.Contains("обрезано", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -90,10 +95,11 @@ public sealed class IsoFieldSlabBindingServiceTests
         Assert.Single(analysis.HoleBoundariesFeet);
         Assert.Equal(1, analysis.OutsideZoneCount);
         Assert.Equal(["over-hole"], analysis.OutsideZoneIds);
+        Assert.Equal(["over-hole"], analysis.RemovedZoneIds);
     }
 
     [Fact]
-    public void Analyze_BlocksZoneThatFullyEnclosesHole()
+    public void Analyze_ClipsHoleFromZoneAndAllowsWorkflow()
     {
         IsoFieldRecognitionResult recognition = CreateRecognition(
             CreateZone("encloses-hole", 20, 20, 80, 80));
@@ -103,8 +109,49 @@ public sealed class IsoFieldSlabBindingServiceTests
             CreateGeometry(includeHole: true),
             CreateDefaultInput());
 
-        Assert.False(analysis.CanProceed);
+        Assert.True(analysis.CanProceed, string.Join(Environment.NewLine, analysis.Diagnostics));
         Assert.Equal(1, analysis.OutsideZoneCount);
+        IsoFieldClippedZone clippedZone = Assert.Single(analysis.ClippedZones);
+        IsoFieldPolygonRegion region = Assert.Single(clippedZone.Regions);
+        Assert.Single(region.HoleBoundariesFeet);
+        Assert.Empty(analysis.RemovedZoneIds);
+    }
+
+    [Fact]
+    public void Analyze_BlocksThirdPointOutsideTolerance()
+    {
+        IsoFieldSlabBindingInput input = CreateDefaultInput() with
+        {
+            HostPoint3Feet = new IsoFieldPoint(-4, 5)
+        };
+
+        IsoFieldSlabBindingAnalysis analysis = service.Analyze(
+            CreateRecognition(CreateZone("inside", 25, 25, 75, 75)),
+            CreateGeometry(includeHole: false),
+            input);
+
+        Assert.False(analysis.CanProceed);
+        Assert.False(analysis.IsThirdPointValid);
+        Assert.Equal(304.8, analysis.ThirdPointDeviationMillimeters, 6);
+        Assert.Contains(analysis.Diagnostics, message => message.Contains("не подтверждает", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Analyze_RejectsCollinearThirdPoint()
+    {
+        IsoFieldSlabBindingInput input = CreateDefaultInput() with
+        {
+            ImagePoint3 = new IsoFieldPoint(50, 0),
+            HostPoint3Feet = new IsoFieldPoint(0, -5)
+        };
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.Analyze(
+                CreateRecognition(CreateZone("inside", 25, 25, 75, 75)),
+                CreateGeometry(includeHole: false),
+                input));
+
+        Assert.Contains("в стороне", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -122,11 +169,35 @@ public sealed class IsoFieldSlabBindingServiceTests
 
         Assert.NotEmpty(layout.OuterBoundary);
         Assert.Single(layout.Zones);
-        Assert.Equal(2, layout.ControlPoints.Count);
+        Assert.Equal(3, layout.ControlPoints.Count);
         Assert.All(
             layout.OuterBoundary
-                .Concat(layout.Zones.SelectMany(zone => zone.Points))
+                .Concat(layout.Zones.SelectMany(zone => zone.OuterBoundary))
                 .Concat(layout.ControlPoints),
+            point =>
+            {
+                Assert.InRange(point.X, 0, layout.Width);
+                Assert.InRange(point.Y, 0, layout.Height);
+            });
+    }
+
+    [Fact]
+    public void OverlayLayout_KeepsFullyRemovedZoneVisibleForDiagnostics()
+    {
+        IsoFieldSlabBindingAnalysis analysis = service.Analyze(
+            CreateRecognition(CreateZone("removed", 45, 45, 55, 55)),
+            CreateGeometry(includeHole: true),
+            CreateDefaultInput());
+
+        IsoFieldSlabOverlayLayout layout = new IsoFieldSlabOverlayLayoutService().Build(
+            analysis,
+            width: 430,
+            height: 180);
+
+        Assert.Empty(layout.Zones);
+        Assert.Equal("removed", Assert.Single(layout.RemovedZones).Id);
+        Assert.All(
+            layout.RemovedZones.SelectMany(zone => zone.Points),
             point =>
             {
                 Assert.InRange(point.X, 0, layout.Width);
@@ -155,7 +226,9 @@ public sealed class IsoFieldSlabBindingServiceTests
             new IsoFieldPoint(100, 0),
             new IsoFieldPoint(-5, -5),
             new IsoFieldPoint(5, -5),
-            MirrorImageY: false);
+            MirrorImageY: false,
+            ImagePoint3: new IsoFieldPoint(0, 100),
+            HostPoint3Feet: new IsoFieldPoint(-5, 5));
     }
 
     private static IsoFieldHostGeometry CreateGeometry(bool includeHole)

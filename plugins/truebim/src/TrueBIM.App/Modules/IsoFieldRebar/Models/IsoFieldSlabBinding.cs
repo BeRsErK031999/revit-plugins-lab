@@ -5,7 +5,9 @@ public sealed record IsoFieldSlabBindingInput(
     IsoFieldPoint ImagePoint2,
     IsoFieldPoint HostPoint1Feet,
     IsoFieldPoint HostPoint2Feet,
-    bool MirrorImageY);
+    bool MirrorImageY,
+    IsoFieldPoint? ImagePoint3 = null,
+    IsoFieldPoint? HostPoint3Feet = null);
 
 public sealed record IsoFieldPlanarTransform(
     IsoFieldPoint ImageAnchor,
@@ -41,11 +43,20 @@ public sealed record IsoFieldSlabBindingAnalysis(
     IsoFieldPlanarTransform Transform,
     IsoFieldHostGeometry HostGeometry,
     IReadOnlyList<IsoFieldPolyline> MappedZones,
+    IReadOnlyList<IsoFieldClippedZone> ClippedZones,
     IReadOnlyList<IsoFieldPoint> OuterBoundaryFeet,
     IReadOnlyList<IReadOnlyList<IsoFieldPoint>> HoleBoundariesFeet,
     IReadOnlyList<IsoFieldPoint> ControlPointsFeet,
+    IReadOnlyList<string> ClippedZoneIds,
+    IReadOnlyList<string> RemovedZoneIds,
     IReadOnlyList<string> OutsideZoneIds,
     int OutsideZoneCount,
-    double InsideSampleRatio,
+    double RetainedAreaRatio,
+    double ThirdPointDeviationMillimeters,
+    double ThirdPointToleranceMillimeters,
+    bool IsThirdPointValid,
     IReadOnlyList<string> Diagnostics,
-    bool CanProceed);
+    bool CanProceed)
+{
+    public double InsideSampleRatio => RetainedAreaRatio;
+}

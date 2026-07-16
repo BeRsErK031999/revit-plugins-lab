@@ -26,12 +26,13 @@ the current MVP behavior without requiring a production recognition worker.
 6. Verify preview `DetailCurve` lines appear on the active view and can be
    removed with `Очистить`.
 7. Select the rectangular slab as host.
-8. In `Привязка плиты по двум точкам`, enter two recognizable pixel points,
-   click `Точка 1 на плите` and `Точка 2 на плите`, then select their matching
-   positions on the slab top face.
+8. In `Привязка плиты по трём точкам`, enter two baseline pixel points and a
+   third point away from their line. Pick all three matching positions on the
+   slab top face.
 9. Click `Проверить привязку`. Verify the preview shows the slab boundary, holes,
-   numbered control points, mapped zones, scale, and rotation. A valid boundary
-   is green and rule calculation becomes available.
+   numbered control points, clipped filled zones, retained area, scale, rotation,
+   and third-point deviation. A valid boundary is green and rule calculation
+   becomes available.
 10. Click `Рассчитать правила`.
 11. Verify rule preview lists valid slab rules and no model elements are created.
 12. Click `Создать пробное армирование`, confirm the dialog, and verify test rebar is
@@ -72,17 +73,25 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   controls remain disabled, and the status asks to load or recognize zones.
 - Select a wall. Expected: the slab binding section collapses and rules do not
   require slab control points.
-- Pick both control points at the same slab location or enter coincident image
+- Pick the first two control points at the same slab location or enter coincident image
   points. Expected: binding is rejected with a precise diagnostic.
+- Put point 3 on the baseline of points 1–2. Expected: binding is rejected because
+  the third point cannot independently verify the transform.
+- Move host point 3 more than 50 mm from its mapped position. Expected: the
+  deviation and tolerance are shown, point 3 is red, and rules stay disabled.
 - Swap the second host point or toggle `Отразить Y изображения`. Expected: scale,
   rotation, overlay, and validation are recalculated only after
   `Проверить привязку`.
-- Place a mapped zone outside the slab or inside an opening. Expected: slab
-  boundary and offending zone are red, the zone remains visible, and `Рассчитать правила`
-  plus `Создать пробное армирование` stay disabled.
+- Let a zone cross the slab edge or an opening. Expected: it is clipped, filled,
+  outlined with a yellow dash, retained area is below 100%, and rules remain available.
+- Place a zone fully outside the slab or fully inside an opening. Expected: its
+  original outline is red and dashed; `Рассчитать правила` plus
+  `Создать пробное армирование` stay disabled.
 - Apply manual zone correction after a valid binding. Expected: binding is
-  rechecked; if a corrected zone exits the slab, the invalid red overlay remains
-  visible instead of falling back to raw pixel preview.
+  rechecked and the clipped overlay updates instead of falling back to raw pixel preview.
+- Save a valid profile, reset and reselect the same slab on the same view. Expected:
+  `Загрузить профиль` becomes available and loading it reruns validation. On another
+  view or slab the button stays disabled.
 
 ## Built-in PNG Recognition Smoke
 
@@ -176,7 +185,7 @@ must override the built-in runner.
 - Current write-flow creates test rebar only; it is not a production reinforcement
   layout engine.
 - Wall placement supports simple straight walls, not curved or stacked walls.
-- Slab overlay reads the top face and blocks zones outside boundaries or inside
-  holes, but does not clip zone geometry. Test rebar placement still uses bounding
-  boxes and does not account for holes, sloped slabs, or compound structure.
+- Slab overlay clips managed zone geometry by the top face and holes. Test rebar
+  placement still uses bounding boxes and does not yet consume clipped regions;
+  sloped slabs and compound structure remain unsupported.
 - Manual QA still needs real Revit for visual preview and rebar creation checks.

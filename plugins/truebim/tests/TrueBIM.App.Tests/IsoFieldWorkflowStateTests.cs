@@ -64,6 +64,6 @@ public sealed class IsoFieldWorkflowStateTests
         Assert.False(state.HasReadyHost);
         Assert.False(state.CanCalculateRules);
         Assert.False(state.CanCreateRebar);
-        Assert.Contains("двум контрольным точкам", state.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("трём контрольным точкам", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 }

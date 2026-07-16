@@ -21,9 +21,16 @@ public sealed class IsoFieldSlabOverlayLayoutService
             throw new ArgumentOutOfRangeException(nameof(width), "Preview size must be positive.");
         }
 
+        HashSet<string> removedZoneIds = new(analysis.RemovedZoneIds, StringComparer.Ordinal);
+        IsoFieldPolyline[] removedZones = analysis.MappedZones
+            .Where(zone => removedZoneIds.Contains(zone.Id))
+            .ToArray();
         IsoFieldPoint[] points = analysis.OuterBoundaryFeet
             .Concat(analysis.HoleBoundariesFeet.SelectMany(loop => loop))
-            .Concat(analysis.MappedZones.SelectMany(zone => zone.Points))
+            .Concat(analysis.ClippedZones.SelectMany(zone => zone.Regions)
+                .SelectMany(region => region.OuterBoundaryFeet
+                    .Concat(region.HoleBoundariesFeet.SelectMany(hole => hole))))
+            .Concat(removedZones.SelectMany(zone => zone.Points))
             .Concat(analysis.ControlPointsFeet)
             .ToArray();
         if (points.Length == 0)
@@ -31,6 +38,7 @@ public sealed class IsoFieldSlabOverlayLayoutService
             return new IsoFieldSlabOverlayLayout(
                 Array.Empty<IsoFieldPoint>(),
                 Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
+                Array.Empty<IsoFieldSlabOverlayRegion>(),
                 Array.Empty<IsoFieldPreviewPolyline>(),
                 Array.Empty<IsoFieldPoint>(),
                 width,
@@ -55,12 +63,27 @@ public sealed class IsoFieldSlabOverlayLayoutService
             offsetX + (point.X * scale),
             offsetY - (point.Y * scale));
 
+        IsoFieldSlabOverlayRegion[] zones = analysis.ClippedZones
+            .SelectMany(zone => zone.Regions.Select(region => new IsoFieldSlabOverlayRegion(
+                zone.SourceZoneId,
+                zone.ZoneName,
+                zone.Confidence,
+                zone.LayerRole,
+                region.OuterBoundaryFeet.Select(Map).ToArray(),
+                region.HoleBoundariesFeet
+                    .Select(hole => (IReadOnlyList<IsoFieldPoint>)hole.Select(Map).ToArray())
+                    .ToArray(),
+                zone.RetainedAreaRatio,
+                zone.WasClipped)))
+            .ToArray();
+
         return new IsoFieldSlabOverlayLayout(
             analysis.OuterBoundaryFeet.Select(Map).ToArray(),
             analysis.HoleBoundariesFeet
                 .Select(loop => (IReadOnlyList<IsoFieldPoint>)loop.Select(Map).ToArray())
                 .ToArray(),
-            analysis.MappedZones
+            zones,
+            removedZones
                 .Select(zone => new IsoFieldPreviewPolyline(
                     zone.Id,
                     zone.Points.Select(Map).ToArray(),

@@ -8,7 +8,8 @@ public sealed class IsoFieldSlabBindingService
     private const double MinimumImageSpanPixels = 1;
     private const double MinimumHostSpanFeet = 0.01;
     private const double BoundaryToleranceFeet = 1e-6;
-    private const int SegmentSampleCount = 8;
+    private const double ThirdPointToleranceMillimeters = 50;
+    private readonly IsoFieldPolygonClipService polygonClipService = new();
 
     public IsoFieldSlabBindingAnalysis Analyze(
         IsoFieldRecognitionResult recognitionResult,
@@ -22,6 +23,7 @@ public sealed class IsoFieldSlabBindingService
 
         ValidateHostGeometry(hostGeometry);
         IsoFieldPlanarTransform transform = BuildTransform(input);
+        ThirdPointCheck thirdPoint = ValidateThirdPoint(input, transform);
         IReadOnlyList<IsoFieldPoint> outerBoundary = hostGeometry.BoundaryLoopsFeet
             .OrderByDescending(loop => Math.Abs(CalculateSignedArea(loop)))
             .First();
@@ -34,49 +36,66 @@ public sealed class IsoFieldSlabBindingService
                 Points = polyline.Points.Select(transform.Map).ToArray()
             })
             .ToArray();
+        IsoFieldClippedZone[] clippedZones = mappedZones
+            .Select(zone => polygonClipService.Clip(zone, outerBoundary, holes))
+            .ToArray();
+        string[] clippedZoneIds = clippedZones
+            .Where(zone => zone.WasClipped)
+            .Select(zone => zone.SourceZoneId)
+            .ToArray();
+        string[] removedZoneIds = clippedZones
+            .Where(zone => zone.IsEmpty)
+            .Select(zone => zone.SourceZoneId)
+            .ToArray();
+        string[] outsideZoneIds = clippedZoneIds
+            .Concat(removedZoneIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
-        int totalSamples = 0;
-        int insideSamples = 0;
-        List<string> outsideZoneIds = new();
-        foreach (IsoFieldPolyline zone in mappedZones)
-        {
-            IsoFieldPoint[] samples = BuildSamples(zone.Points).ToArray();
-            int zoneInsideCount = samples.Count(point => IsInsideHost(point, outerBoundary, holes));
-            bool overlapsHole = holes.Any(hole => PolygonsOverlap(zone.Points, hole));
-            totalSamples += samples.Length;
-            insideSamples += zoneInsideCount;
-            if (samples.Length == 0 || zoneInsideCount != samples.Length || overlapsHole)
-            {
-                outsideZoneIds.Add(zone.Id);
-            }
-        }
-
-        int outsideZoneCount = outsideZoneIds.Count;
-        bool controlPointsInside = IsInsideHost(input.HostPoint1Feet, outerBoundary, holes)
-            && IsInsideHost(input.HostPoint2Feet, outerBoundary, holes);
-        double insideRatio = totalSamples == 0 ? 0 : (double)insideSamples / totalSamples;
+        IReadOnlyList<IsoFieldPoint> controlPoints =
+        [
+            input.HostPoint1Feet,
+            input.HostPoint2Feet,
+            thirdPoint.HostPointFeet
+        ];
+        bool controlPointsInside = controlPoints.All(point =>
+            IsInsideHost(point, outerBoundary, holes));
+        double totalOriginalArea = clippedZones.Sum(zone => zone.OriginalAreaSquareFeet);
+        double totalClippedArea = clippedZones.Sum(zone => zone.ClippedAreaSquareFeet);
+        double retainedAreaRatio = totalOriginalArea <= BoundaryToleranceFeet * BoundaryToleranceFeet
+            ? 0
+            : Math.Max(0, Math.Min(1, totalClippedArea / totalOriginalArea));
         bool canProceed = recognitionResult.Polylines.Count > 0
-            && outsideZoneCount == 0
-            && controlPointsInside;
+            && removedZoneIds.Length == 0
+            && controlPointsInside
+            && thirdPoint.IsValid;
         List<string> diagnostics = BuildDiagnostics(
             transform,
             recognitionResult.Polylines.Count,
-            outsideZoneCount,
-            insideRatio,
+            clippedZoneIds.Length,
+            removedZoneIds.Length,
+            retainedAreaRatio,
             controlPointsInside,
             holes.Count,
+            thirdPoint,
             canProceed);
 
         return new IsoFieldSlabBindingAnalysis(
             transform,
             hostGeometry,
             mappedZones,
+            clippedZones,
             outerBoundary,
             holes,
-            [input.HostPoint1Feet, input.HostPoint2Feet],
+            controlPoints,
+            clippedZoneIds,
+            removedZoneIds,
             outsideZoneIds,
-            outsideZoneCount,
-            insideRatio,
+            outsideZoneIds.Length,
+            retainedAreaRatio,
+            thirdPoint.DeviationMillimeters,
+            ThirdPointToleranceMillimeters,
+            thirdPoint.IsValid,
             diagnostics,
             canProceed);
     }
@@ -126,6 +145,47 @@ public sealed class IsoFieldSlabBindingService
             input.MirrorImageY);
     }
 
+    private static ThirdPointCheck ValidateThirdPoint(
+        IsoFieldSlabBindingInput input,
+        IsoFieldPlanarTransform transform)
+    {
+        if (input.ImagePoint3 is null || input.HostPoint3Feet is null)
+        {
+            throw new InvalidOperationException(
+                "Для независимой проверки привязки укажите третью точку на карте и на плите.");
+        }
+
+        ValidatePoint(input.ImagePoint3, "Третья точка изображения");
+        ValidatePoint(input.HostPoint3Feet, "Третья точка плиты");
+        double imageOffset = PerpendicularDistance(
+            input.ImagePoint3,
+            input.ImagePoint1,
+            input.ImagePoint2);
+        if (imageOffset < MinimumImageSpanPixels)
+        {
+            throw new InvalidOperationException(
+                "Третья точка изображения должна находиться в стороне от линии первых двух минимум на 1 пиксель.");
+        }
+
+        double hostOffset = PerpendicularDistance(
+            input.HostPoint3Feet,
+            input.HostPoint1Feet,
+            input.HostPoint2Feet);
+        if (hostOffset < MinimumHostSpanFeet)
+        {
+            throw new InvalidOperationException(
+                "Третья точка плиты должна находиться в стороне от линии первых двух контрольных точек.");
+        }
+
+        IsoFieldPoint expectedHostPoint = transform.Map(input.ImagePoint3);
+        double deviationFeet = Distance(expectedHostPoint, input.HostPoint3Feet);
+        double deviationMillimeters = deviationFeet * 304.8;
+        return new ThirdPointCheck(
+            input.HostPoint3Feet,
+            deviationMillimeters,
+            deviationMillimeters <= ThirdPointToleranceMillimeters);
+    }
+
     private static void ValidateHostGeometry(IsoFieldHostGeometry hostGeometry)
     {
         if (hostGeometry is null)
@@ -141,35 +201,6 @@ public sealed class IsoFieldSlabBindingService
         }
     }
 
-    private static IEnumerable<IsoFieldPoint> BuildSamples(IReadOnlyList<IsoFieldPoint> points)
-    {
-        if (points.Count == 0)
-        {
-            yield break;
-        }
-
-        if (points.Count == 1)
-        {
-            yield return points[0];
-            yield break;
-        }
-
-        for (int index = 0; index < points.Count - 1; index++)
-        {
-            IsoFieldPoint start = points[index];
-            IsoFieldPoint end = points[index + 1];
-            for (int sample = 0; sample < SegmentSampleCount; sample++)
-            {
-                double ratio = (double)sample / SegmentSampleCount;
-                yield return new IsoFieldPoint(
-                    start.X + ((end.X - start.X) * ratio),
-                    start.Y + ((end.Y - start.Y) * ratio));
-            }
-        }
-
-        yield return points[points.Count - 1];
-    }
-
     private static bool IsInsideHost(
         IsoFieldPoint point,
         IReadOnlyList<IsoFieldPoint> outerBoundary,
@@ -177,78 +208,6 @@ public sealed class IsoFieldSlabBindingService
     {
         return IsInsidePolygon(point, outerBoundary)
             && !holes.Any(hole => IsInsidePolygon(point, hole));
-    }
-
-    private static bool PolygonsOverlap(
-        IReadOnlyList<IsoFieldPoint> first,
-        IReadOnlyList<IsoFieldPoint> second)
-    {
-        if (first.Count < 3 || second.Count < 3)
-        {
-            return false;
-        }
-
-        return first.Any(point => IsInsidePolygon(point, second))
-            || second.Any(point => IsInsidePolygon(point, first))
-            || EnumerateSegments(first).Any(firstSegment =>
-                EnumerateSegments(second).Any(secondSegment =>
-                    SegmentsIntersect(
-                        firstSegment.Start,
-                        firstSegment.End,
-                        secondSegment.Start,
-                        secondSegment.End)));
-    }
-
-    private static IEnumerable<(IsoFieldPoint Start, IsoFieldPoint End)> EnumerateSegments(
-        IReadOnlyList<IsoFieldPoint> polygon)
-    {
-        for (int index = 0; index < polygon.Count; index++)
-        {
-            IsoFieldPoint start = polygon[index];
-            IsoFieldPoint end = polygon[(index + 1) % polygon.Count];
-            if (start != end)
-            {
-                yield return (start, end);
-            }
-        }
-    }
-
-    private static bool SegmentsIntersect(
-        IsoFieldPoint firstStart,
-        IsoFieldPoint firstEnd,
-        IsoFieldPoint secondStart,
-        IsoFieldPoint secondEnd)
-    {
-        double firstSideStart = Cross(firstStart, firstEnd, secondStart);
-        double firstSideEnd = Cross(firstStart, firstEnd, secondEnd);
-        double secondSideStart = Cross(secondStart, secondEnd, firstStart);
-        double secondSideEnd = Cross(secondStart, secondEnd, firstEnd);
-        if (OppositeSides(firstSideStart, firstSideEnd)
-            && OppositeSides(secondSideStart, secondSideEnd))
-        {
-            return true;
-        }
-
-        return Math.Abs(firstSideStart) <= BoundaryToleranceFeet
-                && IsOnSegment(secondStart, firstStart, firstEnd)
-            || Math.Abs(firstSideEnd) <= BoundaryToleranceFeet
-                && IsOnSegment(secondEnd, firstStart, firstEnd)
-            || Math.Abs(secondSideStart) <= BoundaryToleranceFeet
-                && IsOnSegment(firstStart, secondStart, secondEnd)
-            || Math.Abs(secondSideEnd) <= BoundaryToleranceFeet
-                && IsOnSegment(firstEnd, secondStart, secondEnd);
-    }
-
-    private static double Cross(IsoFieldPoint start, IsoFieldPoint end, IsoFieldPoint point)
-    {
-        return ((end.X - start.X) * (point.Y - start.Y))
-            - ((end.Y - start.Y) * (point.X - start.X));
-    }
-
-    private static bool OppositeSides(double first, double second)
-    {
-        return first > BoundaryToleranceFeet && second < -BoundaryToleranceFeet
-            || first < -BoundaryToleranceFeet && second > BoundaryToleranceFeet;
     }
 
     private static bool IsInsidePolygon(
@@ -302,10 +261,7 @@ public sealed class IsoFieldSlabBindingService
             + ((end.Y - start.Y) * (end.Y - start.Y));
         if (squaredLength <= BoundaryToleranceFeet * BoundaryToleranceFeet)
         {
-            double deltaX = point.X - start.X;
-            double deltaY = point.Y - start.Y;
-            return (deltaX * deltaX) + (deltaY * deltaY)
-                <= BoundaryToleranceFeet * BoundaryToleranceFeet;
+            return Distance(point, start) <= BoundaryToleranceFeet;
         }
 
         return dot <= squaredLength + BoundaryToleranceFeet;
@@ -326,34 +282,74 @@ public sealed class IsoFieldSlabBindingService
     private static List<string> BuildDiagnostics(
         IsoFieldPlanarTransform transform,
         int zoneCount,
-        int outsideZoneCount,
-        double insideRatio,
+        int clippedZoneCount,
+        int removedZoneCount,
+        double retainedAreaRatio,
         bool controlPointsInside,
         int holeCount,
+        ThirdPointCheck thirdPoint,
         bool canProceed)
     {
         CultureInfo culture = CultureInfo.GetCultureInfo("ru-RU");
         List<string> diagnostics =
         [
-            $"Двухточечная привязка: {transform.MillimetersPerPixel.ToString("0.###", culture)} мм/пикс; "
+            $"Привязка: {transform.MillimetersPerPixel.ToString("0.###", culture)} мм/пикс; "
                 + $"поворот {transform.RotationDegrees.ToString("0.##", culture)}°; "
                 + $"отражение Y: {(transform.MirrorImageY ? "да" : "нет")}.",
-            $"Контур плиты: отверстий {holeCount}. Внутри допустимой области: {(insideRatio * 100).ToString("0.#", culture)}% проверочных точек."
+            $"Третья точка: отклонение {thirdPoint.DeviationMillimeters.ToString("0.#", culture)} мм "
+                + $"при допуске {ThirdPointToleranceMillimeters.ToString("0.#", culture)} мм.",
+            $"Геометрия плиты: отверстий {holeCount}; сохранено {(retainedAreaRatio * 100).ToString("0.#", culture)}% площади зон."
         ];
         if (!controlPointsInside)
         {
-            diagnostics.Add("Одна или обе контрольные точки находятся вне допустимого контура плиты.");
+            diagnostics.Add("Одна или несколько контрольных точек находятся вне допустимого контура плиты.");
         }
 
-        if (outsideZoneCount > 0)
+        if (!thirdPoint.IsValid)
         {
-            diagnostics.Add($"За контур плиты или в отверстия попадает зон: {outsideZoneCount} из {zoneCount}.");
+            diagnostics.Add("Третья точка не подтверждает масштаб, поворот или зеркальность первых двух точек.");
+        }
+
+        if (clippedZoneCount > 0)
+        {
+            diagnostics.Add($"По контуру плиты и отверстиям обрезано зон: {clippedZoneCount} из {zoneCount}.");
+        }
+
+        if (removedZoneCount > 0)
+        {
+            diagnostics.Add($"Полностью вне допустимой области осталось зон: {removedZoneCount}. Они блокируют расчёт правил.");
         }
 
         diagnostics.Add(canProceed
-            ? "Привязка прошла read-only проверку. Можно переходить к расчёту правил."
+            ? "Привязка и отсечение зон проверены. Можно переходить к расчёту правил."
             : "Привязка требует исправления; расчёт правил для плиты заблокирован.");
         return diagnostics;
+    }
+
+    private static double PerpendicularDistance(
+        IsoFieldPoint point,
+        IsoFieldPoint lineStart,
+        IsoFieldPoint lineEnd)
+    {
+        double deltaX = lineEnd.X - lineStart.X;
+        double deltaY = lineEnd.Y - lineStart.Y;
+        double length = Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
+        if (length <= BoundaryToleranceFeet)
+        {
+            return 0;
+        }
+
+        double cross = Math.Abs(
+            (deltaX * (lineStart.Y - point.Y))
+            - ((lineStart.X - point.X) * deltaY));
+        return cross / length;
+    }
+
+    private static double Distance(IsoFieldPoint first, IsoFieldPoint second)
+    {
+        double deltaX = second.X - first.X;
+        double deltaY = second.Y - first.Y;
+        return Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
     }
 
     private static void ValidatePoint(IsoFieldPoint point, string label)
@@ -383,4 +379,9 @@ public sealed class IsoFieldSlabBindingService
     {
         return !double.IsNaN(value) && !double.IsInfinity(value);
     }
+
+    private sealed record ThirdPointCheck(
+        IsoFieldPoint HostPointFeet,
+        double DeviationMillimeters,
+        bool IsValid);
 }
