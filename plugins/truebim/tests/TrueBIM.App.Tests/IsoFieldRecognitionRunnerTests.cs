@@ -54,11 +54,17 @@ public sealed class IsoFieldRecognitionRunnerTests
             Assert.Equal(3, legend.Bands.Count);
             Assert.Equal("#FFFF64", legend.Bands[0].HexColor);
             Assert.Equal("#FF0000", legend.Bands[2].HexColor);
+            Assert.True(legend.HasNumericRanges);
+            Assert.Equal(0.5, legend.Bands[0].MinimumValue);
+            Assert.Equal(1.5, legend.Bands[0].MaximumValue);
+            Assert.Equal(2.5, legend.Bands[2].MinimumValue);
+            Assert.Equal(3.5, legend.Bands[2].MaximumValue);
             Assert.Equal(2, result.Polylines.Count);
-            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("уровень 1", StringComparison.OrdinalIgnoreCase));
-            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("уровень 3", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("0,5–1,5 см²/м", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("2,5–3,5 см²/м", StringComparison.OrdinalIgnoreCase));
             Assert.All(result.Polylines, zone => Assert.True(zone.Points.Count >= 4));
             Assert.Contains(result.Diagnostics, message => message.Contains("максимальный уровень", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Diagnostics, message => message.Contains("числовые границы", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -80,6 +86,54 @@ public sealed class IsoFieldRecognitionRunnerTests
             Assert.Empty(result.Polylines);
             Assert.Empty(result.EffectiveLegends);
             Assert.Contains(result.Diagnostics, message => message.Contains("шкала не найдена", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuiltInRecognitionRunner_KeepsColorOnlyFallbackWhenNumbersAreMissing()
+    {
+        string directory = CreateTempDirectory();
+        string imagePath = Path.Combine(directory, "pk-lira-map-without-labels.png");
+        try
+        {
+            CreateSyntheticPkLiraMap(imagePath, includeNumericLabels: false);
+
+            IsoFieldRecognitionResult result = new BuiltInIsoFieldRecognitionRunner().Run(imagePath);
+
+            IsoFieldLegend legend = Assert.Single(result.EffectiveLegends);
+            Assert.False(legend.HasNumericRanges);
+            Assert.All(legend.Bands, band =>
+            {
+                Assert.Null(band.MinimumValue);
+                Assert.Null(band.MaximumValue);
+            });
+            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("уровень", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Diagnostics, message => message.Contains("не полностью", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuiltInRecognitionRunner_RejectsNonIncreasingNumericScale()
+    {
+        string directory = CreateTempDirectory();
+        string imagePath = Path.Combine(directory, "pk-lira-map-with-invalid-scale.png");
+        try
+        {
+            CreateSyntheticPkLiraMap(imagePath, numericLabels: ["0.5", "2.5", "1.5", "3.5"]);
+
+            IsoFieldRecognitionResult result = new BuiltInIsoFieldRecognitionRunner().Run(imagePath);
+
+            IsoFieldLegend legend = Assert.Single(result.EffectiveLegends);
+            Assert.False(legend.HasNumericRanges);
+            Assert.Contains(result.Diagnostics, message => message.Contains("не полностью", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
@@ -346,7 +400,10 @@ public sealed class IsoFieldRecognitionRunnerTests
         return path;
     }
 
-    private static void CreateSyntheticPkLiraMap(string path)
+    private static void CreateSyntheticPkLiraMap(
+        string path,
+        bool includeNumericLabels = true,
+        IReadOnlyList<string>? numericLabels = null)
     {
         const int width = 300;
         const int height = 180;
@@ -355,6 +412,16 @@ public sealed class IsoFieldRecognitionRunnerTests
         FillRectangle(pixels, stride, 20, 20, 87, 12, 255, 255, 100);
         FillRectangle(pixels, stride, 107, 20, 87, 12, 0, 255, 0);
         FillRectangle(pixels, stride, 194, 20, 86, 12, 255, 0, 0);
+        if (includeNumericLabels)
+        {
+            IReadOnlyList<string> labels = numericLabels ?? ["0.5", "1.5", "2.5", "3.5"];
+            int[] centers = [20, 107, 194, 280];
+            for (int index = 0; index < centers.Length; index++)
+            {
+                int textWidth = GetRasterTextWidth(labels[index]);
+                DrawRasterText(pixels, stride, centers[index] - (textWidth / 2), 39, labels[index]);
+            }
+        }
         FillRectangle(pixels, stride, 45, 82, 28, 24, 255, 255, 100);
         FillRectangle(pixels, stride, 190, 118, 32, 26, 255, 0, 0);
         SavePng(path, width, height, pixels, stride);
@@ -378,6 +445,46 @@ public sealed class IsoFieldRecognitionRunnerTests
         }
 
         return pixels;
+    }
+
+    private static int GetRasterTextWidth(string text)
+    {
+        return text.Sum(character => GetRasterGlyph(character)[0].Length + 2) - 2;
+    }
+
+    private static void DrawRasterText(byte[] pixels, int stride, int x, int y, string text)
+    {
+        int cursorX = x;
+        foreach (char character in text)
+        {
+            string[] rows = GetRasterGlyph(character);
+            for (int row = 0; row < rows.Length; row++)
+            {
+                for (int column = 0; column < rows[row].Length; column++)
+                {
+                    if (rows[row][column] == '#')
+                    {
+                        FillRectangle(pixels, stride, cursorX + column, y + row, 1, 1, 0, 0, 0);
+                    }
+                }
+            }
+
+            cursorX += rows[0].Length + 2;
+        }
+    }
+
+    private static string[] GetRasterGlyph(char character)
+    {
+        return character switch
+        {
+            '0' => [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+            '1' => ["..#", "###", "..#", "..#", "..#", "..#", "..#", "..#", "..#"],
+            '2' => ["..###.", ".#...#", ".....#", ".....#", "....#.", "...#..", "..#...", ".#....", "######"],
+            '3' => [".###.", "#..##", "....#", "...#.", "..##.", "....#", "....#", "#...#", ".###."],
+            '5' => ["#####", "#....", "#....", "####.", "#...#", "....#", "....#", "#...#", "####."],
+            '.' => [".", ".", ".", ".", ".", ".", ".", ".", "#"],
+            _ => throw new ArgumentOutOfRangeException(nameof(character), character, "Unsupported raster glyph.")
+        };
     }
 
     private static void FillRectangle(

@@ -1420,10 +1420,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             StackPanel cardContent = new();
             cardContent.Children.Add(new TextBlock
             {
-                Text = $"{legend.LayerRole?.ToString() ?? "Источник"} · {legend.Bands.Count} уровней",
+                Text = $"{legend.LayerRole?.ToString() ?? "Источник"} · {legend.Bands.Count} диапазонов",
                 Foreground = TrueBimBrushes.TextPrimary,
                 FontWeight = FontWeights.SemiBold,
                 Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
+            });
+            cardContent.Children.Add(new TextBlock
+            {
+                Text = BuildLegendRangeSummary(legend),
+                Foreground = legend.HasNumericRanges
+                    ? TrueBimBrushes.TextSecondary
+                    : TrueBimBrushes.TextMuted,
+                FontSize = TrueBimTheme.CaptionFontSize,
+                Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
             });
 
             StackPanel swatches = new()
@@ -1443,7 +1452,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     BorderBrush = TrueBimBrushes.Border,
                     BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
                     CornerRadius = new CornerRadius(2),
-                    ToolTip = $"Уровень {band.Index + 1}: {band.HexColor}. Текстовое значение пока не распознано."
+                    ToolTip = BuildLegendBandToolTip(band)
                 });
             }
 
@@ -1463,6 +1472,26 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         legendSummaryPanel.Visibility = legendSummaryPanel.Children.Count > 0
             ? Visibility.Visible
             : Visibility.Collapsed;
+    }
+
+    private static string BuildLegendRangeSummary(IsoFieldLegend legend)
+    {
+        if (!legend.HasNumericRanges)
+        {
+            return "Числа шкалы не распознаны";
+        }
+
+        IsoFieldLegendBand first = legend.Bands[0];
+        IsoFieldLegendBand last = legend.Bands[legend.Bands.Count - 1];
+        return $"{FormatNumber(first.MinimumValue!.Value)}–{FormatNumber(last.MaximumValue!.Value)} см²/м";
+    }
+
+    private static string BuildLegendBandToolTip(IsoFieldLegendBand band)
+    {
+        string range = band.MinimumValue.HasValue && band.MaximumValue.HasValue
+            ? $"{FormatNumber(band.MinimumValue.Value)}–{FormatNumber(band.MaximumValue.Value)} см²/м"
+            : $"Уровень {band.Index + 1}; числовые границы не распознаны";
+        return $"{range}{Environment.NewLine}Цвет: {band.HexColor}";
     }
 
     private void ResetLegendPresentation()

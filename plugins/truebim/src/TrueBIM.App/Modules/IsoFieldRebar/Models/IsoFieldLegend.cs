@@ -5,7 +5,11 @@ public sealed record IsoFieldLegend(
     int PixelY,
     int PixelStartX,
     int PixelEndX,
-    IsoFieldLayerRole? LayerRole = null);
+    IsoFieldLayerRole? LayerRole = null)
+{
+    public bool HasNumericRanges => Bands.Count > 0
+        && Bands.All(band => band.MinimumValue.HasValue && band.MaximumValue.HasValue);
+}
 
 public sealed record IsoFieldLegendBand(
     int Index,
@@ -14,7 +18,9 @@ public sealed record IsoFieldLegendBand(
     byte Blue,
     double StartRatio,
     double EndRatio,
-    string? Label = null)
+    string? Label = null,
+    double? MinimumValue = null,
+    double? MaximumValue = null)
 {
     public string HexColor => $"#{Red:X2}{Green:X2}{Blue:X2}";
 }
