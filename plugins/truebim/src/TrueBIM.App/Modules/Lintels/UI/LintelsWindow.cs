@@ -25,6 +25,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private readonly UIDocument uiDocument;
     private readonly LintelDiagnosticCollectorService collectorService;
+    private readonly LintelWizardSourceMode sourceMode;
     private readonly LintelAssemblyPreflightService preflightService;
     private readonly LintelAssemblyCreationService creationService;
     private readonly LintelAssemblyViewCreationService viewCreationService;
@@ -49,11 +50,13 @@ public sealed class LintelsWindow : TrueBimWindow
     public LintelsWindow(
         UIDocument uiDocument,
         LintelDiagnosticCollectorService collectorService,
+        LintelWizardSourceMode sourceMode,
         LintelDiagnosticResult initialResult,
         ITrueBimLogger logger)
     {
         this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
         this.collectorService = collectorService ?? throw new ArgumentNullException(nameof(collectorService));
+        this.sourceMode = sourceMode;
         currentResult = initialResult ?? throw new ArgumentNullException(nameof(initialResult));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         preflightService = new LintelAssemblyPreflightService(this.logger);
@@ -106,7 +109,7 @@ public sealed class LintelsWindow : TrueBimWindow
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader(
                 DialogTitle,
-                "Выберите один готовый типоразмер и нажмите «Создать одну сборку». Состав будет безопасно проверен перед подтверждением.",
+                $"Шаг 2 из 4. Источник: {LintelWizardSourceCatalog.GetTitle(sourceMode)}. Выберите один готовый типоразмер; состав будет безопасно проверен перед созданием.",
                 TrueBimIcon.Lintels),
             CreateCommandBar(),
             CreateBody(),
@@ -397,7 +400,7 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         try
         {
-            LintelDiagnosticResult result = collectorService.Collect(uiDocument);
+            LintelDiagnosticResult result = collectorService.Collect(uiDocument, sourceMode);
             ApplyResult(result);
             logger.Info("Lintels selection preview refreshed from Revit.");
         }

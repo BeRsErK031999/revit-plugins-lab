@@ -24,9 +24,28 @@ public sealed class LintelDiagnosticCollectorService
             throw new ArgumentNullException(nameof(uiDocument));
         }
 
+        ICollection<ElementId> selectedIds = uiDocument.Selection.GetElementIds();
+        LintelWizardSourceMode sourceMode = selectedIds.Count > 0
+            ? LintelWizardSourceMode.CurrentSelection
+            : LintelWizardSourceMode.ActiveView;
+        return Collect(uiDocument, sourceMode);
+    }
+
+    public LintelDiagnosticResult Collect(UIDocument uiDocument, LintelWizardSourceMode sourceMode)
+    {
+        if (uiDocument is null)
+        {
+            throw new ArgumentNullException(nameof(uiDocument));
+        }
+
+        if (sourceMode is not (LintelWizardSourceMode.CurrentSelection or LintelWizardSourceMode.ActiveView))
+        {
+            throw new NotSupportedException($"Источник «{LintelWizardSourceCatalog.GetTitle(sourceMode)}» пока недоступен.");
+        }
+
         Document document = uiDocument.Document;
         ICollection<ElementId> selectedIds = uiDocument.Selection.GetElementIds();
-        LintelDiagnosticSource source = selectedIds.Count > 0
+        LintelDiagnosticSource source = sourceMode == LintelWizardSourceMode.CurrentSelection
             ? LintelDiagnosticSource.Selection
             : LintelDiagnosticSource.ActiveView;
         IReadOnlyList<Element> sourceElements = source == LintelDiagnosticSource.Selection
