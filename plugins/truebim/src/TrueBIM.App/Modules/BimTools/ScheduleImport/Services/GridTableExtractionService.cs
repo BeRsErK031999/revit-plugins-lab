@@ -373,7 +373,7 @@ public sealed class GridTableExtractionService
         List<string> result = [];
         for (int index = 0; index < header.Count; index++)
         {
-            string baseName = NormalizeText(header[index]);
+            string baseName = ScheduleColumnHeadingNormalizer.Normalize(header[index]);
             if (baseName.Length == 0)
             {
                 baseName = $"Колонка {index + 1}";

@@ -114,7 +114,11 @@ public sealed class ScheduleTableJsonReader
         if (columns is { Count: > 0 })
         {
             return columns
-                .Select((column, index) => string.IsNullOrWhiteSpace(column) ? $"Колонка {index + 1}" : column.Trim())
+                .Select((column, index) =>
+                {
+                    string heading = ScheduleColumnHeadingNormalizer.Normalize(column);
+                    return heading.Length == 0 ? $"Колонка {index + 1}" : heading;
+                })
                 .ToList();
         }
 

@@ -22,6 +22,19 @@ public sealed class PdfGridTableParserTests
         var table = Assert.Single(result.Tables);
         Assert.Equal(9, table.ColumnCount);
         Assert.Equal(17, table.RowCount);
+        Assert.Equal(
+        [
+            "Позиция",
+            "Наименование и техническая характеристика",
+            "Тип марка оборудования обозначение документа опросного листа",
+            "Код оборудования, изделия, материала",
+            "Код завода-изготовителя",
+            "Единица измерения",
+            "Количество",
+            "Масса единицы, кг",
+            "Примечания"
+        ],
+            table.Columns);
         Assert.Contains("Наименование", table.Rows[0].Values[1], StringComparison.CurrentCulture);
         Assert.Contains("Трубопроводы", table.Rows[1].Values[1], StringComparison.CurrentCulture);
         Assert.Contains("Ø18х1.8", table.Rows[^1].Values[1], StringComparison.CurrentCulture);

@@ -49,6 +49,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     private TabItem? schedulePreviewTab;
     private bool isApplying;
     private bool isLoadingFields;
+    private bool isRecognizing;
     private string? previewFingerprint;
 
     public ScheduleImportWindow(
@@ -77,6 +78,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         Drop += OnDrop;
 
         Content = CreateContent();
+        ConfigureActionHelp();
         InitializeInputs();
         AddWarnings(context.Warnings);
         UpdateStatus("Распознайте PDF, выберите категорию и сопоставьте колонки с реальными полями Revit.");
@@ -238,11 +240,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
     private UIElement CreatePdfPreviewPanel()
     {
-        pdfPreviewGrid.Style = TrueBimStyles.CreateDataGridStyle();
-        pdfPreviewGrid.AutoGenerateColumns = true;
-        pdfPreviewGrid.CanUserAddRows = false;
-        pdfPreviewGrid.CanUserDeleteRows = false;
-        pdfPreviewGrid.IsReadOnly = true;
+        ConfigurePreviewGrid(pdfPreviewGrid);
         return pdfPreviewGrid;
     }
 
@@ -322,11 +320,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         DockPanel.SetDock(previewSummaryText, Dock.Top);
         panel.Children.Add(previewSummaryText);
 
-        schedulePreviewGrid.Style = TrueBimStyles.CreateDataGridStyle();
-        schedulePreviewGrid.AutoGenerateColumns = true;
-        schedulePreviewGrid.CanUserAddRows = false;
-        schedulePreviewGrid.CanUserDeleteRows = false;
-        schedulePreviewGrid.IsReadOnly = true;
+        ConfigurePreviewGrid(schedulePreviewGrid);
         panel.Children.Add(schedulePreviewGrid);
         return panel;
     }
@@ -365,12 +359,15 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         filePathInput.Text = dialog.FileName;
         InvalidatePreview();
         UpdateStatus("Файл выбран. Нажмите «Распознать».");
+        UpdateActionState();
     }
 
     private async Task RecognizeAsync()
     {
         string filePath = filePathInput.Text.Trim();
-        recognizeButton.IsEnabled = false;
+        isRecognizing = true;
+        UpdateStatus("Распознаю таблицу из выбранного файла...");
+        UpdateActionState();
         try
         {
             PdfParserResult result = await parser.ParseAsync(filePath, CancellationToken.None);
@@ -396,7 +393,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         }
         finally
         {
-            recognizeButton.IsEnabled = true;
+            isRecognizing = false;
             UpdateActionState();
         }
     }
@@ -584,14 +581,34 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
     private ScheduleImportRequest? BuildRequest(bool previewOnly, bool showErrors)
     {
+        return BuildRequest(previewOnly, showErrors, out _);
+    }
+
+    private ScheduleImportRequest? BuildRequest(
+        bool previewOnly,
+        bool showErrors,
+        out IReadOnlyList<string> blockers)
+    {
         CommitMappingEdits();
         ParsedTable? table = SelectedTable;
         ScheduleCategoryOption? category = SelectedCategory;
         if (table is null || category is null)
         {
+            List<string> prerequisites = [];
+            if (table is null)
+            {
+                prerequisites.Add("Выберите файл и распознайте таблицу PDF или DWG.");
+            }
+
+            if (category is null)
+            {
+                prerequisites.Add("Выберите категорию Revit для новой спецификации.");
+            }
+
+            blockers = prerequisites;
             if (showErrors)
             {
-                Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, "Сначала распознайте таблицу PDF и выберите категорию Revit.");
+                Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, string.Join(Environment.NewLine, blockers));
             }
 
             return null;
@@ -628,16 +645,20 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         localErrors.AddRange(validation.Errors);
         if (localErrors.Count > 0)
         {
+            blockers = localErrors
+                .Distinct(StringComparer.CurrentCulture)
+                .ToList();
             if (showErrors)
             {
                 Autodesk.Revit.UI.TaskDialog.Show(
                     DialogTitle,
-                    string.Join(Environment.NewLine, localErrors.Distinct(StringComparer.CurrentCulture)));
+                    string.Join(Environment.NewLine, blockers));
             }
 
             return null;
         }
 
+        blockers = Array.Empty<string>();
         return new ScheduleImportRequest(
             table,
             category.CategoryId,
@@ -709,22 +730,77 @@ public sealed class ScheduleImportWindow : TrueBimWindow
 
     private void UpdateActionState()
     {
-        validateButton.IsEnabled = !isApplying && SelectedTable is not null;
-        recognizeButton.IsEnabled = !isApplying;
-        categoryInput.IsEnabled = !isApplying && !isLoadingFields;
-        tableInput.IsEnabled = !isApplying;
-        mappingGrid.IsEnabled = !isApplying && !isLoadingFields && fieldOptions.Count > 0;
+        bool hasSourceFile = !string.IsNullOrWhiteSpace(filePathInput.Text);
+        recognizeButton.IsEnabled = !isApplying && !isRecognizing && hasSourceFile;
+        recognizeButton.ToolTip = recognizeButton.IsEnabled
+            ? "Распознать таблицу и полные названия колонок из выбранного PDF или DWG."
+            : CreateBlockedActionTooltip(
+                "Распознавание недоступно",
+                [isApplying
+                    ? "Дождитесь завершения операции Revit."
+                    : isRecognizing
+                        ? "Дождитесь завершения распознавания файла."
+                        : "Сначала выберите файл PDF или DWG."]);
 
-        ScheduleImportRequest? previewRequest = isApplying || isLoadingFields
-            ? null
-            : BuildRequest(previewOnly: true, showErrors: false);
+        validateButton.IsEnabled = !isApplying && !isRecognizing && SelectedTable is not null;
+        validateButton.ToolTip = validateButton.IsEnabled
+            ? "Проверить структуру, границы и распознанные колонки исходной таблицы."
+            : CreateBlockedActionTooltip(
+                "Проверка PDF недоступна",
+                [isApplying
+                    ? "Дождитесь завершения операции Revit."
+                    : isRecognizing
+                        ? "Дождитесь завершения распознавания файла."
+                        : "Сначала распознайте таблицу PDF или DWG."]);
+
+        categoryInput.IsEnabled = !isApplying && !isLoadingFields && !isRecognizing;
+        tableInput.IsEnabled = !isApplying && !isRecognizing;
+        mappingGrid.IsEnabled = !isApplying && !isLoadingFields && !isRecognizing && fieldOptions.Count > 0;
+
+        ScheduleImportRequest? previewRequest = null;
+        IReadOnlyList<string> previewBlockers;
+        if (isApplying)
+        {
+            previewBlockers = ["Дождитесь завершения операции Revit."];
+        }
+        else if (isRecognizing)
+        {
+            previewBlockers = ["Дождитесь завершения распознавания файла."];
+        }
+        else if (isLoadingFields)
+        {
+            previewBlockers = ["Дождитесь загрузки реальных полей выбранной категории Revit."];
+        }
+        else
+        {
+            previewRequest = BuildRequest(previewOnly: true, showErrors: false, out previewBlockers);
+        }
+
         previewButton.IsEnabled = previewRequest is not null;
-        createButton.IsEnabled = previewRequest is not null
+        previewButton.ToolTip = previewButton.IsEnabled
+            ? "Построить временную спецификацию из реальных элементов Revit без изменения модели."
+            : CreateBlockedActionTooltip("Предпросмотр Revit недоступен", previewBlockers);
+
+        List<string> createBlockers = previewBlockers.ToList();
+        bool hasCurrentPreview = previewRequest is not null
             && previewFingerprint is not null
             && string.Equals(
                 previewFingerprint,
                 previewRequest.ConfigurationFingerprint,
                 StringComparison.Ordinal);
+        if (previewRequest is not null && previewFingerprint is null)
+        {
+            createBlockers.Add("Сначала выполните «Предпросмотр Revit».");
+        }
+        else if (previewRequest is not null && !hasCurrentPreview)
+        {
+            createBlockers.Add("Категория, поля или условия изменились — повторите «Предпросмотр Revit».");
+        }
+
+        createButton.IsEnabled = hasCurrentPreview;
+        createButton.ToolTip = createButton.IsEnabled
+            ? "Создать рабочую параметрическую спецификацию Revit с проверенными полями и условиями."
+            : CreateBlockedActionTooltip("Создание спецификации недоступно", createBlockers);
     }
 
     private void InvalidatePreview()
@@ -758,6 +834,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
             filePathInput.Text = files[0];
             InvalidatePreview();
             UpdateStatus("Файл добавлен. Нажмите «Распознать».");
+            UpdateActionState();
         }
     }
 
@@ -866,6 +943,75 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         }
 
         return dataTable;
+    }
+
+    private void ConfigureActionHelp()
+    {
+        foreach (Button button in new[] { recognizeButton, validateButton, previewButton, createButton })
+        {
+            ToolTipService.SetShowOnDisabled(button, true);
+            ToolTipService.SetInitialShowDelay(button, 250);
+            ToolTipService.SetShowDuration(button, 30000);
+        }
+    }
+
+    private static void ConfigurePreviewGrid(DataGrid dataGrid)
+    {
+        dataGrid.Style = TrueBimStyles.CreateDataGridStyle();
+        dataGrid.AutoGenerateColumns = true;
+        dataGrid.CanUserAddRows = false;
+        dataGrid.CanUserDeleteRows = false;
+        dataGrid.IsReadOnly = true;
+        dataGrid.ColumnHeaderHeight = double.NaN;
+        dataGrid.AutoGeneratingColumn += (_, args) => ConfigurePreviewColumn(args);
+    }
+
+    private static void ConfigurePreviewColumn(DataGridAutoGeneratingColumnEventArgs args)
+    {
+        string heading = ScheduleColumnHeadingNormalizer.Normalize(args.Column.Header?.ToString());
+        if (heading.Length == 0)
+        {
+            heading = "Колонка";
+        }
+
+        TextBlock header = new()
+        {
+            Text = heading,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing4),
+            ToolTip = heading
+        };
+        ToolTipService.SetShowDuration(header, 30000);
+        args.Column.Header = header;
+        args.Column.MinWidth = 72;
+        double widthWeight = Math.Min(2.8, Math.Max(0.75, heading.Length / 18.0));
+        args.Column.Width = new DataGridLength(widthWeight, DataGridLengthUnitType.Star);
+    }
+
+    private static string CreateBlockedActionTooltip(string title, IEnumerable<string> reasons)
+    {
+        List<string> items = reasons
+            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+            .Distinct(StringComparer.CurrentCulture)
+            .ToList();
+        if (items.Count == 0)
+        {
+            items.Add("Завершите предыдущий шаг.");
+        }
+
+        const int visibleReasonLimit = 5;
+        string list = string.Join(
+            Environment.NewLine,
+            items.Take(visibleReasonLimit).Select(reason => $"• {reason}"));
+        if (items.Count > visibleReasonLimit)
+        {
+            list += $"{Environment.NewLine}• Ещё требований: {items.Count - visibleReasonLimit}.";
+        }
+
+        return $"{title}:{Environment.NewLine}{list}";
     }
 
     private static void ConfigureTextBox(TextBox textBox)

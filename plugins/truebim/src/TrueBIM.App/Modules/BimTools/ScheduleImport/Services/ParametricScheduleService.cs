@@ -149,7 +149,7 @@ public sealed class ParametricScheduleService
             }
 
             ScheduleField scheduleField = definition.AddField(schedulableField);
-            scheduleField.ColumnHeading = mapping.SourceColumnName;
+            scheduleField.ColumnHeading = ScheduleColumnHeadingNormalizer.Normalize(mapping.SourceColumnName);
             AddFilter(document, definition, scheduleField, mapping);
         }
     }
