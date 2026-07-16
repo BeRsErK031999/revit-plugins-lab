@@ -1328,7 +1328,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(result);
         UpdateLegendPresentation(result);
         RenderPreview(result);
-        ClearRulePreview("Нажмите «Рассчитать правила» после выбора host-элемента.");
+        ClearRulePreview("Нажмите «Рассчитать раскладку» после выбора host-элемента.");
         footerStatusText.Text = "JSON-контракт изополей прочитан. Модель Revit не изменялась.";
         logger.Info($"IsoField recognition JSON read. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
     }
@@ -1365,7 +1365,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             RenderPreview(result);
             ClearRulePreview(result.Polylines.Count == 0
                 ? "Правила не рассчитаны: результат распознавания не содержит зон."
-                : "Нажмите «Рассчитать правила» после выбора host-элемента.");
+                : "Нажмите «Рассчитать раскладку» после выбора host-элемента.");
             footerStatusText.Text = "Распознавание завершено. Модель Revit не изменялась.";
             logger.Info(
                 $"IsoField source set recognition completed. Polylines={result.Polylines.Count}; "
@@ -1534,7 +1534,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             selectedHostViewId = RevitElementIds.GetValue(uiDocument.ActiveView.Id);
             ResetSlabBindingForHost();
             RefreshHostStatus();
-            ClearRulePreview("Нажмите «Рассчитать правила» для выбранного host-элемента.");
+            ClearRulePreview("Нажмите «Рассчитать раскладку» для выбранного host-элемента.");
             footerStatusText.Text = $"Host-элемент выбран: {hostElement.DisplayName}. Модель Revit не изменялась.";
             logger.Info($"IsoField host selected. Kind={hostElement.HostKind}; ElementId={hostElement.ElementId}; Name='{hostElement.Name}'.");
         }
@@ -2112,7 +2112,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         if (uiDocument is null)
         {
             logger.Warning("IsoField test rebar creation was requested without an open Revit document.");
-            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием пробного армирования.");
+            TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием армирования.");
             return;
         }
 
@@ -2121,8 +2121,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Warning("IsoField test rebar creation was requested with unconfirmed layer mappings.");
             TaskDialog.Show(
                 "Армирование по изополям",
-                "Подтвердите назначение верх/низ для всех слоёв перед созданием пробного армирования.");
-            rebarCreationStatusText.Text = "Пробное армирование не создано: назначение слоёв не подтверждено.";
+                "Подтвердите назначение верх/низ для всех слоёв перед созданием армирования.");
+            rebarCreationStatusText.Text = "Армирование не создано: назначение слоёв не подтверждено.";
             return;
         }
 
@@ -2130,7 +2130,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Warning("IsoField test rebar creation was requested without selected host element.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите стену или плиту как host-элемент.");
-            rebarCreationStatusText.Text = "Пробное армирование не создано: host-элемент не выбран.";
+            rebarCreationStatusText.Text = "Армирование не создано: host-элемент не выбран.";
             return;
         }
 
@@ -2138,7 +2138,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Warning("IsoField test rebar creation was requested without recognition polylines.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
-            rebarCreationStatusText.Text = "Пробное армирование не создано: нет контуров изополей.";
+            rebarCreationStatusText.Text = "Армирование не создано: нет контуров изополей.";
             return;
         }
 
@@ -2152,15 +2152,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         if (preview is null || !preview.CanCreateRebar)
         {
             logger.Warning("IsoField test rebar creation blocked by invalid rule preview.");
-            TaskDialog.Show("Армирование по изополям", "Перед созданием пробного армирования исправьте диагностику правил.");
-            rebarCreationStatusText.Text = "Пробное армирование не создано: правила не готовы.";
+            TaskDialog.Show("Армирование по изополям", "Перед созданием армирования исправьте диагностику правил и раскладки.");
+            rebarCreationStatusText.Text = "Армирование не создано: правила не готовы.";
             return;
         }
 
         if (!ConfirmCreateTestRebar(preview, selectedHostElement, selectedSourceSet))
         {
-            rebarCreationStatusText.Text = "Создание пробного армирования отменено.";
-            footerStatusText.Text = "Создание пробного армирования отменено пользователем.";
+            rebarCreationStatusText.Text = "Создание армирования отменено.";
+            footerStatusText.Text = "Создание армирования отменено пользователем.";
             logger.Info("IsoField test rebar creation canceled by user.");
             return;
         }
@@ -2182,9 +2182,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Error("Failed to create IsoField test rebar.", exception);
             TaskDialog.Show(
                 "Армирование по изополям",
-                "Не удалось создать пробное армирование. Проверьте host-элемент, наличие RebarBarType в модели и логи.");
-            rebarCreationStatusText.Text = "Пробное армирование не создано: см. логи диагностики.";
-            footerStatusText.Text = "Не удалось создать пробное армирование.";
+                "Не удалось создать армирование. Проверьте host-элемент, наличие точных диаметров RebarBarType в модели и логи.");
+            rebarCreationStatusText.Text = "Армирование не создано: см. логи диагностики.";
+            footerStatusText.Text = "Не удалось создать армирование.";
         }
     }
 

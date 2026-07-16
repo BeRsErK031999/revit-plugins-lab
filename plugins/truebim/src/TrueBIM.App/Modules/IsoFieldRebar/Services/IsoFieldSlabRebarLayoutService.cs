@@ -62,6 +62,22 @@ public sealed class IsoFieldSlabRebarLayoutService
             }
         }
 
+        IGrouping<string, IsoFieldSlabRebarSegment>? duplicateLine = segments
+            .GroupBy(segment => string.Join(
+                "|",
+                segment.Face,
+                segment.Direction,
+                Math.Round(segment.StartFeet.X, 6),
+                Math.Round(segment.StartFeet.Y, 6),
+                Math.Round(segment.EndFeet.X, 6),
+                Math.Round(segment.EndFeet.Y, 6)))
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateLine is not null)
+        {
+            throw new InvalidOperationException(
+                $"Зона {duplicateLine.First().ZoneId} слишком узкая либо перекрывается с соседней зоной: найдены совпадающие стержни на одной грани.");
+        }
+
         return segments;
     }
 
@@ -173,15 +189,16 @@ public sealed class IsoFieldSlabRebarLayoutService
     {
         double start = minimum + boundaryOffset + phase;
         double end = maximum - boundaryOffset;
+        double minimumAllowed = minimum + boundaryOffset;
         List<double> positions = new();
         for (double value = start; value <= end + GeometryToleranceFeet; value += spacing)
         {
             positions.Add(value);
         }
 
-        if (positions.Count == 0 && maximum - minimum > GeometryToleranceFeet)
+        if (positions.Count == 0 && end >= minimumAllowed - GeometryToleranceFeet)
         {
-            positions.Add((minimum + maximum) / 2);
+            positions.Add(Math.Min(end, Math.Max(minimumAllowed, start)));
         }
 
         return positions;

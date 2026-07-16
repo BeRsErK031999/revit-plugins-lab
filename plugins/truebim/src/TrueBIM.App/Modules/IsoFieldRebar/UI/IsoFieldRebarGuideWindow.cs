@@ -39,7 +39,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 Title,
-                "Справка по безопасному сценарию IsoField Rebar: комплект, назначение слоёв, preview, host, правила и пробная запись.",
+                "Справка IsoField Rebar: комплект, привязка плиты, инженерные правила, preview раскладки и контролируемая запись.",
                 TrueBimIcon.IsoFieldRebar),
             commandBar: null,
             body: viewer,
@@ -56,7 +56,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 
         body.Children.Add(CreateSection(
             "Как работает текущий режим",
-            CreateParagraph("Модуль ведёт пользователя от комплекта изополей к назначению верх/низ, выбору host, трёхточечной привязке и отсечению зон по плите. До кнопки «Создать пробное армирование» модель Revit не должна меняться."),
+            CreateParagraph("Модуль ведёт пользователя от комплекта изополей к назначению верх/низ, выбору плиты, трёхточечной привязке, отсечению зон и инженерной раскладке. До кнопки «Создать армирование по зонам» модель Revit не должна меняться."),
             CreateDiagramCard("Путь данных в текущем режиме модуля.", CreatePipelineDiagram())));
         body.Children.Add(CreateSection(
             "Комплект из четырёх карт",
@@ -67,21 +67,28 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 "Если имя и заголовок конфликтуют, строка подсветится красным — выберите правильный слой вручную.",
                 "Для направлений X и Y назначьте ровно один слой «Низ» и один слой «Верх».",
                 "Сохраните manifest: он зафиксирует относительные пути, размеры, SHA-256 и назначение слоёв.",
-                "Распознайте четыре изображения и продолжайте к host и правилам.")));
+                "Распознайте четыре изображения и продолжайте к плите, привязке и раскладке.")));
         body.Children.Add(CreateSection(
-            "Пример с JSON",
-            CreateParagraph("Для проверки удобно взять fixture `docs/IsoFieldRebar/examples/sample-wall-zones.json`: он уже содержит контуры зон и не требует внешнего worker-а распознавания."),
-            CreateDiagramCard("Пример: JSON-контур становится preview, затем правилом для выбранной стены или плиты.", CreateExampleDiagram()),
+            "Legacy-пример стены с JSON",
+            CreateParagraph("Для быстрой проверки чтения и стены можно взять fixture `docs/IsoFieldRebar/examples/sample-wall-zones.json`. JSON не содержит числовые легенды четырёх слоёв и поэтому не допускается к инженерной раскладке плиты P4.1."),
+            CreateDiagramCard("Legacy-пример: JSON-контур становится preview и пробным правилом для прямой стены.", CreateExampleDiagram()),
             CreateNumberedList(
                 "Выберите JSON-файл изополей.",
                 "Проверьте контуры в окне. Через «Исправить зоны» можно исключить шум, изменить класс или объединить зоны одного слоя и класса.",
                 "При необходимости покажите временные линии в Revit. После коррекции повторный preview заменит старые линии.",
-                "Выберите простую стену или плиту как host-элемент.",
-                "Для плиты задайте две опорные и третью проверочную точку, затем укажите соответствующие точки на верхней грани.",
-                "Проверьте итоговый overlay: частичные зоны отсекаются по контуру и отверстиям, полностью потерянные зоны блокируют правила.",
-                "При необходимости сохраните профиль для этого документа, вида и плиты; после загрузки он будет проверен заново.",
-                "Рассчитайте правила армирования и прочитайте диагностику.",
-                "Создавайте пробное армирование только после подтверждения и сразу проверяйте Undo.")));
+                "Выберите простую прямую стену как host-элемент.",
+                "Рассчитайте legacy-правила и создавайте пробный Rebar только после подтверждения и с немедленной проверкой Undo.")));
+        body.Children.Add(CreateSection(
+            "Инженерная раскладка плиты P4.1",
+            CreateParagraph("Для плиты используйте полный комплект As1X/As2X/As3Y/As4Y. Верхняя граница диапазона зоны принимается как требуемая площадь, а площадь сочетания d...s... пересчитывается по диаметру и шагу."),
+            CreateNumberedList(
+                "Подтвердите один нижний и один верхний слой для направлений X и Y.",
+                "Задайте три пары контрольных точек, проверьте overlay и при необходимости сохраните профиль.",
+                "Выберите режим: только дополнительное усиление поверх первой базовой сетки либо полное сочетание внутри зон.",
+                "Задайте защитный слой, отступ от границ и отверстий и минимальную длину стержня.",
+                "Нажмите «Рассчитать раскладку» и проверьте требуется/принято, сочетание, грань, направление, количество и тонкие линии стержней.",
+                "Нажмите «Создать армирование по зонам» только после проверки предупреждения: P4.1 создаёт отдельные стержни, а повторный запуск пока даёт дубликаты.",
+                "Проверьте комментарии TrueBIM, отверстия, защитный слой и один общий Undo.")));
         body.Children.Add(CreateSection(
             "Границы безопасности",
             CreateSafetyGrid()));
@@ -92,7 +99,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 "входной JSON, manifest или комплект изображений изополей;",
                 "скриншот этого окна после шага, где возникла проблема;",
                 "лог `%APPDATA%\\TrueBIM\\Logs\\truebim.log`;",
-                "описание шага: файл, preview, host, правила или пробная запись.")));
+                "описание шага: файл, preview, host, инженерная раскладка или запись.")));
 
         return body;
     }
@@ -206,12 +213,12 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         AddNode(canvas, 350, 28, 130, 70, "3. Preview", "картинка в окне и линии Revit", TrueBimBrushes.WarningBackground, TrueBimBrushes.Warning);
         AddArrow(canvas, 485, 63, 515, 63, arrowBrush);
         AddNode(canvas, 520, 28, 130, 70, "4. Host", "стена или привязанная плита", TrueBimBrushes.NeutralBackground, TrueBimBrushes.Accent);
-        AddArrow(canvas, 655, 63, 685, 63, arrowBrush);
-        AddNode(canvas, 690, 28, 60, 70, "5.", "правила", TrueBimBrushes.DangerBackground, TrueBimBrushes.Danger);
+        AddArrow(canvas, 655, 63, 675, 63, arrowBrush);
+        AddNode(canvas, 680, 28, 70, 70, "5.", "раскладка", TrueBimBrushes.DangerBackground, TrueBimBrushes.Danger);
 
-        AddCanvasText(canvas, "Безопасная часть: чтение, preview, выбор host и расчет правил не создают арматуру.", 20, 128, 510, 15, FontWeights.SemiBold, TextBrush);
-        AddCanvasText(canvas, "Запись в модель начинается только после кнопки «Создать пробное армирование» и отдельного подтверждения.", 20, 154, 690, 14, FontWeights.Normal, MutedBrush);
-        AddCanvasText(canvas, "Undo должен вернуть модель в исходное состояние после пробной записи.", 20, 178, 690, 14, FontWeights.Normal, MutedBrush);
+        AddCanvasText(canvas, "Безопасная часть: чтение, preview, привязка и расчет раскладки не создают арматуру.", 20, 128, 620, 15, FontWeights.SemiBold, TextBrush);
+        AddCanvasText(canvas, "Запись начинается только после «Создать армирование по зонам» и отдельного подтверждения.", 20, 154, 690, 14, FontWeights.Normal, MutedBrush);
+        AddCanvasText(canvas, "P4.1 создаёт отдельные стержни; Undo должен вернуть модель в исходное состояние.", 20, 178, 690, 14, FontWeights.Normal, MutedBrush);
         return canvas;
     }
 
@@ -397,17 +404,18 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             "временные линии предпросмотра;",
             "выбор host-элемента;",
             "трёхточечная привязка, отсечение и профиль плиты;",
-            "расчет правил и диагностика.");
+            "расчёт площади, линий и количества стержней.");
         Grid.SetColumn(safeColumn, 0);
         grid.Children.Add(safeColumn);
 
         UIElement writeColumn = CreateChecklistColumn(
             "Меняет модель",
             TrueBimBrushes.Danger,
-            "только команда «Создать пробное армирование»;",
+            "только команда «Создать армирование по зонам»;",
             "только после подтверждения;",
-            "создаётся пробный Rebar;",
-            "проверяется через Revit Undo.");
+            "создаются отдельные Rebar по clipped-зонам;",
+            "повторный запуск до P5 создаёт дубликаты;",
+            "вся транзакция проверяется через Revit Undo.");
         Grid.SetColumn(writeColumn, 1);
         grid.Children.Add(writeColumn);
 

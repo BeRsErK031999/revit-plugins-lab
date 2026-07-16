@@ -11,7 +11,8 @@ the current MVP behavior without requiring a production recognition worker.
 - Open a small local test model with:
   - one straight wall at least 3000 mm long and 2500 mm high;
   - one rectangular floor/slab at least 3000 x 3000 mm;
-  - at least one usable `RebarBarType`, preferably names containing `10` and `12`.
+  - usable `RebarBarType` values with the diameters required by the selected legend
+    (the reference maps may require 10, 12, 14, 16 and 20 mm).
 - Keep `%APPDATA%\TrueBIM\Logs\truebim.log` open or easy to inspect.
 - Test JSON fixtures are available under `docs/IsoFieldRebar/examples/`.
 
@@ -19,9 +20,10 @@ the current MVP behavior without requiring a production recognition worker.
 
 1. Start Revit 2022 and open the test model.
 2. Open `TrueBIM -> BIM -> Армирование по изополям`.
-3. Choose `docs/IsoFieldRebar/examples/sample-slab-zones.json`.
-4. Verify the WPF preview shows multiple contours and the footer says the JSON
-   contract was read without changing the Revit model.
+3. Choose the four reference PK LIRA maps `As1X/As2X/As3Y/As4Y`, assign exactly
+   one bottom and one top layer for X and Y, then click `Загрузить зоны`.
+4. Verify the WPF preview shows multiple contours, four numerical legends and
+   the footer says the images were processed without changing the Revit model.
 5. Click `Показать в Revit` on an active 2D view.
 6. Verify preview `DetailCurve` lines appear on the active view and can be
    removed with `Очистить`.
@@ -33,10 +35,15 @@ the current MVP behavior without requiring a production recognition worker.
    numbered control points, clipped filled zones, retained area, scale, rotation,
    and third-point deviation. A valid boundary is green and rule calculation
    becomes available.
-10. Click `Рассчитать правила`.
-11. Verify rule preview lists valid slab rules and no model elements are created.
-12. Click `Создать пробное армирование`, confirm the dialog, and verify test rebar is
-    created. Undo must remove it.
+10. Keep `Только усиление поверх базовой сетки`, set cover/offset/minimum length,
+    and click `Рассчитать раскладку`.
+11. Verify every valid zone shows required and accepted `см²/м`, the selected
+    `d...s...` combination, X/Y, top/bottom and estimated bar count. Thin lines
+    must be visible inside the clipped overlay and no model elements are created.
+12. Click `Создать армирование по зонам`, verify the confirmation states the
+    mode and total number of individual bars, then confirm. Every created bar
+    must remain inside the slab/zone and carry a `TrueBIM IsoFieldRebar` comment.
+    One Undo must remove the entire transaction.
 13. Repeat the source, preview, host, rule, and creation steps with
     `sample-wall-zones.json` and a straight wall host; slab binding must not be required.
 14. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
@@ -49,7 +56,7 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - the ribbon button opens the same window;
 - preview creation and cleanup work on a 2D view;
 - wall and slab host selection both update the host status;
-- test rebar creation is guarded by explicit confirmation;
+- engineering slab creation is guarded by explicit confirmation and reports its bar count;
 - logs contain the same workflow milestones.
 
 ## Cancel And Guard Flows
@@ -60,11 +67,11 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   explains what is missing.
 - Click `Показать в Revit` before loading JSON. Expected: user dialog and log
   warning.
-- Click `Рассчитать правила` before selecting a host. Expected: read-only
+- Click `Рассчитать раскладку` before selecting a host. Expected: read-only
   diagnostics, no model change.
 - Cancel host selection with `Esc`. Expected: footer says selection was canceled,
   no model change.
-- Click `Создать пробное армирование` and choose `No` in the confirmation dialog. Expected:
+- Click `Создать армирование по зонам` and choose `No` in the confirmation dialog. Expected:
   no rebar is created and log records user cancellation.
 
 ## Slab Binding Guard Flows
@@ -85,13 +92,41 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - Let a zone cross the slab edge or an opening. Expected: it is clipped, filled,
   outlined with a yellow dash, retained area is below 100%, and rules remain available.
 - Place a zone fully outside the slab or fully inside an opening. Expected: its
-  original outline is red and dashed; `Рассчитать правила` plus
-  `Создать пробное армирование` stay disabled.
+  original outline is red and dashed; `Рассчитать раскладку` plus
+  `Создать армирование по зонам` stay disabled.
 - Apply manual zone correction after a valid binding. Expected: binding is
   rechecked and the clipped overlay updates instead of falling back to raw pixel preview.
 - Save a valid profile, reset and reselect the same slab on the same view. Expected:
   `Загрузить профиль` becomes available and loading it reruns validation. On another
   view or slab the button stays disabled.
+
+## P4.1 Engineering Rules And Clipped Layout
+
+- Use a zone with range `7.85–9.58 см²/м`. Expected: the upper value `9.58`
+  is required and `d10s200+d12s200` is accepted because its calculated area is
+  not smaller than the requirement.
+- Temporarily replace the upper legend label in a test fixture with a smaller
+  combination. Expected: the item says `принятая площадь меньше требуемой` and
+  creation stays disabled.
+- In `Только усиление поверх базовой сетки`, expected: the first component of
+  each label is treated as existing base reinforcement and is not created. The
+  confirmation repeats this assumption.
+- In `Полное сочетание внутри зон`, expected: all components are included and
+  parallel components use a phase offset instead of coincident bars. No base
+  mesh is created outside recognized zones.
+- Change cover, boundary offset or minimum length after preview. Expected: the
+  preview is reset immediately and must be recalculated.
+- Use a zone crossing an opening. Expected: each scan line splits at the opening;
+  no bar crosses the void. Short residual pieces are removed by minimum length.
+- Verify X and Y are on separate depth planes: X is closer to the respective
+  face, Y is deeper with 5 mm clear spacing. Top and bottom layers must not clash.
+- Remove one required diameter from the Revit model. Expected: the whole
+  transaction rolls back with a missing-diameter diagnostic; the first available
+  bar type must not be substituted.
+- Set parameters so the estimate exceeds 5000 bars. Expected: preview is blocked
+  before a Revit transaction starts.
+- Run creation twice only in a disposable model. Expected for P4.1: duplicates
+  are created and the confirmation explicitly warns about this P5 limitation.
 
 ## Built-in PNG Recognition Smoke
 
@@ -138,7 +173,7 @@ must override the built-in runner.
 4. For the four reference PK LIRA images, verify every row says
    `Роль: имя + заголовок` and its tooltip shows the detected role and confidence.
 5. Assign one `Низ` and one `Верх` layer for each X/Y direction. Verify duplicate
-   faces or `Не задано` keep `Создать пробное армирование` disabled.
+   faces or `Не задано` keep `Создать армирование по зонам` disabled.
 6. Change one role to create a duplicate. Verify `Распознать 4 изображения` is
    disabled and the exact missing/duplicate role is shown; restore the role.
 7. Save `*.isofield-set.json`, close the window, reopen it, and select the manifest.
@@ -182,10 +217,10 @@ must override the built-in runner.
   grammar, or skipped catalog level falls back without accepting partial labels.
 - Header detection is intentionally limited to the current PK LIRA marker style.
   A nonstandard font or scaled header falls back to file-name/manual assignment.
-- Current write-flow creates test rebar only; it is not a production reinforcement
-  layout engine.
+- P4.1 creates individual engineering bars, not grouped `Rebar Set` or
+  `Area Reinforcement` elements. Neighboring zones are not merged.
 - Wall placement supports simple straight walls, not curved or stacked walls.
-- Slab overlay clips managed zone geometry by the top face and holes. Test rebar
-  placement still uses bounding boxes and does not yet consume clipped regions;
-  sloped slabs and compound structure remain unsupported.
+- Slab placement consumes clipped top-face regions and holes. Full-combination
+  mode does not create a background base mesh outside recognized zones; laps,
+  anchorage, repeated-run updates, sloped slabs and compound structures remain unsupported.
 - Manual QA still needs real Revit for visual preview and rebar creation checks.
