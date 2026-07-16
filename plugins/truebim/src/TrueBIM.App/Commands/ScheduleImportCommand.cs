@@ -71,16 +71,16 @@ public sealed class ScheduleImportCommand : IExternalCommand
     {
         private readonly UIDocument uiDocument;
         private readonly ITrueBimLogger logger;
-        private readonly ScheduleTableImportService importService;
+        private readonly DraftingTableService draftingTableService;
         private ScheduleImportRequest? pendingRequest;
-        private Action<ScheduleTableImportResult>? onCompleted;
+        private Action<DraftingTableCreationResult>? onCompleted;
         private Action<Exception>? onFailed;
 
         public ScheduleImportExternalEventHandler(UIDocument uiDocument, ITrueBimLogger logger)
         {
             this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            importService = new ScheduleTableImportService(
+            draftingTableService = new DraftingTableService(
                 new DraftingTableLayoutService(),
                 new ParsedTableValidationService(),
                 logger);
@@ -88,7 +88,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
 
         public void SetRequest(
             ScheduleImportRequest request,
-            Action<ScheduleTableImportResult> onCompleted,
+            Action<DraftingTableCreationResult> onCompleted,
             Action<Exception> onFailed)
         {
             pendingRequest = request ?? throw new ArgumentNullException(nameof(request));
@@ -99,7 +99,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
         public void Execute(UIApplication app)
         {
             ScheduleImportRequest? request = pendingRequest;
-            Action<ScheduleTableImportResult>? completed = onCompleted;
+            Action<DraftingTableCreationResult>? completed = onCompleted;
             Action<Exception>? failed = onFailed;
             pendingRequest = null;
             onCompleted = null;
@@ -113,8 +113,10 @@ public sealed class ScheduleImportCommand : IExternalCommand
             try
             {
                 Document document = uiDocument.Document;
-                ScheduleTableImportResult result = importService.Apply(
+                View activeView = document.ActiveView;
+                DraftingTableCreationResult result = draftingTableService.CreateTable(
                     document,
+                    activeView,
                     request.Table,
                     request.Options);
                 completed?.Invoke(result);
