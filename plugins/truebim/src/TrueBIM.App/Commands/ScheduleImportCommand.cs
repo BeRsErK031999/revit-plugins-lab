@@ -87,6 +87,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
         private ScheduleImportRequest? pendingRequest;
         private Action<ScheduleImportCreationResult>? onCompleted;
         private Action<Exception>? onFailed;
+        private string? approvedPreviewFingerprint;
 
         public ScheduleImportExternalEventHandler(UIDocument uiDocument, ITrueBimLogger logger)
         {
@@ -124,8 +125,27 @@ public sealed class ScheduleImportCommand : IExternalCommand
 
             try
             {
+                if (!request.PreviewOnly
+                    && !string.Equals(
+                        approvedPreviewFingerprint,
+                        request.ConfigurationFingerprint,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Создание заблокировано: сначала выполните актуальный «Предпросмотр Revit» для выбранных полей и условий.");
+                }
+
                 Document document = uiDocument.Document;
                 ScheduleImportCreationResult result = parametricScheduleService.Execute(document, request);
+                if (result.Succeeded && result.IsPreview)
+                {
+                    approvedPreviewFingerprint = result.ConfigurationFingerprint;
+                }
+                else if (result.Succeeded)
+                {
+                    approvedPreviewFingerprint = null;
+                }
+
                 if (ScheduleImportViewActivationPolicy.ShouldOpenCreatedSchedule(result))
                 {
                     try

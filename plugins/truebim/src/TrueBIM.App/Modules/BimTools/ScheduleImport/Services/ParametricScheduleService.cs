@@ -250,11 +250,13 @@ public sealed class ParametricScheduleService
 
         return new ScheduleFilter(field.FieldId, filterType, value);
 #else
+#pragma warning disable CS0618 // Revit 2019-2020 expose schedule units only through UnitType; Revit 2021 keeps it for compatibility.
         if (field.UnitType != UnitType.UT_Undefined
             && UnitFormatUtils.TryParse(document.GetUnits(), field.UnitType, value, out double parsedValue))
         {
             return new ScheduleFilter(field.FieldId, filterType, parsedValue);
         }
+#pragma warning restore CS0618
 
         return new ScheduleFilter(field.FieldId, filterType, value);
 #endif
