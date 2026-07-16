@@ -1432,6 +1432,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     ? TrueBimBrushes.TextSecondary
                     : TrueBimBrushes.TextMuted,
                 FontSize = TrueBimTheme.CaptionFontSize,
+                Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
+            });
+            cardContent.Children.Add(new TextBlock
+            {
+                Text = BuildLegendReinforcementSummary(legend),
+                Foreground = legend.HasReinforcementLabels
+                    ? TrueBimBrushes.TextSecondary
+                    : TrueBimBrushes.TextMuted,
+                FontSize = TrueBimTheme.CaptionFontSize,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 280,
                 Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
             });
 
@@ -1452,7 +1463,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     BorderBrush = TrueBimBrushes.Border,
                     BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
                     CornerRadius = new CornerRadius(2),
-                    ToolTip = BuildLegendBandToolTip(band)
+                    ToolTip = BuildLegendBandToolTip(legend, band)
                 });
             }
 
@@ -1486,12 +1497,27 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         return $"{FormatNumber(first.MinimumValue!.Value)}–{FormatNumber(last.MaximumValue!.Value)} см²/м";
     }
 
-    private static string BuildLegendBandToolTip(IsoFieldLegendBand band)
+    private static string BuildLegendReinforcementSummary(IsoFieldLegend legend)
+    {
+        if (!legend.HasReinforcementLabels)
+        {
+            return "Сочетания диаметр/шаг не распознаны";
+        }
+
+        IsoFieldLegendBoundary first = legend.EffectiveBoundaries[0];
+        IsoFieldLegendBoundary last = legend.EffectiveBoundaries[legend.EffectiveBoundaries.Count - 1];
+        return $"{legend.EffectiveBoundaries.Count} подписей · {first.ReinforcementLabel} … {last.ReinforcementLabel}";
+    }
+
+    private static string BuildLegendBandToolTip(IsoFieldLegend legend, IsoFieldLegendBand band)
     {
         string range = band.MinimumValue.HasValue && band.MaximumValue.HasValue
             ? $"{FormatNumber(band.MinimumValue.Value)}–{FormatNumber(band.MaximumValue.Value)} см²/м"
             : $"Уровень {band.Index + 1}; числовые границы не распознаны";
-        return $"{range}{Environment.NewLine}Цвет: {band.HexColor}";
+        string reinforcement = legend.HasReinforcementLabels
+            ? $"Границы: {legend.EffectiveBoundaries[band.Index].ReinforcementLabel} → {legend.EffectiveBoundaries[band.Index + 1].ReinforcementLabel}"
+            : "Сочетания диаметр/шаг не распознаны";
+        return $"{range}{Environment.NewLine}{reinforcement}{Environment.NewLine}Цвет: {band.HexColor}";
     }
 
     private void ResetLegendPresentation()

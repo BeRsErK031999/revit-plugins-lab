@@ -5,11 +5,25 @@ public sealed record IsoFieldLegend(
     int PixelY,
     int PixelStartX,
     int PixelEndX,
-    IsoFieldLayerRole? LayerRole = null)
+    IsoFieldLayerRole? LayerRole = null,
+    IReadOnlyList<IsoFieldLegendBoundary>? Boundaries = null)
 {
+    public IReadOnlyList<IsoFieldLegendBoundary> EffectiveBoundaries =>
+        Boundaries ?? Array.Empty<IsoFieldLegendBoundary>();
+
     public bool HasNumericRanges => Bands.Count > 0
         && Bands.All(band => band.MinimumValue.HasValue && band.MaximumValue.HasValue);
+
+    public bool HasReinforcementLabels => EffectiveBoundaries.Count == Bands.Count + 1
+        && EffectiveBoundaries.All(boundary => !string.IsNullOrWhiteSpace(boundary.ReinforcementLabel));
 }
+
+public sealed record IsoFieldLegendBoundary(
+    int Index,
+    double Ratio,
+    double? Value = null,
+    string? ReinforcementLabel = null,
+    double? LabelConfidence = null);
 
 public sealed record IsoFieldLegendBand(
     int Index,

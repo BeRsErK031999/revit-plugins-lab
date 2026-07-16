@@ -69,7 +69,9 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 5. Verify the summary reports four legends and a non-zero contour count.
 6. Verify four compact legend cards are visible for `As1X`, `As2X`, `As3Y`,
    and `As4Y`; every card shows its full numerical range in `см²/м` and ordered
-   color swatches whose tooltips contain the band range and HEX color.
+   color swatches. The card also shows the first and last `d...s...` label;
+   every swatch tooltip contains the numerical range, both boundary labels,
+   and HEX color.
 7. Verify the preview contains closed hotspot envelopes, zone names contain a
    numerical range in `см²/м`, and diagnostics confirm recognition of numerical
    boundaries plus the maximum-level rule inside each contour.
@@ -127,9 +129,9 @@ must override the built-in runner.
 - External CLI remains an optional replacement for teams with a custom OCR/CV pipeline.
 - Built-in contours are conservative convex envelopes of dense color regions,
   not exact finite-element boundaries.
-- Numerical legend boundaries are read for the current PK LIRA raster template,
-  but `d10s200+...` labels are not read yet; the in-process contract exposes
-  ordered ranges and HEX colors.
+- Numerical boundaries and `d10s200+...` labels are read only for the current
+  PK LIRA raster template and known ordered label catalog. A changed font,
+  grammar, or skipped catalog level falls back without accepting partial labels.
 - Header detection is intentionally limited to the current PK LIRA marker style.
   A nonstandard font or scaled header falls back to file-name/manual assignment.
 - Current write-flow creates test rebar only; it is not a production reinforcement

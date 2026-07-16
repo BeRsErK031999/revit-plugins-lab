@@ -26,7 +26,7 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
     private const int NormalizedGlyphWidth = 12;
     private const int NormalizedGlyphHeight = 18;
 
-    private static readonly IReadOnlyList<GlyphTemplate> NumericGlyphTemplates =
+    private static readonly IReadOnlyList<GlyphTemplate> RasterGlyphTemplates =
     [
         new('0', [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."]),
         new('1', ["..#", "###", "..#", "..#", "..#", "..#", "..#", "..#", "..#"]),
@@ -37,7 +37,26 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
         new('6', [".###.", "#...#", "#....", "####.", "#...#", "#...#", "#...#", "#...#", ".###."]),
         new('7', ["#####", "....#", "...#.", "...#.", "...#.", "..#..", "..#..", ".#...", ".#..."]),
         new('8', [".###.", "#...#", "#...#", "#..#.", ".###.", "#...#", "#...#", "#...#", ".###."]),
-        new('9', [".###.", "#..##", "#...#", "#...#", "#...#", ".####", "....#", "#..#.", ".###."])
+        new('9', [".###.", "#..##", "#...#", "#...#", "#...#", ".####", "....#", "#..#.", ".###."]),
+        new('d', ["....#", "....#", "....#", ".####", "#...#", "....#", "....#", "#..##", "#####"]),
+        new('s', [".####", ".#..#", ".##..", "...##", "##..#", ".####"]),
+        new('+', ["..#..", "..#..", "#####", "..#..", "..#.."])
+    ];
+
+    private static readonly IReadOnlyList<GlyphTemplate> NumericGlyphTemplates =
+        RasterGlyphTemplates.Where(template => char.IsDigit(template.Character)).ToArray();
+
+    private static readonly IReadOnlyList<ReinforcementLabelTemplate> ReinforcementLabelTemplates =
+    [
+        CreateReinforcementLabelTemplate("d10s200"),
+        CreateReinforcementLabelTemplate("d10s200+d10s200"),
+        CreateReinforcementLabelTemplate("d10s200+d12s200"),
+        CreateReinforcementLabelTemplate("d10s200+d14s200"),
+        CreateReinforcementLabelTemplate("d10s200+d16s200"),
+        CreateReinforcementLabelTemplate("d10s200+d12s100"),
+        CreateReinforcementLabelTemplate("d10s200+d14s100"),
+        CreateReinforcementLabelTemplate("d10s200+d16s100"),
+        CreateReinforcementLabelTemplate("d10s200+d20s100")
     ];
 
     public string RunnerName => "Встроенный";
@@ -75,7 +94,9 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
         diagnostics.Add(legend.HasNumericRanges
             ? $"Числовые границы шкалы распознаны: {FormatValue(legend.Bands[0].MinimumValue!.Value)}–{FormatValue(legend.Bands[legend.Bands.Count - 1].MaximumValue!.Value)} см²/м."
             : "Числовые границы шкалы распознаны не полностью; зоны подписаны номером уровня и HEX-цветом.");
-        diagnostics.Add("Подписи сочетаний диаметр/шаг пока не распознаются автоматически.");
+        diagnostics.Add(legend.HasReinforcementLabels
+            ? $"Подписи сочетаний диаметр/шаг распознаны: {legend.EffectiveBoundaries.Count}; минимальное совпадение {legend.EffectiveBoundaries.Min(boundary => boundary.LabelConfidence!.Value):P0}."
+            : "Подписи сочетаний диаметр/шаг распознаны не полностью и не были приняты.");
         if (zones.Polylines.Count == 0)
         {
             diagnostics.Add("Плотные цветные области не найдены. Проверьте, что расчётная карта не была сжата или изменена.");
@@ -143,8 +164,20 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
                 (double)(run.StartX - bestStartX) / bestLength,
                 (double)(run.EndX - bestStartX + 1) / bestLength))
             .ToArray();
-        IsoFieldLegend legend = new(legendBands, bestY, bestStartX, bestEndX);
-        return ApplyNumericLegendRanges(buffer, legend);
+        List<IsoFieldLegendBoundary> boundaries =
+        [
+            new IsoFieldLegendBoundary(0, 0)
+        ];
+        boundaries.AddRange(legendBands.Select(
+            (band, index) => new IsoFieldLegendBoundary(index + 1, band.EndRatio)));
+        IsoFieldLegend legend = new(
+            legendBands,
+            bestY,
+            bestStartX,
+            bestEndX,
+            Boundaries: boundaries);
+        legend = ApplyNumericLegendRanges(buffer, legend);
+        return ApplyReinforcementLabels(buffer, legend);
     }
 
     private static IsoFieldLegend ApplyNumericLegendRanges(PixelBuffer buffer, IsoFieldLegend legend)
@@ -171,9 +204,14 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
         }
 
         double legendWidth = legend.PixelEndX - legend.PixelStartX + 1;
-        List<double> expectedBoundaryXs = [legend.PixelStartX];
-        expectedBoundaryXs.AddRange(legend.Bands.Select(
-            band => legend.PixelStartX + (band.EndRatio * legendWidth)));
+        if (legend.EffectiveBoundaries.Count != boundaryCount)
+        {
+            return legend;
+        }
+
+        List<double> expectedBoundaryXs = legend.EffectiveBoundaries
+            .Select(boundary => legend.PixelStartX + (boundary.Ratio * legendWidth))
+            .ToList();
         List<NumericToken> available = tokens.ToList();
         List<double> values = new(boundaryCount);
         double tolerance = Math.Max(24, legendWidth / Math.Max(2, legend.Bands.Count * 2));
@@ -203,7 +241,218 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
                 MaximumValue = values[index + 1]
             })
             .ToArray();
-        return legend with { Bands = recognizedBands };
+        IsoFieldLegendBoundary[] recognizedBoundaries = legend.EffectiveBoundaries
+            .Select((boundary, index) => boundary with { Value = values[index] })
+            .ToArray();
+        return legend with
+        {
+            Bands = recognizedBands,
+            Boundaries = recognizedBoundaries
+        };
+    }
+
+    private static IsoFieldLegend ApplyReinforcementLabels(PixelBuffer buffer, IsoFieldLegend legend)
+    {
+        if (legend.EffectiveBoundaries.Count != legend.Bands.Count + 1)
+        {
+            return legend;
+        }
+
+        double legendWidth = legend.PixelEndX - legend.PixelStartX + 1;
+        IReadOnlyList<ReinforcementLabelMatch>? matches = RecognizeReinforcementLabels(
+            buffer,
+            legend,
+            legendWidth);
+        if (matches is null)
+        {
+            return legend;
+        }
+
+        IsoFieldLegendBoundary[] recognizedBoundaries = legend.EffectiveBoundaries
+            .Select((boundary, index) => boundary with
+            {
+                ReinforcementLabel = matches[index].Label,
+                LabelConfidence = matches[index].Confidence
+            })
+            .ToArray();
+        IsoFieldLegendBand[] recognizedBands = legend.Bands
+            .Select((band, index) => band with { Label = matches[index].Label })
+            .ToArray();
+        return legend with
+        {
+            Bands = recognizedBands,
+            Boundaries = recognizedBoundaries
+        };
+    }
+
+    private static IReadOnlyList<ReinforcementLabelMatch>? RecognizeReinforcementLabels(
+        PixelBuffer buffer,
+        IsoFieldLegend legend,
+        double legendWidth)
+    {
+        int boundaryCount = legend.EffectiveBoundaries.Count;
+        if (boundaryCount == 0 || boundaryCount > ReinforcementLabelTemplates.Count)
+        {
+            return null;
+        }
+
+        double[,] scores = new double[boundaryCount, ReinforcementLabelTemplates.Count];
+        for (int boundaryIndex = 0; boundaryIndex < boundaryCount; boundaryIndex++)
+        {
+            IsoFieldLegendBoundary boundary = legend.EffectiveBoundaries[boundaryIndex];
+            double expectedCenterX = legend.PixelStartX + (boundary.Ratio * legendWidth);
+            for (int templateIndex = 0; templateIndex < ReinforcementLabelTemplates.Count; templateIndex++)
+            {
+                scores[boundaryIndex, templateIndex] = CalculateBestTemplateCoverage(
+                    buffer,
+                    ReinforcementLabelTemplates[templateIndex],
+                    legend.PixelY,
+                    expectedCenterX);
+            }
+        }
+
+        double[,] totals = new double[boundaryCount, ReinforcementLabelTemplates.Count];
+        int[,] parents = new int[boundaryCount, ReinforcementLabelTemplates.Count];
+        for (int boundaryIndex = 0; boundaryIndex < boundaryCount; boundaryIndex++)
+        {
+            for (int templateIndex = 0; templateIndex < ReinforcementLabelTemplates.Count; templateIndex++)
+            {
+                totals[boundaryIndex, templateIndex] = double.NegativeInfinity;
+                parents[boundaryIndex, templateIndex] = -1;
+            }
+        }
+
+        for (int templateIndex = 0; templateIndex < ReinforcementLabelTemplates.Count; templateIndex++)
+        {
+            totals[0, templateIndex] = scores[0, templateIndex];
+        }
+
+        for (int boundaryIndex = 1; boundaryIndex < boundaryCount; boundaryIndex++)
+        {
+            for (int templateIndex = boundaryIndex;
+                templateIndex < ReinforcementLabelTemplates.Count;
+                templateIndex++)
+            {
+                for (int previousTemplate = boundaryIndex - 1;
+                    previousTemplate < templateIndex;
+                    previousTemplate++)
+                {
+                    double total = totals[boundaryIndex - 1, previousTemplate]
+                        + scores[boundaryIndex, templateIndex];
+                    if (total > totals[boundaryIndex, templateIndex])
+                    {
+                        totals[boundaryIndex, templateIndex] = total;
+                        parents[boundaryIndex, templateIndex] = previousTemplate;
+                    }
+                }
+            }
+        }
+
+        int selectedTemplate = Enumerable.Range(0, ReinforcementLabelTemplates.Count)
+            .OrderByDescending(index => totals[boundaryCount - 1, index])
+            .First();
+        int[] selectedTemplates = new int[boundaryCount];
+        for (int boundaryIndex = boundaryCount - 1; boundaryIndex >= 0; boundaryIndex--)
+        {
+            selectedTemplates[boundaryIndex] = selectedTemplate;
+            selectedTemplate = parents[boundaryIndex, selectedTemplate];
+        }
+
+        List<ReinforcementLabelMatch> matches = new(boundaryCount);
+        for (int boundaryIndex = 0; boundaryIndex < boundaryCount; boundaryIndex++)
+        {
+            int templateIndex = selectedTemplates[boundaryIndex];
+            double confidence = scores[boundaryIndex, templateIndex];
+            if (confidence < 0.82)
+            {
+                return null;
+            }
+
+            matches.Add(new ReinforcementLabelMatch(
+                ReinforcementLabelTemplates[templateIndex].Text,
+                confidence));
+        }
+
+        return matches;
+    }
+
+    private static double CalculateBestTemplateCoverage(
+        PixelBuffer buffer,
+        ReinforcementLabelTemplate template,
+        int legendY,
+        double expectedCenterX)
+    {
+        int nominalLeft = (int)Math.Round(expectedCenterX - (template.Width / 2.0));
+        double bestScore = 0;
+        for (int top = Math.Max(0, legendY - 20);
+            top <= Math.Min(buffer.Height - template.Height, legendY - 7);
+            top++)
+        {
+            for (int left = nominalLeft - 6; left <= nominalLeft + 6; left++)
+            {
+                bestScore = Math.Max(bestScore, CalculateTemplateCoverage(buffer, template, left, top));
+            }
+        }
+
+        return bestScore;
+    }
+
+    private static double CalculateTemplateCoverage(
+        PixelBuffer buffer,
+        ReinforcementLabelTemplate template,
+        int left,
+        int top)
+    {
+        int matched = 0;
+        foreach (PixelPoint point in template.Points)
+        {
+            int x = left + point.X;
+            int y = top + point.Y;
+            if (x >= 0
+                && x < buffer.Width
+                && y >= 0
+                && y < buffer.Height
+                && IsLegendTextPixel(buffer.GetColor(x, y)))
+            {
+                matched++;
+            }
+        }
+
+        return (double)matched / template.Points.Count;
+    }
+
+    private static ReinforcementLabelTemplate CreateReinforcementLabelTemplate(string text)
+    {
+        int[] offsets = text.Length == 7
+            ? [0, 7, 14, 20, 26, 34, 41]
+            : [0, 7, 14, 20, 26, 34, 41, 48, 55, 62, 69, 75, 81, 89, 96];
+        if (offsets.Length != text.Length)
+        {
+            throw new InvalidOperationException($"Unsupported reinforcement label template: {text}.");
+        }
+
+        List<PixelPoint> points = new();
+        int width = 0;
+        for (int index = 0; index < text.Length; index++)
+        {
+            char character = text[index];
+            GlyphTemplate glyph = RasterGlyphTemplates.Single(template => template.Character == character);
+            int glyphTop = character == 's' ? 3 : character == '+' ? 2 : 0;
+            for (int y = 0; y < glyph.Rows.Count; y++)
+            {
+                for (int x = 0; x < glyph.Rows[y].Length; x++)
+                {
+                    if (glyph.Rows[y][x] == '#')
+                    {
+                        points.Add(new PixelPoint(offsets[index] + x, glyphTop + y));
+                    }
+                }
+            }
+
+            width = Math.Max(width, offsets[index] + glyph.Rows[0].Length);
+        }
+
+        return new ReinforcementLabelTemplate(text, width, 9, points);
     }
 
     private static (int top, int bottom)? FindLegendLabelRows(PixelBuffer buffer, IsoFieldLegend legend)
@@ -993,6 +1242,14 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
         int RejectedComponents);
 
     private sealed record NumericToken(double Value, double CenterX);
+
+    private sealed record ReinforcementLabelMatch(string Label, double Confidence);
+
+    private sealed record ReinforcementLabelTemplate(
+        string Text,
+        int Width,
+        int Height,
+        IReadOnlyList<PixelPoint> Points);
 
     private sealed record BinaryGlyph(
         int MinX,
