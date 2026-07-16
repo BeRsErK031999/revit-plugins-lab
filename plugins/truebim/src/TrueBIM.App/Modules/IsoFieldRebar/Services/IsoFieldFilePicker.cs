@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Win32;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
@@ -20,5 +21,28 @@ public sealed class IsoFieldFilePicker : IIsoFieldFilePicker
         return dialog.ShowDialog() == true
             ? dialog.FileNames
             : Array.Empty<string>();
+    }
+
+    public string? PickSourceSetManifestSavePath(string? initialDirectory, string? suggestedFileName)
+    {
+        SaveFileDialog dialog = new()
+        {
+            Title = "Сохранить manifest комплекта изополей",
+            Filter = "Manifest комплекта (*.isofield-set.json)|*.isofield-set.json",
+            FileName = string.IsNullOrWhiteSpace(suggestedFileName)
+                ? IsoFieldSourceSetManifestService.DefaultManifestFileName
+                : suggestedFileName,
+            DefaultExt = ".isofield-set.json",
+            AddExtension = true,
+            OverwritePrompt = true
+        };
+        if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+        {
+            dialog.InitialDirectory = initialDirectory;
+        }
+
+        return dialog.ShowDialog() == true
+            ? dialog.FileName
+            : null;
     }
 }

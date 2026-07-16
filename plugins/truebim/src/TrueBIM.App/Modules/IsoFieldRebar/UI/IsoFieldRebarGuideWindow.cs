@@ -39,7 +39,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 Title,
-                "Справка по безопасному сценарию IsoField Rebar: файл, preview, host, правила и пробная запись.",
+                "Справка по безопасному сценарию IsoField Rebar: комплект, назначение слоёв, preview, host, правила и пробная запись.",
                 TrueBimIcon.IsoFieldRebar),
             commandBar: null,
             body: viewer,
@@ -56,8 +56,17 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
 
         body.Children.Add(CreateSection(
             "Как работает текущий режим",
-            CreateParagraph("Модуль ведёт пользователя от входного файла изополей к безопасной проверке контуров, выбору host-элемента и только затем к созданию пробного армирования. До кнопки «Создать пробное армирование» модель Revit не должна меняться."),
+            CreateParagraph("Модуль ведёт пользователя от комплекта изополей к явному назначению верх/низ, безопасной проверке контуров, выбору host-элемента и только затем к созданию пробного армирования. До кнопки «Создать пробное армирование» модель Revit не должна меняться."),
             CreateDiagramCard("Путь данных в текущем режиме модуля.", CreatePipelineDiagram())));
+        body.Children.Add(CreateSection(
+            "Комплект из четырёх карт",
+            CreateParagraph("Для расчётных изображений выберите вместе As1X, As2X, As3Y и As4Y. Плагин проверит роли, pixel size и покажет миниатюры. Направление X/Y определяется ролью, а верхнюю/нижнюю грань пользователь подтверждает явно."),
+            CreateNumberedList(
+                "Выберите четыре изображения одновременно или откройте ранее сохранённый `.isofield-set.json`.",
+                "Исправьте роль файла, если она не определилась по имени.",
+                "Для направлений X и Y назначьте ровно один слой «Низ» и один слой «Верх».",
+                "Сохраните manifest: он зафиксирует относительные пути, размеры, SHA-256 и назначение слоёв.",
+                "Распознайте четыре изображения и продолжайте к host и правилам.")));
         body.Children.Add(CreateSection(
             "Пример с JSON",
             CreateParagraph("Для проверки удобно взять fixture `docs/IsoFieldRebar/examples/sample-wall-zones.json`: он уже содержит контуры зон и не требует внешнего worker-а распознавания."),
@@ -75,7 +84,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             "Что прикладывать к ошибке",
             CreateBulletedList(
                 "версию Revit и название активного документа;",
-                "входной JSON или изображение изополей;",
+                "входной JSON, manifest или комплект изображений изополей;",
                 "скриншот этого окна после шага, где возникла проблема;",
                 "лог `%APPDATA%\\TrueBIM\\Logs\\truebim.log`;",
                 "описание шага: файл, preview, host, правила или пробная запись.")));
@@ -185,7 +194,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         };
 
         Brush arrowBrush = MutedBrush;
-        AddNode(canvas, 10, 28, 130, 70, "1. Файл", "JSON или изображение", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
+        AddNode(canvas, 10, 28, 130, 70, "1. Источник", "JSON или комплект + грани", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
         AddArrow(canvas, 145, 63, 175, 63, arrowBrush);
         AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "JSON reader или CLI-worker", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
         AddArrow(canvas, 315, 63, 345, 63, arrowBrush);

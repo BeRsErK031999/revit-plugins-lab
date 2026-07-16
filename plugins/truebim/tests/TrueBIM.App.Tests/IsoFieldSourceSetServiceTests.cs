@@ -108,6 +108,112 @@ public sealed class IsoFieldSourceSetServiceTests
         Assert.Equal("[As1X] fake diagnostic", result.Diagnostics[0]);
     }
 
+    [Fact]
+    public void AssignFace_RequiresOneTopAndBottomLayerPerDirection()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            IsoFieldSourceSetService service = new();
+            IsoFieldSourceSet sourceSet = service.Build(CreateSourceImages(directory, 32, 18));
+
+            sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As1X, IsoFieldRebarFace.Bottom);
+            sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As2X, IsoFieldRebarFace.Top);
+            sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As3Y, IsoFieldRebarFace.Bottom);
+            sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As4Y, IsoFieldRebarFace.Top);
+
+            Assert.True(sourceSet.HasConfirmedLayerMappings);
+            Assert.Empty(sourceSet.LayerMappingValidationMessages);
+
+            IsoFieldSourceSet duplicateTop = service.AssignFace(
+                sourceSet,
+                IsoFieldLayerRole.As1X,
+                IsoFieldRebarFace.Top);
+            Assert.False(duplicateTop.HasConfirmedLayerMappings);
+            Assert.Contains(
+                duplicateTop.LayerMappingValidationMessages,
+                message => message.Contains("направления X", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Manifest_SaveAndLoad_RestoresRelativeFilesHashesAndMappings()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            IsoFieldSourceSetService sourceSetService = new();
+            IsoFieldSourceSet sourceSet = sourceSetService.Build(CreateSourceImages(directory, 32, 18));
+            sourceSet = ConfirmLayerMappings(sourceSetService, sourceSet);
+            string manifestPath = Path.Combine(directory, IsoFieldSourceSetManifestService.DefaultManifestFileName);
+            IsoFieldSourceSetManifestService manifestService = new(sourceSetService);
+
+            manifestService.Save(sourceSet, manifestPath);
+            IsoFieldSourceSet loaded = manifestService.Load(manifestPath);
+
+            Assert.True(loaded.IsComplete);
+            Assert.True(loaded.HasConfirmedLayerMappings);
+            Assert.Equal(IsoFieldRebarFace.Bottom, loaded.GetLayerMapping(IsoFieldLayerRole.As1X).Face);
+            Assert.All(loaded.Files, file => Assert.Equal(directory, Path.GetDirectoryName(file.FilePath)));
+            string json = File.ReadAllText(manifestPath);
+            Assert.DoesNotContain(directory, json, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("sha256", json, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Manifest_Load_BlocksSourceWhoseHashChanged()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            IsoFieldSourceSetService sourceSetService = new();
+            string[] paths = CreateSourceImages(directory, 32, 18);
+            IsoFieldSourceSet sourceSet = sourceSetService.Build(paths);
+            string manifestPath = Path.Combine(directory, IsoFieldSourceSetManifestService.DefaultManifestFileName);
+            IsoFieldSourceSetManifestService manifestService = new(sourceSetService);
+            manifestService.Save(sourceSet, manifestPath);
+            File.AppendAllText(paths[0], "changed");
+
+            IsoFieldSourceSet loaded = manifestService.Load(manifestPath);
+
+            Assert.False(loaded.IsComplete);
+            Assert.Contains("SHA-256", loaded.Files[0].ValidationError, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Manifest_Load_RejectsUnsupportedSchema()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string manifestPath = Path.Combine(directory, IsoFieldSourceSetManifestService.DefaultManifestFileName);
+            File.WriteAllText(manifestPath, "{ \"schemaVersion\": \"2.0\" }");
+
+            InvalidDataException exception = Assert.Throws<InvalidDataException>(
+                () => new IsoFieldSourceSetManifestService(new IsoFieldSourceSetService()).Load(manifestPath));
+
+            Assert.Contains("schemaVersion", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static string[] CreateSourceImages(string directory, int width, int height)
     {
         return
@@ -117,6 +223,16 @@ public sealed class IsoFieldSourceSetServiceTests
             CreatePng(directory, "result_As3Y1.png", width, height),
             CreatePng(directory, "result_As4Y1.png", width, height)
         ];
+    }
+
+    private static IsoFieldSourceSet ConfirmLayerMappings(
+        IsoFieldSourceSetService service,
+        IsoFieldSourceSet sourceSet)
+    {
+        sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As1X, IsoFieldRebarFace.Bottom);
+        sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As2X, IsoFieldRebarFace.Top);
+        sourceSet = service.AssignFace(sourceSet, IsoFieldLayerRole.As3Y, IsoFieldRebarFace.Bottom);
+        return service.AssignFace(sourceSet, IsoFieldLayerRole.As4Y, IsoFieldRebarFace.Top);
     }
 
     private static string CreatePng(string directory, string fileName, int width, int height)

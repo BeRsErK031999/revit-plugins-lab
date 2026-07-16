@@ -68,13 +68,17 @@ Only run this section when a real or fake worker is available.
 2. In one file dialog choose four images whose names contain `As1X`, `As2X`,
    `As3Y`, and `As4Y` and whose pixel dimensions match.
 3. Verify four thumbnails, detected roles, and the message that the set is ready.
-4. Change one role to create a duplicate. Verify `Распознать 4 изображения` is
+4. Assign one `Низ` and one `Верх` layer for each X/Y direction. Verify duplicate
+   faces or `Не задано` keep `Создать пробное армирование` disabled.
+5. Change one role to create a duplicate. Verify `Распознать 4 изображения` is
    disabled and the exact missing/duplicate role is shown; restore the role.
-5. Click `Распознать 4 изображения`.
-6. Verify the runner logs `Runner=CLI`, invokes four source files in role order,
+6. Save `*.isofield-set.json`, close the window, reopen it, and select the manifest.
+   Verify files, roles, dimensions, and face assignments are restored.
+7. Click `Распознать 4 изображения`.
+8. Verify the runner logs `Runner=CLI`, invokes four source files in role order,
    prepares temp request/output files, and validates every output JSON.
-7. Verify merged contour ids and diagnostics keep their `As*` role prefixes.
-8. Verify timeout or non-zero exit failures show a user-friendly dialog and a
+9. Verify merged contour ids and diagnostics keep their `As*` role prefixes.
+10. Verify timeout or non-zero exit failures show a user-friendly dialog and a
    detailed log entry.
 
 ## Source Set Guard Flows
@@ -89,11 +93,15 @@ Only run this section when a real or fake worker is available.
   with a same-scale/export warning.
 - Mix JSON and images in one selection. Expected: the selection is rejected and
   no model change occurs.
+- After saving a manifest, modify one source image and reopen the manifest.
+  Expected: the affected row reports SHA-256 mismatch and processing is blocked.
+- Move the manifest together with all four images to another directory. Expected:
+  relative paths still resolve and the set remains valid.
 
 ## Known Limitations
 
 - Real contour recognition is still external to this module.
-- Source-set manifest persistence and header-based role detection are not yet implemented.
+- Header-based role detection is not yet implemented; current auto-detection uses file names.
 - Current write-flow creates test rebar only; it is not a production reinforcement
   layout engine.
 - Wall placement supports simple straight walls, not curved or stacked walls.

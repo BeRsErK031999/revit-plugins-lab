@@ -32,6 +32,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly IsoFieldSourceSetService sourceSetService = new();
+    private readonly IsoFieldSourceSetManifestService sourceSetManifestService;
     private readonly IsoFieldSourceSetRecognitionService sourceSetRecognitionService = new();
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
     private readonly ITrueBimLogger logger;
@@ -52,11 +53,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly Button clearHostButton;
     private readonly Button previewRulesButton;
     private readonly Button createTestRebarButton;
+    private readonly Button saveSourceSetManifestButton;
     private readonly TextBlock workflowSummaryText;
     private readonly TextBlock sourceStepText;
+    private readonly TextBlock mappingStepText;
     private readonly TextBlock zonesStepText;
     private readonly TextBlock hostStepText;
     private readonly TextBlock rulesStepText;
+    private readonly TextBlock layerMappingStatusText;
+    private readonly TextBlock manifestStatusText;
     private readonly StackPanel sourceSetRows = new();
     private readonly WpfTextBox calibrationAnchorXInput;
     private readonly WpfTextBox calibrationAnchorYInput;
@@ -64,6 +69,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly CheckBox calibrationInvertYInput;
     private string? selectedJsonPath;
     private IsoFieldSourceSet? selectedSourceSet;
+    private string? selectedSourceSetManifestPath;
+    private bool isSourceSetManifestDirty;
     private IsoFieldRecognitionResult? currentRecognitionResult;
     private IsoFieldHostElement? selectedHostElement;
     private IsoFieldCalibration currentCalibration = IsoFieldCalibration.Default;
@@ -71,6 +78,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
+    private static readonly IReadOnlyList<IsoFieldFaceOption> LayerFaceOptions =
+    [
+        new(IsoFieldRebarFace.Unconfirmed, "Не задано"),
+        new(IsoFieldRebarFace.Bottom, "Низ"),
+        new(IsoFieldRebarFace.Top, "Верх")
+    ];
 
     public IsoFieldRebarWindow(
         string? documentTitle,
@@ -94,6 +107,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         this.hostSelectionService = hostSelectionService ?? throw new ArgumentNullException(nameof(hostSelectionService));
         this.rebarCreationService = rebarCreationService ?? throw new ArgumentNullException(nameof(rebarCreationService));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        sourceSetManifestService = new IsoFieldSourceSetManifestService(sourceSetService);
         revitActions = new RevitActionDispatcher("армирование по изополям", this.logger);
 
         selectedFileText = CreateMutedText("Источник не выбран.");
@@ -148,11 +162,20 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             "Сначала рассчитайте валидные правила армирования.",
             (_, _) => CreateTestRebar(),
             TrueBimButtonStyleKind.Primary);
-        workflowSummaryText = CreateMutedText("Готово 0 из 4 обязательных шагов.");
+        saveSourceSetManifestButton = CreateActionButton(
+            "Сохранить manifest",
+            TrueBimIcon.Export,
+            168,
+            "Сначала выберите полный комплект из четырёх изображений.",
+            (_, _) => SaveSourceSetManifest());
+        workflowSummaryText = CreateMutedText("Готово 0 из 5 обязательных шагов.");
         sourceStepText = CreateWorkflowStepText("Источник выбран");
+        mappingStepText = CreateWorkflowStepText("Верх/низ подтверждены");
         zonesStepText = CreateWorkflowStepText("Зоны загружены");
         hostStepText = CreateWorkflowStepText("Host выбран");
         rulesStepText = CreateWorkflowStepText("Правила проверены");
+        layerMappingStatusText = CreateMutedText("Назначение верх/низ появится после выбора комплекта изображений.");
+        manifestStatusText = CreateMutedText("Manifest не сохранён.");
         footerStatusText = CreateMutedText("Линии предпросмотра создаются только по явной кнопке.");
 
         Title = "Армирование по изополям";
@@ -290,35 +313,36 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         StackPanel content = CreatePanelContent("1. Источник и зоны изополей");
 
-        StackPanel buttonRow = new()
-        {
-            Orientation = Orientation.Horizontal
-        };
+        WrapPanel buttonRow = new();
 
         Button chooseButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать JSON/4 изображения"),
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать источник/manifest"),
             MinWidth = 214,
             MinHeight = TrueBimTheme.ControlHeight32,
             Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Выбрать готовый JSON зон или четыре карты As1X, As2X, As3Y, As4Y для настроенного worker."
+            ToolTip = "Выбрать готовый JSON зон, manifest комплекта или четыре карты As1X, As2X, As3Y, As4Y."
         };
+        chooseButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
         chooseButton.Click += (_, _) => ChooseSourceFile();
         buttonRow.Children.Add(chooseButton);
-        recognizeButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        recognizeButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
         buttonRow.Children.Add(recognizeButton);
+        saveSourceSetManifestButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        buttonRow.Children.Add(saveSourceSetManifestButton);
         content.Children.Add(buttonRow);
 
         selectedFileText.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         content.Children.Add(selectedFileText);
         sourceSetRows.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(sourceSetRows);
-        TextBlock layerAssignmentNote = CreateMutedText(
-            "As1X/As2X — направление X, As3Y/As4Y — направление Y. "
-            + "Соответствие верх/низ пока требует инженерного подтверждения перед производственной записью.");
-        layerAssignmentNote.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
-        content.Children.Add(layerAssignmentNote);
+        layerMappingStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        layerMappingStatusText.Visibility = Visibility.Collapsed;
+        content.Children.Add(layerMappingStatusText);
+        manifestStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        manifestStatusText.Visibility = Visibility.Collapsed;
+        content.Children.Add(manifestStatusText);
         recognitionStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(recognitionStatusText);
 
@@ -450,6 +474,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         workflowSummaryText.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         content.Children.Add(TrueBimUi.CreateInfoBanner(workflowSummaryText));
         content.Children.Add(sourceStepText);
+        content.Children.Add(mappingStepText);
         content.Children.Add(zonesStepText);
         content.Children.Add(hostStepText);
         content.Children.Add(rulesStepText);
@@ -496,6 +521,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 {
                     selectedJsonPath = null;
                     selectedSourceSet = null;
+                    ResetSourceSetManifestState();
                     sourceSetRows.Children.Clear();
                     selectedFileText.Text = "Выбор отклонён: JSON и изображения нельзя смешивать.";
                     selectedFileText.Foreground = TrueBimBrushes.Danger;
@@ -508,8 +534,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 }
 
                 string selectedPath = paths[0];
+                if (IsoFieldSourceSetManifestService.IsManifestPath(selectedPath))
+                {
+                    LoadSourceSetManifest(selectedPath);
+                    return;
+                }
+
                 selectedJsonPath = selectedPath;
                 selectedSourceSet = null;
+                ResetSourceSetManifestState();
                 sourceSetRows.Children.Clear();
                 selectedFileText.Text = $"JSON: {Path.GetFileName(selectedPath)}";
                 selectedFileText.Foreground = TrueBimBrushes.Success;
@@ -521,6 +554,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             {
                 selectedJsonPath = null;
                 selectedSourceSet = sourceSetService.Build(paths);
+                selectedSourceSetManifestPath = null;
+                isSourceSetManifestDirty = true;
                 UpdateSourceSetPresentation();
                 ClearPreview("Контуры появятся после обработки полного комплекта изображений.");
                 footerStatusText.Text = selectedSourceSet.IsComplete
@@ -536,6 +571,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Error("Failed to select IsoField source file.", exception);
             selectedJsonPath = null;
             selectedSourceSet = null;
+            ResetSourceSetManifestState();
             sourceSetRows.Children.Clear();
             selectedFileText.Text = "Источник не выбран.";
             selectedFileText.Foreground = TrueBimBrushes.Danger;
@@ -547,6 +583,63 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 "Армирование по изополям",
                 "Не удалось выбрать файл изополей. Используйте логи для диагностики.");
             footerStatusText.Text = "Не удалось выбрать файл.";
+        }
+    }
+
+    private void LoadSourceSetManifest(string manifestPath)
+    {
+        selectedJsonPath = null;
+        selectedSourceSet = sourceSetManifestService.Load(manifestPath);
+        selectedSourceSetManifestPath = manifestPath;
+        isSourceSetManifestDirty = false;
+        UpdateSourceSetPresentation();
+        ClearPreview("Комплект восстановлен из manifest. Зоны нужно загрузить заново.");
+        footerStatusText.Text = selectedSourceSet.IsComplete
+            ? "Manifest комплекта загружен и проверен. Модель Revit не изменялась."
+            : "Manifest загружен, но исходные файлы не прошли проверку.";
+        logger.Info(
+            $"IsoField source-set manifest loaded. File={Path.GetFileName(manifestPath)}; "
+            + $"Complete={selectedSourceSet.IsComplete}; MappingsConfirmed={selectedSourceSet.HasConfirmedLayerMappings}.");
+    }
+
+    private void SaveSourceSetManifest()
+    {
+        try
+        {
+            if (selectedSourceSet?.IsComplete != true)
+            {
+                footerStatusText.Text = "Manifest не сохранён: сначала исправьте комплект изображений.";
+                return;
+            }
+
+            string? initialDirectory = selectedSourceSetManifestPath is null
+                ? Path.GetDirectoryName(selectedSourceSet.Files[0].FilePath)
+                : Path.GetDirectoryName(selectedSourceSetManifestPath);
+            string? suggestedFileName = selectedSourceSetManifestPath is null
+                ? IsoFieldSourceSetManifestService.DefaultManifestFileName
+                : Path.GetFileName(selectedSourceSetManifestPath);
+            string? manifestPath = filePicker.PickSourceSetManifestSavePath(initialDirectory, suggestedFileName);
+            if (string.IsNullOrWhiteSpace(manifestPath))
+            {
+                footerStatusText.Text = "Сохранение manifest отменено.";
+                logger.Info("IsoField source-set manifest save canceled.");
+                return;
+            }
+
+            sourceSetManifestService.Save(selectedSourceSet, manifestPath!);
+            selectedSourceSetManifestPath = manifestPath;
+            isSourceSetManifestDirty = false;
+            UpdateManifestStatus();
+            footerStatusText.Text = "Manifest комплекта сохранён. Модель Revit не изменялась.";
+            logger.Info($"IsoField source-set manifest saved. File={Path.GetFileName(manifestPath)}.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            logger.Error("Failed to save IsoField source-set manifest.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось сохранить manifest комплекта. Используйте логи для диагностики.");
+            footerStatusText.Text = "Не удалось сохранить manifest комплекта.";
         }
     }
 
@@ -576,6 +669,62 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         recognitionStatusText.Text = selectedSourceSet.IsComplete
             ? "Комплект проверен. Нажмите «Распознать 4 изображения», если CLI worker настроен."
             : FormatSourceSetIssues(selectedSourceSet);
+        UpdateLayerMappingStatus();
+        UpdateManifestStatus();
+    }
+
+    private void UpdateLayerMappingStatus()
+    {
+        if (selectedSourceSet is null)
+        {
+            layerMappingStatusText.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        layerMappingStatusText.Visibility = Visibility.Visible;
+        layerMappingStatusText.Text = selectedSourceSet.HasConfirmedLayerMappings
+            ? "Назначение подтверждено: для X и Y выбрано по одному верхнему и нижнему слою."
+            : string.Join(" ", selectedSourceSet.LayerMappingValidationMessages);
+        bool hasUnconfirmedFaces = selectedSourceSet.EffectiveLayerMappings
+            .Any(mapping => mapping.Face == IsoFieldRebarFace.Unconfirmed);
+        layerMappingStatusText.Foreground = selectedSourceSet.HasConfirmedLayerMappings
+            ? TrueBimBrushes.Success
+            : hasUnconfirmedFaces ? TrueBimBrushes.Warning : TrueBimBrushes.Danger;
+    }
+
+    private void UpdateManifestStatus()
+    {
+        if (selectedSourceSet is null)
+        {
+            manifestStatusText.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        manifestStatusText.Visibility = Visibility.Visible;
+        if (selectedSourceSetManifestPath is null)
+        {
+            manifestStatusText.Text = "Manifest ещё не сохранён.";
+            manifestStatusText.Foreground = TrueBimBrushes.TextMuted;
+            manifestStatusText.ToolTip = null;
+            return;
+        }
+
+        manifestStatusText.Text = isSourceSetManifestDirty
+            ? $"Комплект изменён после загрузки {Path.GetFileName(selectedSourceSetManifestPath)} — сохраните manifest заново."
+            : $"Manifest: {Path.GetFileName(selectedSourceSetManifestPath)}";
+        manifestStatusText.Foreground = isSourceSetManifestDirty
+            ? TrueBimBrushes.Warning
+            : TrueBimBrushes.Success;
+        manifestStatusText.ToolTip = selectedSourceSetManifestPath;
+    }
+
+    private void ResetSourceSetManifestState()
+    {
+        selectedSourceSetManifestPath = null;
+        isSourceSetManifestDirty = false;
+        layerMappingStatusText.Visibility = Visibility.Collapsed;
+        manifestStatusText.Visibility = Visibility.Collapsed;
+        manifestStatusText.ToolTip = null;
     }
 
     private Border CreateSourceSetRow(IsoFieldSourceFile sourceFile)
@@ -583,6 +732,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         WpfGrid row = new();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
 
         Border thumbnailBorder = new()
@@ -643,6 +794,43 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         WpfGrid.SetColumn(roleSelector, 2);
         row.Children.Add(roleSelector);
 
+        TextBlock directionText = CreateMutedText(sourceFile.Role.HasValue
+            ? IsoFieldLayerMapping.ResolveDirection(sourceFile.Role.Value).ToString()
+            : "—");
+        directionText.HorizontalAlignment = HorizontalAlignment.Center;
+        directionText.VerticalAlignment = VerticalAlignment.Center;
+        directionText.FontWeight = FontWeights.SemiBold;
+        WpfGrid.SetColumn(directionText, 3);
+        row.Children.Add(directionText);
+
+        IsoFieldLayerMapping? mapping = sourceFile.Role.HasValue
+            ? selectedSourceSet?.GetLayerMapping(sourceFile.Role.Value)
+            : null;
+        WpfComboBox faceSelector = new()
+        {
+            ItemsSource = LayerFaceOptions,
+            DisplayMemberPath = nameof(IsoFieldFaceOption.Label),
+            MinHeight = TrueBimTheme.ControlHeight32,
+            VerticalAlignment = VerticalAlignment.Center,
+            Style = TrueBimStyles.CreateComboBoxStyle(),
+            IsEnabled = selectedSourceSet?.IsComplete == true && sourceFile.Role.HasValue,
+            ToolTip = selectedSourceSet?.IsComplete == true
+                ? "Явно назначьте верхнюю или нижнюю грань для расчётного слоя."
+                : "Сначала исправьте состав и роли комплекта."
+        };
+        faceSelector.SelectedItem = LayerFaceOptions.First(option => option.Face == (mapping?.Face ?? IsoFieldRebarFace.Unconfirmed));
+        faceSelector.SelectionChanged += (_, _) =>
+        {
+            if (sourceFile.Role.HasValue
+                && faceSelector.SelectedItem is IsoFieldFaceOption option
+                && selectedSourceSet?.GetLayerMapping(sourceFile.Role.Value).Face != option.Face)
+            {
+                AssignSourceFace(sourceFile.Role.Value, option.Face);
+            }
+        };
+        WpfGrid.SetColumn(faceSelector, 4);
+        row.Children.Add(faceSelector);
+
         return new Border
         {
             Child = row,
@@ -660,17 +848,34 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
 
         TextBlock fileHeader = CreateMutedText("Карта и размер");
         fileHeader.FontWeight = FontWeights.SemiBold;
+        fileHeader.Margin = new Thickness(0);
         WpfGrid.SetColumnSpan(fileHeader, 2);
         header.Children.Add(fileHeader);
 
-        TextBlock roleHeader = CreateMutedText("Расчётный слой");
+        TextBlock roleHeader = CreateMutedText("Слой");
         roleHeader.FontWeight = FontWeights.SemiBold;
+        roleHeader.Margin = new Thickness(0);
         WpfGrid.SetColumn(roleHeader, 2);
         header.Children.Add(roleHeader);
+
+        TextBlock directionHeader = CreateMutedText("Ось");
+        directionHeader.FontWeight = FontWeights.SemiBold;
+        directionHeader.Margin = new Thickness(0);
+        directionHeader.HorizontalAlignment = HorizontalAlignment.Center;
+        WpfGrid.SetColumn(directionHeader, 3);
+        header.Children.Add(directionHeader);
+
+        TextBlock faceHeader = CreateMutedText("Грань");
+        faceHeader.FontWeight = FontWeights.SemiBold;
+        faceHeader.Margin = new Thickness(0);
+        WpfGrid.SetColumn(faceHeader, 4);
+        header.Children.Add(faceHeader);
         return header;
     }
 
@@ -682,6 +887,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         selectedSourceSet = sourceSetService.AssignRole(selectedSourceSet, filePath, role);
+        isSourceSetManifestDirty = true;
         UpdateSourceSetPresentation();
         ClearPreview("Назначение слоя изменено. Запустите обработку комплекта заново.");
         footerStatusText.Text = selectedSourceSet.IsComplete
@@ -690,6 +896,33 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         logger.Info(
             $"IsoField source role assigned. File={Path.GetFileName(filePath)}; Role={role}; "
             + $"Complete={selectedSourceSet.IsComplete}.");
+    }
+
+    private void AssignSourceFace(IsoFieldLayerRole role, IsoFieldRebarFace face)
+    {
+        if (selectedSourceSet is null)
+        {
+            return;
+        }
+
+        selectedSourceSet = sourceSetService.AssignFace(selectedSourceSet, role, face);
+        isSourceSetManifestDirty = true;
+        UpdateLayerMappingStatus();
+        UpdateManifestStatus();
+        if (currentRulePreview?.CanCreateRebar == true)
+        {
+            rebarCreationStatusText.Text = selectedSourceSet.HasConfirmedLayerMappings
+                ? "Готово к созданию пробного армирования после подтверждения."
+                : "Правила готовы, но назначение верх/низ не подтверждено.";
+        }
+
+        RefreshWorkflowState();
+        footerStatusText.Text = selectedSourceSet.HasConfirmedLayerMappings
+            ? "Назначение верх/низ подтверждено для всех слоёв."
+            : "Назначение грани изменено; заполните оставшиеся слои.";
+        logger.Info(
+            $"IsoField layer face assigned. Role={role}; Face={face}; "
+            + $"MappingsConfirmed={selectedSourceSet.HasConfirmedLayerMappings}.");
     }
 
     private static ImageSource? LoadSourceThumbnail(string filePath)
@@ -992,12 +1225,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             selectedHostElement);
         currentRulePreview = preview;
         ruleStatusText.Text = FormatRulePreview(preview);
-        rebarCreationStatusText.Text = preview.CanCreateRebar
+        bool mappingsReady = selectedSourceSet is null || selectedSourceSet.HasConfirmedLayerMappings;
+        rebarCreationStatusText.Text = preview.CanCreateRebar && mappingsReady
             ? "Готово к созданию пробного армирования после подтверждения."
-            : "Пробное армирование недоступно: проверьте диагностику правил.";
-        footerStatusText.Text = preview.CanCreateRebar
+            : preview.CanCreateRebar
+                ? "Правила готовы, но назначение верх/низ не подтверждено."
+                : "Пробное армирование недоступно: проверьте диагностику правил.";
+        footerStatusText.Text = preview.CanCreateRebar && mappingsReady
             ? $"Правила армирования рассчитаны: {preview.Items.Count}. Модель Revit не изменялась."
-            : "Правила армирования требуют проверки.";
+            : preview.CanCreateRebar
+                ? "Правила рассчитаны; подтвердите назначение верх/низ перед созданием."
+                : "Правила армирования требуют проверки.";
         logger.Info($"IsoField rebar rules preview calculated. Items={preview.Items.Count}; Diagnostics={preview.Diagnostics.Count}; CanCreateRebar={preview.CanCreateRebar}.");
         RefreshWorkflowState();
     }
@@ -1014,6 +1252,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Warning("IsoField test rebar creation was requested without an open Revit document.");
             TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием пробного армирования.");
+            return;
+        }
+
+        if (selectedSourceSet is not null && !selectedSourceSet.HasConfirmedLayerMappings)
+        {
+            logger.Warning("IsoField test rebar creation was requested with unconfirmed layer mappings.");
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Подтвердите назначение верх/низ для всех слоёв перед созданием пробного армирования.");
+            rebarCreationStatusText.Text = "Пробное армирование не создано: назначение слоёв не подтверждено.";
             return;
         }
 
@@ -1048,7 +1296,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             return;
         }
 
-        if (!ConfirmCreateTestRebar(preview, selectedHostElement))
+        if (!ConfirmCreateTestRebar(preview, selectedHostElement, selectedSourceSet))
         {
             rebarCreationStatusText.Text = "Создание пробного армирования отменено.";
             footerStatusText.Text = "Создание пробного армирования отменено пользователем.";
@@ -1078,13 +1326,26 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
     }
 
-    private static bool ConfirmCreateTestRebar(RebarRulePreviewResult preview, IsoFieldHostElement hostElement)
+    private static bool ConfirmCreateTestRebar(
+        RebarRulePreviewResult preview,
+        IsoFieldHostElement hostElement,
+        IsoFieldSourceSet? sourceSet)
     {
         RebarRulePreviewItem firstItem = preview.Items.First();
+        string layerMappingText = sourceSet is null
+            ? "Назначение слоёв: источник JSON."
+            : "Назначение слоёв: " + string.Join(
+                ", ",
+                IsoFieldSourceSet.RequiredRoles.Select(role =>
+                {
+                    IsoFieldLayerMapping mapping = sourceSet.GetLayerMapping(role);
+                    string face = mapping.Face == IsoFieldRebarFace.Bottom ? "низ" : "верх";
+                    return $"{role}={face}";
+                }));
         TaskDialog dialog = new("Армирование по изополям")
         {
             MainInstruction = "Создать пробное армирование в модели Revit?",
-            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Будет создано по одному пробному элементу на валидную зону. Это не производственная раскладка. Действие изменит модель, но его можно отменить через Undo.",
+            MainContent = $"Host: {hostElement.DisplayName}{Environment.NewLine}{layerMappingText}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Будет создано по одному пробному элементу на валидную зону. Это не производственная раскладка. Действие изменит модель, но его можно отменить через Undo.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };
@@ -1173,6 +1434,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             : isJsonSource ? "Перечитать JSON" : "Распознать 4 изображения";
         recognizeButton.Content = IconFactory.CreateButtonContent(recognitionIcon, recognitionText);
         recognizeButton.ToolTip = ResolveRecognitionToolTip(state);
+        saveSourceSetManifestButton.IsEnabled = selectedSourceSet?.IsComplete == true;
+        saveSourceSetManifestButton.ToolTip = saveSourceSetManifestButton.IsEnabled
+            ? "Сохранить пути, размеры, SHA-256 и назначение верх/низ в воспроизводимый manifest."
+            : "Сначала выберите и исправьте комплект из четырёх изображений.";
 
         showRevitPreviewButton.IsEnabled = state.CanShowRevitPreview;
         showRevitPreviewButton.ToolTip = state.CanShowRevitPreview
@@ -1195,16 +1460,22 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         createTestRebarButton.IsEnabled = state.CanCreateRebar;
         createTestRebarButton.ToolTip = state.CanCreateRebar
             ? "Создать пробное армирование после отдельного подтверждения."
-            : "Сначала рассчитайте правила без ошибок.";
+            : !state.HasConfirmedLayerMappings && state.HasSource
+                ? "Подтвердите назначение верх/низ для всех расчётных слоёв."
+                : "Сначала рассчитайте правила без ошибок.";
 
         string nextAction = selectedSourceSet is not null && !selectedSourceSet.IsComplete
             ? FormatSourceSetIssues(selectedSourceSet)
             : state.NextAction;
-        workflowSummaryText.Text = $"Готово {state.CompletedStepCount} из 4. {nextAction}";
+        workflowSummaryText.Text = $"Готово {state.CompletedStepCount} из 5. {nextAction}";
         UpdateWorkflowStep(
             sourceStepText,
             state.HasSource,
             selectedSourceSet is null ? "Источник выбран" : "Комплект из 4 слоёв готов");
+        UpdateWorkflowStep(
+            mappingStepText,
+            state.HasConfirmedLayerMappings,
+            isJsonSource ? "Назначение слоёв не требуется" : "Верх/низ подтверждены");
         UpdateWorkflowStep(zonesStepText, state.HasZones, "Зоны загружены");
         UpdateWorkflowStep(hostStepText, state.HasHost, "Host выбран");
         UpdateWorkflowStep(rulesStepText, state.HasValidRules, "Правила проверены");
@@ -1214,6 +1485,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         bool isJsonSource = !string.IsNullOrWhiteSpace(selectedJsonPath);
         bool hasSource = isJsonSource || selectedSourceSet?.IsComplete == true;
+        bool hasConfirmedLayerMappings = isJsonSource || selectedSourceSet?.HasConfirmedLayerMappings == true;
         bool hasConfiguredWorker = !string.Equals(ResolveRecognitionRunnerName(), "Stub", StringComparison.OrdinalIgnoreCase);
         return new IsoFieldWorkflowState(
             hasSource,
@@ -1221,7 +1493,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             selectedHostElement is not null,
             currentRulePreview?.CanCreateRebar == true,
             activeRevitPreviewIds.Count > 0,
-            isJsonSource || selectedSourceSet?.IsComplete == true && hasConfiguredWorker);
+            isJsonSource || selectedSourceSet?.IsComplete == true && hasConfiguredWorker,
+            hasConfirmedLayerMappings);
     }
 
     private string ResolveRecognitionToolTip(IsoFieldWorkflowState state)
@@ -1452,4 +1725,6 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         return value.ToString("0.###", CultureInfo.CurrentCulture);
     }
+
+    private sealed record IsoFieldFaceOption(IsoFieldRebarFace Face, string Label);
 }

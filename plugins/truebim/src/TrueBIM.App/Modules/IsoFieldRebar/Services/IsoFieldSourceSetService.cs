@@ -22,6 +22,24 @@ public sealed class IsoFieldSourceSetService
         return new IsoFieldSourceSet(files);
     }
 
+    public IsoFieldSourceSet AssignFace(
+        IsoFieldSourceSet sourceSet,
+        IsoFieldLayerRole role,
+        IsoFieldRebarFace face)
+    {
+        if (sourceSet is null)
+        {
+            throw new ArgumentNullException(nameof(sourceSet));
+        }
+
+        IsoFieldLayerMapping[] mappings = IsoFieldSourceSet.RequiredRoles
+            .Select(requiredRole => requiredRole == role
+                ? sourceSet.GetLayerMapping(requiredRole) with { Face = face }
+                : sourceSet.GetLayerMapping(requiredRole))
+            .ToArray();
+        return new IsoFieldSourceSet(sourceSet.Files, mappings);
+    }
+
     public IsoFieldSourceSet AssignRole(
         IsoFieldSourceSet sourceSet,
         string filePath,
@@ -56,7 +74,7 @@ public sealed class IsoFieldSourceSetService
             throw new ArgumentException("Source file is not part of the selected set.", nameof(filePath));
         }
 
-        return new IsoFieldSourceSet(files);
+        return new IsoFieldSourceSet(files, sourceSet.LayerMappings);
     }
 
     public static IsoFieldLayerRole? DetectRole(string filePath)
