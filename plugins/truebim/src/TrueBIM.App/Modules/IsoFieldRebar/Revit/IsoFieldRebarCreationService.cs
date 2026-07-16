@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Structure;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
+using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
@@ -12,12 +13,13 @@ public sealed class IsoFieldRebarCreationService
 {
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
-    private const string OwnedCommentPrefix = "TrueBIM IsoFieldRebar";
     private const double MillimetersPerFoot = 304.8;
     private const double MinimumTestLengthFeet = 0.5;
     private const double MinimumDirectionLengthFeet = 1e-9;
+    private const double GeometryComparisonToleranceFeet = 1e-5;
     private readonly SlabRebarPlacementService slabPlacementService = new();
     private readonly WallRebarPlacementService wallPlacementService = new();
+    private readonly IsoFieldRebarChangePlanService changePlanService = new();
     private readonly ITrueBimLogger logger;
 
     public IsoFieldRebarCreationService(ITrueBimLogger logger)
@@ -52,6 +54,20 @@ public sealed class IsoFieldRebarCreationService
             ?? throw new InvalidOperationException("Выбранный host-элемент не найден в текущем документе Revit.");
         EnsureHostMatchesSelection(host, hostElement);
 
+        RebarCreationRequest[] requests = BuildCreationRequests(
+                document,
+                host,
+                hostElement,
+                rulePreview,
+                previewItems,
+                slabBinding)
+            .ToArray();
+        if (rulePreview.IsEngineeringPreview)
+        {
+            IsoFieldRebarChangePlan changePlan = BuildEngineeringChangePlan(document, host, requests);
+            return ApplyEngineeringChangePlan(document, host, hostElement, requests, changePlan);
+        }
+
         List<long> createdIds = new();
         logger.Info($"IsoField test rebar transaction starting. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}; ValidRules={previewItems.Count}.");
 
@@ -63,16 +79,15 @@ public sealed class IsoFieldRebarCreationService
 
         try
         {
-            foreach (RebarCreationRequest request in BuildCreationRequests(
-                document,
-                host,
-                hostElement,
-                rulePreview,
-                previewItems,
-                slabBinding))
+            foreach (RebarCreationRequest request in requests)
             {
                 Rebar rebar = CreateRebar(document, host, request);
-                MarkCreatedRebar(rebar, request.PreviewItem, request.Placement);
+                MarkCreatedRebar(
+                    rebar,
+                    request.PreviewItem,
+                    request.Placement,
+                    request.Signature,
+                    hostElement.ElementId);
                 createdIds.Add(RevitElementIds.GetValue(rebar.Id));
             }
 
@@ -91,8 +106,54 @@ public sealed class IsoFieldRebarCreationService
             : "пробное армирование";
         return new IsoFieldRebarCreationResult(
             createdIds.Count,
+            0,
+            0,
+            0,
             createdIds,
+            Array.Empty<long>(),
             $"Создано {resultKind}: {createdIds.Count}. Host: {hostElement.DisplayName}.");
+    }
+
+    public IsoFieldRebarChangePlan PreviewEngineeringChanges(
+        UIDocument uiDocument,
+        IsoFieldHostElement hostElement,
+        RebarRulePreviewResult rulePreview,
+        IsoFieldSlabBindingAnalysis? slabBinding = null)
+    {
+        if (uiDocument is null)
+        {
+            throw new ArgumentNullException(nameof(uiDocument));
+        }
+
+        if (hostElement is null)
+        {
+            throw new ArgumentNullException(nameof(hostElement));
+        }
+
+        if (rulePreview is null)
+        {
+            throw new ArgumentNullException(nameof(rulePreview));
+        }
+
+        if (!rulePreview.IsEngineeringPreview)
+        {
+            throw new InvalidOperationException("Diff повторного запуска доступен только для инженерной раскладки плиты.");
+        }
+
+        IReadOnlyList<RebarRulePreviewItem> previewItems = ResolvePreviewItems(rulePreview, hostElement.HostKind);
+        Document document = uiDocument.Document;
+        Element host = document.GetElement(RevitElementIds.Create(hostElement.ElementId))
+            ?? throw new InvalidOperationException("Выбранный host-элемент не найден в текущем документе Revit.");
+        EnsureHostMatchesSelection(host, hostElement);
+        RebarCreationRequest[] requests = BuildCreationRequests(
+                document,
+                host,
+                hostElement,
+                rulePreview,
+                previewItems,
+                slabBinding)
+            .ToArray();
+        return BuildEngineeringChangePlan(document, host, requests);
     }
 
     private static IReadOnlyList<RebarRulePreviewItem> ResolvePreviewItems(
@@ -208,7 +269,7 @@ public sealed class IsoFieldRebarCreationService
                 previewItems))
             {
                 logger.Info($"IsoField wall rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
-                yield return new RebarCreationRequest(
+                yield return CreateRequest(
                     previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
                     ResolveBarType(document, placement.Rule.BarTypeName, placement.Component),
                     new TestRebarGeometry(
@@ -245,7 +306,7 @@ public sealed class IsoFieldRebarCreationService
             foreach (IsoFieldRebarPlacement placement in placements)
             {
                 logger.Info($"IsoField slab rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
-                yield return new RebarCreationRequest(
+                yield return CreateRequest(
                     previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
                     ResolveBarType(document, placement.Rule.BarTypeName, placement.Component),
                     new TestRebarGeometry(
@@ -341,18 +402,227 @@ public sealed class IsoFieldRebarCreationService
     private static void MarkCreatedRebar(
         Rebar rebar,
         RebarRulePreviewItem previewItem,
-        IsoFieldRebarPlacement placement)
+        IsoFieldRebarPlacement placement,
+        string? signature,
+        long hostElementId)
     {
         Parameter? parameter = rebar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+        if (placement.Component is not null
+            && (parameter is null
+                || parameter.IsReadOnly
+                || string.IsNullOrWhiteSpace(placement.StableId)
+                || string.IsNullOrWhiteSpace(signature)))
+        {
+            throw new InvalidOperationException(
+                "Созданный Rebar нельзя безопасно пометить stable id и сигнатурой TrueBIM. Транзакция отменена.");
+        }
+
         if (parameter is not null && !parameter.IsReadOnly)
         {
             string comment = placement.Component is null
-                ? $"{OwnedCommentPrefix} Test: {previewItem.ZoneName}; {previewItem.Rule.BarTypeName}; spacing {previewItem.Rule.SpacingMillimeters.ToString("0", CultureInfo.InvariantCulture)} mm"
-                : $"{OwnedCommentPrefix}; id={placement.StableId}; zone={previewItem.ZoneId}; "
+                ? $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix} Test: {previewItem.ZoneName}; {previewItem.Rule.BarTypeName}; spacing {previewItem.Rule.SpacingMillimeters.ToString("0", CultureInfo.InvariantCulture)} mm"
+                : $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix}; id={placement.StableId}; sig={signature}; host={hostElementId}; zone={previewItem.ZoneId}; "
                     + $"layer={previewItem.Rule.LayerRole}; face={previewItem.Rule.Face}; "
                     + $"{placement.Component.DisplayName}";
-            parameter.Set(comment);
+            bool marked = parameter.Set(comment);
+            if (!marked && placement.Component is not null)
+            {
+                throw new InvalidOperationException(
+                    "Rebar создан, но Revit отклонил запись stable id TrueBIM. Транзакция отменена.");
+            }
         }
+    }
+
+    private RebarCreationRequest CreateRequest(
+        RebarRulePreviewItem previewItem,
+        RebarBarType barType,
+        TestRebarGeometry geometry,
+        IsoFieldRebarPlacement placement)
+    {
+        string? signature = placement.Component is null
+            ? null
+            : changePlanService.BuildSignature(placement);
+        return new RebarCreationRequest(previewItem, barType, geometry, placement, signature);
+    }
+
+    private IsoFieldRebarChangePlan BuildEngineeringChangePlan(
+        Document document,
+        Element host,
+        IReadOnlyList<RebarCreationRequest> requests)
+    {
+        IsoFieldRebarPlanItem[] plannedItems = requests
+            .Select(request => new IsoFieldRebarPlanItem(
+                request.Placement.StableId
+                    ?? throw new InvalidOperationException("Инженерная линия не содержит стабильный id."),
+                request.Signature
+                    ?? throw new InvalidOperationException("Инженерная линия не содержит сигнатуру.")))
+            .ToArray();
+        Dictionary<string, RebarCreationRequest> requestsByStableId = requests
+            .Where(request => !string.IsNullOrWhiteSpace(request.Placement.StableId))
+            .GroupBy(request => request.Placement.StableId!, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First(),
+                StringComparer.Ordinal);
+        long hostId = RevitElementIds.GetValue(host.Id);
+        List<IsoFieldOwnedRebarSnapshot> existingElements = new();
+        foreach (Rebar rebar in new FilteredElementCollector(document)
+            .OfClass(typeof(Rebar))
+            .Cast<Rebar>())
+        {
+            if (RevitElementIds.GetValue(rebar.GetHostId()) != hostId)
+            {
+                continue;
+            }
+
+            Parameter? comments = rebar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+            if (changePlanService.TryParseOwnedComment(
+                RevitElementIds.GetValue(rebar.Id),
+                comments?.AsString(),
+                out IsoFieldOwnedRebarSnapshot? snapshot))
+            {
+                IsoFieldOwnedRebarSnapshot activeSnapshot = snapshot!;
+                if (requestsByStableId.TryGetValue(activeSnapshot.StableId, out RebarCreationRequest? request)
+                    && !RebarMatchesRequest(document, rebar, request))
+                {
+                    activeSnapshot = activeSnapshot with { Signature = null };
+                }
+
+                existingElements.Add(activeSnapshot);
+            }
+        }
+
+        return changePlanService.Build(plannedItems, existingElements);
+    }
+
+    private static bool RebarMatchesRequest(
+        Document document,
+        Rebar rebar,
+        RebarCreationRequest request)
+    {
+        IList<Curve> centerlineCurves = rebar.GetCenterlineCurves(
+            false,
+            false,
+            false,
+            MultiplanarOption.IncludeOnlyPlanarCurves,
+            0);
+        if (centerlineCurves.Count != 1 || centerlineCurves[0] is not Line actualLine)
+        {
+            return false;
+        }
+
+        Line plannedLine = (Line)request.Geometry.Curves[0];
+        XYZ actualStart = actualLine.GetEndPoint(0);
+        XYZ actualEnd = actualLine.GetEndPoint(1);
+        XYZ plannedStart = plannedLine.GetEndPoint(0);
+        XYZ plannedEnd = plannedLine.GetEndPoint(1);
+        bool geometryMatches = PointsMatch(actualStart, plannedStart)
+            && PointsMatch(actualEnd, plannedEnd)
+            || PointsMatch(actualStart, plannedEnd)
+            && PointsMatch(actualEnd, plannedStart);
+        if (!geometryMatches)
+        {
+            return false;
+        }
+
+        RebarBarType? existingBarType = document.GetElement(rebar.GetTypeId()) as RebarBarType;
+        Parameter? diameterParameter = existingBarType?.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER);
+        return diameterParameter?.StorageType == StorageType.Double
+            && request.Placement.Component is not null
+            && Math.Abs(
+                (diameterParameter.AsDouble() * MillimetersPerFoot)
+                - request.Placement.Component.DiameterMillimeters) <= 0.2;
+    }
+
+    private static bool PointsMatch(XYZ first, XYZ second)
+    {
+        return first.DistanceTo(second) <= GeometryComparisonToleranceFeet;
+    }
+
+    private IsoFieldRebarCreationResult ApplyEngineeringChangePlan(
+        Document document,
+        Element host,
+        IsoFieldHostElement hostElement,
+        IReadOnlyList<RebarCreationRequest> requests,
+        IsoFieldRebarChangePlan changePlan)
+    {
+        if (!changePlan.CanApply)
+        {
+            throw new InvalidOperationException(string.Join(" ", changePlan.Diagnostics));
+        }
+
+        if (!changePlan.HasChanges)
+        {
+            string unchangedMessage =
+                $"Армирование уже соответствует расчётной раскладке. Без изменений: {changePlan.UnchangedCount}. Host: {hostElement.DisplayName}.";
+            logger.Info($"IsoField engineering rebar is current. HostId={hostElement.ElementId}; Unchanged={changePlan.UnchangedCount}.");
+            return new IsoFieldRebarCreationResult(
+                0,
+                0,
+                0,
+                changePlan.UnchangedCount,
+                Array.Empty<long>(),
+                Array.Empty<long>(),
+                unchangedMessage);
+        }
+
+        Dictionary<string, RebarCreationRequest> requestsByStableId = requests.ToDictionary(
+            request => request.Placement.StableId!,
+            StringComparer.Ordinal);
+        List<long> createdIds = new();
+        List<long> deletedIds = new();
+        logger.Info(
+            $"IsoField engineering rebar change transaction starting. HostId={hostElement.ElementId}; {changePlan.Summary}");
+        using Transaction transaction = new(document, "TrueBIM: обновить армирование плиты по изополям");
+        transaction.Start();
+        try
+        {
+            foreach (IsoFieldRebarChange change in changePlan.Changes.Where(change =>
+                change.Kind is IsoFieldRebarChangeKind.Update or IsoFieldRebarChangeKind.Delete))
+            {
+                foreach (long elementId in change.ExistingElementIds)
+                {
+                    document.Delete(RevitElementIds.Create(elementId));
+                    deletedIds.Add(elementId);
+                }
+            }
+
+            foreach (IsoFieldRebarChange change in changePlan.Changes.Where(change =>
+                change.Kind is IsoFieldRebarChangeKind.Add or IsoFieldRebarChangeKind.Update))
+            {
+                RebarCreationRequest request = requestsByStableId[change.StableId];
+                Rebar rebar = CreateRebar(document, host, request);
+                MarkCreatedRebar(
+                    rebar,
+                    request.PreviewItem,
+                    request.Placement,
+                    request.Signature,
+                    hostElement.ElementId);
+                createdIds.Add(RevitElementIds.GetValue(rebar.Id));
+            }
+
+            transaction.Commit();
+        }
+        catch (Exception exception)
+        {
+            transaction.RollBack();
+            logger.Error(
+                $"IsoField engineering rebar change transaction rolled back. HostId={hostElement.ElementId}.",
+                exception);
+            throw;
+        }
+
+        string message = $"Армирование обновлено. {changePlan.Summary} Host: {hostElement.DisplayName}.";
+        logger.Info(
+            $"IsoField engineering rebar changes applied. HostId={hostElement.ElementId}; {changePlan.Summary}");
+        return new IsoFieldRebarCreationResult(
+            changePlan.AddCount,
+            changePlan.UpdateCount,
+            changePlan.DeleteCount,
+            changePlan.UnchangedCount,
+            createdIds,
+            deletedIds,
+            message);
     }
 
     private static string NormalizeBarTypeName(string value)
@@ -423,7 +693,8 @@ public sealed class IsoFieldRebarCreationService
         RebarRulePreviewItem PreviewItem,
         RebarBarType BarType,
         TestRebarGeometry Geometry,
-        IsoFieldRebarPlacement Placement);
+        IsoFieldRebarPlacement Placement,
+        string? Signature);
 
     private sealed record TestRebarGeometry(IList<Curve> Curves, XYZ Normal);
 }

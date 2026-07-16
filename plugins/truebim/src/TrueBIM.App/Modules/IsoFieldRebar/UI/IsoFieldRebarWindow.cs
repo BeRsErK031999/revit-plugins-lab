@@ -281,10 +281,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             "Сначала загрузите зоны и выберите host-элемент.",
             (_, _) => PreviewRebarRules());
         createTestRebarButton = CreateActionButton(
-            "Создать армирование по зонам",
+            "Применить изменения",
             TrueBimIcon.Apply,
             244,
-            "Сначала рассчитайте валидную инженерную раскладку.",
+            "Сначала рассчитайте валидную инженерную раскладку. Перед подтверждением будут показаны добавления, обновления и удаления.",
             (_, _) => CreateTestRebar(),
             TrueBimButtonStyleKind.Primary);
         saveSourceSetManifestButton = CreateActionButton(
@@ -375,7 +375,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 Title,
-                $"Активный документ: {documentTitle}. Последовательный сценарий: источник, зоны, host, инженерная раскладка и создание после подтверждения.",
+                $"Активный документ: {documentTitle}. Последовательный сценарий: источник, зоны, host, инженерная раскладка, сравнение и применение после подтверждения.",
                 TrueBimIcon.IsoFieldRebar),
             commandBar: TrueBimUi.CreateCommandBar(CreateGuideButton()),
             body: CreateScrollableBody(body),
@@ -429,7 +429,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, 0, 0, 6)
         });
         content.Children.Add(CreateMutedText("Нажмите, чтобы открыть справку с картинками: комплект карт, привязка, инженерные правила и раскладка по отсечённым зонам."));
-        content.Children.Add(CreateMutedText("До кнопки «Создать армирование по зонам» модуль работает в безопасном режиме без записи арматуры в модель."));
+        content.Children.Add(CreateMutedText("До подтверждения команды «Применить изменения» модуль работает в безопасном режиме без записи арматуры в модель."));
 
         return new ToolTip
         {
@@ -690,7 +690,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private Border CreateRulePanel()
     {
-        StackPanel content = CreatePanelContent("4. Правила и создание");
+        StackPanel content = CreatePanelContent("4. Правила и применение");
         content.Children.Add(TrueBimUi.CreateInfoBanner(
             "Требуемая площадь принимается по верхней границе диапазона зоны, см²/м. Сочетание диаметр/шаг допускается только когда расчётная площадь не меньше требуемой.",
             TrueBimUiSeverity.Neutral));
@@ -798,7 +798,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         content.Children.Add(hostStepText);
         content.Children.Add(rulesStepText);
 
-        TextBlock note = CreateMutedText("Создание доступно только после проверки всех обязательных шагов и отдельного подтверждения. Раскладка использует отсечённые зоны, но повторный запуск пока создаёт новые элементы — автоматическое обновление появится в P5.");
+        TextBlock note = CreateMutedText("Применение доступно только после проверки обязательных шагов. Перед подтверждением модуль сравнит расчёт с принадлежащей ему арматурой на выбранной плите; ручные элементы не изменяются.");
         note.Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, 0);
         content.Children.Add(note);
 
@@ -2042,7 +2042,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         bool mappingsReady = selectedSourceSet is null || selectedSourceSet.HasConfirmedLayerMappings;
         rebarCreationStatusText.Text = preview.CanCreateRebar && mappingsReady
             ? preview.IsEngineeringPreview
-                ? $"Готово к созданию {preview.EstimatedBarCount} стержней по отсечённым зонам после подтверждения."
+                ? $"Рассчитано {preview.EstimatedBarCount} стержней. Нажмите «Применить изменения», чтобы увидеть сравнение с моделью."
                 : "Готово к созданию пробного армирования после подтверждения."
             : preview.CanCreateRebar
                 ? "Правила готовы, но назначение верх/низ не подтверждено."
@@ -2157,10 +2157,54 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             return;
         }
 
-        if (!ConfirmCreateTestRebar(preview, selectedHostElement, selectedSourceSet))
+        IsoFieldRebarChangePlan? changePlan = null;
+        if (preview.IsEngineeringPreview)
         {
-            rebarCreationStatusText.Text = "Создание армирования отменено.";
-            footerStatusText.Text = "Создание армирования отменено пользователем.";
+            try
+            {
+                changePlan = rebarCreationService.PreviewEngineeringChanges(
+                    uiDocument,
+                    selectedHostElement,
+                    preview,
+                    currentSlabBinding);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+            {
+                logger.Error("Failed to preview IsoField engineering rebar changes.", exception);
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    "Не удалось сравнить раскладку с моделью. Проверьте host-элемент, точные диаметры RebarBarType и логи.");
+                rebarCreationStatusText.Text = "Изменения не применены: сравнение с моделью не рассчитано.";
+                footerStatusText.Text = "Не удалось рассчитать изменения армирования.";
+                return;
+            }
+
+            if (!changePlan.CanApply)
+            {
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    "Изменения заблокированы: " + string.Join(" ", changePlan.Diagnostics));
+                rebarCreationStatusText.Text = "Изменения не применены: план содержит ошибки.";
+                return;
+            }
+
+            rebarCreationStatusText.Text = "Сравнение с моделью: " + changePlan.Summary;
+            footerStatusText.Text = "Раскладка сравнена с принадлежащей модулю арматурой. Модель пока не изменялась.";
+            if (!changePlan.HasChanges)
+            {
+                string message = $"Армирование уже соответствует расчётной раскладке. {changePlan.Summary}";
+                TaskDialog.Show("Армирование по изополям", message);
+                rebarCreationStatusText.Text = message;
+                footerStatusText.Text = message;
+                logger.Info($"IsoField engineering rebar apply skipped. {changePlan.Summary}");
+                return;
+            }
+        }
+
+        if (!ConfirmCreateTestRebar(preview, selectedHostElement, selectedSourceSet, changePlan))
+        {
+            rebarCreationStatusText.Text = "Применение изменений отменено.";
+            footerStatusText.Text = "Применение изменений отменено пользователем.";
             logger.Info("IsoField test rebar creation canceled by user.");
             return;
         }
@@ -2175,7 +2219,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 currentSlabBinding);
             rebarCreationStatusText.Text = result.Message;
             footerStatusText.Text = result.Message;
-            logger.Info($"IsoField test rebar creation completed. Count={result.CreatedCount}; HostId={selectedHostElement.ElementId}.");
+            logger.Info(
+                $"IsoField rebar apply completed. Added={result.AddedCount}; Updated={result.UpdatedCount}; "
+                + $"Deleted={result.DeletedCount}; Unchanged={result.UnchangedCount}; HostId={selectedHostElement.ElementId}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
         {
@@ -2191,7 +2237,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private static bool ConfirmCreateTestRebar(
         RebarRulePreviewResult preview,
         IsoFieldHostElement hostElement,
-        IsoFieldSourceSet? sourceSet)
+        IsoFieldSourceSet? sourceSet,
+        IsoFieldRebarChangePlan? changePlan)
     {
         RebarRulePreviewItem firstItem = preview.Items.First();
         bool isEngineering = preview.IsEngineeringPreview;
@@ -2208,10 +2255,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         TaskDialog dialog = new("Армирование по изополям")
         {
             MainInstruction = isEngineering
-                ? "Создать армирование по отсечённым зонам в модели Revit?"
+                ? "Применить рассчитанные изменения армирования?"
                 : "Создать пробное армирование в модели Revit?",
             MainContent = isEngineering
-                ? BuildEngineeringConfirmationText(preview, hostElement, layerMappingText, firstItem)
+                ? BuildEngineeringConfirmationText(preview, hostElement, layerMappingText, firstItem, changePlan)
                 : $"Host: {hostElement.DisplayName}{Environment.NewLine}{layerMappingText}{Environment.NewLine}Зон с правилами: {preview.Items.Count}{Environment.NewLine}Первое правило: {firstItem.DisplayName}{Environment.NewLine}Будет создано по одному пробному элементу на валидную зону. Действие изменит модель, но его можно отменить через Undo.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
@@ -2224,7 +2271,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         RebarRulePreviewResult preview,
         IsoFieldHostElement hostElement,
         string layerMappingText,
-        RebarRulePreviewItem firstItem)
+        RebarRulePreviewItem firstItem,
+        IsoFieldRebarChangePlan? changePlan)
     {
         string mode = preview.EngineeringSettings?.Mode == IsoFieldReinforcementMode.AdditionalOverBase
             ? "Только дополнительное усиление. Первая сетка каждого сочетания считается уже существующей в модели."
@@ -2233,8 +2281,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             + $"{layerMappingText}{Environment.NewLine}"
             + $"Режим: {mode}{Environment.NewLine}"
             + $"Зон: {preview.Items.Count}; отдельных стержней: {preview.EstimatedBarCount}.{Environment.NewLine}"
+            + $"Изменения: {changePlan?.Summary ?? "diff не рассчитан"}{Environment.NewLine}"
             + $"Первое правило: {firstItem.DisplayName}{Environment.NewLine}"
-            + "Все линии отсечены по контуру зон и отверстиям. Повторный запуск пока создаёт дубликаты; автоматическое обновление появится в P5. Действие выполняется одной транзакцией и отменяется через Undo.";
+            + "Модуль изменяет только элементы выбранной плиты с меткой TrueBIM и стабильным id; ручная арматура не затрагивается. Добавление, обновление и удаление выполняются одной транзакцией и отменяются через Undo.";
     }
 
     private void UpdateLegendPresentation(IsoFieldRecognitionResult result)
@@ -2760,7 +2809,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         createTestRebarButton.IsEnabled = state.CanCreateRebar;
         createTestRebarButton.ToolTip = state.CanCreateRebar
             ? currentRulePreview?.IsEngineeringPreview == true
-                ? $"Создать {currentRulePreview.EstimatedBarCount} стержней по отсечённым зонам после отдельного подтверждения."
+                ? $"Сравнить {currentRulePreview.EstimatedBarCount} расчётных стержней с моделью и показать diff перед применением."
                 : "Создать пробное армирование после отдельного подтверждения."
             : !state.HasConfirmedLayerMappings && state.HasSource
                 ? "Подтвердите назначение верх/низ для всех расчётных слоёв."

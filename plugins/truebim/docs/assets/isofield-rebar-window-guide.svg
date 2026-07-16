@@ -36,7 +36,7 @@
     <rect x="80" y="446" width="492" height="76" rx="8" fill="#FFFFFF" stroke="#D7DEE8"/>
     <text x="104" y="476" fill="#12263A" font-size="18" font-weight="700">Инженерная раскладка</text>
     <rect x="104" y="486" width="210" height="26" rx="6" fill="#FCEBEB" stroke="#B23A48"/>
-    <text x="209" y="504" text-anchor="middle" fill="#B23A48" font-size="13" font-weight="700">Создать по зонам</text>
+    <text x="209" y="504" text-anchor="middle" fill="#B23A48" font-size="13" font-weight="700">Применить изменения</text>
 
     <rect x="602" y="284" width="258" height="238" rx="8" fill="#FFF3DB" stroke="#B06F00" stroke-width="2"/>
     <text x="624" y="316" fill="#12263A" font-size="20" font-weight="700">Готовность: 4 из 5</text>
@@ -45,6 +45,6 @@
     <text x="624" y="406" fill="#1F8A70" font-size="16">✓ Зоны загружены</text>
     <text x="624" y="434" fill="#1F8A70" font-size="16">✓ Плита привязана</text>
     <text x="624" y="462" fill="#4A5A6A" font-size="16">○ Раскладка проверена</text>
-    <text x="624" y="494" fill="#4A5A6A" font-size="14">Следующий шаг понятен до записи</text>
+    <text x="624" y="494" fill="#4A5A6A" font-size="14">Перед записью будет показан diff</text>
   </g>
 </svg>

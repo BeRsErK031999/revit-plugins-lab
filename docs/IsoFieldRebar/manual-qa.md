@@ -40,13 +40,15 @@ the current MVP behavior without requiring a production recognition worker.
 11. Verify every valid zone shows required and accepted `см²/м`, the selected
     `d...s...` combination, X/Y, top/bottom and estimated bar count. Thin lines
     must be visible inside the clipped overlay and no model elements are created.
-12. Click `Создать армирование по зонам`, verify the confirmation states the
-    mode and total number of individual bars, then confirm. Every created bar
-    must remain inside the slab/zone and carry a `TrueBIM IsoFieldRebar` comment.
-    One Undo must remove the entire transaction.
-13. Repeat the source, preview, host, rule, and creation steps with
+12. Click `Применить изменения`, verify the confirmation states the mode, total
+    number of individual bars and `add/update/delete/unchanged` diff, then confirm.
+    Every created bar must remain inside the slab/zone and carry a
+    `TrueBIM IsoFieldRebar` comment. One Undo must remove the entire transaction.
+13. Recalculate and apply the same layout. Expected: every bar is `без изменений`,
+    no transaction starts and no duplicate is created.
+14. Repeat the source, preview, host, rule, and creation steps with
     `sample-wall-zones.json` and a straight wall host; slab binding must not be required.
-14. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
+15. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
     preview, rule preview, and write-flow entries.
 
 ## Revit 2025 Smoke
@@ -71,7 +73,7 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   diagnostics, no model change.
 - Cancel host selection with `Esc`. Expected: footer says selection was canceled,
   no model change.
-- Click `Создать армирование по зонам` and choose `No` in the confirmation dialog. Expected:
+- Click `Применить изменения` and choose `No` in the confirmation dialog. Expected:
   no rebar is created and log records user cancellation.
 
 ## Slab Binding Guard Flows
@@ -93,7 +95,7 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   outlined with a yellow dash, retained area is below 100%, and rules remain available.
 - Place a zone fully outside the slab or fully inside an opening. Expected: its
   original outline is red and dashed; `Рассчитать раскладку` plus
-  `Создать армирование по зонам` stay disabled.
+  `Применить изменения` stay disabled.
 - Apply manual zone correction after a valid binding. Expected: binding is
   rechecked and the clipped overlay updates instead of falling back to raw pixel preview.
 - Save a valid profile, reset and reselect the same slab on the same view. Expected:
@@ -125,8 +127,28 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   bar type must not be substituted.
 - Set parameters so the estimate exceeds 5000 bars. Expected: preview is blocked
   before a Revit transaction starts.
-- Run creation twice only in a disposable model. Expected for P4.1: duplicates
-  are created and the confirmation explicitly warns about this P5 limitation.
+
+## P5.1 Idempotent Apply And Ownership Diff
+
+- Apply a valid engineering layout for the first time. Expected: the confirmation
+  shows every planned bar in `Добавить`; comments contain `id=`, `sig=` and the
+  selected host id.
+- Apply the same layout again. Expected: all bars are `Без изменений`, the model
+  is not modified and no additional Undo entry appears.
+- Change cover, offset or minimum length and recalculate. Expected: bars with the
+  same stable id and changed geometry are `Обновить`; no longer planned ids are
+  `Удалить`. Confirming applies the whole diff in one Undo transaction.
+- Move one owned bar manually without changing its comment. Expected: actual
+  centerline comparison detects it as `Обновить` and restores the planned line.
+- Copy an owned bar together with its TrueBIM comment. Expected: the duplicate
+  stable id is healed as one `Обновить`, leaving exactly one planned element.
+- Delete one owned bar manually. Expected: only that stable id becomes `Добавить`.
+- Add manual Rebar on the same slab without the exact
+  `TrueBIM IsoFieldRebar; id=...` marker. Expected: it is absent from the diff and
+  remains untouched after apply.
+- Test an element created by P4.1 before `sig=` was introduced. Expected: it is
+  updated once to the new ownership metadata, then becomes `Без изменений`.
+- Cancel the diff confirmation. Expected: no elements are added, changed or deleted.
 
 ## Built-in PNG Recognition Smoke
 
@@ -173,7 +195,7 @@ must override the built-in runner.
 4. For the four reference PK LIRA images, verify every row says
    `Роль: имя + заголовок` and its tooltip shows the detected role and confidence.
 5. Assign one `Низ` and one `Верх` layer for each X/Y direction. Verify duplicate
-   faces or `Не задано` keep `Создать армирование по зонам` disabled.
+   faces or `Не задано` keep `Применить изменения` disabled.
 6. Change one role to create a duplicate. Verify `Распознать 4 изображения` is
    disabled and the exact missing/duplicate role is shown; restore the role.
 7. Save `*.isofield-set.json`, close the window, reopen it, and select the manifest.
@@ -222,5 +244,7 @@ must override the built-in runner.
 - Wall placement supports simple straight walls, not curved or stacked walls.
 - Slab placement consumes clipped top-face regions and holes. Full-combination
   mode does not create a background base mesh outside recognized zones; laps,
-  anchorage, repeated-run updates, sloped slabs and compound structures remain unsupported.
+  anchorage, sloped slabs and compound structures remain unsupported.
+- P5.1 diff is summarized before confirmation; there is no separate filterable
+  per-stable-id diff table yet. The legacy straight-wall probe is not idempotent.
 - Manual QA still needs real Revit for visual preview and rebar creation checks.
