@@ -97,7 +97,25 @@ public sealed class IsoFieldJsonReader : IIsoFieldJsonReader
             polylineId,
             points,
             normalizedZoneName,
-            polyline.Confidence);
+            polyline.Confidence,
+            ParseLayerRole(polyline.LayerRole, polylineId));
+    }
+
+    private static IsoFieldLayerRole? ParseLayerRole(string? layerRole, string polylineId)
+    {
+        if (string.IsNullOrWhiteSpace(layerRole))
+        {
+            return null;
+        }
+
+        if (Enum.TryParse(layerRole!.Trim(), ignoreCase: true, out IsoFieldLayerRole role)
+            && Enum.IsDefined(typeof(IsoFieldLayerRole), role))
+        {
+            return role;
+        }
+
+        throw new InvalidDataException(
+            $"IsoField polyline '{polylineId}' contains unsupported layerRole '{layerRole}'.");
     }
 
     private static IsoFieldPoint MapPoint(string polylineId, PointContract point, int pointIndex)
@@ -136,6 +154,8 @@ public sealed class IsoFieldJsonReader : IIsoFieldJsonReader
         public string? ZoneName { get; set; }
 
         public double? Confidence { get; set; }
+
+        public string? LayerRole { get; set; }
 
         public List<PointContract>? Points { get; set; }
     }

@@ -1,4 +1,5 @@
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
+using TrueBIM.App.Modules.IsoFieldRebar.Models;
 using Xunit;
 
 namespace TrueBIM.App.Tests;
@@ -187,6 +188,7 @@ public sealed class IsoFieldRecognitionRunnerTests
               "polylines": [
                 {
                   "id": "zone-a",
+                  "layerRole": "As1X",
                   "zoneName": "Zone A",
                   "confidence": 0.9,
                   "points": [
@@ -209,6 +211,7 @@ public sealed class IsoFieldRecognitionRunnerTests
             Assert.Equal("zone-a", polyline.Id);
             Assert.Equal("Zone A", polyline.ZoneName);
             Assert.Equal(0.9, polyline.Confidence);
+            Assert.Equal(IsoFieldLayerRole.As1X, polyline.LayerRole);
             Assert.Equal(2, polyline.Points.Count);
             Assert.Equal(10.0, polyline.Points[0].X);
             Assert.Equal(20.0, polyline.Points[0].Y);

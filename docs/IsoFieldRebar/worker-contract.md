@@ -36,8 +36,13 @@ $env:TRUEBIM_ISOFIELD_WORKER_TIMEOUT_SECONDS = "45"
 
 ## Invocation
 
-For each recognition run TrueBIM creates a temporary working directory under
+For each source image TrueBIM creates a temporary working directory under
 `%TEMP%\TrueBIM\IsoFieldRebar\...`.
+
+For a validated four-file source set the worker is called sequentially in the
+order `As1X`, `As2X`, `As3Y`, `As4Y`. The worker still receives one image per
+invocation and does not need to implement source-set grouping. TrueBIM assigns
+the layer role while merging the four results.
 
 TrueBIM writes `request.json`:
 

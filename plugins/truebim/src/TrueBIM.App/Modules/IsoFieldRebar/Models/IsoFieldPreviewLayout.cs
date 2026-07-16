@@ -15,4 +15,5 @@ public sealed record IsoFieldPreviewPolyline(
     string Id,
     IReadOnlyList<IsoFieldPoint> Points,
     string? ZoneName = null,
-    double? Confidence = null);
+    double? Confidence = null,
+    IsoFieldLayerRole? LayerRole = null);

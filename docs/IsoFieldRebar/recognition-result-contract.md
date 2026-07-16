@@ -18,6 +18,7 @@
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | string | yes | Stable id внутри результата распознавания. |
+| `layerRole` | string | no | Расчётный слой: `As1X`, `As2X`, `As3Y` или `As4Y`. При обработке комплекта TrueBIM заполняет роль по исходному файлу. |
 | `zoneName` | string | no | Имя зоны или слоя изополей. |
 | `confidence` | number | no | Уверенность распознавания в диапазоне `0..1`. |
 | `points` | array | yes | Точки полилинии в координатах исходного файла. Минимум две точки. |
@@ -36,6 +37,7 @@
 - Every polyline must have a non-empty `id`.
 - Every polyline must have at least two points.
 - Every point must have finite `x` and `y` values.
+- If `layerRole` is present, it must be one of `As1X`, `As2X`, `As3Y`, `As4Y` (case-insensitive on read).
 - Unknown fields are ignored for forward compatibility.
 
 ## Safety boundaries

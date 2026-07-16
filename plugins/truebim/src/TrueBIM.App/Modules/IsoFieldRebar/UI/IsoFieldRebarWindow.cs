@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
 using TrueBIM.App.Modules.IsoFieldRebar.Revit;
@@ -10,6 +11,7 @@ using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
+using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfTextBox = System.Windows.Controls.TextBox;
 using WpfPolyline = System.Windows.Shapes.Polyline;
@@ -29,6 +31,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldRebarCreationService rebarCreationService;
     private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
+    private readonly IsoFieldSourceSetService sourceSetService = new();
+    private readonly IsoFieldSourceSetRecognitionService sourceSetRecognitionService = new();
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
@@ -53,11 +57,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly TextBlock zonesStepText;
     private readonly TextBlock hostStepText;
     private readonly TextBlock rulesStepText;
+    private readonly StackPanel sourceSetRows = new();
     private readonly WpfTextBox calibrationAnchorXInput;
     private readonly WpfTextBox calibrationAnchorYInput;
     private readonly WpfTextBox calibrationMillimetersPerPixelInput;
     private readonly CheckBox calibrationInvertYInput;
-    private string? selectedFilePath;
+    private string? selectedJsonPath;
+    private IsoFieldSourceSet? selectedSourceSet;
     private IsoFieldRecognitionResult? currentRecognitionResult;
     private IsoFieldHostElement? selectedHostElement;
     private IsoFieldCalibration currentCalibration = IsoFieldCalibration.Default;
@@ -90,7 +96,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         revitActions = new RevitActionDispatcher("армирование по изополям", this.logger);
 
-        selectedFileText = CreateMutedText("Файл не выбран.");
+        selectedFileText = CreateMutedText("Источник не выбран.");
         recognitionStatusText = CreateMutedText($"JSON загружается сразу. Обработчик изображений: {ResolveRecognitionRunnerName()}.");
         hostStatusText = CreateMutedText("Host-элемент не выбран.");
         calibrationAnchorXInput = CreateCalibrationInput(currentCalibration.ImageAnchor.X);
@@ -113,7 +119,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             "Загрузить зоны",
             TrueBimIcon.Preview,
             176,
-            "Сначала выберите JSON или изображение изополей.",
+            "Сначала выберите JSON или полный комплект As1X, As2X, As3Y, As4Y.",
             (_, _) => RunRecognition());
         showRevitPreviewButton = CreateRevitPreviewButton();
         clearRevitPreviewButton = CreateClearRevitPreviewButton();
@@ -291,12 +297,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         Button chooseButton = new()
         {
-            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать JSON/изображение"),
+            Content = IconFactory.CreateButtonContent(TrueBimIcon.Open, "Выбрать JSON/4 изображения"),
             MinWidth = 214,
             MinHeight = TrueBimTheme.ControlHeight32,
             Style = TrueBimStyles.CreateButtonStyle(),
             HorizontalAlignment = HorizontalAlignment.Left,
-            ToolTip = "Выбрать готовый JSON зон или изображение изополей для настроенного worker."
+            ToolTip = "Выбрать готовый JSON зон или четыре карты As1X, As2X, As3Y, As4Y для настроенного worker."
         };
         chooseButton.Click += (_, _) => ChooseSourceFile();
         buttonRow.Children.Add(chooseButton);
@@ -306,6 +312,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         selectedFileText.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         content.Children.Add(selectedFileText);
+        sourceSetRows.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        content.Children.Add(sourceSetRows);
+        TextBlock layerAssignmentNote = CreateMutedText(
+            "As1X/As2X — направление X, As3Y/As4Y — направление Y. "
+            + "Соответствие верх/низ пока требует инженерного подтверждения перед производственной записью.");
+        layerAssignmentNote.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
+        content.Children.Add(layerAssignmentNote);
         recognitionStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(recognitionStatusText);
 
@@ -468,41 +481,242 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         try
         {
-            string? path = filePicker.PickIsoFieldSourceFile();
-            if (string.IsNullOrWhiteSpace(path))
+            IReadOnlyList<string> paths = filePicker.PickIsoFieldSourceFiles();
+            if (paths.Count == 0)
             {
-                footerStatusText.Text = "Выбор файла отменен.";
-                logger.Info("IsoField source file selection canceled.");
+                footerStatusText.Text = "Выбор источников отменен.";
+                logger.Info("IsoField source selection canceled.");
                 return;
             }
 
-            string selectedPath = path!;
-            selectedFilePath = selectedPath;
-            selectedFileText.Text = $"Выбран: {Path.GetFileName(selectedPath)}";
-            selectedFileText.ToolTip = selectedPath;
-            logger.Info($"IsoField source file selected: {Path.GetFileName(selectedPath)}.");
-            if (IsJsonFile(selectedPath))
+            bool containsJson = paths.Any(IsJsonFile);
+            if (containsJson)
             {
+                if (paths.Count != 1 || !IsJsonFile(paths[0]))
+                {
+                    selectedJsonPath = null;
+                    selectedSourceSet = null;
+                    sourceSetRows.Children.Clear();
+                    selectedFileText.Text = "Выбор отклонён: JSON и изображения нельзя смешивать.";
+                    selectedFileText.Foreground = TrueBimBrushes.Danger;
+                    selectedFileText.ToolTip = null;
+                    ClearPreview("Контуры не загружены: выберите один JSON или четыре изображения.");
+                    recognitionStatusText.Text = "JSON нужно выбирать отдельно от комплекта изображений.";
+                    footerStatusText.Text = "Выбор отклонён. Модель Revit не изменялась.";
+                    logger.Warning("IsoField source selection mixed JSON with other files and was rejected.");
+                    return;
+                }
+
+                string selectedPath = paths[0];
+                selectedJsonPath = selectedPath;
+                selectedSourceSet = null;
+                sourceSetRows.Children.Clear();
+                selectedFileText.Text = $"JSON: {Path.GetFileName(selectedPath)}";
+                selectedFileText.Foreground = TrueBimBrushes.Success;
+                selectedFileText.ToolTip = selectedPath;
+                logger.Info($"IsoField JSON source selected: {Path.GetFileName(selectedPath)}.");
                 ReadJsonSource(selectedPath);
             }
             else
             {
-                recognitionStatusText.Text = "Изображение выбрано. Нажмите «Распознать изображение», если CLI worker настроен.";
-                ClearPreview("Выбран файл изображения. Контуры появятся после JSON или распознавания.");
-                footerStatusText.Text = "Файл изополей выбран. Модель Revit не изменялась.";
-                logger.Info($"IsoField image source is ready for recognition. Extension='{Path.GetExtension(selectedPath)}'.");
+                selectedJsonPath = null;
+                selectedSourceSet = sourceSetService.Build(paths);
+                UpdateSourceSetPresentation();
+                ClearPreview("Контуры появятся после обработки полного комплекта изображений.");
+                footerStatusText.Text = selectedSourceSet.IsComplete
+                    ? "Комплект изополей готов к обработке. Модель Revit не изменялась."
+                    : "Комплект требует исправления назначения файлов.";
+                logger.Info(
+                    $"IsoField image source set selected. Files={selectedSourceSet.Files.Count}; "
+                    + $"Complete={selectedSourceSet.IsComplete}; Issues={selectedSourceSet.ValidationMessages.Count}.");
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or InvalidDataException)
         {
             logger.Error("Failed to select IsoField source file.", exception);
+            selectedJsonPath = null;
+            selectedSourceSet = null;
+            sourceSetRows.Children.Clear();
+            selectedFileText.Text = "Источник не выбран.";
+            selectedFileText.Foreground = TrueBimBrushes.Danger;
+            selectedFileText.ToolTip = null;
             ClearPreview("Контуры не загружены из выбранного файла.");
+            recognitionStatusText.Text = "Источник не удалось прочитать. Проверьте выбранные файлы.";
             ClearRulePreview("Правила не рассчитаны: контуры не загружены.");
             TaskDialog.Show(
                 "Армирование по изополям",
                 "Не удалось выбрать файл изополей. Используйте логи для диагностики.");
             footerStatusText.Text = "Не удалось выбрать файл.";
         }
+    }
+
+    private void UpdateSourceSetPresentation()
+    {
+        sourceSetRows.Children.Clear();
+        if (selectedSourceSet is null)
+        {
+            return;
+        }
+
+        int assignedCount = selectedSourceSet.Files.Count(file => file.Role.HasValue);
+        selectedFileText.Text = selectedSourceSet.IsComplete
+            ? "Комплект готов: 4 из 4 слоёв назначены, размеры совпадают."
+            : $"Комплект не готов: назначено {assignedCount} из 4 слоёв.";
+        selectedFileText.Foreground = selectedSourceSet.IsComplete
+            ? TrueBimBrushes.Success
+            : TrueBimBrushes.Danger;
+        selectedFileText.ToolTip = string.Join(Environment.NewLine, selectedSourceSet.Files.Select(file => file.FilePath));
+
+        sourceSetRows.Children.Add(CreateSourceSetHeader());
+        foreach (IsoFieldSourceFile sourceFile in selectedSourceSet.Files)
+        {
+            sourceSetRows.Children.Add(CreateSourceSetRow(sourceFile));
+        }
+
+        recognitionStatusText.Text = selectedSourceSet.IsComplete
+            ? "Комплект проверен. Нажмите «Распознать 4 изображения», если CLI worker настроен."
+            : FormatSourceSetIssues(selectedSourceSet);
+    }
+
+    private Border CreateSourceSetRow(IsoFieldSourceFile sourceFile)
+    {
+        WpfGrid row = new();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
+
+        Border thumbnailBorder = new()
+        {
+            Width = 96,
+            Height = 54,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Background = TrueBimBrushes.SurfaceAlt,
+            Child = new Image
+            {
+                Source = LoadSourceThumbnail(sourceFile.FilePath),
+                Stretch = Stretch.Uniform
+            }
+        };
+        row.Children.Add(thumbnailBorder);
+
+        StackPanel fileInfo = new()
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing8, 0)
+        };
+        fileInfo.Children.Add(new TextBlock
+        {
+            Text = sourceFile.FileName,
+            Foreground = TrueBimBrushes.TextPrimary,
+            FontWeight = FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            ToolTip = sourceFile.FilePath
+        });
+        fileInfo.Children.Add(CreateMutedText(sourceFile.ImageSizeText));
+        WpfGrid.SetColumn(fileInfo, 1);
+        row.Children.Add(fileInfo);
+
+        WpfComboBox roleSelector = new()
+        {
+            ItemsSource = IsoFieldSourceSet.RequiredRoles,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            VerticalAlignment = VerticalAlignment.Center,
+            Style = TrueBimStyles.CreateComboBoxStyle(),
+            ToolTip = sourceFile.Role.HasValue
+                ? "Назначение определено автоматически. При необходимости выберите другой слой."
+                : "Роль не определена по имени файла. Выберите слой вручную."
+        };
+        if (sourceFile.Role.HasValue)
+        {
+            roleSelector.SelectedItem = sourceFile.Role.Value;
+        }
+
+        roleSelector.SelectionChanged += (_, _) =>
+        {
+            if (roleSelector.SelectedItem is IsoFieldLayerRole role && sourceFile.Role != role)
+            {
+                AssignSourceRole(sourceFile.FilePath, role);
+            }
+        };
+        WpfGrid.SetColumn(roleSelector, 2);
+        row.Children.Add(roleSelector);
+
+        return new Border
+        {
+            Child = row,
+            Padding = new Thickness(TrueBimTheme.Spacing8),
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(0, 0, 0, TrueBimTheme.BorderWidth)
+        };
+    }
+
+    private static WpfGrid CreateSourceSetHeader()
+    {
+        WpfGrid header = new()
+        {
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing4)
+        };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(112) });
+
+        TextBlock fileHeader = CreateMutedText("Карта и размер");
+        fileHeader.FontWeight = FontWeights.SemiBold;
+        WpfGrid.SetColumnSpan(fileHeader, 2);
+        header.Children.Add(fileHeader);
+
+        TextBlock roleHeader = CreateMutedText("Расчётный слой");
+        roleHeader.FontWeight = FontWeights.SemiBold;
+        WpfGrid.SetColumn(roleHeader, 2);
+        header.Children.Add(roleHeader);
+        return header;
+    }
+
+    private void AssignSourceRole(string filePath, IsoFieldLayerRole role)
+    {
+        if (selectedSourceSet is null)
+        {
+            return;
+        }
+
+        selectedSourceSet = sourceSetService.AssignRole(selectedSourceSet, filePath, role);
+        UpdateSourceSetPresentation();
+        ClearPreview("Назначение слоя изменено. Запустите обработку комплекта заново.");
+        footerStatusText.Text = selectedSourceSet.IsComplete
+            ? "Назначение слоёв исправлено; комплект готов."
+            : "Назначение изменено, но комплект пока не готов.";
+        logger.Info(
+            $"IsoField source role assigned. File={Path.GetFileName(filePath)}; Role={role}; "
+            + $"Complete={selectedSourceSet.IsComplete}.");
+    }
+
+    private static ImageSource? LoadSourceThumbnail(string filePath)
+    {
+        try
+        {
+            using FileStream stream = new(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            BitmapImage image = new();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.DecodePixelWidth = 192;
+            image.StreamSource = stream;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException or FileFormatException)
+        {
+            return null;
+        }
+    }
+
+    private static string FormatSourceSetIssues(IsoFieldSourceSet sourceSet)
+    {
+        return sourceSet.ValidationMessages.Count == 0
+            ? "Назначьте каждому изображению уникальный слой."
+            : string.Join(" ", sourceSet.ValidationMessages);
     }
 
     private void ReadJsonSource(string path)
@@ -521,24 +735,34 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(selectedFilePath))
+            if (!string.IsNullOrWhiteSpace(selectedJsonPath))
             {
-                logger.Warning("IsoField recognition was requested without selected source file.");
-                TaskDialog.Show("Армирование по изополям", "Сначала выберите файл изополей.");
-                footerStatusText.Text = "Распознавание не запущено: файл не выбран.";
+                ReadJsonSource(selectedJsonPath!);
                 return;
             }
 
-            logger.Info($"IsoField recognition started. Runner={ResolveRecognitionRunnerName()}; Source={Path.GetFileName(selectedFilePath)}.");
-            IsoFieldRecognitionResult result = recognitionRunner.Run(selectedFilePath);
+            if (selectedSourceSet?.IsComplete != true)
+            {
+                logger.Warning("IsoField recognition was requested without a complete source set.");
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    "Выберите четыре изображения и назначьте уникальные слои As1X, As2X, As3Y, As4Y.");
+                footerStatusText.Text = "Обработка не запущена: комплект не готов.";
+                return;
+            }
+
+            logger.Info(
+                $"IsoField source set recognition started. Runner={ResolveRecognitionRunnerName()}; "
+                + $"Files={selectedSourceSet.Files.Count}.");
+            IsoFieldRecognitionResult result = sourceSetRecognitionService.Run(selectedSourceSet, recognitionRunner);
             currentRecognitionResult = result;
-            recognitionStatusText.Text = $"Распознавание выполнено. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+            recognitionStatusText.Text = $"Обработано 4 слоя. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
             RenderPreview(result);
             ClearRulePreview(result.Polylines.Count == 0
                 ? "Правила не рассчитаны: результат распознавания не содержит зон."
                 : "Нажмите «Рассчитать правила» после выбора host-элемента.");
             footerStatusText.Text = "Распознавание завершено. Модель Revit не изменялась.";
-            logger.Info($"IsoField recognition completed. Polylines: {result.Polylines.Count}, diagnostics: {result.Diagnostics.Count}.");
+            logger.Info($"IsoField source set recognition completed. Polylines={result.Polylines.Count}; Diagnostics={result.Diagnostics.Count}.");
         }
         catch (Exception exception)
         {
@@ -891,7 +1115,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             IsoFieldPreviewPolyline source = layout.Polylines[index];
             WpfPolyline line = new()
             {
-                Stroke = strokes[index % strokes.Length],
+                Stroke = source.LayerRole.HasValue
+                    ? strokes[(int)source.LayerRole.Value]
+                    : strokes[index % strokes.Length],
                 StrokeThickness = 2,
                 StrokeLineJoin = PenLineJoin.Round
             };
@@ -935,13 +1161,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         IsoFieldWorkflowState state = BuildWorkflowState();
         recognizeButton.IsEnabled = state.CanRunRecognition;
-        bool isJsonSource = state.HasSource && IsJsonFile(selectedFilePath!);
+        bool isJsonSource = !string.IsNullOrWhiteSpace(selectedJsonPath);
+        bool hasIncompleteSourceSet = selectedSourceSet is not null && !selectedSourceSet.IsComplete;
         TrueBimIcon recognitionIcon = !state.HasSource
             ? TrueBimIcon.Open
             : isJsonSource ? TrueBimIcon.Refresh : TrueBimIcon.Preview;
-        string recognitionText = !state.HasSource
+        string recognitionText = hasIncompleteSourceSet
+            ? "Исправьте комплект"
+            : !state.HasSource
             ? "Загрузить зоны"
-            : isJsonSource ? "Перечитать JSON" : "Распознать изображение";
+            : isJsonSource ? "Перечитать JSON" : "Распознать 4 изображения";
         recognizeButton.Content = IconFactory.CreateButtonContent(recognitionIcon, recognitionText);
         recognizeButton.ToolTip = ResolveRecognitionToolTip(state);
 
@@ -968,8 +1197,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             ? "Создать пробное армирование после отдельного подтверждения."
             : "Сначала рассчитайте правила без ошибок.";
 
-        workflowSummaryText.Text = $"Готово {state.CompletedStepCount} из 4. {state.NextAction}";
-        UpdateWorkflowStep(sourceStepText, state.HasSource, "Источник выбран");
+        string nextAction = selectedSourceSet is not null && !selectedSourceSet.IsComplete
+            ? FormatSourceSetIssues(selectedSourceSet)
+            : state.NextAction;
+        workflowSummaryText.Text = $"Готово {state.CompletedStepCount} из 4. {nextAction}";
+        UpdateWorkflowStep(
+            sourceStepText,
+            state.HasSource,
+            selectedSourceSet is null ? "Источник выбран" : "Комплект из 4 слоёв готов");
         UpdateWorkflowStep(zonesStepText, state.HasZones, "Зоны загружены");
         UpdateWorkflowStep(hostStepText, state.HasHost, "Host выбран");
         UpdateWorkflowStep(rulesStepText, state.HasValidRules, "Правила проверены");
@@ -977,8 +1212,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private IsoFieldWorkflowState BuildWorkflowState()
     {
-        bool hasSource = !string.IsNullOrWhiteSpace(selectedFilePath);
-        bool isJsonSource = hasSource && IsJsonFile(selectedFilePath!);
+        bool isJsonSource = !string.IsNullOrWhiteSpace(selectedJsonPath);
+        bool hasSource = isJsonSource || selectedSourceSet?.IsComplete == true;
         bool hasConfiguredWorker = !string.Equals(ResolveRecognitionRunnerName(), "Stub", StringComparison.OrdinalIgnoreCase);
         return new IsoFieldWorkflowState(
             hasSource,
@@ -986,14 +1221,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             selectedHostElement is not null,
             currentRulePreview?.CanCreateRebar == true,
             activeRevitPreviewIds.Count > 0,
-            isJsonSource || hasConfiguredWorker);
+            isJsonSource || selectedSourceSet?.IsComplete == true && hasConfiguredWorker);
     }
 
-    private static string ResolveRecognitionToolTip(IsoFieldWorkflowState state)
+    private string ResolveRecognitionToolTip(IsoFieldWorkflowState state)
     {
+        if (selectedSourceSet is not null && !selectedSourceSet.IsComplete)
+        {
+            return FormatSourceSetIssues(selectedSourceSet);
+        }
+
         if (!state.HasSource)
         {
-            return "Сначала выберите JSON или изображение изополей.";
+            return "Сначала выберите JSON или полный комплект из четырёх изображений.";
         }
 
         if (!state.CanProcessSource)
@@ -1001,7 +1241,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             return "Распознавание изображений не настроено: выберите готовый JSON или настройте CLI worker.";
         }
 
-        return "Загрузить зоны из JSON или запустить настроенный CLI worker для изображения.";
+        return !string.IsNullOrWhiteSpace(selectedJsonPath)
+            ? "Перечитать зоны из выбранного JSON."
+            : "Последовательно обработать четыре слоя настроенным CLI worker.";
     }
 
     private static void UpdateWorkflowStep(TextBlock textBlock, bool isComplete, string label)

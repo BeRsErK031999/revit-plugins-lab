@@ -57,7 +57,8 @@ public sealed class IsoFieldPreviewLayoutService
                         offsetY + point.Y * scale))
                     .ToArray(),
                 polyline.ZoneName,
-                polyline.Confidence))
+                polyline.Confidence,
+                polyline.LayerRole))
             .ToArray();
 
         return new IsoFieldPreviewLayout(polylines, width, height);
