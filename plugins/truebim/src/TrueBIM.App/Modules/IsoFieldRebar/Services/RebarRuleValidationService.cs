@@ -1,3 +1,4 @@
+using System.Globalization;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
@@ -6,50 +7,41 @@ public sealed class RebarRuleValidationService
 {
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
+    private const double AreaToleranceSquareCentimetersPerMeter = 0.02;
+    private readonly IsoFieldReinforcementCombinationService combinationService = new();
+    private readonly IsoFieldSlabRebarLayoutService layoutService = new();
 
     public RebarRulePreviewResult BuildPreview(
         IsoFieldRecognitionResult recognitionResult,
         IsoFieldHostElement? hostElement)
+    {
+        return BuildLegacyPreview(recognitionResult, hostElement);
+    }
+
+    public RebarRulePreviewResult BuildPreview(
+        IsoFieldRecognitionResult recognitionResult,
+        IsoFieldHostElement? hostElement,
+        IsoFieldSourceSet? sourceSet,
+        IsoFieldSlabBindingAnalysis? slabBinding,
+        IsoFieldEngineeringSettings? engineeringSettings)
     {
         if (recognitionResult is null)
         {
             throw new ArgumentNullException(nameof(recognitionResult));
         }
 
-        List<string> diagnostics = new();
-        if (hostElement is null)
+        if (hostElement is null
+            || !string.Equals(hostElement.HostKind, SlabHostKind, StringComparison.Ordinal))
         {
-            diagnostics.Add("Выберите стену или плиту перед расчетом правил армирования.");
+            return BuildLegacyPreview(recognitionResult, hostElement);
         }
 
-        if (recognitionResult.Polylines.Count == 0)
-        {
-            diagnostics.Add("Нет зон изополей для расчета правил армирования.");
-        }
-
-        if (diagnostics.Count > 0)
-        {
-            return new RebarRulePreviewResult(Array.Empty<RebarRulePreviewItem>(), diagnostics);
-        }
-
-        List<RebarRulePreviewItem> items = new();
-        foreach (IsoFieldPolyline polyline in recognitionResult.Polylines)
-        {
-            RebarRule rule = CreateRule(polyline, hostElement!);
-            List<string> itemDiagnostics = ValidateRule(rule).ToList();
-            if (polyline.Points.Count < 2)
-            {
-                itemDiagnostics.Add($"Зона '{polyline.Id}' содержит меньше двух точек.");
-            }
-
-            items.Add(new RebarRulePreviewItem(
-                polyline.Id,
-                ResolveZoneName(polyline),
-                rule,
-                itemDiagnostics));
-        }
-
-        return new RebarRulePreviewResult(items, Array.Empty<string>());
+        return BuildSlabEngineeringPreview(
+            recognitionResult,
+            hostElement,
+            sourceSet,
+            slabBinding,
+            engineeringSettings);
     }
 
     public IReadOnlyList<string> ValidateRule(RebarRule rule)
@@ -85,10 +77,234 @@ public sealed class RebarRuleValidationService
             diagnostics.Add($"Направление армирования '{rule.PlacementDirection}' не поддерживается. Ожидается Auto, X, Y, AlongHost или Vertical.");
         }
 
+        if (rule.IsEngineeringRule
+            && rule.ProvidedAreaSquareCentimetersPerMeter
+                + AreaToleranceSquareCentimetersPerMeter
+                < rule.RequiredAreaSquareCentimetersPerMeter)
+        {
+            diagnostics.Add(
+                $"Принятая площадь {rule.ProvidedAreaSquareCentimetersPerMeter:0.###} см²/м "
+                + $"меньше требуемой {rule.RequiredAreaSquareCentimetersPerMeter:0.###} см²/м.");
+        }
+
         return diagnostics;
     }
 
-    private static RebarRule CreateRule(IsoFieldPolyline polyline, IsoFieldHostElement hostElement)
+    private RebarRulePreviewResult BuildSlabEngineeringPreview(
+        IsoFieldRecognitionResult recognitionResult,
+        IsoFieldHostElement hostElement,
+        IsoFieldSourceSet? sourceSet,
+        IsoFieldSlabBindingAnalysis? slabBinding,
+        IsoFieldEngineeringSettings? settings)
+    {
+        List<string> diagnostics = new();
+        if (recognitionResult.Polylines.Count == 0)
+        {
+            diagnostics.Add("Нет зон изополей для расчёта инженерных правил.");
+        }
+
+        if (sourceSet is null || !sourceSet.IsComplete)
+        {
+            diagnostics.Add("Для инженерной раскладки плиты нужен полный комплект из четырёх карт, а не одиночный JSON.");
+        }
+        else if (!sourceSet.HasConfirmedLayerMappings)
+        {
+            diagnostics.AddRange(sourceSet.LayerMappingValidationMessages);
+        }
+
+        if (slabBinding?.CanProceed != true)
+        {
+            diagnostics.Add("Перед расчётом раскладки выполните проверенную трёхточечную привязку и отсечение зон по плите.");
+        }
+
+        diagnostics.AddRange(layoutService.ValidateSettings(settings));
+        if (diagnostics.Count > 0)
+        {
+            return new RebarRulePreviewResult(
+                Array.Empty<RebarRulePreviewItem>(),
+                diagnostics,
+                settings);
+        }
+
+        Dictionary<string, IsoFieldClippedZone> clippedByZoneId = slabBinding!.ClippedZones
+            .Where(zone => !zone.IsEmpty)
+            .ToDictionary(zone => zone.SourceZoneId, StringComparer.Ordinal);
+        IsoFieldEngineeringSettings activeSettings = settings!;
+        List<RebarRulePreviewItem> items = new();
+        foreach (IsoFieldPolyline polyline in recognitionResult.Polylines)
+        {
+            List<string> itemDiagnostics = new();
+            if (polyline.LayerRole is null)
+            {
+                itemDiagnostics.Add("Для зоны не определён расчётный слой As1X/As2X/As3Y/As4Y.");
+            }
+
+            if (polyline.LegendBandIndex is null)
+            {
+                itemDiagnostics.Add("Для зоны не определён уровень цветовой шкалы.");
+            }
+
+            if (!clippedByZoneId.TryGetValue(polyline.Id, out IsoFieldClippedZone? clippedZone))
+            {
+                itemDiagnostics.Add("После отсечения по плите зона не содержит допустимой геометрии.");
+            }
+
+            IsoFieldLayerMapping? mapping = polyline.LayerRole.HasValue
+                ? sourceSet!.GetLayerMapping(polyline.LayerRole.Value)
+                : null;
+            IsoFieldLegend? legend = polyline.LayerRole.HasValue
+                ? recognitionResult.EffectiveLegends.FirstOrDefault(candidate =>
+                    candidate.LayerRole == polyline.LayerRole)
+                : null;
+            IsoFieldLegendBand? band = legend is not null && polyline.LegendBandIndex.HasValue
+                ? legend.Bands.FirstOrDefault(candidate => candidate.Index == polyline.LegendBandIndex.Value)
+                : null;
+            if (band?.MaximumValue is null)
+            {
+                itemDiagnostics.Add("Уровень зоны не содержит верхнюю числовую границу в см²/м.");
+            }
+
+            IsoFieldLegendBoundary? upperBoundary = band is not null && legend is not null
+                ? legend.EffectiveBoundaries.FirstOrDefault(boundary => boundary.Index == band.Index + 1)
+                : null;
+            IsoFieldReinforcementCombination? combination = null;
+            if (!combinationService.TryParse(
+                upperBoundary?.ReinforcementLabel,
+                out combination,
+                out string combinationDiagnostic))
+            {
+                itemDiagnostics.Add(combinationDiagnostic);
+            }
+
+            IReadOnlyList<IsoFieldRebarComponent> selectedComponents = combination is null
+                ? Array.Empty<IsoFieldRebarComponent>()
+                : activeSettings.Mode == IsoFieldReinforcementMode.AdditionalOverBase
+                    ? combination.Components.Where(component => !component.IsBase).ToArray()
+                    : combination.Components;
+            if (combination is not null && selectedComponents.Count == 0)
+            {
+                itemDiagnostics.Add("Для режима дополнительного усиления сочетание не содержит арматуру сверх базовой сетки.");
+            }
+
+            double? requiredArea = band?.MaximumValue;
+            double? providedArea = combination?.AreaSquareCentimetersPerMeter;
+            IsoFieldRebarComponent? firstComponent = selectedComponents.FirstOrDefault();
+            RebarRule rule = new(
+                $"Правило {ResolveZoneName(polyline)}",
+                hostElement.HostKind,
+                firstComponent?.BarTypeName ?? string.Empty,
+                firstComponent?.SpacingMillimeters ?? 0,
+                BuildEngineeringNote(activeSettings, requiredArea, providedArea, combination?.SourceLabel),
+                mapping?.Direction.ToString() ?? "Auto",
+                requiredArea,
+                providedArea,
+                combination?.SourceLabel,
+                polyline.LayerRole,
+                mapping?.Face,
+                selectedComponents,
+                activeSettings.Mode);
+            itemDiagnostics.AddRange(ValidateRule(rule));
+            items.Add(new RebarRulePreviewItem(
+                polyline.Id,
+                ResolveZoneName(polyline),
+                rule,
+                itemDiagnostics.Distinct(StringComparer.Ordinal).ToArray(),
+                clippedZone?.Regions));
+        }
+
+        if (items.Count == 0)
+        {
+            diagnostics.Add("После инженерной проверки не осталось зон для раскладки.");
+            return new RebarRulePreviewResult(items, diagnostics, settings);
+        }
+
+        IReadOnlyList<IsoFieldSlabRebarSegment> segments;
+        try
+        {
+            segments = layoutService.BuildSegments(items, activeSettings);
+        }
+        catch (InvalidOperationException exception)
+        {
+            diagnostics.Add(exception.Message);
+            return new RebarRulePreviewResult(items, diagnostics, settings);
+        }
+
+        Dictionary<string, int> countByZone = segments
+            .GroupBy(segment => segment.ZoneId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        items = items
+            .Select(item => item with
+            {
+                EstimatedBarCount = countByZone.TryGetValue(item.ZoneId, out int count)
+                    ? count
+                    : 0
+            })
+            .ToList();
+        foreach (RebarRulePreviewItem emptyItem in items.Where(item =>
+            item.IsValid && item.EstimatedBarCount == 0))
+        {
+            int index = items.IndexOf(emptyItem);
+            items[index] = emptyItem with
+            {
+                Diagnostics = [.. emptyItem.Diagnostics, "После отступов и проверки минимальной длины в зоне не осталось стержней."]
+            };
+        }
+
+        return new RebarRulePreviewResult(
+            items,
+            diagnostics,
+            settings,
+            segments.Count);
+    }
+
+    private RebarRulePreviewResult BuildLegacyPreview(
+        IsoFieldRecognitionResult recognitionResult,
+        IsoFieldHostElement? hostElement)
+    {
+        if (recognitionResult is null)
+        {
+            throw new ArgumentNullException(nameof(recognitionResult));
+        }
+
+        List<string> diagnostics = new();
+        if (hostElement is null)
+        {
+            diagnostics.Add("Выберите стену или плиту перед расчетом правил армирования.");
+        }
+
+        if (recognitionResult.Polylines.Count == 0)
+        {
+            diagnostics.Add("Нет зон изополей для расчета правил армирования.");
+        }
+
+        if (diagnostics.Count > 0)
+        {
+            return new RebarRulePreviewResult(Array.Empty<RebarRulePreviewItem>(), diagnostics);
+        }
+
+        List<RebarRulePreviewItem> items = new();
+        foreach (IsoFieldPolyline polyline in recognitionResult.Polylines)
+        {
+            RebarRule rule = CreateLegacyRule(polyline, hostElement!);
+            List<string> itemDiagnostics = ValidateRule(rule).ToList();
+            if (polyline.Points.Count < 2)
+            {
+                itemDiagnostics.Add($"Зона '{polyline.Id}' содержит меньше двух точек.");
+            }
+
+            items.Add(new RebarRulePreviewItem(
+                polyline.Id,
+                ResolveZoneName(polyline),
+                rule,
+                itemDiagnostics));
+        }
+
+        return new RebarRulePreviewResult(items, Array.Empty<string>());
+    }
+
+    private static RebarRule CreateLegacyRule(
+        IsoFieldPolyline polyline,
+        IsoFieldHostElement hostElement)
     {
         string zoneName = ResolveZoneName(polyline);
         double spacing = ResolveSpacingMillimeters(polyline.Confidence);
@@ -103,6 +319,20 @@ public sealed class RebarRuleValidationService
             spacing,
             $"Preview rule. Confidence={FormatConfidence(polyline.Confidence)}; Host={hostElement.DisplayName}.",
             ResolvePlacementDirection(hostElement.HostKind));
+    }
+
+    private static string BuildEngineeringNote(
+        IsoFieldEngineeringSettings settings,
+        double? requiredArea,
+        double? providedArea,
+        string? label)
+    {
+        CultureInfo culture = CultureInfo.GetCultureInfo("ru-RU");
+        string mode = settings.Mode == IsoFieldReinforcementMode.AdditionalOverBase
+            ? "дополнительное усиление поверх базовой сетки"
+            : "полное сочетание в зоне";
+        return $"{mode}; требуется {requiredArea?.ToString("0.###", culture) ?? "?"} см²/м; "
+            + $"принято {providedArea?.ToString("0.###", culture) ?? "?"} см²/м; {label ?? "без подписи"}.";
     }
 
     private static string ResolveZoneName(IsoFieldPolyline polyline)
@@ -131,7 +361,7 @@ public sealed class RebarRuleValidationService
     private static string FormatConfidence(double? confidence)
     {
         return confidence.HasValue && IsFinite(confidence.Value)
-            ? confidence.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+            ? confidence.Value.ToString("0.###", CultureInfo.InvariantCulture)
             : "n/a";
     }
 

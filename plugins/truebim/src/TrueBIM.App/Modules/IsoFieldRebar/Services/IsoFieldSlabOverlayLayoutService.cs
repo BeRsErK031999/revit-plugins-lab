@@ -9,7 +9,8 @@ public sealed class IsoFieldSlabOverlayLayoutService
     public IsoFieldSlabOverlayLayout Build(
         IsoFieldSlabBindingAnalysis analysis,
         double width,
-        double height)
+        double height,
+        IReadOnlyList<IsoFieldSlabRebarSegment>? rebarSegments = null)
     {
         if (analysis is null)
         {
@@ -31,6 +32,8 @@ public sealed class IsoFieldSlabOverlayLayoutService
                 .SelectMany(region => region.OuterBoundaryFeet
                     .Concat(region.HoleBoundariesFeet.SelectMany(hole => hole))))
             .Concat(removedZones.SelectMany(zone => zone.Points))
+            .Concat((rebarSegments ?? Array.Empty<IsoFieldSlabRebarSegment>())
+                .SelectMany(segment => new[] { segment.StartFeet, segment.EndFeet }))
             .Concat(analysis.ControlPointsFeet)
             .ToArray();
         if (points.Length == 0)
@@ -76,6 +79,14 @@ public sealed class IsoFieldSlabOverlayLayoutService
                 zone.RetainedAreaRatio,
                 zone.WasClipped)))
             .ToArray();
+        IsoFieldSlabRebarSegment[] mappedRebarSegments = (rebarSegments
+                ?? Array.Empty<IsoFieldSlabRebarSegment>())
+            .Select(segment => segment with
+            {
+                StartFeet = Map(segment.StartFeet),
+                EndFeet = Map(segment.EndFeet)
+            })
+            .ToArray();
 
         return new IsoFieldSlabOverlayLayout(
             analysis.OuterBoundaryFeet.Select(Map).ToArray(),
@@ -93,6 +104,7 @@ public sealed class IsoFieldSlabOverlayLayoutService
                 .ToArray(),
             analysis.ControlPointsFeet.Select(Map).ToArray(),
             width,
-            height);
+            height,
+            mappedRebarSegments);
     }
 }

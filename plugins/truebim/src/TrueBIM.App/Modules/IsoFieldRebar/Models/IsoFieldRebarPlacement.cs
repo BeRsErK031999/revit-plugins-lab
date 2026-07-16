@@ -6,7 +6,9 @@ public sealed record IsoFieldRebarPlacement(
     RebarRule Rule,
     IsoFieldRebarPoint3D Start,
     IsoFieldRebarPoint3D End,
-    IsoFieldRebarPoint3D Normal)
+    IsoFieldRebarPoint3D Normal,
+    IsoFieldRebarComponent? Component = null,
+    string? StableId = null)
 {
     public double LengthFeet => Math.Sqrt(
         Math.Pow(End.XFeet - Start.XFeet, 2)

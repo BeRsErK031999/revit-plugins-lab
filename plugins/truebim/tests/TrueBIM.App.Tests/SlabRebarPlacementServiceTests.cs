@@ -78,6 +78,61 @@ public sealed class SlabRebarPlacementServiceTests
         Assert.Contains("плиты", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildEngineeringPlacements_MapsLocalClippedLineToBottomFace()
+    {
+        IsoFieldRebarComponent component = new(10, 304.8, 0, 1);
+        IsoFieldPolygonRegion region = new(
+            [
+                new IsoFieldPoint(0, 0),
+                new IsoFieldPoint(2, 0),
+                new IsoFieldPoint(2, 1),
+                new IsoFieldPoint(0, 1),
+                new IsoFieldPoint(0, 0)
+            ],
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
+            AreaSquareFeet: 2);
+        RebarRulePreviewItem item = new(
+            "As1X:zone-a",
+            "Zone A",
+            new RebarRule(
+                "Rule A",
+                "Slab",
+                component.BarTypeName,
+                component.SpacingMillimeters,
+                PlacementDirection: "X",
+                RequiredAreaSquareCentimetersPerMeter: component.AreaSquareCentimetersPerMeter,
+                ProvidedAreaSquareCentimetersPerMeter: component.AreaSquareCentimetersPerMeter,
+                ReinforcementLabel: component.DisplayName,
+                LayerRole: IsoFieldLayerRole.As1X,
+                Face: IsoFieldRebarFace.Bottom,
+                Components: [component],
+                ReinforcementMode: IsoFieldReinforcementMode.FullCombination),
+            Array.Empty<string>(),
+            [region]);
+        IsoFieldEngineeringSettings settings = new(
+            IsoFieldReinforcementMode.FullCombination,
+            ConcreteCoverMillimeters: 30,
+            BoundaryOffsetMillimeters: 30.48,
+            MinimumBarLengthMillimeters: 100);
+        RebarRulePreviewResult preview = new([item], Array.Empty<string>(), settings, 1);
+        IsoFieldHostGeometry geometry = new(
+            new IsoFieldRebarPoint3D(100, 200, 10),
+            new IsoFieldRebarPoint3D(0, 1, 0),
+            new IsoFieldRebarPoint3D(-1, 0, 0),
+            new IsoFieldRebarPoint3D(0, 0, 1),
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>());
+
+        IsoFieldRebarPlacement placement = Assert.Single(
+            service.BuildEngineeringPlacements(geometry, slabThicknessFeet: 1, preview));
+
+        Assert.Equal(99.9, placement.Start.XFeet, 6);
+        Assert.Equal(200.1, placement.Start.YFeet, 6);
+        Assert.Equal(10 - 1 + (35d / 304.8), placement.Start.ZFeet, 6);
+        Assert.Equal(component, placement.Component);
+        Assert.Contains("As1X:zone-a", placement.StableId, StringComparison.Ordinal);
+    }
+
     private static RebarRulePreviewItem CreateItem(
         string zoneId,
         string placementDirection,

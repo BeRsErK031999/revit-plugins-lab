@@ -17,4 +17,9 @@ public sealed record IsoFieldSlabOverlayLayout(
     IReadOnlyList<IsoFieldPreviewPolyline> RemovedZones,
     IReadOnlyList<IsoFieldPoint> ControlPoints,
     double Width,
-    double Height);
+    double Height,
+    IReadOnlyList<IsoFieldSlabRebarSegment>? RebarSegments = null)
+{
+    public IReadOnlyList<IsoFieldSlabRebarSegment> EffectiveRebarSegments =>
+        RebarSegments ?? Array.Empty<IsoFieldSlabRebarSegment>();
+}
