@@ -4,6 +4,7 @@ using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.ScheduleImport.Models;
 using TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 using TrueBIM.App.Modules.BimTools.ScheduleImport.UI;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 
@@ -119,6 +120,29 @@ public sealed class ScheduleImportCommand : IExternalCommand
                     activeView,
                     request.Table,
                     request.Options);
+                if (ScheduleImportViewActivationPolicy.ShouldOpenSeparateTab(result))
+                {
+                    try
+                    {
+                        View? createdView = document.GetElement(
+                            RevitElementIds.Create(result.TargetViewId!.Value)) as View;
+                        if (createdView is null || createdView.IsTemplate)
+                        {
+                            throw new InvalidOperationException($"Created view id {result.TargetViewId} is unavailable.");
+                        }
+
+                        uiDocument.ActiveView = createdView;
+                        result = result with { OpenedInSeparateTab = true };
+                        logger.Info($"Schedule Import opened '{createdView.Name}' in a separate Revit view tab.");
+                    }
+                    catch (Exception activationException)
+                    {
+                        string warning = "Таблица создана, но Revit не смог автоматически открыть её вид в отдельной вкладке.";
+                        result = result with { Warnings = result.Warnings.Append(warning).ToList() };
+                        logger.Warning($"Schedule Import could not open created view id {result.TargetViewId} in a separate Revit view tab: {activationException.Message}");
+                    }
+                }
+
                 completed?.Invoke(result);
             }
             catch (Exception exception)

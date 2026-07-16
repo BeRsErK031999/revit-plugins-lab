@@ -50,6 +50,8 @@ public sealed class DraftingTableService
         {
             return new DraftingTableCreationResult(
                 activeView.Name,
+                RevitElementIds.GetValue(activeView.Id),
+                false,
                 false,
                 0,
                 0,
@@ -75,6 +77,8 @@ public sealed class DraftingTableService
                 transaction.RollBack();
                 return new DraftingTableCreationResult(
                     targetView.Name,
+                    RevitElementIds.GetValue(targetView.Id),
+                    false,
                     false,
                     0,
                     0,
@@ -89,7 +93,9 @@ public sealed class DraftingTableService
                 transaction.RollBack();
                 return new DraftingTableCreationResult(
                     targetView.Name,
+                    RevitElementIds.GetValue(targetView.Id),
                     createdNewView,
+                    false,
                     0,
                     0,
                     skippedCells,
@@ -144,7 +150,9 @@ public sealed class DraftingTableService
         logger.Info($"Schedule Import created a drafting table on '{targetView.Name}'. Lines: {createdLineCount}; text notes: {createdTextCount}; skipped cells: {skippedCells.Count}.");
         return new DraftingTableCreationResult(
             targetView.Name,
+            RevitElementIds.GetValue(targetView.Id),
             createdNewView,
+            false,
             createdLineCount,
             createdTextCount,
             skippedCells,

@@ -2,7 +2,9 @@ namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Models;
 
 public sealed record DraftingTableCreationResult(
     string TargetViewName,
+    long? TargetViewId,
     bool CreatedNewView,
+    bool OpenedInSeparateTab,
     int CreatedLineCount,
     int CreatedTextCount,
     IReadOnlyList<string> SkippedCells,
@@ -25,7 +27,11 @@ public sealed record DraftingTableCreationResult(
             $"Создано текстов: {CreatedTextCount}"
         ];
 
-        if (CreatedNewView)
+        if (OpenedInSeparateTab)
+        {
+            lines.Add("Созданный чертёжный вид открыт в отдельной вкладке Revit.");
+        }
+        else if (CreatedNewView)
         {
             lines.Add("Создан новый чертёжный вид для визуальной таблицы.");
         }
