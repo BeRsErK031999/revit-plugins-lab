@@ -2,4 +2,8 @@ namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Models;
 
 public sealed record ScheduleImportRequest(
     ParsedTable Table,
-    ImportOptions Options);
+    long CategoryId,
+    string CategoryName,
+    IReadOnlyList<ScheduleFieldMapping> Mappings,
+    bool PreviewOnly,
+    string ConfigurationFingerprint);

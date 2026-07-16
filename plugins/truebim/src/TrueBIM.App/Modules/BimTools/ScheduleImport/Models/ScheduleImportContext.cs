@@ -5,7 +5,5 @@ public sealed record ScheduleImportContext(
     string ActiveViewName,
     string ActiveViewKind,
     long? ActiveViewId,
-    bool CanUseBimScheduleMode,
-    IReadOnlyList<string> AvailableBimScheduleParameterNames,
-    IReadOnlyList<string> Warnings,
-    IReadOnlyList<ScheduleTarget> ScheduleTargets);
+    IReadOnlyList<ScheduleCategoryOption> ScheduleCategories,
+    IReadOnlyList<string> Warnings);

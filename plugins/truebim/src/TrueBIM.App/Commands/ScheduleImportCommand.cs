@@ -41,22 +41,33 @@ public sealed class ScheduleImportCommand : IExternalCommand
             }
 
             ScheduleImportContext context = new ScheduleImportContextService().Create(uiDocument);
-            ScheduleImportExternalEventHandler handler = new(uiDocument, logger);
-            ExternalEvent externalEvent = ExternalEvent.Create(handler);
+            ScheduleFieldCatalogExternalEventHandler fieldCatalogHandler = new(uiDocument);
+            ScheduleImportExternalEventHandler scheduleHandler = new(uiDocument, logger);
+            ExternalEvent fieldCatalogEvent = ExternalEvent.Create(fieldCatalogHandler);
+            ExternalEvent scheduleEvent = ExternalEvent.Create(scheduleHandler);
             ScheduleImportWindow window = new(
                 context,
                 ScheduleImportParserFactory.Create(logger),
                 logger,
+                (categoryId, onCompleted, onFailed) =>
+                {
+                    fieldCatalogHandler.SetRequest(categoryId, onCompleted, onFailed);
+                    fieldCatalogEvent.Raise();
+                },
                 (request, onCompleted, onFailed) =>
                 {
-                    handler.SetRequest(request, onCompleted, onFailed);
-                    externalEvent.Raise();
+                    scheduleHandler.SetRequest(request, onCompleted, onFailed);
+                    scheduleEvent.Raise();
                 })
             {
                 ShowInTaskbar = true
             };
 
-            window.Closed += (_, _) => externalEvent.Dispose();
+            window.Closed += (_, _) =>
+            {
+                fieldCatalogEvent.Dispose();
+                scheduleEvent.Dispose();
+            };
             ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }
@@ -72,7 +83,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
     {
         private readonly UIDocument uiDocument;
         private readonly ITrueBimLogger logger;
-        private readonly ScheduleTableImportService scheduleTableImportService;
+        private readonly ParametricScheduleService parametricScheduleService;
         private ScheduleImportRequest? pendingRequest;
         private Action<ScheduleImportCreationResult>? onCompleted;
         private Action<Exception>? onFailed;
@@ -81,9 +92,9 @@ public sealed class ScheduleImportCommand : IExternalCommand
         {
             this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            scheduleTableImportService = new ScheduleTableImportService(
-                new ScheduleTableLayoutService(),
+            parametricScheduleService = new ParametricScheduleService(
                 new ParsedTableValidationService(),
+                new ScheduleMappingConfigurationService(),
                 logger);
         }
 
@@ -114,10 +125,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
             try
             {
                 Document document = uiDocument.Document;
-                ScheduleImportCreationResult result = scheduleTableImportService.CreateSchedule(
-                    document,
-                    request.Table,
-                    request.Options);
+                ScheduleImportCreationResult result = parametricScheduleService.Execute(document, request);
                 if (ScheduleImportViewActivationPolicy.ShouldOpenCreatedSchedule(result))
                 {
                     try
@@ -153,6 +161,58 @@ public sealed class ScheduleImportCommand : IExternalCommand
         public string GetName()
         {
             return "TrueBIM Schedule Import";
+        }
+    }
+
+    private sealed class ScheduleFieldCatalogExternalEventHandler : IExternalEventHandler
+    {
+        private readonly UIDocument uiDocument;
+        private readonly ScheduleFieldCatalogService catalogService = new();
+        private long? pendingCategoryId;
+        private Action<ScheduleFieldCatalogResult>? onCompleted;
+        private Action<Exception>? onFailed;
+
+        public ScheduleFieldCatalogExternalEventHandler(UIDocument uiDocument)
+        {
+            this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
+        }
+
+        public void SetRequest(
+            long categoryId,
+            Action<ScheduleFieldCatalogResult> onCompleted,
+            Action<Exception> onFailed)
+        {
+            pendingCategoryId = categoryId;
+            this.onCompleted = onCompleted ?? throw new ArgumentNullException(nameof(onCompleted));
+            this.onFailed = onFailed ?? throw new ArgumentNullException(nameof(onFailed));
+        }
+
+        public void Execute(UIApplication app)
+        {
+            long? categoryId = pendingCategoryId;
+            Action<ScheduleFieldCatalogResult>? completed = onCompleted;
+            Action<Exception>? failed = onFailed;
+            pendingCategoryId = null;
+            onCompleted = null;
+            onFailed = null;
+            if (categoryId is null)
+            {
+                return;
+            }
+
+            try
+            {
+                completed?.Invoke(catalogService.LoadFields(uiDocument.Document, categoryId.Value));
+            }
+            catch (Exception exception)
+            {
+                failed?.Invoke(exception);
+            }
+        }
+
+        public string GetName()
+        {
+            return "TrueBIM Schedule Field Catalog";
         }
     }
 }

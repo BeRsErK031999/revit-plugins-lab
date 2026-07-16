@@ -7,19 +7,7 @@ namespace TrueBIM.App.Tests.Modules.BimTools.ScheduleImport;
 public sealed class ParameterMappingServiceTests
 {
     [Fact]
-    public void SuggestMappings_InfersPipeColumnTypes()
-    {
-        var table = ScheduleImportSampleTables.CreatePipeSchedule("sample.pdf");
-
-        var mappings = new ParameterMappingService().SuggestMappings(table, ["Диаметр", "Длина"]);
-
-        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Диаметр" && mapping.DataType == ScheduleImportDataType.Length);
-        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Длина, м" && mapping.DataType == ScheduleImportDataType.Length && mapping.UnitSource == "m");
-        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Количество" && mapping.DataType == ScheduleImportDataType.Count);
-    }
-
-    [Fact]
-    public void SuggestMappings_UsesAvailableScheduleFields()
+    public void SuggestMappings_UsesExactAndUnitlessColumnNames()
     {
         ParsedTable table = new(
             "source.pdf",
@@ -29,11 +17,43 @@ public sealed class ParameterMappingServiceTests
             Array.Empty<ParsedCell>(),
             1,
             Array.Empty<string>());
+        ScheduleFieldOption[] fields =
+        [
+            CreateField("system", "System Name", "Instance"),
+            CreateField("length", "Length", "Instance")
+        ];
 
-        var mappings = new ParameterMappingService().SuggestMappings(table, ["Length", "System Name"]);
+        IReadOnlyDictionary<string, string> mappings = new ParameterMappingService().SuggestMappings(table, fields);
 
-        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "System Name" && mapping.TargetRevitParameterName == "System Name");
-        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Length, m" && mapping.TargetRevitParameterName == "Length");
-        Assert.Contains(mappings, mapping => mapping.SourceColumnName == "Unknown" && mapping.TargetRevitParameterName is null);
+        Assert.Equal("system", mappings["System Name"]);
+        Assert.Equal("length", mappings["Length, m"]);
+        Assert.False(mappings.ContainsKey("Unknown"));
+    }
+
+    [Fact]
+    public void SuggestMappings_PrefersInstanceFieldWhenNamesAreEqual()
+    {
+        ParsedTable table = new(
+            "source.pdf",
+            1,
+            Array.Empty<ParsedRow>(),
+            ["Марка"],
+            Array.Empty<ParsedCell>(),
+            1,
+            Array.Empty<string>());
+        ScheduleFieldOption[] fields =
+        [
+            CreateField("type", "Марка", "ElementType"),
+            CreateField("instance", "Марка", "Instance")
+        ];
+
+        IReadOnlyDictionary<string, string> mappings = new ParameterMappingService().SuggestMappings(table, fields);
+
+        Assert.Equal("instance", mappings["Марка"]);
+    }
+
+    private static ScheduleFieldOption CreateField(string key, string name, string fieldType)
+    {
+        return new ScheduleFieldOption(key, name, $"{name} ({fieldType})", 1, 0, fieldType);
     }
 }

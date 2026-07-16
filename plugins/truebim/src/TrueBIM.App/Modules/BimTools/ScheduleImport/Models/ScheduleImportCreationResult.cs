@@ -6,6 +6,10 @@ public sealed record ScheduleImportCreationResult(
     bool OpenedInSeparateTab,
     int RowCount,
     int ColumnCount,
+    int FilterCount,
+    bool IsPreview,
+    string ConfigurationFingerprint,
+    SchedulePreviewTable Preview,
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Errors)
 {
@@ -18,13 +22,23 @@ public sealed record ScheduleImportCreationResult(
             return string.Join(Environment.NewLine, Errors);
         }
 
-        List<string> lines =
-        [
-            $"Спецификация: {ScheduleName}",
-            $"Импортировано строк: {RowCount}",
-            $"Импортировано колонок: {ColumnCount}",
-            "Создана новая спецификация Revit, доступная в диспетчере проекта и для размещения на листе."
-        ];
+        List<string> lines = IsPreview
+            ?
+            [
+                $"Категория: {ScheduleName}",
+                $"Элементов модели в предпросмотре: {RowCount}",
+                $"Полей Revit: {ColumnCount}",
+                $"Условий: {FilterCount}",
+                "Модель не изменена. Создание доступно только для этой проверенной конфигурации."
+            ]
+            :
+            [
+                $"Спецификация: {ScheduleName}",
+                $"Элементов модели: {RowCount}",
+                $"Полей Revit: {ColumnCount}",
+                $"Условий: {FilterCount}",
+                "Создана параметрическая спецификация Revit из реальных полей элементов модели."
+            ];
 
         if (OpenedInSeparateTab)
         {

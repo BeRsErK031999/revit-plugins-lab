@@ -40,6 +40,10 @@ public sealed class ScheduleImportViewActivationPolicyTests
             false,
             10,
             5,
+            0,
+            false,
+            "fingerprint",
+            SchedulePreviewTable.Empty,
             Array.Empty<string>(),
             Array.Empty<string>());
     }

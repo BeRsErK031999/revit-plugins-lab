@@ -5,43 +5,43 @@ namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 
 public sealed class ParameterMappingService
 {
-    public IReadOnlyList<ColumnMapping> SuggestMappings(
+    public IReadOnlyDictionary<string, string> SuggestMappings(
         ParsedTable table,
-        IReadOnlyCollection<string> availableParameterNames)
+        IReadOnlyCollection<ScheduleFieldOption> availableFields)
     {
         Guard.NotNull(table, nameof(table));
-        Guard.NotNull(availableParameterNames, nameof(availableParameterNames));
+        Guard.NotNull(availableFields, nameof(availableFields));
 
-        Dictionary<string, string> parametersByKey = availableParameterNames
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .GroupBy(NormalizeKey, StringComparer.OrdinalIgnoreCase)
+        Dictionary<string, ScheduleFieldOption> fieldsByName = availableFields
+            .Where(field => !string.IsNullOrWhiteSpace(field.Name))
+            .OrderBy(field => FieldTypePriority(field.FieldTypeName))
+            .ThenBy(field => field.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .GroupBy(field => NormalizeKey(field.Name), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
         return table.Columns
-            .Select(column =>
+            .Select(column => new
             {
-                string? parameterName = ResolveParameterName(column, parametersByKey);
-                return new ColumnMapping(
-                    column,
-                    parameterName,
-                    null,
-                    InferDataType(column),
-                    InferSourceUnit(column),
-                    null,
-                    IsLikelyRequired(column));
+                Column = column,
+                Field = ResolveField(column, fieldsByName)
             })
-            .ToList();
+            .Where(item => item.Field is not null)
+            .GroupBy(item => item.Column, StringComparer.CurrentCultureIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First().Field!.Key,
+                StringComparer.CurrentCultureIgnoreCase);
     }
 
-    private static string? ResolveParameterName(
+    private static ScheduleFieldOption? ResolveField(
         string columnName,
-        IReadOnlyDictionary<string, string> parametersByKey)
+        IReadOnlyDictionary<string, ScheduleFieldOption> fieldsByName)
     {
         foreach (string key in BuildColumnMatchKeys(columnName))
         {
-            if (parametersByKey.TryGetValue(key, out string? parameterName))
+            if (fieldsByName.TryGetValue(key, out ScheduleFieldOption? field))
             {
-                return parameterName;
+                return field;
             }
         }
 
@@ -67,72 +67,14 @@ public sealed class ParameterMappingService
         }
     }
 
-    private static ScheduleImportDataType InferDataType(string columnName)
+    private static int FieldTypePriority(string fieldTypeName)
     {
-        string normalized = NormalizeKey(columnName);
-        if (ContainsAny(normalized, "length", "длина", "len"))
+        return fieldTypeName switch
         {
-            return ScheduleImportDataType.Length;
-        }
-
-        if (ContainsAny(normalized, "area", "площадь"))
-        {
-            return ScheduleImportDataType.Area;
-        }
-
-        if (ContainsAny(normalized, "volume", "объем", "объём"))
-        {
-            return ScheduleImportDataType.Volume;
-        }
-
-        if (ContainsAny(normalized, "count", "количество", "колво", "qty"))
-        {
-            return ScheduleImportDataType.Count;
-        }
-
-        if (ContainsAny(normalized, "diameter", "диаметр", "dn"))
-        {
-            return ScheduleImportDataType.Length;
-        }
-
-        return ScheduleImportDataType.Text;
-    }
-
-    private static string? InferSourceUnit(string columnName)
-    {
-        string normalized = NormalizeKey(columnName);
-        if (ContainsAny(normalized, "мм", "mm"))
-        {
-            return "mm";
-        }
-
-        if (ContainsAny(normalized, "м2", "m2"))
-        {
-            return "m2";
-        }
-
-        if (ContainsAny(normalized, "м3", "m3"))
-        {
-            return "m3";
-        }
-
-        if (ContainsAny(normalized, "м", "m"))
-        {
-            return "m";
-        }
-
-        return null;
-    }
-
-    private static bool IsLikelyRequired(string columnName)
-    {
-        string normalized = NormalizeKey(columnName);
-        return ContainsAny(normalized, "марка", "номер", "позиция", "поз", "id");
-    }
-
-    private static bool ContainsAny(string value, params string[] tokens)
-    {
-        return tokens.Any(token => value.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0);
+            "Instance" => 0,
+            "ElementType" => 1,
+            _ => 2
+        };
     }
 
     private static string NormalizeKey(string value)
