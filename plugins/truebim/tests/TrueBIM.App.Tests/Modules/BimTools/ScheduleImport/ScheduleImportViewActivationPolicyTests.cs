@@ -7,34 +7,39 @@ namespace TrueBIM.App.Tests.Modules.BimTools.ScheduleImport;
 public sealed class ScheduleImportViewActivationPolicyTests
 {
     [Fact]
-    public void ShouldOpenSeparateTab_ReturnsTrueForSuccessfullyCreatedView()
+    public void ShouldOpenCreatedSchedule_ReturnsTrueForSuccessfulSchedule()
     {
-        DraftingTableCreationResult result = CreateResult(targetViewId: 42, createdNewView: true);
+        ScheduleImportCreationResult result = CreateResult(scheduleId: 42);
 
-        Assert.True(ScheduleImportViewActivationPolicy.ShouldOpenSeparateTab(result));
+        Assert.True(ScheduleImportViewActivationPolicy.ShouldOpenCreatedSchedule(result));
     }
 
     [Theory]
-    [InlineData(null, true)]
-    [InlineData(0L, true)]
-    [InlineData(42L, false)]
-    public void ShouldOpenSeparateTab_ReturnsFalseWithoutCreatedView(long? targetViewId, bool createdNewView)
+    [InlineData(null)]
+    [InlineData(0L)]
+    public void ShouldOpenCreatedSchedule_ReturnsFalseWithoutScheduleId(long? scheduleId)
     {
-        DraftingTableCreationResult result = CreateResult(targetViewId, createdNewView);
+        ScheduleImportCreationResult result = CreateResult(scheduleId);
 
-        Assert.False(ScheduleImportViewActivationPolicy.ShouldOpenSeparateTab(result));
+        Assert.False(ScheduleImportViewActivationPolicy.ShouldOpenCreatedSchedule(result));
     }
 
-    private static DraftingTableCreationResult CreateResult(long? targetViewId, bool createdNewView)
+    [Fact]
+    public void ShouldOpenCreatedSchedule_ReturnsFalseForFailedCreation()
     {
-        return new DraftingTableCreationResult(
+        ScheduleImportCreationResult result = CreateResult(42) with { Errors = ["failed"] };
+
+        Assert.False(ScheduleImportViewActivationPolicy.ShouldOpenCreatedSchedule(result));
+    }
+
+    private static ScheduleImportCreationResult CreateResult(long? scheduleId)
+    {
+        return new ScheduleImportCreationResult(
             "TrueBIM_Импорт таблицы",
-            targetViewId,
-            createdNewView,
+            scheduleId,
             false,
             10,
             5,
-            Array.Empty<string>(),
             Array.Empty<string>(),
             Array.Empty<string>());
     }

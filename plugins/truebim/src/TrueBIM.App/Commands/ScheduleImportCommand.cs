@@ -72,24 +72,24 @@ public sealed class ScheduleImportCommand : IExternalCommand
     {
         private readonly UIDocument uiDocument;
         private readonly ITrueBimLogger logger;
-        private readonly DraftingTableService draftingTableService;
+        private readonly ScheduleTableImportService scheduleTableImportService;
         private ScheduleImportRequest? pendingRequest;
-        private Action<DraftingTableCreationResult>? onCompleted;
+        private Action<ScheduleImportCreationResult>? onCompleted;
         private Action<Exception>? onFailed;
 
         public ScheduleImportExternalEventHandler(UIDocument uiDocument, ITrueBimLogger logger)
         {
             this.uiDocument = uiDocument ?? throw new ArgumentNullException(nameof(uiDocument));
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            draftingTableService = new DraftingTableService(
-                new DraftingTableLayoutService(),
+            scheduleTableImportService = new ScheduleTableImportService(
+                new ScheduleTableLayoutService(),
                 new ParsedTableValidationService(),
                 logger);
         }
 
         public void SetRequest(
             ScheduleImportRequest request,
-            Action<DraftingTableCreationResult> onCompleted,
+            Action<ScheduleImportCreationResult> onCompleted,
             Action<Exception> onFailed)
         {
             pendingRequest = request ?? throw new ArgumentNullException(nameof(request));
@@ -100,7 +100,7 @@ public sealed class ScheduleImportCommand : IExternalCommand
         public void Execute(UIApplication app)
         {
             ScheduleImportRequest? request = pendingRequest;
-            Action<DraftingTableCreationResult>? completed = onCompleted;
+            Action<ScheduleImportCreationResult>? completed = onCompleted;
             Action<Exception>? failed = onFailed;
             pendingRequest = null;
             onCompleted = null;
@@ -114,32 +114,30 @@ public sealed class ScheduleImportCommand : IExternalCommand
             try
             {
                 Document document = uiDocument.Document;
-                View activeView = document.ActiveView;
-                DraftingTableCreationResult result = draftingTableService.CreateTable(
+                ScheduleImportCreationResult result = scheduleTableImportService.CreateSchedule(
                     document,
-                    activeView,
                     request.Table,
                     request.Options);
-                if (ScheduleImportViewActivationPolicy.ShouldOpenSeparateTab(result))
+                if (ScheduleImportViewActivationPolicy.ShouldOpenCreatedSchedule(result))
                 {
                     try
                     {
-                        View? createdView = document.GetElement(
-                            RevitElementIds.Create(result.TargetViewId!.Value)) as View;
-                        if (createdView is null || createdView.IsTemplate)
+                        ViewSchedule? createdSchedule = document.GetElement(
+                            RevitElementIds.Create(result.ScheduleId!.Value)) as ViewSchedule;
+                        if (createdSchedule is null || createdSchedule.IsTemplate)
                         {
-                            throw new InvalidOperationException($"Created view id {result.TargetViewId} is unavailable.");
+                            throw new InvalidOperationException($"Created schedule id {result.ScheduleId} is unavailable.");
                         }
 
-                        uiDocument.ActiveView = createdView;
+                        uiDocument.ActiveView = createdSchedule;
                         result = result with { OpenedInSeparateTab = true };
-                        logger.Info($"Schedule Import opened '{createdView.Name}' in a separate Revit view tab.");
+                        logger.Info($"Schedule Import opened ViewSchedule '{createdSchedule.Name}' in a separate Revit view tab.");
                     }
                     catch (Exception activationException)
                     {
-                        string warning = "Таблица создана, но Revit не смог автоматически открыть её вид в отдельной вкладке.";
+                        string warning = "Спецификация создана, но Revit не смог автоматически открыть её в отдельной вкладке.";
                         result = result with { Warnings = result.Warnings.Append(warning).ToList() };
-                        logger.Warning($"Schedule Import could not open created view id {result.TargetViewId} in a separate Revit view tab: {activationException.Message}");
+                        logger.Warning($"Schedule Import could not open created schedule id {result.ScheduleId} in a separate Revit view tab: {activationException.Message}");
                     }
                 }
 

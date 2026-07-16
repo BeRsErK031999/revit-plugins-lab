@@ -21,36 +21,31 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     private readonly ScheduleImportContext context;
     private readonly IPdfTableParser parser;
     private readonly ITrueBimLogger logger;
-    private readonly Action<ScheduleImportRequest, Action<DraftingTableCreationResult>, Action<Exception>> createTable;
+    private readonly Action<ScheduleImportRequest, Action<ScheduleImportCreationResult>, Action<Exception>> createSchedule;
     private readonly ParsedTableValidationService validationService = new();
     private readonly ObservableCollection<TableItem> tables = new();
     private readonly ObservableCollection<string> warnings = new();
     private readonly TextBox filePathInput = new();
     private readonly ComboBox tableInput = new();
     private readonly TextBox scaleInput = new() { Text = "1.0" };
-    private readonly CheckBox createViewInput = new()
-    {
-        Content = "Создать чертёжный вид при необходимости",
-        IsChecked = true
-    };
     private readonly DataGrid previewGrid = new();
     private readonly ListBox warningList = new();
     private readonly TextBlock statusText = new();
     private readonly Button recognizeButton = CreateButton("Распознать", TrueBimIcon.Preview, 130);
     private readonly Button validateButton = CreateButton("Проверить", TrueBimIcon.Apply, 120);
-    private readonly Button createButton = CreateButton("Создать таблицу", TrueBimIcon.ScheduleImport, 170);
+    private readonly Button createButton = CreateButton("Создать спецификацию", TrueBimIcon.ScheduleImport, 190);
     private bool isApplying;
 
     public ScheduleImportWindow(
         ScheduleImportContext context,
         IPdfTableParser parser,
         ITrueBimLogger logger,
-        Action<ScheduleImportRequest, Action<DraftingTableCreationResult>, Action<Exception>> createTable)
+        Action<ScheduleImportRequest, Action<ScheduleImportCreationResult>, Action<Exception>> createSchedule)
     {
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         this.parser = parser ?? throw new ArgumentNullException(nameof(parser));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        this.createTable = createTable ?? throw new ArgumentNullException(nameof(createTable));
+        this.createSchedule = createSchedule ?? throw new ArgumentNullException(nameof(createSchedule));
 
         Title = DialogTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.ScheduleImport, 32);
@@ -67,7 +62,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         Content = CreateContent();
         InitializeTableInput();
         AddWarnings(context.Warnings);
-        UpdateStatus("Выберите PDF или DWG и распознайте визуальную таблицу для размещения в Revit.");
+        UpdateStatus("Выберите PDF или DWG и распознайте таблицу для создания новой спецификации Revit.");
         logger.Info($"Schedule Import window opened for '{context.DocumentTitle}', active view '{context.ActiveViewName}'.");
     }
 
@@ -175,7 +170,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         WpfGrid.SetColumn(fileActions, 2);
         root.Children.Add(fileActions);
 
-        AddLabel(root, "Размещение", 0, 2);
+        AddLabel(root, "Результат", 0, 2);
         StackPanel options = new()
         {
             Orientation = Orientation.Horizontal,
@@ -184,17 +179,11 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         };
         options.Children.Add(new TextBlock
         {
-            Text = "Чертёжная таблица",
+            Text = "Новая спецификация Revit",
             VerticalAlignment = VerticalAlignment.Center,
             Foreground = TrueBimBrushes.TextPrimary,
             Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0)
         });
-        createViewInput.Style = TrueBimStyles.CreateCheckBoxStyle();
-        createViewInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
-        createViewInput.ToolTip = "Если активный вид не поддерживает DetailCurve и TextNote, TrueBIM создаст новый чертёжный вид.";
-        createViewInput.Checked += (_, _) => ValidateCurrentTable(showDialog: false);
-        createViewInput.Unchecked += (_, _) => ValidateCurrentTable(showDialog: false);
-        options.Children.Add(createViewInput);
         options.Children.Add(new TextBlock
         {
             Text = "Размер",
@@ -332,15 +321,11 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         ParsedTableValidationResult validation = validationService.Validate(table);
         AddWarnings(validation.Warnings);
         AddWarnings(validation.Errors);
-        bool canPlace = context.CanUseDraftingTableMode || createViewInput.IsChecked == true;
-        bool canCreate = validation.Succeeded && canPlace;
-        createButton.IsEnabled = canCreate;
+        createButton.IsEnabled = validation.Succeeded;
         validateButton.IsEnabled = true;
-        UpdateStatus(validation.Succeeded && canPlace
+        UpdateStatus(validation.Succeeded
             ? $"Проверка пройдена. Строк: {table.RowCount}. Колонок: {table.ColumnCount}."
-            : validation.Succeeded
-                ? "Активный вид не подходит; включите создание чертёжного вида."
-                : "Проверка нашла ошибки.");
+            : "Проверка нашла ошибки.");
 
         if (showDialog)
         {
@@ -357,14 +342,7 @@ public sealed class ScheduleImportWindow : TrueBimWindow
             return string.Join(Environment.NewLine, validation.Errors);
         }
 
-        if (!context.CanUseDraftingTableMode && createViewInput.IsChecked != true)
-        {
-            return "Активный вид не поддерживает визуальную таблицу. Включите создание нового чертёжного вида.";
-        }
-
-        return context.CanUseDraftingTableMode
-            ? $"Таблица готова к размещению на активном виде «{context.ActiveViewName}»."
-            : "Таблица готова к размещению на новом чертёжном виде.";
+        return "Таблица готова: будет создана новая спецификация Revit и открыта отдельной вкладкой.";
     }
 
     private void CreateInRevit()
@@ -376,18 +354,10 @@ public sealed class ScheduleImportWindow : TrueBimWindow
             return;
         }
 
-        if (!context.CanUseDraftingTableMode && createViewInput.IsChecked != true)
-        {
-            Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, "Активный вид не подходит. Включите создание нового чертёжного вида.");
-            return;
-        }
-
         MessageBoxResult decision = MessageBox.Show(
             this,
-            $"Создать визуальную таблицу с линиями и текстом: {table.RowCount} x {table.ColumnCount}?\n\n" +
-            (context.CanUseDraftingTableMode
-                ? $"Таблица будет размещена на активном виде «{context.ActiveViewName}»."
-                : "Для таблицы будет создан новый чертёжный вид."),
+            $"Создать новую спецификацию Revit: {table.RowCount} x {table.ColumnCount}?\n\n" +
+            "Спецификация появится в диспетчере проекта и откроется отдельной вкладкой.",
             DialogTitle,
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
@@ -400,37 +370,34 @@ public sealed class ScheduleImportWindow : TrueBimWindow
         isApplying = true;
         createButton.IsEnabled = false;
         UpdateStatus("Запрос передан в Revit через ExternalEvent.");
-        createTable(
+        createSchedule(
             new ScheduleImportRequest(
                 table,
-                ScheduleImportCreationOptionsFactory.Create(
-                    context.ActiveViewId,
-                    createViewInput.IsChecked == true,
-                    ParseScale(scaleInput.Text))),
+                ScheduleImportCreationOptionsFactory.Create(ParseScale(scaleInput.Text))),
             OnCreated,
             OnFailed);
     }
 
-    private void OnCreated(DraftingTableCreationResult result)
+    private void OnCreated(ScheduleImportCreationResult result)
     {
         isApplying = false;
         AddWarnings(result.Warnings);
         AddWarnings(result.Errors);
         createButton.IsEnabled = result.Errors.Count > 0;
         UpdateStatus(result.Succeeded
-            ? $"Создана визуальная таблица на виде «{result.TargetViewName}»."
-            : "Создание таблицы завершилось ошибкой.");
+            ? $"Создана спецификация Revit «{result.ScheduleName}»."
+            : "Создание спецификации завершилось ошибкой.");
         Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, result.ToDialogText());
     }
 
     private void OnFailed(Exception exception)
     {
         isApplying = false;
-        logger.Error("Failed to create schedule import drafting table.", exception);
+        logger.Error("Failed to create Revit schedule from imported table.", exception);
         createButton.IsEnabled = true;
         AddWarnings([exception.Message]);
-        UpdateStatus("Не удалось создать таблицу в Revit.");
-        Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, "Не удалось создать таблицу. Используйте логи для диагностики.");
+        UpdateStatus("Не удалось создать спецификацию Revit.");
+        Autodesk.Revit.UI.TaskDialog.Show(DialogTitle, "Не удалось создать спецификацию Revit. Используйте логи для диагностики.");
     }
 
     private void OnDragEnter(object sender, DragEventArgs args)
@@ -460,22 +427,17 @@ public sealed class ScheduleImportWindow : TrueBimWindow
     private void UpdateStatus(string? prefix = null)
     {
         ParsedTable? table = SelectedTable;
-        string placement = context.CanUseDraftingTableMode
-            ? $"активный вид «{context.ActiveViewName}»"
-            : createViewInput.IsChecked == true
-                ? "новый чертёжный вид"
-                : "размещение недоступно";
+        const string resultTarget = "новая спецификация Revit";
         string tableText = table is null
             ? "Таблица не выбрана."
             : $"Таблица: {table.RowCount} x {table.ColumnCount}.";
         statusText.Text = string.IsNullOrWhiteSpace(prefix)
-            ? $"{tableText} Размещение: {placement}. Предупреждений: {warnings.Count}."
-            : $"{prefix} {tableText} Размещение: {placement}. Предупреждений: {warnings.Count}.";
+            ? $"{tableText} Результат: {resultTarget}. Предупреждений: {warnings.Count}."
+            : $"{prefix} {tableText} Результат: {resultTarget}. Предупреждений: {warnings.Count}.";
         if (table is not null)
         {
             ParsedTableValidationResult validation = validationService.Validate(table);
-            bool canPlace = context.CanUseDraftingTableMode || createViewInput.IsChecked == true;
-            createButton.IsEnabled = !isApplying && validation.Succeeded && canPlace;
+            createButton.IsEnabled = !isApplying && validation.Succeeded;
             validateButton.IsEnabled = true;
         }
         else

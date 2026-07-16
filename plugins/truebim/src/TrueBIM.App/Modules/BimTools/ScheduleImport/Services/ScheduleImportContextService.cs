@@ -14,33 +14,17 @@ public sealed class ScheduleImportContextService
         Document document = uiDocument.Document;
         View activeView = document.ActiveView;
         List<string> warnings = [];
-        bool canUseDrafting = DraftingTableService.IsDraftingCompatible(activeView);
         bool canUseBimSchedule = activeView is ViewSchedule;
         IReadOnlyList<ScheduleTarget> scheduleTargets = CollectScheduleTargets(document, activeView.Id, warnings);
         IReadOnlyList<string> availableBimScheduleParameterNames = canUseBimSchedule
             ? CollectBimScheduleParameterNames(document, (ViewSchedule)activeView, warnings)
             : Array.Empty<string>();
 
-        if (!canUseDrafting)
-        {
-            warnings.Add("Активный вид не подходит для прямого размещения DetailCurve/TextNote. При создании будет предложен новый чертёжный вид.");
-        }
-
-        if (scheduleTargets.Count == 0)
-        {
-            warnings.Add("В документе не найдено доступных спецификаций Revit. Создайте пустую спецификацию, затем снова откройте импорт.");
-        }
-        else
-        {
-            warnings.Add($"Доступно спецификаций Revit для импорта: {scheduleTargets.Count}.");
-        }
-
         return new ScheduleImportContext(
             string.IsNullOrWhiteSpace(document.Title) ? "Документ Revit" : document.Title,
             string.IsNullOrWhiteSpace(activeView.Name) ? "Активный вид" : activeView.Name,
             activeView.ViewType.ToString(),
             RevitElementIds.GetValue(activeView.Id),
-            canUseDrafting,
             canUseBimSchedule,
             availableBimScheduleParameterNames,
             warnings,

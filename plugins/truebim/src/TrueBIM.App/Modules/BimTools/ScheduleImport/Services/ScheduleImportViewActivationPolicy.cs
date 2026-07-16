@@ -4,7 +4,7 @@ namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 
 public static class ScheduleImportViewActivationPolicy
 {
-    public static bool ShouldOpenSeparateTab(DraftingTableCreationResult result)
+    public static bool ShouldOpenCreatedSchedule(ScheduleImportCreationResult result)
     {
         if (result is null)
         {
@@ -12,7 +12,6 @@ public static class ScheduleImportViewActivationPolicy
         }
 
         return result.Succeeded
-            && result.CreatedNewView
-            && result.TargetViewId is > 0;
+            && result.ScheduleId is > 0;
     }
 }

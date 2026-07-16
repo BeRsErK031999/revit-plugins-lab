@@ -119,7 +119,6 @@ public sealed class BimScheduleDryRunServiceTests
             "Schedule",
             canUseBimScheduleMode ? "Schedule" : "FloorPlan",
             42,
-            true,
             canUseBimScheduleMode,
             availableFields,
             Array.Empty<string>(),

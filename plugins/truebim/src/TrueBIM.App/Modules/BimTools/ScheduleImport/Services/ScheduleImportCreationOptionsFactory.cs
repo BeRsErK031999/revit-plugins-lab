@@ -4,15 +4,10 @@ namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 
 public static class ScheduleImportCreationOptionsFactory
 {
-    public static ImportOptions Create(
-        long? activeViewId,
-        bool createNewViewIfNeeded,
-        double tableScale)
+    public static ImportOptions Create(double tableScale)
     {
         return new ImportOptions(
-            ScheduleImportMode.DraftingTable,
-            TargetViewId: activeViewId,
-            CreateNewViewIfNeeded: createNewViewIfNeeded,
+            ScheduleImportMode.RevitSchedule,
             TableScale: tableScale,
             DryRun: false);
     }

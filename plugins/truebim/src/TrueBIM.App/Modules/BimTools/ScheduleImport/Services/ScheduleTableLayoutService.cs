@@ -2,7 +2,7 @@ using TrueBIM.App.Modules.BimTools.ScheduleImport.Models;
 
 namespace TrueBIM.App.Modules.BimTools.ScheduleImport.Services;
 
-public sealed class DraftingTableLayoutService
+public sealed class ScheduleTableLayoutService
 {
     public const double FeetPerMillimeter = 1.0 / 304.8;
 
@@ -14,35 +14,14 @@ public sealed class DraftingTableLayoutService
     private const double HorizontalPaddingMm = 4;
     private const double VerticalPaddingMm = 2.5;
 
-    public DraftingTableLayout CreateLayout(ParsedTable table, double tableScale)
+    public ScheduleTableLayout CreateLayout(ParsedTable table, double tableScale)
     {
         Guard.NotNull(table, nameof(table));
 
         double scale = NormalizeScale(tableScale);
         IReadOnlyList<double> columnWidths = CalculateColumnWidths(table, scale);
         IReadOnlyList<double> rowHeights = CalculateRowHeights(table, scale);
-        List<DraftingTableCellLayout> cells = [];
-
-        foreach (ParsedCell cell in table.Cells)
-        {
-            if (cell.RowIndex >= rowHeights.Count || cell.ColumnIndex >= columnWidths.Count)
-            {
-                continue;
-            }
-
-            double x = columnWidths.Take(cell.ColumnIndex).Sum();
-            double y = rowHeights.Take(cell.RowIndex).Sum();
-            int columnSpan = Math.Min(Math.Max(1, cell.ColumnSpan), columnWidths.Count - cell.ColumnIndex);
-            int rowSpan = Math.Min(Math.Max(1, cell.RowSpan), rowHeights.Count - cell.RowIndex);
-            cells.Add(new DraftingTableCellLayout(
-                cell,
-                x,
-                y,
-                columnWidths.Skip(cell.ColumnIndex).Take(columnSpan).Sum(),
-                rowHeights.Skip(cell.RowIndex).Take(rowSpan).Sum()));
-        }
-
-        return new DraftingTableLayout(columnWidths, rowHeights, cells);
+        return new ScheduleTableLayout(columnWidths, rowHeights);
     }
 
     public static double ToFeet(double millimeters)
