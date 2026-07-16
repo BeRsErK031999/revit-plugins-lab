@@ -17,6 +17,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "раскраски"
         },
         {
+            "TrueBIM_FinishSchedule",
+            TrueBimRibbon.ArPanelName,
+            "Ведомость\nотделки",
+            $"TrueBIM.App.Commands.{nameof(FinishScheduleCommand)}",
+            TrueBimIcon.FinishSchedule,
+            "ведомости отделки"
+        },
+        {
             "TrueBIM_IsoFieldRebar",
             TrueBimRibbon.KrPanelName,
             "Армирование\nпо изополям",
@@ -258,6 +266,7 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.Contains(TrueBimRibbon.ParametersPanelName, TrueBimRibbon.PanelNames);
         Assert.Contains(TrueBimRibbon.AdministrationPanelName, TrueBimRibbon.PanelNames);
         Assert.Contains(TrueBimRibbon.HelpPanelName, TrueBimRibbon.PanelNames);
+        Assert.Contains(TrueBimRibbon.ArPanelName, TrueBimRibbon.PanelNames);
         Assert.Contains(TrueBimRibbon.KrPanelName, TrueBimRibbon.PanelNames);
         Assert.Contains(TrueBimRibbon.EomPanelName, TrueBimRibbon.PanelNames);
 
@@ -278,6 +287,7 @@ public sealed class AppRibbonButtonDefinitionTests
             TrueBimRibbon.GeometryPanelName,
             TrueBimRibbon.ParametersPanelName,
             TrueBimRibbon.AdministrationPanelName,
+            TrueBimRibbon.ArPanelName,
             TrueBimRibbon.KrPanelName,
             TrueBimRibbon.EomPanelName,
             TrueBimRibbon.HelpPanelName
@@ -323,6 +333,7 @@ public sealed class AppRibbonButtonDefinitionTests
             [TrueBimRibbon.GeometryPanelName] = 2,
             [TrueBimRibbon.ParametersPanelName] = 3,
             [TrueBimRibbon.AdministrationPanelName] = 2,
+            [TrueBimRibbon.ArPanelName] = 2,
             [TrueBimRibbon.KrPanelName] = 3,
             [TrueBimRibbon.EomPanelName] = 2,
             [TrueBimRibbon.HelpPanelName] = 2
