@@ -15,7 +15,8 @@ public sealed record IsoFieldRebarPlanItem(
 public sealed record IsoFieldOwnedRebarSnapshot(
     long ElementId,
     string StableId,
-    string? Signature);
+    string? Signature,
+    string? StateSignature = null);
 
 public sealed record IsoFieldRebarChange(
     IsoFieldRebarChangeKind Kind,
@@ -25,7 +26,8 @@ public sealed record IsoFieldRebarChange(
 
 public sealed record IsoFieldRebarChangePlan(
     IReadOnlyList<IsoFieldRebarChange> Changes,
-    IReadOnlyList<string> Diagnostics)
+    IReadOnlyList<string> Diagnostics,
+    string? ExistingStateFingerprint = null)
 {
     public bool CanApply => Diagnostics.Count == 0;
 

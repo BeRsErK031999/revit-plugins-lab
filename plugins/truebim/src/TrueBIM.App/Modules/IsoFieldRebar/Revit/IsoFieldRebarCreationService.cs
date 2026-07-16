@@ -482,6 +482,10 @@ public sealed class IsoFieldRebarCreationService
                 out IsoFieldOwnedRebarSnapshot? snapshot))
             {
                 IsoFieldOwnedRebarSnapshot activeSnapshot = snapshot!;
+                activeSnapshot = activeSnapshot with
+                {
+                    StateSignature = BuildOwnedRebarStateSignature(document, rebar)
+                };
                 if (requestsByStableId.TryGetValue(activeSnapshot.StableId, out RebarCreationRequest? request)
                     && !RebarMatchesRequest(document, rebar, request))
                 {
@@ -493,6 +497,41 @@ public sealed class IsoFieldRebarCreationService
         }
 
         return changePlanService.Build(plannedItems, existingElements);
+    }
+
+    private static string BuildOwnedRebarStateSignature(Document document, Rebar rebar)
+    {
+        IList<Curve> centerlineCurves = rebar.GetCenterlineCurves(
+            false,
+            false,
+            false,
+            MultiplanarOption.IncludeOnlyPlanarCurves,
+            0);
+        RebarBarType? barType = document.GetElement(rebar.GetTypeId()) as RebarBarType;
+        Parameter? diameterParameter = barType?.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER);
+        string diameter = diameterParameter?.StorageType == StorageType.Double
+            ? diameterParameter.AsDouble().ToString("0.#########", CultureInfo.InvariantCulture)
+            : "unknown";
+        return string.Join(
+            "|",
+            RevitElementIds.GetValue(rebar.GetTypeId()),
+            diameter,
+            string.Join(
+                ";",
+                centerlineCurves.Select(curve => string.Join(
+                    ",",
+                    curve.GetType().Name,
+                    FormatStatePoint(curve.GetEndPoint(0)),
+                    FormatStatePoint(curve.GetEndPoint(1))))));
+    }
+
+    private static string FormatStatePoint(XYZ point)
+    {
+        return string.Join(
+            ":",
+            point.X.ToString("0.#########", CultureInfo.InvariantCulture),
+            point.Y.ToString("0.#########", CultureInfo.InvariantCulture),
+            point.Z.ToString("0.#########", CultureInfo.InvariantCulture));
     }
 
     private static bool RebarMatchesRequest(

@@ -24,6 +24,8 @@ public sealed class IsoFieldRebarChangePlanService
             throw new ArgumentNullException(nameof(existingElements));
         }
 
+        string existingStateFingerprint = BuildExistingStateFingerprint(existingElements);
+
         List<string> diagnostics = new();
         foreach (IGrouping<string, IsoFieldRebarPlanItem> duplicate in plannedItems
             .Where(item => !string.IsNullOrWhiteSpace(item.StableId))
@@ -41,7 +43,10 @@ public sealed class IsoFieldRebarChangePlanService
 
         if (diagnostics.Count > 0)
         {
-            return new IsoFieldRebarChangePlan(Array.Empty<IsoFieldRebarChange>(), diagnostics);
+            return new IsoFieldRebarChangePlan(
+                Array.Empty<IsoFieldRebarChange>(),
+                diagnostics,
+                existingStateFingerprint);
         }
 
         Dictionary<string, IsoFieldOwnedRebarSnapshot[]> existingByStableId = existingElements
@@ -88,7 +93,10 @@ public sealed class IsoFieldRebarChangePlanService
                 obsoletePair.Value.Select(item => item.ElementId).ToArray()));
         }
 
-        return new IsoFieldRebarChangePlan(changes, Array.Empty<string>());
+        return new IsoFieldRebarChangePlan(
+            changes,
+            Array.Empty<string>(),
+            existingStateFingerprint);
     }
 
     public string BuildSignature(IsoFieldRebarPlacement placement)
@@ -120,6 +128,37 @@ public sealed class IsoFieldRebarChangePlanService
             placement.Rule.LayerRole,
             placement.Rule.Face,
             placement.Rule.PlacementDirection);
+        using SHA256 sha256 = SHA256.Create();
+        byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+        return string.Concat(hash
+            .Take(SignatureByteCount)
+            .Select(item => item.ToString("x2", CultureInfo.InvariantCulture)));
+    }
+
+    public string BuildFingerprint(IsoFieldRebarChangePlan plan)
+    {
+        if (plan is null)
+        {
+            throw new ArgumentNullException(nameof(plan));
+        }
+
+        IEnumerable<string> fingerprintParts = new[]
+        {
+            "existing-state|" + (plan.ExistingStateFingerprint ?? string.Empty)
+        }
+            .Concat(plan.Diagnostics
+                .OrderBy(item => item, StringComparer.Ordinal)
+                .Select(item => "diagnostic|" + item))
+            .Concat(plan.Changes
+                .OrderBy(change => change.StableId, StringComparer.Ordinal)
+                .ThenBy(change => change.Kind)
+                .Select(change => string.Join(
+                    "|",
+                    change.Kind,
+                    change.StableId,
+                    change.PlannedItem?.Signature ?? string.Empty,
+                    string.Join(",", change.ExistingElementIds.OrderBy(id => id)))));
+        string value = string.Join("\n", fingerprintParts);
         using SHA256 sha256 = SHA256.Create();
         byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
         return string.Concat(hash
@@ -168,5 +207,26 @@ public sealed class IsoFieldRebarChangePlanService
     private static string Format(double value)
     {
         return value.ToString("0.#########", CultureInfo.InvariantCulture);
+    }
+
+    private static string BuildExistingStateFingerprint(
+        IReadOnlyList<IsoFieldOwnedRebarSnapshot> existingElements)
+    {
+        string value = string.Join(
+            "\n",
+            existingElements
+                .OrderBy(item => item.ElementId)
+                .ThenBy(item => item.StableId, StringComparer.Ordinal)
+                .Select(item => string.Join(
+                    "|",
+                    item.ElementId,
+                    item.StableId,
+                    item.Signature ?? string.Empty,
+                    item.StateSignature ?? string.Empty)));
+        using SHA256 sha256 = SHA256.Create();
+        byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+        return string.Concat(hash
+            .Take(SignatureByteCount)
+            .Select(item => item.ToString("x2", CultureInfo.InvariantCulture)));
     }
 }

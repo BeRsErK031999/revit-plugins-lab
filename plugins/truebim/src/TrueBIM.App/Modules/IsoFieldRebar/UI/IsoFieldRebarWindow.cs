@@ -1,7 +1,10 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Autodesk.Revit.UI;
@@ -12,6 +15,7 @@ using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
+using WpfBinding = System.Windows.Data.Binding;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfTextBox = System.Windows.Controls.TextBox;
@@ -43,6 +47,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldSourceSetManifestService sourceSetManifestService;
     private readonly IsoFieldSourceSetRecognitionService sourceSetRecognitionService = new();
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
+    private readonly IsoFieldRebarReviewService rebarReviewService = new();
+    private readonly IsoFieldRebarChangePlanService rebarChangePlanService = new();
+    private readonly ObservableCollection<IsoFieldRebarReviewRow> rebarReviewRows = new();
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
     private readonly TextBlock selectedFileText;
@@ -61,6 +68,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly Button selectHostButton;
     private readonly Button clearHostButton;
     private readonly Button previewRulesButton;
+    private readonly Button compareChangesButton;
     private readonly Button createTestRebarButton;
     private readonly Button saveSourceSetManifestButton;
     private readonly TextBlock workflowSummaryText;
@@ -99,6 +107,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly WpfTextBox concreteCoverInput;
     private readonly WpfTextBox boundaryOffsetInput;
     private readonly WpfTextBox minimumBarLengthInput;
+    private readonly WpfTextBox reviewSearchInput;
+    private readonly WpfComboBox reviewLayerFilter;
+    private readonly WpfComboBox reviewStatusFilter;
+    private readonly WpfComboBox reviewDiameterFilter;
+    private readonly WpfComboBox reviewSpacingFilter;
+    private readonly WpfComboBox reviewConfidenceFilter;
+    private readonly DataGrid rebarReviewGrid;
+    private readonly TextBlock reviewSummaryText;
     private string? selectedJsonPath;
     private IsoFieldSourceSet? selectedSourceSet;
     private string? selectedSourceSetManifestPath;
@@ -113,6 +129,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private IsoFieldSlabBindingProfile? availableSlabBindingProfile;
     private long selectedHostViewId;
     private RebarRulePreviewResult? currentRulePreview;
+    private IsoFieldRebarChangePlan? currentChangePlan;
+    private string? currentChangePlanFingerprint;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -130,6 +148,32 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         new(
             IsoFieldReinforcementMode.FullCombination,
             "Полное сочетание внутри зон")
+    ];
+    private static readonly IReadOnlyList<IsoFieldReviewLayerOption> ReviewLayerOptions =
+    [
+        new(null, "Все слои"),
+        new(IsoFieldLayerRole.As1X, "As1X"),
+        new(IsoFieldLayerRole.As2X, "As2X"),
+        new(IsoFieldLayerRole.As3Y, "As3Y"),
+        new(IsoFieldLayerRole.As4Y, "As4Y")
+    ];
+    private static readonly IReadOnlyList<IsoFieldReviewStatusOption> ReviewStatusOptions =
+    [
+        new(null, "Все статусы"),
+        new(IsoFieldRebarReviewStatus.NotCompared, "Не сравнено"),
+        new(IsoFieldRebarReviewStatus.Add, "Добавить"),
+        new(IsoFieldRebarReviewStatus.Update, "Обновить"),
+        new(IsoFieldRebarReviewStatus.Delete, "Удалить"),
+        new(IsoFieldRebarReviewStatus.Unchanged, "Без изменений"),
+        new(IsoFieldRebarReviewStatus.Mixed, "Смешано"),
+        new(IsoFieldRebarReviewStatus.Invalid, "Ошибка")
+    ];
+    private static readonly IReadOnlyList<IsoFieldReviewNumberOption> ReviewConfidenceOptions =
+    [
+        new(null, "Любой confidence"),
+        new(0.9, "Не ниже 90%"),
+        new(0.75, "Не ниже 75%"),
+        new(0.5, "Не ниже 50%")
     ];
 
     public IsoFieldRebarWindow(
@@ -244,6 +288,30 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         concreteCoverInput = CreateBindingInput(IsoFieldEngineeringSettings.Default.ConcreteCoverMillimeters);
         boundaryOffsetInput = CreateBindingInput(IsoFieldEngineeringSettings.Default.BoundaryOffsetMillimeters);
         minimumBarLengthInput = CreateBindingInput(IsoFieldEngineeringSettings.Default.MinimumBarLengthMillimeters);
+        reviewSearchInput = new WpfTextBox
+        {
+            Width = 180,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateTextBoxStyle(),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "Найти строку по имени или id зоны."
+        };
+        reviewLayerFilter = CreateReviewFilterComboBox(ReviewLayerOptions, nameof(IsoFieldReviewLayerOption.Label), 112);
+        reviewStatusFilter = CreateReviewFilterComboBox(ReviewStatusOptions, nameof(IsoFieldReviewStatusOption.Label), 150);
+        reviewDiameterFilter = CreateReviewFilterComboBox(
+            new[] { new IsoFieldReviewNumberOption(null, "Любой Ø") },
+            nameof(IsoFieldReviewNumberOption.Label),
+            112);
+        reviewSpacingFilter = CreateReviewFilterComboBox(
+            new[] { new IsoFieldReviewNumberOption(null, "Любой шаг") },
+            nameof(IsoFieldReviewNumberOption.Label),
+            118);
+        reviewConfidenceFilter = CreateReviewFilterComboBox(
+            ReviewConfidenceOptions,
+            nameof(IsoFieldReviewNumberOption.Label),
+            150);
+        reviewSummaryText = CreateMutedText("Таблица появится после расчёта раскладки.");
+        rebarReviewGrid = CreateRebarReviewGrid();
         ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
         rebarCreationStatusText = CreateMutedText("Раскладка армирования пока не создана.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
@@ -280,11 +348,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             188,
             "Сначала загрузите зоны и выберите host-элемент.",
             (_, _) => PreviewRebarRules());
+        compareChangesButton = CreateActionButton(
+            "Сравнить с моделью",
+            TrueBimIcon.Refresh,
+            196,
+            "Сначала рассчитайте валидную инженерную раскладку.",
+            (_, _) => CompareEngineeringChanges());
         createTestRebarButton = CreateActionButton(
             "Применить изменения",
             TrueBimIcon.Apply,
             244,
-            "Сначала рассчитайте валидную инженерную раскладку. Перед подтверждением будут показаны добавления, обновления и удаления.",
+            "Сначала рассчитайте раскладку и отдельно сравните её с моделью.",
             (_, _) => CreateTestRebar(),
             TrueBimButtonStyleKind.Primary);
         saveSourceSetManifestButton = CreateActionButton(
@@ -315,6 +389,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         concreteCoverInput.TextChanged += (_, _) => InvalidateEngineeringRules();
         boundaryOffsetInput.TextChanged += (_, _) => InvalidateEngineeringRules();
         minimumBarLengthInput.TextChanged += (_, _) => InvalidateEngineeringRules();
+        reviewSearchInput.TextChanged += (_, _) => RefreshRebarReviewFilter();
+        reviewLayerFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
+        reviewStatusFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
+        reviewDiameterFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
+        reviewSpacingFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
+        reviewConfidenceFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
 
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
@@ -428,8 +508,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 6)
         });
-        content.Children.Add(CreateMutedText("Нажмите, чтобы открыть справку с картинками: комплект карт, привязка, инженерные правила и раскладка по отсечённым зонам."));
-        content.Children.Add(CreateMutedText("До подтверждения команды «Применить изменения» модуль работает в безопасном режиме без записи арматуры в модель."));
+        content.Children.Add(CreateMutedText("Нажмите, чтобы открыть справку с картинками: комплект карт, привязка, инженерные правила, сравнение и применение раскладки."));
+        content.Children.Add(CreateMutedText("Сначала выполните «Сравнить с моделью» и проверьте таблицу зон. До отдельного подтверждения «Применить изменения» арматура в модель не записывается."));
 
         return new ToolTip
         {
@@ -729,15 +809,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             ToolTip = "Параметры влияют на расчёт количества и фактическое положение стержней."
         });
 
-        StackPanel buttonRow = new()
+        WrapPanel buttonRow = new()
         {
-            Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
         buttonRow.Children.Add(previewRulesButton);
 
-        createTestRebarButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        compareChangesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        buttonRow.Children.Add(compareChangesButton);
+
+        createTestRebarButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
         buttonRow.Children.Add(createTestRebarButton);
 
         content.Children.Add(buttonRow);
@@ -746,8 +828,220 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         content.Children.Add(ruleStatusText);
         rebarCreationStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(rebarCreationStatusText);
+        content.Children.Add(CreateRebarReviewPanel());
 
         return CreatePanel(content);
+    }
+
+    private UIElement CreateRebarReviewPanel()
+    {
+        StackPanel content = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
+        content.Children.Add(TrueBimUi.CreateInfoBanner(
+            "Проверьте строки и счётчики до применения. Фильтры меняют только отображение и не исключают зоны из раскладки.",
+            TrueBimUiSeverity.Info));
+
+        WrapPanel filters = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing8)
+        };
+        filters.Children.Add(CreateReviewFilterField("Поиск", reviewSearchInput));
+        filters.Children.Add(CreateReviewFilterField("Слой", reviewLayerFilter));
+        filters.Children.Add(CreateReviewFilterField("Статус", reviewStatusFilter));
+        filters.Children.Add(CreateReviewFilterField("Диаметр", reviewDiameterFilter));
+        filters.Children.Add(CreateReviewFilterField("Шаг", reviewSpacingFilter));
+        filters.Children.Add(CreateReviewFilterField("Confidence", reviewConfidenceFilter));
+        content.Children.Add(filters);
+        content.Children.Add(rebarReviewGrid);
+        content.Children.Add(reviewSummaryText);
+
+        return new Expander
+        {
+            Header = "Проверка зон и изменений",
+            Content = content,
+            IsExpanded = true,
+            ToolTip = "Таблица заполняется расчётными зонами, а после сравнения показывает добавление, обновление, удаление и неизменённые элементы."
+        };
+    }
+
+    private DataGrid CreateRebarReviewGrid()
+    {
+        DataGrid grid = new()
+        {
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            CanUserReorderColumns = true,
+            CanUserResizeColumns = true,
+            CanUserSortColumns = true,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            IsReadOnly = true,
+            MinHeight = 220,
+            MaxHeight = 340,
+            SelectionMode = DataGridSelectionMode.Single,
+            SelectionUnit = DataGridSelectionUnit.FullRow,
+            Style = TrueBimStyles.CreateDataGridStyle(),
+            ItemsSource = rebarReviewRows
+        };
+        grid.Columns.Add(CreateReviewColumn("Слой", nameof(IsoFieldRebarReviewRow.LayerText), 74));
+        grid.Columns.Add(CreateReviewColumn("Зона", nameof(IsoFieldRebarReviewRow.ZoneName), new DataGridLength(1, DataGridLengthUnitType.Star), 180));
+        grid.Columns.Add(CreateReviewColumn("Статус", nameof(IsoFieldRebarReviewRow.StatusText), 118));
+        grid.Columns.Add(CreateReviewColumn("Напр./грань", nameof(IsoFieldRebarReviewRow.FaceDirectionText), 116));
+        grid.Columns.Add(CreateReviewColumn("Армирование", nameof(IsoFieldRebarReviewRow.ReinforcementText), 142));
+        grid.Columns.Add(CreateReviewColumn("Площадь", nameof(IsoFieldRebarReviewRow.AreaText), 132));
+        grid.Columns.Add(CreateReviewColumn("Стержни", nameof(IsoFieldRebarReviewRow.EstimatedBarCountText), 78));
+        grid.Columns.Add(CreateReviewColumn("Confidence", nameof(IsoFieldRebarReviewRow.ConfidenceText), 92));
+        grid.Columns.Add(CreateReviewColumn("Изменения", nameof(IsoFieldRebarReviewRow.ChangeSummary), 190));
+        return grid;
+    }
+
+    private static DataGridTextColumn CreateReviewColumn(
+        string header,
+        string bindingPath,
+        double width)
+    {
+        return CreateReviewColumn(header, bindingPath, new DataGridLength(width), 0);
+    }
+
+    private static DataGridTextColumn CreateReviewColumn(
+        string header,
+        string bindingPath,
+        DataGridLength width,
+        double minWidth)
+    {
+        return new DataGridTextColumn
+        {
+            Header = header,
+            Binding = new WpfBinding(bindingPath),
+            Width = width,
+            MinWidth = minWidth
+        };
+    }
+
+    private static StackPanel CreateReviewFilterField(string label, UIElement control)
+    {
+        StackPanel field = new()
+        {
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8)
+        };
+        field.Children.Add(new TextBlock
+        {
+            Text = label,
+            Foreground = TrueBimBrushes.TextMuted,
+            FontSize = TrueBimTheme.CaptionFontSize,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
+        });
+        field.Children.Add(control);
+        return field;
+    }
+
+    private static WpfComboBox CreateReviewFilterComboBox(
+        System.Collections.IEnumerable itemsSource,
+        string displayMemberPath,
+        double width)
+    {
+        return new WpfComboBox
+        {
+            ItemsSource = itemsSource,
+            DisplayMemberPath = displayMemberPath,
+            SelectedIndex = 0,
+            Width = width,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateComboBoxStyle()
+        };
+    }
+
+    private void RefreshRebarReviewRows()
+    {
+        rebarReviewRows.Clear();
+        if (currentRulePreview is null || currentRecognitionResult is null)
+        {
+            SetReviewNumberOptions(reviewDiameterFilter, Array.Empty<double>(), "Любой Ø", "Ø");
+            SetReviewNumberOptions(reviewSpacingFilter, Array.Empty<double>(), "Любой шаг", "Шаг");
+            reviewSummaryText.Text = "Таблица появится после расчёта раскладки.";
+            return;
+        }
+
+        IReadOnlyList<IsoFieldRebarReviewRow> rows = rebarReviewService.BuildRows(
+            currentRulePreview,
+            currentRecognitionResult,
+            currentChangePlan);
+        foreach (IsoFieldRebarReviewRow row in rows)
+        {
+            rebarReviewRows.Add(row);
+        }
+
+        SetReviewNumberOptions(
+            reviewDiameterFilter,
+            rows.SelectMany(row => row.DiametersMillimeters),
+            "Любой Ø",
+            "Ø");
+        SetReviewNumberOptions(
+            reviewSpacingFilter,
+            rows.SelectMany(row => row.SpacingsMillimeters),
+            "Любой шаг",
+            "Шаг");
+        RefreshRebarReviewFilter();
+    }
+
+    private void RefreshRebarReviewFilter()
+    {
+        if (rebarReviewGrid is null)
+        {
+            return;
+        }
+
+        IsoFieldRebarReviewFilter filter = new(
+            reviewSearchInput.Text ?? string.Empty,
+            (reviewLayerFilter.SelectedItem as IsoFieldReviewLayerOption)?.LayerRole,
+            (reviewStatusFilter.SelectedItem as IsoFieldReviewStatusOption)?.Status,
+            (reviewDiameterFilter.SelectedItem as IsoFieldReviewNumberOption)?.Value,
+            (reviewSpacingFilter.SelectedItem as IsoFieldReviewNumberOption)?.Value,
+            (reviewConfidenceFilter.SelectedItem as IsoFieldReviewNumberOption)?.Value);
+        ICollectionView view = CollectionViewSource.GetDefaultView(rebarReviewRows);
+        view.Filter = item => item is IsoFieldRebarReviewRow row
+            && rebarReviewService.MatchesFilter(row, filter);
+        view.Refresh();
+
+        int visibleCount = view.Cast<object>().Count();
+        string planSummary = currentChangePlan is null
+            ? "Сравнение с моделью ещё не выполнено."
+            : currentChangePlan.Summary;
+        reviewSummaryText.Text = $"Зон: {rebarReviewRows.Count}; показано: {visibleCount}. {planSummary}";
+    }
+
+    private static void SetReviewNumberOptions(
+        WpfComboBox comboBox,
+        IEnumerable<double> values,
+        string allLabel,
+        string valuePrefix)
+    {
+        double? selectedValue = (comboBox.SelectedItem as IsoFieldReviewNumberOption)?.Value;
+        List<IsoFieldReviewNumberOption> options =
+        [
+            new(null, allLabel)
+        ];
+        options.AddRange(values
+            .Distinct()
+            .OrderBy(value => value)
+            .Select(value => new IsoFieldReviewNumberOption(
+                value,
+                $"{valuePrefix} {FormatNumber(value)} мм")));
+        comboBox.ItemsSource = options;
+        comboBox.SelectedItem = options.FirstOrDefault(option => option.Value == selectedValue)
+            ?? options[0];
+    }
+
+    private void SetCurrentChangePlan(IsoFieldRebarChangePlan? changePlan)
+    {
+        currentChangePlan = changePlan;
+        currentChangePlanFingerprint = changePlan is null
+            ? null
+            : rebarChangePlanService.BuildFingerprint(changePlan);
+        RefreshRebarReviewRows();
+        RefreshWorkflowState();
     }
 
     private UIElement CreateEngineeringModeRow()
@@ -2022,6 +2316,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             && !TryBuildEngineeringSettings(out engineeringSettings, out string settingsError))
         {
             currentRulePreview = null;
+            currentChangePlan = null;
+            currentChangePlanFingerprint = null;
+            RefreshRebarReviewRows();
             ruleStatusText.Text = settingsError;
             rebarCreationStatusText.Text = "Раскладка недоступна: исправьте инженерные параметры.";
             footerStatusText.Text = "Инженерные параметры раскладки требуют исправления.";
@@ -2038,11 +2335,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             currentSlabBinding,
             engineeringSettings);
         currentRulePreview = preview;
+        currentChangePlan = null;
+        currentChangePlanFingerprint = null;
+        RefreshRebarReviewRows();
         ruleStatusText.Text = FormatRulePreview(preview);
         bool mappingsReady = selectedSourceSet is null || selectedSourceSet.HasConfirmedLayerMappings;
         rebarCreationStatusText.Text = preview.CanCreateRebar && mappingsReady
             ? preview.IsEngineeringPreview
-                ? $"Рассчитано {preview.EstimatedBarCount} стержней. Нажмите «Применить изменения», чтобы увидеть сравнение с моделью."
+                ? $"Рассчитано {preview.EstimatedBarCount} стержней. Теперь нажмите «Сравнить с моделью» и проверьте таблицу."
                 : "Готово к созданию пробного армирования после подтверждения."
             : preview.CanCreateRebar
                 ? "Правила готовы, но назначение верх/низ не подтверждено."
@@ -2103,17 +2403,166 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void CreateTestRebar()
     {
-        rebarCreationStatusText.Text = "Создание армирования поставлено в очередь Revit.";
+        rebarCreationStatusText.Text = "Применение изменений поставлено в очередь Revit.";
         revitActions.Raise(CreateTestRebarInRevitContext);
     }
 
+    private void CompareEngineeringChanges()
+    {
+        rebarCreationStatusText.Text = "Сравнение с моделью поставлено в очередь Revit.";
+        revitActions.Raise(CompareEngineeringChangesInRevitContext);
+    }
+
+    private void CompareEngineeringChangesInRevitContext()
+    {
+        ReadyRebarContext? context = ResolveReadyRebarContext();
+        if (context is null)
+        {
+            return;
+        }
+
+        if (!context.Preview.IsEngineeringPreview)
+        {
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Сравнение по зонам доступно для инженерной раскладки горизонтальной плиты.");
+            return;
+        }
+
+        IsoFieldRebarChangePlan? changePlan = TryPreviewEngineeringChanges(context);
+        if (changePlan is null)
+        {
+            return;
+        }
+
+        SetCurrentChangePlan(changePlan);
+        rebarCreationStatusText.Text = changePlan.CanApply
+            ? "Сравнение с моделью: " + changePlan.Summary
+            : "Изменения заблокированы: " + string.Join(" ", changePlan.Diagnostics);
+        footerStatusText.Text = changePlan.CanApply
+            ? "Раскладка сравнена с принадлежащей модулю арматурой. Проверьте таблицу; модель пока не изменялась."
+            : "Сравнение выполнено, но план содержит ошибки.";
+        logger.Info($"IsoField engineering rebar comparison completed. {changePlan.Summary} Diagnostics={changePlan.Diagnostics.Count}.");
+    }
+
     private void CreateTestRebarInRevitContext()
+    {
+        ReadyRebarContext? context = ResolveReadyRebarContext();
+        if (context is null)
+        {
+            return;
+        }
+
+        IsoFieldRebarChangePlan? changePlan = null;
+        if (context.Preview.IsEngineeringPreview)
+        {
+            if (currentChangePlan is null || string.IsNullOrWhiteSpace(currentChangePlanFingerprint))
+            {
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    "Сначала нажмите «Сравнить с моделью» и проверьте таблицу зон и изменений.");
+                rebarCreationStatusText.Text = "Изменения не применены: сравнение с моделью не выполнено.";
+                return;
+            }
+
+            string expectedFingerprint = currentChangePlanFingerprint!;
+            changePlan = TryPreviewEngineeringChanges(context);
+            if (changePlan is null)
+            {
+                return;
+            }
+
+            string actualFingerprint = rebarChangePlanService.BuildFingerprint(changePlan);
+            SetCurrentChangePlan(changePlan);
+            if (!string.Equals(expectedFingerprint, actualFingerprint, StringComparison.Ordinal))
+            {
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    "Модель изменилась после последнего сравнения. Таблица обновлена; проверьте строки ещё раз перед применением.");
+                rebarCreationStatusText.Text = "Изменения не применены: предыдущий результат сравнения устарел.";
+                footerStatusText.Text = "Diff обновлён из модели. Требуется повторная проверка пользователем.";
+                logger.Warning("IsoField engineering rebar apply blocked by a stale change-plan fingerprint.");
+                return;
+            }
+
+            if (!changePlan.CanApply)
+            {
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    "Изменения заблокированы: " + string.Join(" ", changePlan.Diagnostics));
+                rebarCreationStatusText.Text = "Изменения не применены: план содержит ошибки.";
+                return;
+            }
+
+            if (!changePlan.HasChanges)
+            {
+                string message = $"Армирование уже соответствует расчётной раскладке. {changePlan.Summary}";
+                TaskDialog.Show("Армирование по изополям", message);
+                rebarCreationStatusText.Text = message;
+                footerStatusText.Text = message;
+                logger.Info($"IsoField engineering rebar apply skipped. {changePlan.Summary}");
+                return;
+            }
+        }
+
+        if (!ConfirmCreateTestRebar(context.Preview, context.HostElement, selectedSourceSet, changePlan))
+        {
+            rebarCreationStatusText.Text = "Применение изменений отменено.";
+            footerStatusText.Text = "Применение изменений отменено пользователем.";
+            logger.Info("IsoField test rebar creation canceled by user.");
+            return;
+        }
+
+        try
+        {
+            logger.Info($"IsoField test rebar creation requested. HostKind={context.HostElement.HostKind}; HostId={context.HostElement.ElementId}; Rules={context.Preview.Items.Count}.");
+            IsoFieldRebarCreationResult result = rebarCreationService.CreateTestRebar(
+                uiDocument!,
+                context.HostElement,
+                context.Preview,
+                currentSlabBinding);
+            if (context.Preview.IsEngineeringPreview)
+            {
+                try
+                {
+                    IsoFieldRebarChangePlan appliedPlan = rebarCreationService.PreviewEngineeringChanges(
+                        uiDocument!,
+                        context.HostElement,
+                        context.Preview,
+                        currentSlabBinding);
+                    SetCurrentChangePlan(appliedPlan);
+                }
+                catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+                {
+                    logger.Warning($"IsoField post-apply comparison failed: {exception.Message}");
+                    SetCurrentChangePlan(null);
+                }
+            }
+
+            rebarCreationStatusText.Text = result.Message;
+            footerStatusText.Text = result.Message;
+            logger.Info(
+                $"IsoField rebar apply completed. Added={result.AddedCount}; Updated={result.UpdatedCount}; "
+                + $"Deleted={result.DeletedCount}; Unchanged={result.UnchangedCount}; HostId={context.HostElement.ElementId}.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            logger.Error("Failed to create IsoField test rebar.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось создать армирование. Проверьте host-элемент, наличие точных диаметров RebarBarType в модели и логи.");
+            rebarCreationStatusText.Text = "Армирование не создано: см. логи диагностики.";
+            footerStatusText.Text = "Не удалось создать армирование.";
+        }
+    }
+
+    private ReadyRebarContext? ResolveReadyRebarContext()
     {
         if (uiDocument is null)
         {
             logger.Warning("IsoField test rebar creation was requested without an open Revit document.");
             TaskDialog.Show("Армирование по изополям", "Откройте документ Revit перед созданием армирования.");
-            return;
+            return null;
         }
 
         if (selectedSourceSet is not null && !selectedSourceSet.HasConfirmedLayerMappings)
@@ -2123,7 +2572,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 "Армирование по изополям",
                 "Подтвердите назначение верх/низ для всех слоёв перед созданием армирования.");
             rebarCreationStatusText.Text = "Армирование не создано: назначение слоёв не подтверждено.";
-            return;
+            return null;
         }
 
         if (selectedHostElement is null)
@@ -2131,7 +2580,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Warning("IsoField test rebar creation was requested without selected host element.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите стену или плиту как host-элемент.");
             rebarCreationStatusText.Text = "Армирование не создано: host-элемент не выбран.";
-            return;
+            return null;
         }
 
         if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
@@ -2139,7 +2588,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Warning("IsoField test rebar creation was requested without recognition polylines.");
             TaskDialog.Show("Армирование по изополям", "Сначала выберите JSON-файл с контурами изополей.");
             rebarCreationStatusText.Text = "Армирование не создано: нет контуров изополей.";
-            return;
+            return null;
         }
 
         RebarRulePreviewResult? preview = currentRulePreview;
@@ -2154,83 +2603,31 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             logger.Warning("IsoField test rebar creation blocked by invalid rule preview.");
             TaskDialog.Show("Армирование по изополям", "Перед созданием армирования исправьте диагностику правил и раскладки.");
             rebarCreationStatusText.Text = "Армирование не создано: правила не готовы.";
-            return;
+            return null;
         }
 
-        IsoFieldRebarChangePlan? changePlan = null;
-        if (preview.IsEngineeringPreview)
-        {
-            try
-            {
-                changePlan = rebarCreationService.PreviewEngineeringChanges(
-                    uiDocument,
-                    selectedHostElement,
-                    preview,
-                    currentSlabBinding);
-            }
-            catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
-            {
-                logger.Error("Failed to preview IsoField engineering rebar changes.", exception);
-                TaskDialog.Show(
-                    "Армирование по изополям",
-                    "Не удалось сравнить раскладку с моделью. Проверьте host-элемент, точные диаметры RebarBarType и логи.");
-                rebarCreationStatusText.Text = "Изменения не применены: сравнение с моделью не рассчитано.";
-                footerStatusText.Text = "Не удалось рассчитать изменения армирования.";
-                return;
-            }
+        return new ReadyRebarContext(preview, selectedHostElement);
+    }
 
-            if (!changePlan.CanApply)
-            {
-                TaskDialog.Show(
-                    "Армирование по изополям",
-                    "Изменения заблокированы: " + string.Join(" ", changePlan.Diagnostics));
-                rebarCreationStatusText.Text = "Изменения не применены: план содержит ошибки.";
-                return;
-            }
-
-            rebarCreationStatusText.Text = "Сравнение с моделью: " + changePlan.Summary;
-            footerStatusText.Text = "Раскладка сравнена с принадлежащей модулю арматурой. Модель пока не изменялась.";
-            if (!changePlan.HasChanges)
-            {
-                string message = $"Армирование уже соответствует расчётной раскладке. {changePlan.Summary}";
-                TaskDialog.Show("Армирование по изополям", message);
-                rebarCreationStatusText.Text = message;
-                footerStatusText.Text = message;
-                logger.Info($"IsoField engineering rebar apply skipped. {changePlan.Summary}");
-                return;
-            }
-        }
-
-        if (!ConfirmCreateTestRebar(preview, selectedHostElement, selectedSourceSet, changePlan))
-        {
-            rebarCreationStatusText.Text = "Применение изменений отменено.";
-            footerStatusText.Text = "Применение изменений отменено пользователем.";
-            logger.Info("IsoField test rebar creation canceled by user.");
-            return;
-        }
-
+    private IsoFieldRebarChangePlan? TryPreviewEngineeringChanges(ReadyRebarContext context)
+    {
         try
         {
-            logger.Info($"IsoField test rebar creation requested. HostKind={selectedHostElement.HostKind}; HostId={selectedHostElement.ElementId}; Rules={preview.Items.Count}.");
-            IsoFieldRebarCreationResult result = rebarCreationService.CreateTestRebar(
-                uiDocument,
-                selectedHostElement,
-                preview,
+            return rebarCreationService.PreviewEngineeringChanges(
+                uiDocument!,
+                context.HostElement,
+                context.Preview,
                 currentSlabBinding);
-            rebarCreationStatusText.Text = result.Message;
-            footerStatusText.Text = result.Message;
-            logger.Info(
-                $"IsoField rebar apply completed. Added={result.AddedCount}; Updated={result.UpdatedCount}; "
-                + $"Deleted={result.DeletedCount}; Unchanged={result.UnchangedCount}; HostId={selectedHostElement.ElementId}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
         {
-            logger.Error("Failed to create IsoField test rebar.", exception);
+            logger.Error("Failed to preview IsoField engineering rebar changes.", exception);
             TaskDialog.Show(
                 "Армирование по изополям",
-                "Не удалось создать армирование. Проверьте host-элемент, наличие точных диаметров RebarBarType в модели и логи.");
-            rebarCreationStatusText.Text = "Армирование не создано: см. логи диагностики.";
-            footerStatusText.Text = "Не удалось создать армирование.";
+                "Не удалось сравнить раскладку с моделью. Проверьте host-элемент, точные диаметры RebarBarType и логи.");
+            rebarCreationStatusText.Text = "Изменения не применены: сравнение с моделью не рассчитано.";
+            footerStatusText.Text = "Не удалось рассчитать изменения армирования.";
+            return null;
         }
     }
 
@@ -2690,6 +3087,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private void ClearRulePreview(string message)
     {
         currentRulePreview = null;
+        currentChangePlan = null;
+        currentChangePlanFingerprint = null;
+        RefreshRebarReviewRows();
         ruleStatusText.Text = message;
         rebarCreationStatusText.Text = "Армирование не создано: сначала рассчитайте валидную раскладку.";
         if (currentRecognitionResult is not null && currentSlabBinding is not null)
@@ -2806,10 +3206,25 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             : state.HasHost && !state.HasValidHostBinding
                 ? "Для плиты сначала выполните привязку по трём контрольным точкам; полностью потерянных зон быть не должно."
                 : "Сначала загрузите зоны и выберите host-элемент.";
-        createTestRebarButton.IsEnabled = state.CanCreateRebar;
+        bool isEngineeringPreview = currentRulePreview?.IsEngineeringPreview == true;
+        compareChangesButton.IsEnabled = state.CanCreateRebar && isEngineeringPreview;
+        compareChangesButton.ToolTip = compareChangesButton.IsEnabled
+            ? $"Сравнить {currentRulePreview!.EstimatedBarCount} расчётных стержней с принадлежащей модулю арматурой без изменения модели."
+            : state.CanCreateRebar
+                ? "Сравнение по зонам доступно для инженерной раскладки горизонтальной плиты."
+                : "Сначала рассчитайте валидную инженерную раскладку.";
+        createTestRebarButton.IsEnabled = state.CanCreateRebar
+            && (!isEngineeringPreview
+                || currentChangePlan?.CanApply == true && currentChangePlan.HasChanges);
         createTestRebarButton.ToolTip = state.CanCreateRebar
-            ? currentRulePreview?.IsEngineeringPreview == true
-                ? $"Сравнить {currentRulePreview.EstimatedBarCount} расчётных стержней с моделью и показать diff перед применением."
+            ? isEngineeringPreview
+                ? currentChangePlan is null
+                    ? "Сначала нажмите «Сравнить с моделью» и проверьте таблицу."
+                    : !currentChangePlan.CanApply
+                        ? "План изменений содержит ошибки; исправьте диагностику и повторите сравнение."
+                        : !currentChangePlan.HasChanges
+                            ? "Раскладка уже соответствует модели; применять нечего."
+                            : $"Применить после подтверждения: {currentChangePlan.Summary}"
                 : "Создать пробное армирование после отдельного подтверждения."
             : !state.HasConfirmedLayerMappings && state.HasSource
                 ? "Подтвердите назначение верх/низ для всех расчётных слоёв."
@@ -3109,6 +3524,22 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private sealed record IsoFieldReinforcementModeOption(
         IsoFieldReinforcementMode Mode,
         string Label);
+
+    private sealed record IsoFieldReviewLayerOption(
+        IsoFieldLayerRole? LayerRole,
+        string Label);
+
+    private sealed record IsoFieldReviewStatusOption(
+        IsoFieldRebarReviewStatus? Status,
+        string Label);
+
+    private sealed record IsoFieldReviewNumberOption(
+        double? Value,
+        string Label);
+
+    private sealed record ReadyRebarContext(
+        RebarRulePreviewResult Preview,
+        IsoFieldHostElement HostElement);
 
     private sealed record RoleDetectionPresentation(string Label, string ToolTip, Brush Foreground);
 }

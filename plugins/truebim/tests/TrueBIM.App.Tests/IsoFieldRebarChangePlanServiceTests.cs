@@ -109,6 +109,33 @@ public sealed class IsoFieldRebarChangePlanServiceTests
         Assert.NotEqual(signature, service.BuildSignature(CreatePlacement(endXFeet: 2.1)));
     }
 
+    [Fact]
+    public void BuildFingerprint_IsOrderIndependentAndDetectsChangedPlan()
+    {
+        IsoFieldRebarChange add = new(
+            IsoFieldRebarChangeKind.Add,
+            "As1X:zone-a:c0:r0:b0",
+            new IsoFieldRebarPlanItem("As1X:zone-a:c0:r0:b0", "sig-a"),
+            Array.Empty<long>());
+        IsoFieldRebarChange update = new(
+            IsoFieldRebarChangeKind.Update,
+            "As2X:zone-b:c0:r0:b0",
+            new IsoFieldRebarPlanItem("As2X:zone-b:c0:r0:b0", "sig-b"),
+            [20, 10]);
+        IsoFieldRebarChangePlan first = new([add, update], ["b", "a"], "existing-a");
+        IsoFieldRebarChangePlan reordered = new([update with { ExistingElementIds = [10, 20] }, add], ["a", "b"], "existing-a");
+        IsoFieldRebarChangePlan changed = new(
+            [add, update with { PlannedItem = update.PlannedItem! with { Signature = "sig-new" } }],
+            ["b", "a"],
+            "existing-a");
+        IsoFieldRebarChangePlan modelChanged = first with { ExistingStateFingerprint = "existing-b" };
+
+        Assert.Equal(service.BuildFingerprint(first), service.BuildFingerprint(reordered));
+        Assert.NotEqual(service.BuildFingerprint(first), service.BuildFingerprint(changed));
+        Assert.NotEqual(service.BuildFingerprint(first), service.BuildFingerprint(modelChanged));
+        Assert.Equal(24, service.BuildFingerprint(first).Length);
+    }
+
     private static IsoFieldRebarPlacement CreatePlacement(double endXFeet)
     {
         IsoFieldRebarComponent component = new(12, 200, 0, 1);
