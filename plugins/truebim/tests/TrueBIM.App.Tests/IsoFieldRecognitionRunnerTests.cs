@@ -1,3 +1,5 @@
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
 using Xunit;
@@ -19,7 +21,7 @@ public sealed class IsoFieldRecognitionRunnerTests
     }
 
     [Fact]
-    public void IsoFieldRecognitionRunnerFactory_UsesStubWhenCliWorkerIsNotConfigured()
+    public void IsoFieldRecognitionRunnerFactory_UsesBuiltInWhenCliWorkerIsNotConfigured()
     {
         string? previousWorker = Environment.GetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable);
         try
@@ -28,12 +30,60 @@ public sealed class IsoFieldRecognitionRunnerTests
 
             IIsoFieldRecognitionRunner runner = IsoFieldRecognitionRunnerFactory.Create(new TestLogger());
 
-            Assert.IsType<StubIsoFieldRecognitionRunner>(runner);
-            Assert.Equal("Stub", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
+            Assert.IsType<BuiltInIsoFieldRecognitionRunner>(runner);
+            Assert.Equal("Встроенный", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
         }
         finally
         {
             Environment.SetEnvironmentVariable(IsoFieldRecognitionRunnerFactory.WorkerPathEnvironmentVariable, previousWorker);
+        }
+    }
+
+    [Fact]
+    public void BuiltInRecognitionRunner_ExtractsLegendAndDenseColorZones()
+    {
+        string directory = CreateTempDirectory();
+        string imagePath = Path.Combine(directory, "pk-lira-map.png");
+        try
+        {
+            CreateSyntheticPkLiraMap(imagePath);
+
+            IsoFieldRecognitionResult result = new BuiltInIsoFieldRecognitionRunner().Run(imagePath);
+
+            IsoFieldLegend legend = Assert.Single(result.EffectiveLegends);
+            Assert.Equal(3, legend.Bands.Count);
+            Assert.Equal("#FFFF64", legend.Bands[0].HexColor);
+            Assert.Equal("#FF0000", legend.Bands[2].HexColor);
+            Assert.Equal(2, result.Polylines.Count);
+            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("уровень 1", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("уровень 3", StringComparison.OrdinalIgnoreCase));
+            Assert.All(result.Polylines, zone => Assert.True(zone.Points.Count >= 4));
+            Assert.Contains(result.Diagnostics, message => message.Contains("максимальный уровень", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuiltInRecognitionRunner_ExplainsMissingLegend()
+    {
+        string directory = CreateTempDirectory();
+        string imagePath = Path.Combine(directory, "blank.png");
+        try
+        {
+            CreateBlankPng(imagePath, 180, 120);
+
+            IsoFieldRecognitionResult result = new BuiltInIsoFieldRecognitionRunner().Run(imagePath);
+
+            Assert.Empty(result.Polylines);
+            Assert.Empty(result.EffectiveLegends);
+            Assert.Contains(result.Diagnostics, message => message.Contains("шкала не найдена", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 
@@ -294,6 +344,81 @@ public sealed class IsoFieldRecognitionRunnerTests
         string path = Path.Combine(Path.GetTempPath(), $"TrueBIM-IsoField-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static void CreateSyntheticPkLiraMap(string path)
+    {
+        const int width = 300;
+        const int height = 180;
+        int stride = width * 4;
+        byte[] pixels = CreateWhitePixels(width, height);
+        FillRectangle(pixels, stride, 20, 20, 87, 12, 255, 255, 100);
+        FillRectangle(pixels, stride, 107, 20, 87, 12, 0, 255, 0);
+        FillRectangle(pixels, stride, 194, 20, 86, 12, 255, 0, 0);
+        FillRectangle(pixels, stride, 45, 82, 28, 24, 255, 255, 100);
+        FillRectangle(pixels, stride, 190, 118, 32, 26, 255, 0, 0);
+        SavePng(path, width, height, pixels, stride);
+    }
+
+    private static void CreateBlankPng(string path, int width, int height)
+    {
+        int stride = width * 4;
+        SavePng(path, width, height, CreateWhitePixels(width, height), stride);
+    }
+
+    private static byte[] CreateWhitePixels(int width, int height)
+    {
+        byte[] pixels = new byte[width * height * 4];
+        for (int index = 0; index < pixels.Length; index += 4)
+        {
+            pixels[index] = 255;
+            pixels[index + 1] = 255;
+            pixels[index + 2] = 255;
+            pixels[index + 3] = 255;
+        }
+
+        return pixels;
+    }
+
+    private static void FillRectangle(
+        byte[] pixels,
+        int stride,
+        int x,
+        int y,
+        int width,
+        int height,
+        byte red,
+        byte green,
+        byte blue)
+    {
+        for (int offsetY = 0; offsetY < height; offsetY++)
+        {
+            for (int offsetX = 0; offsetX < width; offsetX++)
+            {
+                int index = ((y + offsetY) * stride) + ((x + offsetX) * 4);
+                pixels[index] = blue;
+                pixels[index + 1] = green;
+                pixels[index + 2] = red;
+                pixels[index + 3] = 255;
+            }
+        }
+    }
+
+    private static void SavePng(string path, int width, int height, byte[] pixels, int stride)
+    {
+        BitmapSource bitmap = BitmapSource.Create(
+            width,
+            height,
+            96,
+            96,
+            PixelFormats.Bgra32,
+            null,
+            pixels,
+            stride);
+        PngBitmapEncoder encoder = new();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using FileStream stream = new(path, FileMode.Create, FileAccess.Write);
+        encoder.Save(stream);
     }
 
     private static string ResolvePowerShellPath()

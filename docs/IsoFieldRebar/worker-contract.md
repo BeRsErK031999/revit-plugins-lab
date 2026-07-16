@@ -7,8 +7,9 @@ waits for completion, and validates the output JSON.
 
 ## Configuration
 
-The CLI worker is disabled by default. When it is disabled, TrueBIM uses
-`StubIsoFieldRecognitionRunner`.
+The CLI worker is disabled by default. When it is disabled, TrueBIM uses the
+managed `BuiltInIsoFieldRecognitionRunner`. A configured CLI worker overrides
+the built-in implementation for teams that need a custom OCR/CV pipeline.
 
 Set these environment variables before starting Revit:
 

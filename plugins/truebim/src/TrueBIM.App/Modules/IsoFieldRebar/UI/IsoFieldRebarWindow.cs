@@ -63,6 +63,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly TextBlock layerMappingStatusText;
     private readonly TextBlock manifestStatusText;
     private readonly StackPanel sourceSetRows = new();
+    private readonly WrapPanel legendSummaryPanel = new();
     private readonly WpfTextBox calibrationAnchorXInput;
     private readonly WpfTextBox calibrationAnchorYInput;
     private readonly WpfTextBox calibrationMillimetersPerPixelInput;
@@ -111,7 +112,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         revitActions = new RevitActionDispatcher("армирование по изополям", this.logger);
 
         selectedFileText = CreateMutedText("Источник не выбран.");
-        recognitionStatusText = CreateMutedText($"JSON загружается сразу. Обработчик изображений: {ResolveRecognitionRunnerName()}.");
+        recognitionStatusText = CreateMutedText($"JSON загружается сразу. Локальный обработчик изображений: {ResolveRecognitionRunnerName()}.");
         hostStatusText = CreateMutedText("Host-элемент не выбран.");
         calibrationAnchorXInput = CreateCalibrationInput(currentCalibration.ImageAnchor.X);
         calibrationAnchorYInput = CreateCalibrationInput(currentCalibration.ImageAnchor.Y);
@@ -345,6 +346,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         content.Children.Add(manifestStatusText);
         recognitionStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(recognitionStatusText);
+        legendSummaryPanel.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        legendSummaryPanel.Visibility = Visibility.Collapsed;
+        content.Children.Add(legendSummaryPanel);
 
         return CreatePanel(content);
     }
@@ -670,7 +674,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         recognitionStatusText.Text = selectedSourceSet.IsComplete
-            ? "Комплект проверен. Нажмите «Распознать 4 изображения», если CLI worker настроен."
+            ? $"Комплект проверен. Доступен обработчик «{ResolveRecognitionRunnerName()}»; нажмите «Распознать 4 изображения»."
             : FormatSourceSetIssues(selectedSourceSet);
         UpdateLayerMappingStatus();
         UpdateManifestStatus();
@@ -1007,6 +1011,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         IsoFieldRecognitionResult result = jsonReader.Read(path);
         currentRecognitionResult = result;
         recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+        recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(result);
+        UpdateLegendPresentation(result);
         RenderPreview(result);
         ClearRulePreview("Нажмите «Рассчитать правила» после выбора host-элемента.");
         footerStatusText.Text = "JSON-контракт изополей прочитан. Модель Revit не изменялась.";
@@ -1038,13 +1044,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 + $"Files={selectedSourceSet.Files.Count}.");
             IsoFieldRecognitionResult result = sourceSetRecognitionService.Run(selectedSourceSet, recognitionRunner);
             currentRecognitionResult = result;
-            recognitionStatusText.Text = $"Обработано 4 слоя. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
+            recognitionStatusText.Text = $"Обработано 4 слоя. Контуров: {result.Polylines.Count}. Легенд: {result.EffectiveLegends.Count} из 4. Диагностик: {result.Diagnostics.Count}.";
+            recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(result);
+            UpdateLegendPresentation(result);
             RenderPreview(result);
             ClearRulePreview(result.Polylines.Count == 0
                 ? "Правила не рассчитаны: результат распознавания не содержит зон."
                 : "Нажмите «Рассчитать правила» после выбора host-элемента.");
             footerStatusText.Text = "Распознавание завершено. Модель Revit не изменялась.";
-            logger.Info($"IsoField source set recognition completed. Polylines={result.Polylines.Count}; Diagnostics={result.Diagnostics.Count}.");
+            logger.Info(
+                $"IsoField source set recognition completed. Polylines={result.Polylines.Count}; "
+                + $"Legends={result.EffectiveLegends.Count}; Diagnostics={result.Diagnostics.Count}.");
         }
         catch (Exception exception)
         {
@@ -1402,13 +1412,106 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         return dialog.Show() == TaskDialogResult.Yes;
     }
 
+    private void UpdateLegendPresentation(IsoFieldRecognitionResult result)
+    {
+        legendSummaryPanel.Children.Clear();
+        foreach (IsoFieldLegend legend in result.EffectiveLegends.OrderBy(item => item.LayerRole))
+        {
+            StackPanel cardContent = new();
+            cardContent.Children.Add(new TextBlock
+            {
+                Text = $"{legend.LayerRole?.ToString() ?? "Источник"} · {legend.Bands.Count} уровней",
+                Foreground = TrueBimBrushes.TextPrimary,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
+            });
+
+            StackPanel swatches = new()
+            {
+                Orientation = Orientation.Horizontal
+            };
+            foreach (IsoFieldLegendBand band in legend.Bands)
+            {
+                SolidColorBrush fill = new(Color.FromRgb(band.Red, band.Green, band.Blue));
+                fill.Freeze();
+                swatches.Children.Add(new Border
+                {
+                    Width = 16,
+                    Height = 16,
+                    Margin = new Thickness(0, 0, 2, 0),
+                    Background = fill,
+                    BorderBrush = TrueBimBrushes.Border,
+                    BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+                    CornerRadius = new CornerRadius(2),
+                    ToolTip = $"Уровень {band.Index + 1}: {band.HexColor}. Текстовое значение пока не распознано."
+                });
+            }
+
+            cardContent.Children.Add(swatches);
+            legendSummaryPanel.Children.Add(new Border
+            {
+                Child = cardContent,
+                Padding = new Thickness(TrueBimTheme.Spacing8),
+                Margin = new Thickness(0, TrueBimTheme.Spacing4, TrueBimTheme.Spacing8, 0),
+                Background = TrueBimBrushes.SurfaceAlt,
+                BorderBrush = TrueBimBrushes.Border,
+                BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+                CornerRadius = new CornerRadius(TrueBimTheme.Radius6)
+            });
+        }
+
+        legendSummaryPanel.Visibility = legendSummaryPanel.Children.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void ResetLegendPresentation()
+    {
+        legendSummaryPanel.Children.Clear();
+        legendSummaryPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private static ToolTip? CreateRecognitionDiagnosticsToolTip(IsoFieldRecognitionResult result)
+    {
+        if (result.Diagnostics.Count == 0)
+        {
+            return null;
+        }
+
+        return new ToolTip
+        {
+            Content = new ScrollViewer
+            {
+                MaxHeight = 360,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = new TextBlock
+                {
+                    Width = 520,
+                    Text = string.Join(Environment.NewLine, result.Diagnostics),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = TrueBimBrushes.TextPrimary,
+                    LineHeight = 18
+                }
+            }
+        };
+    }
+
     private void RenderPreview(IsoFieldRecognitionResult result)
     {
         previewCanvas.Children.Clear();
         IsoFieldPreviewLayout layout = previewLayoutService.Build(result, PreviewCanvasWidth, PreviewCanvasHeight);
         if (layout.Polylines.Count == 0)
         {
-            ClearPreview("Нет контуров для предпросмотра.");
+            previewCanvas.Children.Add(new TextBlock
+            {
+                Text = "Зоны не найдены",
+                Foreground = TrueBimBrushes.TextMuted,
+                FontWeight = FontWeights.SemiBold
+            });
+            Canvas.SetLeft(previewCanvas.Children[0], 16);
+            Canvas.SetTop(previewCanvas.Children[0], 16);
+            previewStatusText.Text = "Нет контуров для предпросмотра. Проверьте диагностику распознавания.";
             return;
         }
 
@@ -1446,6 +1549,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private void ClearPreview(string message)
     {
         currentRecognitionResult = null;
+        ResetLegendPresentation();
+        recognitionStatusText.ToolTip = null;
         ClearRulePreview("Правила пока не рассчитаны.");
         previewCanvas.Children.Clear();
         previewCanvas.Children.Add(new TextBlock
@@ -1535,14 +1640,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         bool isJsonSource = !string.IsNullOrWhiteSpace(selectedJsonPath);
         bool hasSource = isJsonSource || selectedSourceSet?.IsComplete == true;
         bool hasConfirmedLayerMappings = isJsonSource || selectedSourceSet?.HasConfirmedLayerMappings == true;
-        bool hasConfiguredWorker = !string.Equals(ResolveRecognitionRunnerName(), "Stub", StringComparison.OrdinalIgnoreCase);
+        bool canProcessImages = !string.Equals(ResolveRecognitionRunnerName(), "Stub", StringComparison.OrdinalIgnoreCase);
         return new IsoFieldWorkflowState(
             hasSource,
             currentRecognitionResult?.Polylines.Count > 0,
             selectedHostElement is not null,
             currentRulePreview?.CanCreateRebar == true,
             activeRevitPreviewIds.Count > 0,
-            isJsonSource || selectedSourceSet?.IsComplete == true && hasConfiguredWorker,
+            isJsonSource || selectedSourceSet?.IsComplete == true && canProcessImages,
             hasConfirmedLayerMappings);
     }
 
@@ -1560,12 +1665,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         if (!state.CanProcessSource)
         {
-            return "Распознавание изображений не настроено: выберите готовый JSON или настройте CLI worker.";
+            return "Обработчик изображений недоступен: выберите готовый JSON.";
         }
 
         return !string.IsNullOrWhiteSpace(selectedJsonPath)
             ? "Перечитать зоны из выбранного JSON."
-            : "Последовательно обработать четыре слоя настроенным CLI worker.";
+            : $"Последовательно обработать четыре слоя с помощью «{ResolveRecognitionRunnerName()}».";
     }
 
     private static void UpdateWorkflowStep(TextBlock textBlock, bool isComplete, string label)

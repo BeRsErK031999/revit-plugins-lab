@@ -59,9 +59,24 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - Click `Создать пробное армирование` and choose `No` in the confirmation dialog. Expected:
   no rebar is created and log records user cancellation.
 
-## CLI Worker Smoke
+## Built-in PNG Recognition Smoke
 
-Only run this section when a real or fake worker is available.
+1. Clear `TRUEBIM_ISOFIELD_WORKER` before starting Revit.
+2. Choose the four reference PK LIRA images together.
+3. Verify the status names the image processor `Встроенный` and recognition is
+   available without additional setup.
+4. Click `Распознать 4 изображения`.
+5. Verify the summary reports four legends and a non-zero contour count.
+6. Verify four compact legend cards are visible for `As1X`, `As2X`, `As3Y`,
+   and `As4Y`; every card shows ordered color swatches with HEX tooltips.
+7. Verify the preview contains closed hotspot envelopes and the diagnostics say
+   neighboring cells use the maximum level inside each contour.
+8. Confirm the operation does not create or modify Revit elements.
+
+## Optional CLI Worker Smoke
+
+Only run this section when a real or fake worker is available. CLI configuration
+must override the built-in runner.
 
 1. Set `TRUEBIM_ISOFIELD_WORKER`, optional `TRUEBIM_ISOFIELD_WORKER_ARGS`, and
    optional `TRUEBIM_ISOFIELD_WORKER_TIMEOUT_SECONDS` before starting Revit.
@@ -107,7 +122,11 @@ Only run this section when a real or fake worker is available.
 
 ## Known Limitations
 
-- Real contour recognition is still external to this module.
+- External CLI remains an optional replacement for teams with a custom OCR/CV pipeline.
+- Built-in contours are conservative convex envelopes of dense color regions,
+  not exact finite-element boundaries.
+- Numerical legend values and `d10s200+...` labels are not read yet; the current
+  contract exposes ordered levels and HEX colors.
 - Header detection is intentionally limited to the current PK LIRA marker style.
   A nonstandard font or scaled header falls back to file-name/manual assignment.
 - Current write-flow creates test rebar only; it is not a production reinforcement

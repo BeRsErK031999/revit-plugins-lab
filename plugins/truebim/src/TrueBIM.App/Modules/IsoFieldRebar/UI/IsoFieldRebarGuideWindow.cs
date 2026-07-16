@@ -197,7 +197,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         Brush arrowBrush = MutedBrush;
         AddNode(canvas, 10, 28, 130, 70, "1. Источник", "роль из имени + заголовка", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
         AddArrow(canvas, 145, 63, 175, 63, arrowBrush);
-        AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "JSON reader или CLI-worker", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
+        AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "встроенный режим или CLI", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
         AddArrow(canvas, 315, 63, 345, 63, arrowBrush);
         AddNode(canvas, 350, 28, 130, 70, "3. Preview", "картинка в окне и линии Revit", TrueBimBrushes.WarningBackground, TrueBimBrushes.Warning);
         AddArrow(canvas, 485, 63, 515, 63, arrowBrush);

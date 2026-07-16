@@ -26,6 +26,7 @@ public sealed class IsoFieldSourceSetRecognitionService
 
         List<IsoFieldPolyline> polylines = new();
         List<string> diagnostics = new();
+        List<IsoFieldLegend> legends = new();
         foreach (IsoFieldLayerRole role in IsoFieldSourceSet.RequiredRoles)
         {
             IsoFieldSourceFile sourceFile = sourceSet.GetFile(role);
@@ -37,8 +38,9 @@ public sealed class IsoFieldSourceSetRecognitionService
                 polyline.Confidence,
                 role)));
             diagnostics.AddRange(result.Diagnostics.Select(message => $"[{role}] {message}"));
+            legends.AddRange(result.EffectiveLegends.Select(legend => legend with { LayerRole = role }));
         }
 
-        return new IsoFieldRecognitionResult(polylines, diagnostics);
+        return new IsoFieldRecognitionResult(polylines, diagnostics, legends);
     }
 }

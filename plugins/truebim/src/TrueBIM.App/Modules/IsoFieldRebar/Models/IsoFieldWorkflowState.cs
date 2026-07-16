@@ -31,7 +31,7 @@ public sealed record IsoFieldWorkflowState(
     public string NextAction => (HasSource, HasZones, HasHost, HasValidRules, HasConfirmedLayerMappings) switch
     {
         (false, _, _, _, _) => "Выберите JSON или изображение изополей.",
-        (true, false, _, _, _) when !CanProcessSource => "Для изображения настройте worker или выберите готовый JSON.",
+        (true, false, _, _, _) when !CanProcessSource => "Обработчик изображений недоступен; выберите готовый JSON.",
         (true, false, _, _, _) => "Загрузите или распознайте зоны изополей.",
         (true, true, _, _, false) => "Подтвердите назначение верх/низ для всех расчётных слоёв.",
         (true, true, false, _, true) => "Выберите стену или плиту в модели.",

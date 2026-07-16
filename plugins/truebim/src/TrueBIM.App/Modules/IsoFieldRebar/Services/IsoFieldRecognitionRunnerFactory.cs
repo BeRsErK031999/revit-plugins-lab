@@ -19,8 +19,8 @@ public static class IsoFieldRecognitionRunnerFactory
         string? workerPath = Environment.GetEnvironmentVariable(WorkerPathEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(workerPath))
         {
-            logger.Info("IsoField CLI worker is not configured. Using stub recognition runner.");
-            return new StubIsoFieldRecognitionRunner();
+            logger.Info("IsoField CLI worker is not configured. Using built-in offline recognition runner.");
+            return new BuiltInIsoFieldRecognitionRunner();
         }
 
         IsoFieldCliRecognitionRunnerOptions options = new()

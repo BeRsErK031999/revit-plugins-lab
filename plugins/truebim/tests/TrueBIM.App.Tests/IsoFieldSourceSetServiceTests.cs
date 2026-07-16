@@ -159,6 +159,13 @@ public sealed class IsoFieldSourceSetServiceTests
             polyline => Assert.Equal(IsoFieldLayerRole.As4Y, polyline.LayerRole));
         Assert.All(result.Polylines, polyline => Assert.StartsWith(polyline.LayerRole + ":", polyline.Id, StringComparison.Ordinal));
         Assert.Equal("[As1X] fake diagnostic", result.Diagnostics[0]);
+        Assert.Equal(4, result.EffectiveLegends.Count);
+        Assert.Collection(
+            result.EffectiveLegends,
+            legend => Assert.Equal(IsoFieldLayerRole.As1X, legend.LayerRole),
+            legend => Assert.Equal(IsoFieldLayerRole.As2X, legend.LayerRole),
+            legend => Assert.Equal(IsoFieldLayerRole.As3Y, legend.LayerRole),
+            legend => Assert.Equal(IsoFieldLayerRole.As4Y, legend.LayerRole));
     }
 
     [Fact]
@@ -385,7 +392,14 @@ public sealed class IsoFieldSourceSetServiceTests
                         id,
                         [new IsoFieldPoint(0, 0), new IsoFieldPoint(10, 10)])
                 ],
-                ["fake diagnostic"]);
+                ["fake diagnostic"],
+                [
+                    new IsoFieldLegend(
+                        [new IsoFieldLegendBand(0, 255, 255, 0, 0, 1)],
+                        20,
+                        10,
+                        100)
+                ]);
         }
     }
 }

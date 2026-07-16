@@ -18,12 +18,12 @@ public sealed class IsoFieldWorkflowStateTests
     }
 
     [Fact]
-    public void ImageWithoutWorker_ExplainsProcessingBlocker()
+    public void ImageWithoutProcessor_ExplainsProcessingBlocker()
     {
         IsoFieldWorkflowState state = new(true, false, false, false, false, false, false);
 
         Assert.False(state.CanRunRecognition);
-        Assert.Contains("worker", state.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("обработчик", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
