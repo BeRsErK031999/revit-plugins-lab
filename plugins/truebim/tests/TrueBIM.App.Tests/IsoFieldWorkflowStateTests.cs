@@ -47,4 +47,23 @@ public sealed class IsoFieldWorkflowStateTests
         Assert.False(state.CanCreateRebar);
         Assert.Contains("верх/низ", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void SlabWithoutValidBinding_BlocksRulesAndCreation()
+    {
+        IsoFieldWorkflowState state = new(
+            true,
+            true,
+            true,
+            true,
+            false,
+            true,
+            true,
+            HasValidHostBinding: false);
+
+        Assert.False(state.HasReadyHost);
+        Assert.False(state.CanCalculateRules);
+        Assert.False(state.CanCreateRebar);
+        Assert.Contains("двум контрольным точкам", state.NextAction, StringComparison.OrdinalIgnoreCase);
+    }
 }

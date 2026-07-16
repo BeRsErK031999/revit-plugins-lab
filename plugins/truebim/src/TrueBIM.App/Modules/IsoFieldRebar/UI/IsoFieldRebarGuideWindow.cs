@@ -77,6 +77,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
                 "Проверьте контуры в окне. Через «Исправить зоны» можно исключить шум, изменить класс или объединить зоны одного слоя и класса.",
                 "При необходимости покажите временные линии в Revit. После коррекции повторный preview заменит старые линии.",
                 "Выберите простую стену или плиту как host-элемент.",
+                "Для плиты задайте две узнаваемые точки на карте, укажите соответствующие точки на верхней грани и проверьте overlay контура, отверстий и зон.",
                 "Рассчитайте правила армирования и прочитайте диагностику.",
                 "Создавайте пробное армирование только после подтверждения и сразу проверяйте Undo.")));
         body.Children.Add(CreateSection(
@@ -202,7 +203,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         AddArrow(canvas, 315, 63, 345, 63, arrowBrush);
         AddNode(canvas, 350, 28, 130, 70, "3. Preview", "картинка в окне и линии Revit", TrueBimBrushes.WarningBackground, TrueBimBrushes.Warning);
         AddArrow(canvas, 485, 63, 515, 63, arrowBrush);
-        AddNode(canvas, 520, 28, 130, 70, "4. Host", "стена или плита", TrueBimBrushes.NeutralBackground, TrueBimBrushes.Accent);
+        AddNode(canvas, 520, 28, 130, 70, "4. Host", "стена или привязанная плита", TrueBimBrushes.NeutralBackground, TrueBimBrushes.Accent);
         AddArrow(canvas, 655, 63, 685, 63, arrowBrush);
         AddNode(canvas, 690, 28, 60, 70, "5.", "правила", TrueBimBrushes.DangerBackground, TrueBimBrushes.Danger);
 
@@ -393,6 +394,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             "исключение, класс и объединение зон;",
             "временные линии предпросмотра;",
             "выбор host-элемента;",
+            "двухточечная привязка и overlay плиты;",
             "расчет правил и диагностика.");
         Grid.SetColumn(safeColumn, 0);
         grid.Children.Add(safeColumn);

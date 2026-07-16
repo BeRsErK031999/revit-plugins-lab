@@ -14,6 +14,7 @@ using TrueBIM.App.UI.DesignSystem;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfGrid = System.Windows.Controls.Grid;
 using WpfTextBox = System.Windows.Controls.TextBox;
+using WpfEllipse = System.Windows.Shapes.Ellipse;
 using WpfPolyline = System.Windows.Shapes.Polyline;
 using ElementId = Autodesk.Revit.DB.ElementId;
 
@@ -31,6 +32,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldRebarCreationService rebarCreationService;
     private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
+    private readonly IsoFieldSlabBindingService slabBindingService = new();
+    private readonly IsoFieldSlabOverlayLayoutService slabOverlayLayoutService = new();
     private readonly IsoFieldSourceSetService sourceSetService = new();
     private readonly IsoFieldSourceSetManifestService sourceSetManifestService;
     private readonly IsoFieldSourceSetRecognitionService sourceSetRecognitionService = new();
@@ -69,6 +72,18 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly WpfTextBox calibrationAnchorYInput;
     private readonly WpfTextBox calibrationMillimetersPerPixelInput;
     private readonly CheckBox calibrationInvertYInput;
+    private readonly WpfTextBox slabImagePoint1XInput;
+    private readonly WpfTextBox slabImagePoint1YInput;
+    private readonly WpfTextBox slabImagePoint2XInput;
+    private readonly WpfTextBox slabImagePoint2YInput;
+    private readonly CheckBox slabMirrorImageYInput;
+    private readonly Button pickSlabPoint1Button;
+    private readonly Button pickSlabPoint2Button;
+    private readonly Button applySlabBindingButton;
+    private readonly TextBlock slabHostPoint1Text;
+    private readonly TextBlock slabHostPoint2Text;
+    private readonly TextBlock slabBindingStatusText;
+    private readonly Expander slabBindingExpander;
     private string? selectedJsonPath;
     private IsoFieldSourceSet? selectedSourceSet;
     private string? selectedSourceSetManifestPath;
@@ -76,6 +91,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private IsoFieldRecognitionResult? currentRecognitionResult;
     private IsoFieldHostElement? selectedHostElement;
     private IsoFieldCalibration currentCalibration = IsoFieldCalibration.Default;
+    private IsoFieldPoint? slabHostPoint1Feet;
+    private IsoFieldPoint? slabHostPoint2Feet;
+    private IsoFieldSlabBindingAnalysis? currentSlabBinding;
     private RebarRulePreviewResult? currentRulePreview;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
@@ -127,6 +145,40 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             ToolTip = "Инвертировать ось Y изображения относительно направления вверх на виде."
         };
         calibrationStatusText = CreateMutedText(FormatCalibration(currentCalibration));
+        slabImagePoint1XInput = CreateBindingInput(0);
+        slabImagePoint1YInput = CreateBindingInput(0);
+        slabImagePoint2XInput = CreateBindingInput(100);
+        slabImagePoint2YInput = CreateBindingInput(0);
+        slabMirrorImageYInput = new CheckBox
+        {
+            Content = "Отразить Y изображения",
+            IsChecked = true,
+            Style = TrueBimStyles.CreateCheckBoxStyle(),
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = "Используйте для карт, где ось Y направлена вниз. Изменение требует повторной проверки привязки."
+        };
+        pickSlabPoint1Button = CreateActionButton(
+            "Точка 1 на плите",
+            TrueBimIcon.Apply,
+            158,
+            "Сначала выберите горизонтальную плиту и загрузите зоны.",
+            (_, _) => PickSlabControlPoint(1));
+        pickSlabPoint2Button = CreateActionButton(
+            "Точка 2 на плите",
+            TrueBimIcon.Apply,
+            158,
+            "Сначала выберите горизонтальную плиту и загрузите зоны.",
+            (_, _) => PickSlabControlPoint(2));
+        applySlabBindingButton = CreateActionButton(
+            "Проверить привязку",
+            TrueBimIcon.Preview,
+            176,
+            "Укажите две точки на карте и соответствующие точки на плите.",
+            (_, _) => ApplySlabBinding(showDialogOnError: false));
+        slabHostPoint1Text = CreateMutedText("Точка 1 на плите не указана.");
+        slabHostPoint2Text = CreateMutedText("Точка 2 на плите не указана.");
+        slabBindingStatusText = CreateMutedText("Выберите горизонтальную плиту, затем задайте две пары контрольных точек.");
+        slabBindingExpander = CreateSlabBindingPanel();
         ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
         rebarCreationStatusText = CreateMutedText("Пробное армирование пока не создано.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
@@ -185,6 +237,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         layerMappingStatusText = CreateMutedText("Назначение верх/низ появится после выбора комплекта изображений.");
         manifestStatusText = CreateMutedText("Manifest не сохранён.");
         footerStatusText = CreateMutedText("Линии предпросмотра создаются только по явной кнопке.");
+
+        slabImagePoint1XInput.TextChanged += (_, _) => InvalidateSlabBinding();
+        slabImagePoint1YInput.TextChanged += (_, _) => InvalidateSlabBinding();
+        slabImagePoint2XInput.TextChanged += (_, _) => InvalidateSlabBinding();
+        slabImagePoint2YInput.TextChanged += (_, _) => InvalidateSlabBinding();
+        slabMirrorImageYInput.Checked += (_, _) => InvalidateSlabBinding();
+        slabMirrorImageYInput.Unchecked += (_, _) => InvalidateSlabBinding();
 
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
@@ -409,6 +468,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         hostStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(hostStatusText);
+        content.Children.Add(slabBindingExpander);
 
         return CreatePanel(content);
     }
@@ -447,13 +507,98 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         content.Children.Add(new Expander
         {
-            Header = "Калибровка координат для линий на виде Revit",
+            Header = "Ручная калибровка временных линий на виде Revit",
             Content = calibrationContent,
             IsExpanded = false,
-            ToolTip = "Откройте только если координаты JSON нужно совместить с активным видом Revit."
+            ToolTip = "Отдельная настройка старого preview на виде. Привязка к плите проверяется выше по двум контрольным точкам."
         });
 
         return CreatePanel(content);
+    }
+
+    private Expander CreateSlabBindingPanel()
+    {
+        StackPanel content = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
+        };
+        content.Children.Add(TrueBimUi.CreateInfoBanner(
+            "На каждой строке задайте координату узнаваемой точки на карте, затем укажите ту же точку на верхней грани плиты.",
+            TrueBimUiSeverity.Neutral));
+
+        StackPanel rows = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
+        rows.Children.Add(CreateSlabBindingPointRow(
+            "Точка 1 на карте",
+            slabImagePoint1XInput,
+            slabImagePoint1YInput,
+            pickSlabPoint1Button));
+        slabHostPoint1Text.Margin = new Thickness(124, 0, 0, TrueBimTheme.Spacing8);
+        rows.Children.Add(slabHostPoint1Text);
+        rows.Children.Add(CreateSlabBindingPointRow(
+            "Точка 2 на карте",
+            slabImagePoint2XInput,
+            slabImagePoint2YInput,
+            pickSlabPoint2Button));
+        slabHostPoint2Text.Margin = new Thickness(124, 0, 0, TrueBimTheme.Spacing8);
+        rows.Children.Add(slabHostPoint2Text);
+        content.Children.Add(rows);
+
+        WrapPanel actions = new();
+        actions.Children.Add(slabMirrorImageYInput);
+        applySlabBindingButton.Margin = new Thickness(TrueBimTheme.Spacing16, 0, 0, 0);
+        actions.Children.Add(applySlabBindingButton);
+        content.Children.Add(actions);
+
+        slabBindingStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        content.Children.Add(slabBindingStatusText);
+        return new Expander
+        {
+            Header = "Привязка плиты по двум точкам",
+            Content = content,
+            IsExpanded = true,
+            ToolTip = "Read-only проверка масштаба, поворота, отражения, контура и отверстий плиты."
+        };
+    }
+
+    private static UIElement CreateSlabBindingPointRow(
+        string label,
+        WpfTextBox xInput,
+        WpfTextBox yInput,
+        Button pickButton)
+    {
+        WrapPanel row = new()
+        {
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
+        };
+        row.Children.Add(new TextBlock
+        {
+            Text = label,
+            Width = 124,
+            Foreground = TrueBimBrushes.TextSecondary,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = "X",
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing4, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = TrueBimBrushes.TextMuted
+        });
+        row.Children.Add(xInput);
+        row.Children.Add(new TextBlock
+        {
+            Text = "Y",
+            Margin = new Thickness(TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing4, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = TrueBimBrushes.TextMuted
+        });
+        row.Children.Add(yInput);
+        pickButton.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
+        row.Children.Add(pickButton);
+        return row;
     }
 
     private Border CreateRulePanel()
@@ -1019,6 +1164,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         logger.Info($"IsoField JSON source read started: {Path.GetFileName(path)}.");
         IsoFieldRecognitionResult result = jsonReader.Read(path);
         currentRecognitionResult = result;
+        ResetSlabBindingForSource(result);
         recognitionStatusText.Text = $"JSON прочитан. Контуров: {result.Polylines.Count}. Диагностик: {result.Diagnostics.Count}.";
         recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(result);
         UpdateLegendPresentation(result);
@@ -1053,6 +1199,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 + $"Files={selectedSourceSet.Files.Count}.");
             IsoFieldRecognitionResult result = sourceSetRecognitionService.Run(selectedSourceSet, recognitionRunner);
             currentRecognitionResult = result;
+            ResetSlabBindingForSource(result);
             recognitionStatusText.Text = $"Обработано 4 слоя. Контуров: {result.Polylines.Count}. Легенд: {result.EffectiveLegends.Count} из 4. Диагностик: {result.Diagnostics.Count}.";
             recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(result);
             UpdateLegendPresentation(result);
@@ -1091,6 +1238,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         int sourceCount = currentRecognitionResult.Polylines.Count;
+        bool hadSlabBinding = currentSlabBinding is not null;
         IsoFieldZoneCorrectionWindow correctionWindow = new(currentRecognitionResult)
         {
             Owner = this
@@ -1106,6 +1254,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         recognitionStatusText.Text = $"Зоны проверены вручную. Было: {sourceCount}; стало: {currentRecognitionResult.Polylines.Count}. Диагностик: {currentRecognitionResult.Diagnostics.Count}.";
         recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(currentRecognitionResult);
         UpdateLegendPresentation(currentRecognitionResult);
+        if (hadSlabBinding)
+        {
+            ApplySlabBinding(showDialogOnError: false, renderPreview: false);
+        }
+        else
+        {
+            currentSlabBinding = null;
+        }
+
         RenderPreview(currentRecognitionResult);
         ClearRulePreview("Правила сброшены после коррекции зон. Рассчитайте их заново для выбранного host-элемента.");
         footerStatusText.Text = activeRevitPreviewIds.Count > 0
@@ -1215,6 +1372,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Visibility = Visibility.Hidden;
             IsoFieldHostElement hostElement = hostSelectionService.PickHost(uiDocument);
             selectedHostElement = hostElement;
+            ResetSlabBindingForHost();
             RefreshHostStatus();
             ClearRulePreview("Нажмите «Рассчитать правила» для выбранного host-элемента.");
             footerStatusText.Text = $"Host-элемент выбран: {hostElement.DisplayName}. Модель Revit не изменялась.";
@@ -1243,6 +1401,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private void ClearHostElement()
     {
         selectedHostElement = null;
+        ResetSlabBindingForHost();
         RefreshHostStatus();
         ClearRulePreview("Правила не рассчитаны: host-элемент сброшен.");
         footerStatusText.Text = "Host-элемент сброшен. Модель Revit не изменялась.";
@@ -1253,7 +1412,266 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         hostStatusText.Text = selectedHostElement is null
             ? "Host-элемент не выбран."
-            : selectedHostElement.DisplayName;
+            : selectedHostElement.IsSlab && selectedHostElement.Geometry is null
+                ? $"{selectedHostElement.DisplayName}. Горизонтальная верхняя грань не распознана."
+                : selectedHostElement.DisplayName;
+    }
+
+    private void PickSlabControlPoint(int pointNumber)
+    {
+        footerStatusText.Text = $"Выбор контрольной точки {pointNumber} поставлен в очередь Revit.";
+        revitActions.Raise(() => PickSlabControlPointInRevitContext(pointNumber));
+    }
+
+    private void PickSlabControlPointInRevitContext(int pointNumber)
+    {
+        if (uiDocument is null || selectedHostElement is null)
+        {
+            SetSlabBindingStatus(
+                "Сначала выберите плиту в открытом документе Revit.",
+                TrueBimUiSeverity.Warning);
+            return;
+        }
+
+        Visibility previousVisibility = Visibility;
+        try
+        {
+            Visibility = Visibility.Hidden;
+            IsoFieldPoint point = hostSelectionService.PickSlabControlPoint(
+                uiDocument,
+                selectedHostElement,
+                pointNumber);
+            if (pointNumber == 1)
+            {
+                slabHostPoint1Feet = point;
+                slabHostPoint1Text.Text = FormatSlabHostPoint(1, point);
+            }
+            else
+            {
+                slabHostPoint2Feet = point;
+                slabHostPoint2Text.Text = FormatSlabHostPoint(2, point);
+            }
+
+            InvalidateSlabBinding();
+            SetSlabBindingStatus(
+                $"Точка {pointNumber} сохранена. Укажите вторую точку или нажмите «Проверить привязку».",
+                TrueBimUiSeverity.Info);
+            footerStatusText.Text = $"Контрольная точка {pointNumber} выбрана. Модель Revit не изменялась.";
+            logger.Info(
+                $"IsoField slab control point selected. Point={pointNumber}; "
+                + $"LocalFeet=({point.X}; {point.Y}); HostId={selectedHostElement.ElementId}.");
+        }
+        catch (Autodesk.Revit.Exceptions.OperationCanceledException)
+        {
+            footerStatusText.Text = $"Выбор контрольной точки {pointNumber} отменён.";
+            logger.Info($"IsoField slab control point selection canceled. Point={pointNumber}.");
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+        {
+            logger.Error($"Failed to select IsoField slab control point {pointNumber}.", exception);
+            SetSlabBindingStatus(exception.Message, TrueBimUiSeverity.Danger);
+            footerStatusText.Text = $"Не удалось выбрать контрольную точку {pointNumber}.";
+        }
+        finally
+        {
+            Visibility = previousVisibility;
+            Activate();
+            RefreshWorkflowState();
+        }
+    }
+
+    private bool ApplySlabBinding(bool showDialogOnError, bool renderPreview = true)
+    {
+        if (currentRecognitionResult is null
+            || selectedHostElement?.IsSlab != true
+            || selectedHostElement.Geometry is null
+            || slabHostPoint1Feet is null
+            || slabHostPoint2Feet is null)
+        {
+            string message = "Для проверки нужны зоны, горизонтальная плита и две контрольные точки на её верхней грани.";
+            SetSlabBindingStatus(message, TrueBimUiSeverity.Warning);
+            if (showDialogOnError)
+            {
+                TaskDialog.Show("Армирование по изополям", message);
+            }
+
+            RefreshWorkflowState();
+            return false;
+        }
+
+        if (!TryBuildSlabBindingInput(out IsoFieldSlabBindingInput input, out string errorMessage))
+        {
+            SetSlabBindingStatus(errorMessage, TrueBimUiSeverity.Danger);
+            if (showDialogOnError)
+            {
+                TaskDialog.Show("Армирование по изополям", errorMessage);
+            }
+
+            RefreshWorkflowState();
+            return false;
+        }
+
+        try
+        {
+            currentSlabBinding = slabBindingService.Analyze(
+                currentRecognitionResult,
+                selectedHostElement.Geometry,
+                input);
+            string status = currentSlabBinding.CanProceed
+                ? $"Привязка проверена. Масштаб {FormatNumber(currentSlabBinding.Transform.MillimetersPerPixel)} мм/пикс; поворот {FormatNumber(currentSlabBinding.Transform.RotationDegrees)}°."
+                : currentSlabBinding.OutsideZoneCount > 0
+                    ? $"Привязка заблокирована: за допустимую область выходит зон {currentSlabBinding.OutsideZoneCount}."
+                    : "Привязка заблокирована: контрольные точки находятся вне допустимой области плиты.";
+            SetSlabBindingStatus(
+                status,
+                currentSlabBinding.CanProceed ? TrueBimUiSeverity.Success : TrueBimUiSeverity.Danger,
+                string.Join(Environment.NewLine, currentSlabBinding.Diagnostics));
+            if (renderPreview)
+            {
+                RenderPreview(currentRecognitionResult);
+            }
+
+            ClearRulePreview(currentSlabBinding.CanProceed
+                ? "Привязка плиты проверена. Рассчитайте правила заново."
+                : "Правила заблокированы: исправьте привязку зон к плите.");
+            footerStatusText.Text = currentSlabBinding.CanProceed
+                ? "Read-only overlay зон и плиты построен. Модель Revit не изменялась."
+                : "Привязка требует исправления. Модель Revit не изменялась.";
+            logger.Info(
+                $"IsoField slab binding analyzed. CanProceed={currentSlabBinding.CanProceed}; "
+                + $"OutsideZones={currentSlabBinding.OutsideZoneCount}; "
+                + $"InsideRatio={currentSlabBinding.InsideSampleRatio}; "
+                + $"ScaleMmPerPixel={currentSlabBinding.Transform.MillimetersPerPixel}; "
+                + $"RotationDegrees={currentSlabBinding.Transform.RotationDegrees}.");
+            return currentSlabBinding.CanProceed;
+        }
+        catch (InvalidOperationException exception)
+        {
+            currentSlabBinding = null;
+            SetSlabBindingStatus(exception.Message, TrueBimUiSeverity.Danger);
+            if (showDialogOnError)
+            {
+                TaskDialog.Show("Армирование по изополям", exception.Message);
+            }
+
+            RefreshWorkflowState();
+            return false;
+        }
+    }
+
+    private bool TryBuildSlabBindingInput(
+        out IsoFieldSlabBindingInput input,
+        out string errorMessage)
+    {
+        input = new IsoFieldSlabBindingInput(
+            new IsoFieldPoint(0, 0),
+            new IsoFieldPoint(0, 0),
+            slabHostPoint1Feet ?? new IsoFieldPoint(0, 0),
+            slabHostPoint2Feet ?? new IsoFieldPoint(0, 0),
+            slabMirrorImageYInput.IsChecked == true);
+        if (!TryReadDouble(slabImagePoint1XInput, "Точка 1 / X", out double point1X, out errorMessage)
+            || !TryReadDouble(slabImagePoint1YInput, "Точка 1 / Y", out double point1Y, out errorMessage)
+            || !TryReadDouble(slabImagePoint2XInput, "Точка 2 / X", out double point2X, out errorMessage)
+            || !TryReadDouble(slabImagePoint2YInput, "Точка 2 / Y", out double point2Y, out errorMessage))
+        {
+            return false;
+        }
+
+        input = input with
+        {
+            ImagePoint1 = new IsoFieldPoint(point1X, point1Y),
+            ImagePoint2 = new IsoFieldPoint(point2X, point2Y)
+        };
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private void InvalidateSlabBinding()
+    {
+        if (currentSlabBinding is null)
+        {
+            RefreshWorkflowState();
+            return;
+        }
+
+        currentSlabBinding = null;
+        if (currentRecognitionResult is not null)
+        {
+            RenderPreview(currentRecognitionResult);
+        }
+
+        ClearRulePreview("Параметры привязки изменены. Проверьте overlay заново.");
+        SetSlabBindingStatus(
+            "Параметры изменены. Нажмите «Проверить привязку» заново.",
+            TrueBimUiSeverity.Warning);
+    }
+
+    private void ResetSlabBindingForSource(IsoFieldRecognitionResult? result)
+    {
+        currentSlabBinding = null;
+        slabHostPoint1Feet = null;
+        slabHostPoint2Feet = null;
+        slabHostPoint1Text.Text = "Точка 1 на плите не указана.";
+        slabHostPoint2Text.Text = "Точка 2 на плите не указана.";
+        if (result?.Polylines.Count > 0)
+        {
+            IsoFieldPoint[] points = result.Polylines.SelectMany(polyline => polyline.Points).ToArray();
+            double minX = points.Min(point => point.X);
+            double maxX = points.Max(point => point.X);
+            double minY = points.Min(point => point.Y);
+            slabImagePoint1XInput.Text = FormatNumber(minX);
+            slabImagePoint1YInput.Text = FormatNumber(minY);
+            slabImagePoint2XInput.Text = FormatNumber(maxX > minX ? maxX : minX + 100);
+            slabImagePoint2YInput.Text = FormatNumber(minY);
+        }
+
+        string status = (result?.Polylines.Count > 0, selectedHostElement) switch
+        {
+            (false, { IsSlab: true }) => "Загрузите или распознайте зоны, затем задайте две пары контрольных точек.",
+            (true, { IsSlab: true }) => "Укажите две соответствующие точки на верхней грани выбранной плиты.",
+            _ => "Выберите горизонтальную плиту, затем задайте две пары контрольных точек."
+        };
+        SetSlabBindingStatus(status, TrueBimUiSeverity.Info);
+    }
+
+    private void ResetSlabBindingForHost()
+    {
+        currentSlabBinding = null;
+        slabHostPoint1Feet = null;
+        slabHostPoint2Feet = null;
+        slabHostPoint1Text.Text = "Точка 1 на плите не указана.";
+        slabHostPoint2Text.Text = "Точка 2 на плите не указана.";
+        string status = selectedHostElement switch
+        {
+            null => "Выберите горизонтальную плиту, затем задайте две пары контрольных точек.",
+            { IsSlab: false } => "Для стены двухточечная привязка плиты не требуется.",
+            { Geometry: null } => "У плиты не распознана горизонтальная верхняя грань; привязка и расчёт правил заблокированы.",
+            _ => "Плита готова. Укажите две соответствующие точки на её верхней грани."
+        };
+        SetSlabBindingStatus(
+            status,
+            selectedHostElement?.IsSlab == true && selectedHostElement.Geometry is null
+                ? TrueBimUiSeverity.Danger
+                : TrueBimUiSeverity.Info);
+        if (currentRecognitionResult is not null)
+        {
+            RenderPreview(currentRecognitionResult);
+        }
+    }
+
+    private void SetSlabBindingStatus(
+        string message,
+        TrueBimUiSeverity severity,
+        string? toolTip = null)
+    {
+        slabBindingStatusText.Text = message;
+        slabBindingStatusText.Foreground = TrueBimBrushes.ForSeverity(severity);
+        slabBindingStatusText.ToolTip = toolTip;
+    }
+
+    private static string FormatSlabHostPoint(int pointNumber, IsoFieldPoint point)
+    {
+        return $"Точка {pointNumber} на плите: X={FormatNumber(point.X * 304.8)} мм; Y={FormatNumber(point.Y * 304.8)} мм.";
     }
 
     private bool ApplyCalibration(bool showDialogOnError)
@@ -1599,6 +2017,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private void RenderPreview(IsoFieldRecognitionResult result)
     {
         previewCanvas.Children.Clear();
+        previewStatusText.ToolTip = null;
+        if (currentSlabBinding is not null)
+        {
+            RenderSlabOverlay(currentSlabBinding);
+            return;
+        }
+
         IsoFieldPreviewLayout layout = previewLayoutService.Build(result, PreviewCanvasWidth, PreviewCanvasHeight);
         if (layout.Polylines.Count == 0)
         {
@@ -1645,9 +2070,112 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         previewStatusText.Text = $"Показано контуров: {layout.Polylines.Count}. Предпросмотр выполнен только в окне, модель Revit не изменялась.";
     }
 
+    private void RenderSlabOverlay(IsoFieldSlabBindingAnalysis analysis)
+    {
+        IsoFieldSlabOverlayLayout layout = slabOverlayLayoutService.Build(
+            analysis,
+            PreviewCanvasWidth,
+            PreviewCanvasHeight);
+        WpfPolyline outerBoundary = CreatePreviewPolyline(
+            layout.OuterBoundary,
+            analysis.CanProceed ? TrueBimBrushes.Success : TrueBimBrushes.Danger,
+            3);
+        outerBoundary.ToolTip = "Внешний контур верхней грани плиты";
+        previewCanvas.Children.Add(outerBoundary);
+
+        foreach (IReadOnlyList<IsoFieldPoint> hole in layout.HoleBoundaries)
+        {
+            WpfPolyline holeBoundary = CreatePreviewPolyline(hole, TrueBimBrushes.Warning, 2);
+            holeBoundary.StrokeDashArray = new DoubleCollection { 4, 3 };
+            holeBoundary.ToolTip = "Отверстие плиты";
+            previewCanvas.Children.Add(holeBoundary);
+        }
+
+        Brush[] strokes =
+        [
+            TrueBimBrushes.Info,
+            TrueBimBrushes.Success,
+            TrueBimBrushes.Warning,
+            TrueBimBrushes.Accent
+        ];
+        HashSet<string> outsideZoneIds = new(analysis.OutsideZoneIds, StringComparer.Ordinal);
+        for (int index = 0; index < layout.Zones.Count; index++)
+        {
+            IsoFieldPreviewPolyline zone = layout.Zones[index];
+            bool isOutside = outsideZoneIds.Contains(zone.Id);
+            WpfPolyline line = CreatePreviewPolyline(
+                zone.Points,
+                isOutside
+                    ? TrueBimBrushes.Danger
+                    : zone.LayerRole.HasValue
+                    ? strokes[(int)zone.LayerRole.Value]
+                    : strokes[index % strokes.Length],
+                isOutside ? 3 : 2);
+            line.Opacity = 0.82;
+            line.ToolTip = isOutside
+                ? $"{zone.ZoneName ?? zone.Id}{Environment.NewLine}Зона выходит за контур плиты или попадает в отверстие."
+                : zone.ZoneName ?? zone.Id;
+            previewCanvas.Children.Add(line);
+        }
+
+        for (int index = 0; index < layout.ControlPoints.Count; index++)
+        {
+            IsoFieldPoint point = layout.ControlPoints[index];
+            WpfEllipse marker = new()
+            {
+                Width = 9,
+                Height = 9,
+                Fill = TrueBimBrushes.Danger,
+                Stroke = TrueBimBrushes.Surface,
+                StrokeThickness = 1.5,
+                ToolTip = $"Контрольная точка {index + 1}"
+            };
+            Canvas.SetLeft(marker, point.X - 4.5);
+            Canvas.SetTop(marker, point.Y - 4.5);
+            previewCanvas.Children.Add(marker);
+            TextBlock label = new()
+            {
+                Text = (index + 1).ToString(CultureInfo.InvariantCulture),
+                Foreground = TrueBimBrushes.Danger,
+                FontWeight = FontWeights.Bold,
+                FontSize = TrueBimTheme.CaptionFontSize
+            };
+            Canvas.SetLeft(label, point.X + 6);
+            Canvas.SetTop(label, point.Y - 8);
+            previewCanvas.Children.Add(label);
+        }
+
+        previewStatusText.Text = analysis.CanProceed
+            ? $"Overlay проверен: зон {layout.Zones.Count}; внутри контура 100%; отверстий {layout.HoleBoundaries.Count}. Модель Revit не изменялась."
+            : analysis.OutsideZoneCount > 0
+                ? $"Overlay требует исправления: красным отмечено зон {analysis.OutsideZoneCount}; внутри {(analysis.InsideSampleRatio * 100).ToString("0.#", CultureInfo.GetCultureInfo("ru-RU"))}%."
+                : "Overlay требует исправления: одна или обе контрольные точки находятся вне допустимой области плиты.";
+        previewStatusText.ToolTip = string.Join(Environment.NewLine, analysis.Diagnostics);
+    }
+
+    private static WpfPolyline CreatePreviewPolyline(
+        IReadOnlyList<IsoFieldPoint> points,
+        Brush stroke,
+        double strokeThickness)
+    {
+        WpfPolyline line = new()
+        {
+            Stroke = stroke,
+            StrokeThickness = strokeThickness,
+            StrokeLineJoin = PenLineJoin.Round
+        };
+        foreach (IsoFieldPoint point in points)
+        {
+            line.Points.Add(new Point(point.X, point.Y));
+        }
+
+        return line;
+    }
+
     private void ClearPreview(string message)
     {
         currentRecognitionResult = null;
+        ResetSlabBindingForSource(null);
         ResetLegendPresentation();
         recognitionStatusText.ToolTip = null;
         ClearRulePreview("Правила пока не рассчитаны.");
@@ -1661,6 +2189,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         Canvas.SetLeft(previewCanvas.Children[0], 16);
         Canvas.SetTop(previewCanvas.Children[0], 16);
         previewStatusText.Text = message;
+        previewStatusText.ToolTip = null;
     }
 
     private void ClearRulePreview(string message)
@@ -1710,15 +2239,47 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             ? "Откройте документ Revit, чтобы выбрать стену или плиту."
             : "Выбрать стену или плиту как host для армирования.";
         clearHostButton.IsEnabled = state.HasHost;
+        slabBindingExpander.IsExpanded = selectedHostElement?.IsSlab == true;
+        bool canConfigureSlabBinding = state.HasZones
+            && selectedHostElement?.IsSlab == true
+            && selectedHostElement.Geometry is not null
+            && uiDocument is not null;
+        slabImagePoint1XInput.IsEnabled = canConfigureSlabBinding;
+        slabImagePoint1YInput.IsEnabled = canConfigureSlabBinding;
+        slabImagePoint2XInput.IsEnabled = canConfigureSlabBinding;
+        slabImagePoint2YInput.IsEnabled = canConfigureSlabBinding;
+        slabMirrorImageYInput.IsEnabled = canConfigureSlabBinding;
+        pickSlabPoint1Button.IsEnabled = canConfigureSlabBinding;
+        pickSlabPoint2Button.IsEnabled = canConfigureSlabBinding;
+        applySlabBindingButton.IsEnabled = canConfigureSlabBinding
+            && slabHostPoint1Feet is not null
+            && slabHostPoint2Feet is not null;
+        string slabBindingToolTip = selectedHostElement switch
+        {
+            null => "Сначала выберите горизонтальную плиту.",
+            { IsSlab: false } => "Для стены двухточечная привязка плиты не требуется.",
+            { Geometry: null } => "У выбранной плиты не распознана горизонтальная верхняя грань.",
+            _ when !state.HasZones => "Сначала загрузите или распознайте зоны.",
+            _ => "Укажите соответствующую точку на верхней грани выбранной плиты."
+        };
+        pickSlabPoint1Button.ToolTip = slabBindingToolTip;
+        pickSlabPoint2Button.ToolTip = slabBindingToolTip;
+        applySlabBindingButton.ToolTip = applySlabBindingButton.IsEnabled
+            ? "Построить read-only overlay и проверить масштаб, поворот, отражение, внешний контур и отверстия."
+            : "Сначала укажите обе контрольные точки на плите.";
         previewRulesButton.IsEnabled = state.CanCalculateRules;
         previewRulesButton.ToolTip = state.CanCalculateRules
             ? "Сформировать read-only preview правил армирования для загруженных зон."
-            : "Сначала загрузите зоны и выберите host-элемент.";
+            : state.HasHost && !state.HasValidHostBinding
+                ? "Для плиты сначала выполните привязку по двум контрольным точкам без выхода зон за контур."
+                : "Сначала загрузите зоны и выберите host-элемент.";
         createTestRebarButton.IsEnabled = state.CanCreateRebar;
         createTestRebarButton.ToolTip = state.CanCreateRebar
             ? "Создать пробное армирование после отдельного подтверждения."
             : !state.HasConfirmedLayerMappings && state.HasSource
                 ? "Подтвердите назначение верх/низ для всех расчётных слоёв."
+                : state.HasHost && !state.HasValidHostBinding
+                    ? "Проверьте двухточечную привязку зон к плите."
                 : "Сначала рассчитайте правила без ошибок.";
 
         string nextAction = selectedSourceSet is not null && !selectedSourceSet.IsComplete
@@ -1734,7 +2295,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             state.HasConfirmedLayerMappings,
             isJsonSource ? "Назначение слоёв не требуется" : "Верх/низ подтверждены");
         UpdateWorkflowStep(zonesStepText, state.HasZones, "Зоны загружены");
-        UpdateWorkflowStep(hostStepText, state.HasHost, "Host выбран");
+        string hostStepLabel = selectedHostElement switch
+        {
+            null => "Host выбран",
+            { IsSlab: true } when state.HasValidHostBinding => "Плита привязана",
+            { IsSlab: true } => "Плита выбрана, нужна привязка",
+            _ => "Host выбран"
+        };
+        UpdateWorkflowStep(hostStepText, state.HasReadyHost, hostStepLabel);
         UpdateWorkflowStep(rulesStepText, state.HasValidRules, "Правила проверены");
     }
 
@@ -1744,6 +2312,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         bool hasSource = isJsonSource || selectedSourceSet?.IsComplete == true;
         bool hasConfirmedLayerMappings = isJsonSource || selectedSourceSet?.HasConfirmedLayerMappings == true;
         bool canProcessImages = !string.Equals(ResolveRecognitionRunnerName(), "Stub", StringComparison.OrdinalIgnoreCase);
+        bool hasValidHostBinding = selectedHostElement?.IsSlab != true
+            || currentSlabBinding?.CanProceed == true;
         return new IsoFieldWorkflowState(
             hasSource,
             currentRecognitionResult?.Polylines.Count > 0,
@@ -1751,7 +2321,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             currentRulePreview?.CanCreateRebar == true,
             activeRevitPreviewIds.Count > 0,
             isJsonSource || selectedSourceSet?.IsComplete == true && canProcessImages,
-            hasConfirmedLayerMappings);
+            hasConfirmedLayerMappings,
+            hasValidHostBinding);
     }
 
     private string ResolveRecognitionToolTip(IsoFieldWorkflowState state)
@@ -1868,6 +2439,18 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Style = TrueBimStyles.CreateTextBoxStyle(),
             VerticalContentAlignment = VerticalAlignment.Center,
             Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0)
+        };
+    }
+
+    private static WpfTextBox CreateBindingInput(double value)
+    {
+        return new WpfTextBox
+        {
+            Text = FormatNumber(value),
+            Width = 72,
+            MinHeight = TrueBimTheme.ControlHeight32,
+            Style = TrueBimStyles.CreateTextBoxStyle(),
+            VerticalContentAlignment = VerticalAlignment.Center
         };
     }
 

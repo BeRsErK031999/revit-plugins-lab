@@ -26,12 +26,19 @@ the current MVP behavior without requiring a production recognition worker.
 6. Verify preview `DetailCurve` lines appear on the active view and can be
    removed with `Очистить`.
 7. Select the rectangular slab as host.
-8. Click `Рассчитать правила`.
-9. Verify rule preview lists valid slab rules and no model elements are created.
-10. Click `Создать пробное армирование`, confirm the dialog, and verify test rebar is
+8. In `Привязка плиты по двум точкам`, enter two recognizable pixel points,
+   click `Точка 1 на плите` and `Точка 2 на плите`, then select their matching
+   positions on the slab top face.
+9. Click `Проверить привязку`. Verify the preview shows the slab boundary, holes,
+   numbered control points, mapped zones, scale, and rotation. A valid boundary
+   is green and rule calculation becomes available.
+10. Click `Рассчитать правила`.
+11. Verify rule preview lists valid slab rules and no model elements are created.
+12. Click `Создать пробное армирование`, confirm the dialog, and verify test rebar is
     created. Undo must remove it.
-11. Repeat steps 3-10 with `sample-wall-zones.json` and a straight wall host.
-12. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
+13. Repeat the source, preview, host, rule, and creation steps with
+    `sample-wall-zones.json` and a straight wall host; slab binding must not be required.
+14. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
     preview, rule preview, and write-flow entries.
 
 ## Revit 2025 Smoke
@@ -58,6 +65,24 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   no model change.
 - Click `Создать пробное армирование` and choose `No` in the confirmation dialog. Expected:
   no rebar is created and log records user cancellation.
+
+## Slab Binding Guard Flows
+
+- Select a slab before zones are loaded. Expected: the binding section expands,
+  controls remain disabled, and the status asks to load or recognize zones.
+- Select a wall. Expected: the slab binding section collapses and rules do not
+  require slab control points.
+- Pick both control points at the same slab location or enter coincident image
+  points. Expected: binding is rejected with a precise diagnostic.
+- Swap the second host point or toggle `Отразить Y изображения`. Expected: scale,
+  rotation, overlay, and validation are recalculated only after
+  `Проверить привязку`.
+- Place a mapped zone outside the slab or inside an opening. Expected: slab
+  boundary and offending zone are red, the zone remains visible, and `Рассчитать правила`
+  plus `Создать пробное армирование` stay disabled.
+- Apply manual zone correction after a valid binding. Expected: binding is
+  rechecked; if a corrected zone exits the slab, the invalid red overlay remains
+  visible instead of falling back to raw pixel preview.
 
 ## Built-in PNG Recognition Smoke
 
@@ -151,6 +176,7 @@ must override the built-in runner.
 - Current write-flow creates test rebar only; it is not a production reinforcement
   layout engine.
 - Wall placement supports simple straight walls, not curved or stacked walls.
-- Slab placement uses bounding boxes and does not account for holes, sloped slabs,
-  or compound structure.
+- Slab overlay reads the top face and blocks zones outside boundaries or inside
+  holes, but does not clip zone geometry. Test rebar placement still uses bounding
+  boxes and does not account for holes, sloped slabs, or compound structure.
 - Manual QA still needs real Revit for visual preview and rebar creation checks.
