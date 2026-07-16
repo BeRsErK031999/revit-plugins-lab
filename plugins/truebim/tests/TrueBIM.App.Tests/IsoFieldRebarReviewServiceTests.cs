@@ -67,6 +67,64 @@ public sealed class IsoFieldRebarReviewServiceTests
         Assert.Equal(2, obsolete.DeleteCount);
     }
 
+    [Fact]
+    public void BuildRows_KeepsManuallyExcludedZoneVisible()
+    {
+        RebarRulePreviewResult source = CreatePreview();
+        RebarRulePreviewResult preview = source with
+        {
+            Items =
+            [
+                source.Items[0] with
+                {
+                    IsIncluded = false,
+                    IsManuallyOverridden = true,
+                    EstimatedBarCount = 0
+                }
+            ],
+            EstimatedBarCount = 0
+        };
+
+        IsoFieldRebarReviewRow row = Assert.Single(service.BuildRows(
+            preview,
+            CreateRecognition(confidence: 0.8)));
+
+        Assert.Equal(IsoFieldRebarReviewStatus.Excluded, row.Status);
+        Assert.Equal("Исключена вручную", row.SettingText);
+        Assert.Equal("Не войдёт в раскладку", row.ChangeSummary);
+    }
+
+    [Fact]
+    public void BuildRows_ShowsOwnedBarsOfExcludedZoneAsDeletion()
+    {
+        RebarRulePreviewResult source = CreatePreview();
+        RebarRulePreviewResult preview = source with
+        {
+            Items =
+            [
+                source.Items[0] with
+                {
+                    IsIncluded = false,
+                    IsManuallyOverridden = true,
+                    EstimatedBarCount = 0
+                }
+            ],
+            EstimatedBarCount = 0
+        };
+        IsoFieldRebarChangePlan plan = new(
+            [CreateChange(IsoFieldRebarChangeKind.Delete, "As1X:zone-a:c0:r0:b0", [44, 45])],
+            Array.Empty<string>());
+
+        IsoFieldRebarReviewRow row = Assert.Single(service.BuildRows(
+            preview,
+            CreateRecognition(confidence: 0.8),
+            plan));
+
+        Assert.Equal(IsoFieldRebarReviewStatus.Delete, row.Status);
+        Assert.Equal("Исключена вручную", row.SettingText);
+        Assert.Equal(2, row.DeleteCount);
+    }
+
     [Theory]
     [InlineData("zone", null, null, null, null, null, true)]
     [InlineData("missing", null, null, null, null, null, false)]

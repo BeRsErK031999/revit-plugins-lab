@@ -128,7 +128,9 @@ public sealed class SlabRebarPlacementService
         }
 
         RebarRulePreviewItem[] slabItems = previewItems
-            .Where(item => item.IsValid && string.Equals(item.Rule.HostKind, SlabHostKind, StringComparison.Ordinal))
+            .Where(item => item.IsIncluded
+                && item.HasValidRule
+                && string.Equals(item.Rule.HostKind, SlabHostKind, StringComparison.Ordinal))
             .ToArray();
         if (slabItems.Length == 0)
         {

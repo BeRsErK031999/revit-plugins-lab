@@ -1,6 +1,6 @@
 <svg width="960" height="620" viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Окно модуля армирования по изополям с кнопкой методички</title>
-  <desc id="desc">Схема показывает кнопку вопроса в окне, подсказку при наведении и последовательные блоки workflow армирования по изополям.</desc>
+  <desc id="desc">Схема показывает кнопку вопроса, подсказку при наведении и последовательные блоки workflow, включая ручную настройку зон армирования.</desc>
   <rect width="960" height="620" rx="22" fill="#F7F9FB"/>
   <rect x="56" y="48" width="848" height="524" rx="14" fill="#FFFFFF" stroke="#D7DEE8" stroke-width="2"/>
 
@@ -47,6 +47,7 @@
     <text x="624" y="406" fill="#1F8A70" font-size="16">✓ Зоны загружены</text>
     <text x="624" y="434" fill="#1F8A70" font-size="16">✓ Плита привязана</text>
     <text x="624" y="462" fill="#4A5A6A" font-size="16">○ Раскладка проверена</text>
-    <text x="624" y="494" fill="#4A5A6A" font-size="14">Diff проверяется в таблице зон</text>
+    <text x="624" y="490" fill="#4A5A6A" font-size="14">Строки можно настроить до diff</text>
+    <text x="624" y="510" fill="#4A5A6A" font-size="14">или исключить из раскладки</text>
   </g>
 </svg>

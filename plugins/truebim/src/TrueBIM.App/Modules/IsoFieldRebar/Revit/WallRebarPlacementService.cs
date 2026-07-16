@@ -21,7 +21,9 @@ public sealed class WallRebarPlacementService
         }
 
         RebarRulePreviewItem[] wallItems = previewItems
-            .Where(item => item.IsValid && string.Equals(item.Rule.HostKind, WallHostKind, StringComparison.Ordinal))
+            .Where(item => item.IsIncluded
+                && item.HasValidRule
+                && string.Equals(item.Rule.HostKind, WallHostKind, StringComparison.Ordinal))
             .ToArray();
         if (wallItems.Length == 0)
         {

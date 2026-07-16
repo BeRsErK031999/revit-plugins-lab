@@ -49,7 +49,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
     private readonly IsoFieldRebarReviewService rebarReviewService = new();
     private readonly IsoFieldRebarChangePlanService rebarChangePlanService = new();
+    private readonly IsoFieldRebarRuleOverrideService rebarRuleOverrideService = new();
     private readonly ObservableCollection<IsoFieldRebarReviewRow> rebarReviewRows = new();
+    private readonly Dictionary<string, IsoFieldRebarRuleOverride> ruleOverrides = new(StringComparer.Ordinal);
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
     private readonly TextBlock selectedFileText;
@@ -70,6 +72,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly Button previewRulesButton;
     private readonly Button compareChangesButton;
     private readonly Button createTestRebarButton;
+    private readonly Button editZoneRuleButton;
+    private readonly Button resetZoneRulesButton;
     private readonly Button saveSourceSetManifestButton;
     private readonly TextBlock workflowSummaryText;
     private readonly TextBlock sourceStepText;
@@ -129,6 +133,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private IsoFieldSlabBindingProfile? availableSlabBindingProfile;
     private long selectedHostViewId;
     private RebarRulePreviewResult? currentRulePreview;
+    private RebarRulePreviewResult? calculatedRulePreview;
     private IsoFieldRebarChangePlan? currentChangePlan;
     private string? currentChangePlanFingerprint;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
@@ -166,7 +171,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         new(IsoFieldRebarReviewStatus.Delete, "Удалить"),
         new(IsoFieldRebarReviewStatus.Unchanged, "Без изменений"),
         new(IsoFieldRebarReviewStatus.Mixed, "Смешано"),
-        new(IsoFieldRebarReviewStatus.Invalid, "Ошибка")
+        new(IsoFieldRebarReviewStatus.Invalid, "Ошибка"),
+        new(IsoFieldRebarReviewStatus.Excluded, "Исключена")
     ];
     private static readonly IReadOnlyList<IsoFieldReviewNumberOption> ReviewConfidenceOptions =
     [
@@ -312,6 +318,18 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             150);
         reviewSummaryText = CreateMutedText("Таблица появится после расчёта раскладки.");
         rebarReviewGrid = CreateRebarReviewGrid();
+        editZoneRuleButton = CreateActionButton(
+            "Настроить выбранную",
+            TrueBimIcon.Settings,
+            184,
+            "Выберите расчётную строку зоны в таблице.",
+            (_, _) => EditSelectedZoneRule());
+        resetZoneRulesButton = CreateActionButton(
+            "Сбросить настройки",
+            TrueBimIcon.Refresh,
+            174,
+            "Ручных настроек зон пока нет.",
+            (_, _) => ResetZoneRuleOverrides());
         ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
         rebarCreationStatusText = CreateMutedText("Раскладка армирования пока не создана.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
@@ -395,6 +413,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         reviewDiameterFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
         reviewSpacingFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
         reviewConfidenceFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
+        rebarReviewGrid.SelectionChanged += (_, _) => RefreshZoneRuleActions();
+        rebarReviewGrid.MouseDoubleClick += (_, _) => EditSelectedZoneRule();
 
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
@@ -854,6 +874,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         filters.Children.Add(CreateReviewFilterField("Шаг", reviewSpacingFilter));
         filters.Children.Add(CreateReviewFilterField("Confidence", reviewConfidenceFilter));
         content.Children.Add(filters);
+
+        WrapPanel zoneActions = new()
+        {
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        };
+        zoneActions.Children.Add(editZoneRuleButton);
+        resetZoneRulesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        zoneActions.Children.Add(resetZoneRulesButton);
+        content.Children.Add(zoneActions);
         content.Children.Add(rebarReviewGrid);
         content.Children.Add(reviewSummaryText);
 
@@ -862,7 +891,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Header = "Проверка зон и изменений",
             Content = content,
             IsExpanded = true,
-            ToolTip = "Таблица заполняется расчётными зонами, а после сравнения показывает добавление, обновление, удаление и неизменённые элементы."
+            ToolTip = "Таблица позволяет настроить или исключить расчётную зону, а после сравнения показывает добавление, обновление, удаление и неизменённые элементы."
         };
     }
 
@@ -893,6 +922,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         grid.Columns.Add(CreateReviewColumn("Площадь", nameof(IsoFieldRebarReviewRow.AreaText), 132));
         grid.Columns.Add(CreateReviewColumn("Стержни", nameof(IsoFieldRebarReviewRow.EstimatedBarCountText), 78));
         grid.Columns.Add(CreateReviewColumn("Confidence", nameof(IsoFieldRebarReviewRow.ConfidenceText), 92));
+        grid.Columns.Add(CreateReviewColumn("Настройка", nameof(IsoFieldRebarReviewRow.SettingText), 136));
         grid.Columns.Add(CreateReviewColumn("Изменения", nameof(IsoFieldRebarReviewRow.ChangeSummary), 190));
         return grid;
     }
@@ -1009,7 +1039,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         string planSummary = currentChangePlan is null
             ? "Сравнение с моделью ещё не выполнено."
             : currentChangePlan.Summary;
-        reviewSummaryText.Text = $"Зон: {rebarReviewRows.Count}; показано: {visibleCount}. {planSummary}";
+        string overrideSummary = ruleOverrides.Count > 0
+            ? $"Ручных настроек: {ruleOverrides.Count}. "
+            : string.Empty;
+        reviewSummaryText.Text = $"Зон: {rebarReviewRows.Count}; показано: {visibleCount}. {overrideSummary}{planSummary}";
     }
 
     private static void SetReviewNumberOptions(
@@ -1042,6 +1075,141 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             : rebarChangePlanService.BuildFingerprint(changePlan);
         RefreshRebarReviewRows();
         RefreshWorkflowState();
+    }
+
+    private void EditSelectedZoneRule()
+    {
+        if (rebarReviewGrid.SelectedItem is not IsoFieldRebarReviewRow selectedRow
+            || calculatedRulePreview?.EngineeringSettings is null)
+        {
+            return;
+        }
+
+        RebarRulePreviewItem? calculatedItem = calculatedRulePreview.Items.FirstOrDefault(item =>
+            string.Equals(item.ZoneId, selectedRow.ZoneId, StringComparison.Ordinal)
+            && item.Rule.LayerRole == selectedRow.LayerRole);
+        if (calculatedItem is null)
+        {
+            return;
+        }
+
+        ruleOverrides.TryGetValue(calculatedItem.ZoneId, out IsoFieldRebarRuleOverride? currentOverride);
+        IsoFieldRebarRuleOverrideWindow dialog = new(
+            calculatedItem,
+            calculatedRulePreview.EngineeringSettings,
+            ResolveReinforcementOptions(calculatedItem),
+            currentOverride)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        if (dialog.ResetToCalculated || IsCalculatedRule(dialog.Result, calculatedItem))
+        {
+            ruleOverrides.Remove(calculatedItem.ZoneId);
+        }
+        else if (dialog.Result is not null)
+        {
+            ruleOverrides[calculatedItem.ZoneId] = dialog.Result;
+        }
+
+        ApplyZoneRuleOverrides();
+    }
+
+    private void ResetZoneRuleOverrides()
+    {
+        if (ruleOverrides.Count == 0)
+        {
+            return;
+        }
+
+        TaskDialog dialog = new("Армирование по изополям")
+        {
+            MainInstruction = "Сбросить ручные настройки зон?",
+            MainContent = $"Будут восстановлены расчётные правила для {ruleOverrides.Count} зон. Сравнение с моделью потребуется выполнить заново.",
+            CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
+            DefaultButton = TaskDialogResult.No
+        };
+        if (dialog.Show() != TaskDialogResult.Yes)
+        {
+            return;
+        }
+
+        ruleOverrides.Clear();
+        ApplyZoneRuleOverrides();
+    }
+
+    private void ApplyZoneRuleOverrides()
+    {
+        if (calculatedRulePreview is null)
+        {
+            return;
+        }
+
+        currentRulePreview = rebarRuleOverrideService.Apply(calculatedRulePreview, ruleOverrides);
+        currentChangePlan = null;
+        currentChangePlanFingerprint = null;
+        ruleStatusText.Text = FormatRulePreview(currentRulePreview);
+        rebarCreationStatusText.Text = currentRulePreview.CanCreateRebar
+            ? $"Ручные настройки применены: {ruleOverrides.Count}. Нажмите «Сравнить с моделью» и проверьте обновлённый diff."
+            : "Ручные настройки применены, но раскладка содержит ошибки. Исправьте зоны, выделенные в таблице.";
+        footerStatusText.Text = "Раскладка пересчитана после ручных настроек. Модель Revit не изменялась.";
+        if (currentRecognitionResult is not null && currentSlabBinding is not null)
+        {
+            RenderPreview(currentRecognitionResult);
+        }
+
+        RefreshRebarReviewRows();
+        RefreshWorkflowState();
+        logger.Info($"IsoField zone rule overrides applied. Overrides={ruleOverrides.Count}; ActiveZones={currentRulePreview.ActiveItems.Count}; EstimatedBars={currentRulePreview.EstimatedBarCount}; CanCreate={currentRulePreview.CanCreateRebar}.");
+    }
+
+    private void RefreshZoneRuleActions()
+    {
+        IsoFieldRebarReviewRow? selectedRow = rebarReviewGrid?.SelectedItem as IsoFieldRebarReviewRow;
+        bool canEdit = selectedRow is not null
+            && calculatedRulePreview?.EngineeringSettings is not null
+            && calculatedRulePreview.Items.Any(item =>
+                string.Equals(item.ZoneId, selectedRow.ZoneId, StringComparison.Ordinal)
+                && item.Rule.LayerRole == selectedRow.LayerRole);
+        editZoneRuleButton.IsEnabled = canEdit;
+        editZoneRuleButton.ToolTip = canEdit
+            ? "Изменить сочетание диаметр/шаг или исключить выбранную зону до сравнения с моделью."
+            : "Выберите расчётную строку зоны. Ранее созданные зоны только на удаление не редактируются.";
+        resetZoneRulesButton.IsEnabled = ruleOverrides.Count > 0;
+        resetZoneRulesButton.ToolTip = resetZoneRulesButton.IsEnabled
+            ? $"Сбросить ручные настройки всех зон: {ruleOverrides.Count}."
+            : "Ручных настроек зон пока нет.";
+    }
+
+    private IReadOnlyList<string> ResolveReinforcementOptions(RebarRulePreviewItem item)
+    {
+        IEnumerable<string?> recognized = currentRecognitionResult?.EffectiveLegends
+            .Where(legend => legend.LayerRole == item.Rule.LayerRole)
+            .SelectMany(legend => legend.EffectiveBoundaries)
+            .Select(boundary => boundary.ReinforcementLabel)
+            ?? Array.Empty<string?>();
+        return new[] { item.Rule.ReinforcementLabel }
+            .Concat(recognized)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsCalculatedRule(
+        IsoFieldRebarRuleOverride? zoneOverride,
+        RebarRulePreviewItem calculatedItem)
+    {
+        return zoneOverride is not null
+            && zoneOverride.IsIncluded
+            && string.Equals(
+                zoneOverride.ReinforcementLabel.Trim(),
+                calculatedItem.Rule.ReinforcementLabel?.Trim(),
+                StringComparison.CurrentCultureIgnoreCase);
     }
 
     private UIElement CreateEngineeringModeRow()
@@ -2316,6 +2484,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             && !TryBuildEngineeringSettings(out engineeringSettings, out string settingsError))
         {
             currentRulePreview = null;
+            calculatedRulePreview = null;
+            ruleOverrides.Clear();
             currentChangePlan = null;
             currentChangePlanFingerprint = null;
             RefreshRebarReviewRows();
@@ -2335,6 +2505,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             currentSlabBinding,
             engineeringSettings);
         currentRulePreview = preview;
+        calculatedRulePreview = preview;
+        ruleOverrides.Clear();
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
         RefreshRebarReviewRows();
@@ -3087,6 +3259,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private void ClearRulePreview(string message)
     {
         currentRulePreview = null;
+        calculatedRulePreview = null;
+        ruleOverrides.Clear();
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
         RefreshRebarReviewRows();
@@ -3254,6 +3428,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         };
         UpdateWorkflowStep(hostStepText, state.HasReadyHost, hostStepLabel);
         UpdateWorkflowStep(rulesStepText, state.HasValidRules, "Правила проверены");
+        RefreshZoneRuleActions();
     }
 
     private IsoFieldWorkflowState BuildWorkflowState()

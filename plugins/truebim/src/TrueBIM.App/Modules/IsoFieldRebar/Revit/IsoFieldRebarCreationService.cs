@@ -166,7 +166,9 @@ public sealed class IsoFieldRebarCreationService
         }
 
         RebarRulePreviewItem[] validItems = rulePreview.Items
-            .Where(item => item.IsValid && string.Equals(item.Rule.HostKind, hostKind, StringComparison.Ordinal))
+            .Where(item => item.IsIncluded
+                && item.HasValidRule
+                && string.Equals(item.Rule.HostKind, hostKind, StringComparison.Ordinal))
             .ToArray();
         if (validItems.Length == 0)
         {

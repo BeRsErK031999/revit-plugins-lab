@@ -133,20 +133,21 @@ public sealed class RebarRuleValidationService
         List<RebarRulePreviewItem> items = new();
         foreach (IsoFieldPolyline polyline in recognitionResult.Polylines)
         {
-            List<string> itemDiagnostics = new();
+            List<string> baseDiagnostics = new();
+            List<string> ruleDiagnostics = new();
             if (polyline.LayerRole is null)
             {
-                itemDiagnostics.Add("Для зоны не определён расчётный слой As1X/As2X/As3Y/As4Y.");
+                baseDiagnostics.Add("Для зоны не определён расчётный слой As1X/As2X/As3Y/As4Y.");
             }
 
             if (polyline.LegendBandIndex is null)
             {
-                itemDiagnostics.Add("Для зоны не определён уровень цветовой шкалы.");
+                baseDiagnostics.Add("Для зоны не определён уровень цветовой шкалы.");
             }
 
             if (!clippedByZoneId.TryGetValue(polyline.Id, out IsoFieldClippedZone? clippedZone))
             {
-                itemDiagnostics.Add("После отсечения по плите зона не содержит допустимой геометрии.");
+                baseDiagnostics.Add("После отсечения по плите зона не содержит допустимой геометрии.");
             }
 
             IsoFieldLayerMapping? mapping = polyline.LayerRole.HasValue
@@ -161,7 +162,7 @@ public sealed class RebarRuleValidationService
                 : null;
             if (band?.MaximumValue is null)
             {
-                itemDiagnostics.Add("Уровень зоны не содержит верхнюю числовую границу в см²/м.");
+                baseDiagnostics.Add("Уровень зоны не содержит верхнюю числовую границу в см²/м.");
             }
 
             IsoFieldLegendBoundary? upperBoundary = band is not null && legend is not null
@@ -173,7 +174,7 @@ public sealed class RebarRuleValidationService
                 out combination,
                 out string combinationDiagnostic))
             {
-                itemDiagnostics.Add(combinationDiagnostic);
+                ruleDiagnostics.Add(combinationDiagnostic);
             }
 
             IReadOnlyList<IsoFieldRebarComponent> selectedComponents = combination is null
@@ -183,7 +184,7 @@ public sealed class RebarRuleValidationService
                     : combination.Components;
             if (combination is not null && selectedComponents.Count == 0)
             {
-                itemDiagnostics.Add("Для режима дополнительного усиления сочетание не содержит арматуру сверх базовой сетки.");
+                ruleDiagnostics.Add("Для режима дополнительного усиления сочетание не содержит арматуру сверх базовой сетки.");
             }
 
             double? requiredArea = band?.MaximumValue;
@@ -203,13 +204,21 @@ public sealed class RebarRuleValidationService
                 mapping?.Face,
                 selectedComponents,
                 activeSettings.Mode);
-            itemDiagnostics.AddRange(ValidateRule(rule));
+            ruleDiagnostics.AddRange(ValidateRule(rule));
+            string[] effectiveBaseDiagnostics = baseDiagnostics
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            string[] itemDiagnostics = effectiveBaseDiagnostics
+                .Concat(ruleDiagnostics)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
             items.Add(new RebarRulePreviewItem(
                 polyline.Id,
                 ResolveZoneName(polyline),
                 rule,
-                itemDiagnostics.Distinct(StringComparer.Ordinal).ToArray(),
-                clippedZone?.Regions));
+                itemDiagnostics,
+                clippedZone?.Regions,
+                BaseDiagnostics: effectiveBaseDiagnostics));
         }
 
         if (items.Count == 0)
@@ -219,6 +228,7 @@ public sealed class RebarRuleValidationService
         }
 
         IReadOnlyList<IsoFieldSlabRebarSegment> segments;
+        string[] basePreviewDiagnostics = diagnostics.ToArray();
         try
         {
             segments = layoutService.BuildSegments(items, activeSettings);
@@ -226,7 +236,11 @@ public sealed class RebarRuleValidationService
         catch (InvalidOperationException exception)
         {
             diagnostics.Add(exception.Message);
-            return new RebarRulePreviewResult(items, diagnostics, settings);
+            return new RebarRulePreviewResult(
+                items,
+                diagnostics,
+                settings,
+                BaseDiagnostics: basePreviewDiagnostics);
         }
 
         Dictionary<string, int> countByZone = segments
@@ -254,7 +268,8 @@ public sealed class RebarRuleValidationService
             items,
             diagnostics,
             settings,
-            segments.Count);
+            segments.Count,
+            basePreviewDiagnostics);
     }
 
     private RebarRulePreviewResult BuildLegacyPreview(

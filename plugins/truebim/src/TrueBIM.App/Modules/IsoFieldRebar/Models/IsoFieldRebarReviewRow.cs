@@ -10,7 +10,8 @@ public enum IsoFieldRebarReviewStatus
     Delete,
     Unchanged,
     Mixed,
-    Invalid
+    Invalid,
+    Excluded
 }
 
 public sealed record IsoFieldRebarReviewRow(
@@ -29,7 +30,9 @@ public sealed record IsoFieldRebarReviewRow(
     int UpdateCount,
     int DeleteCount,
     int UnchangedCount,
-    IReadOnlyList<string> Diagnostics)
+    IReadOnlyList<string> Diagnostics,
+    bool IsIncluded = true,
+    bool IsManuallyOverridden = false)
 {
     public string LayerText => LayerRole?.ToString() ?? "—";
 
@@ -42,6 +45,7 @@ public sealed record IsoFieldRebarReviewRow(
         IsoFieldRebarReviewStatus.Unchanged => "Без изменений",
         IsoFieldRebarReviewStatus.Mixed => "Смешано",
         IsoFieldRebarReviewStatus.Invalid => "Ошибка",
+        IsoFieldRebarReviewStatus.Excluded => "Исключена",
         _ => Status.ToString()
     };
 
@@ -53,12 +57,19 @@ public sealed record IsoFieldRebarReviewRow(
         ? EstimatedBarCount.ToString(CultureInfo.GetCultureInfo("ru-RU"))
         : "—";
 
+    public string SettingText => !IsIncluded
+        ? "Исключена вручную"
+        : IsManuallyOverridden
+            ? "Правило изменено"
+            : "Расчётное правило";
+
     public string ChangeSummary => Status switch
     {
         IsoFieldRebarReviewStatus.NotCompared => "Сначала сравните с моделью",
         IsoFieldRebarReviewStatus.Invalid => Diagnostics.Count > 0
             ? string.Join(" ", Diagnostics)
             : "Правило содержит ошибку",
+        IsoFieldRebarReviewStatus.Excluded => "Не войдёт в раскладку",
         _ => $"+{AddCount} · ~{UpdateCount} · −{DeleteCount} · ={UnchangedCount}"
     };
 }

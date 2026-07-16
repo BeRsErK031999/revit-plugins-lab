@@ -23,7 +23,8 @@ public sealed class IsoFieldSlabRebarLayoutService
         }
 
         List<IsoFieldSlabRebarSegment> segments = new();
-        foreach (RebarRulePreviewItem item in previewItems.Where(item => item.IsValid))
+        foreach (RebarRulePreviewItem item in previewItems.Where(item =>
+            item.IsIncluded && item.HasValidRule))
         {
             if (!item.Rule.IsEngineeringRule
                 || item.Rule.LayerRole is null

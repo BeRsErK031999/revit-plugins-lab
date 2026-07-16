@@ -79,7 +79,9 @@ public sealed class IsoFieldRebarReviewService
                     .Where(change => change.Kind == IsoFieldRebarChangeKind.Delete)
                     .Sum(change => change.ExistingElementIds.Count),
                 changes.Count(change => change.Kind == IsoFieldRebarChangeKind.Unchanged),
-                diagnostics));
+                diagnostics,
+                item.IsIncluded,
+                item.IsManuallyOverridden));
         }
 
         if (changePlan is not null)
@@ -124,7 +126,12 @@ public sealed class IsoFieldRebarReviewService
         IsoFieldRebarChangePlan? changePlan,
         IReadOnlyList<IsoFieldRebarChange> changes)
     {
-        if (!item.IsValid || changePlan?.CanApply == false)
+        if (!item.IsIncluded && (changePlan is null || changes.Count == 0))
+        {
+            return IsoFieldRebarReviewStatus.Excluded;
+        }
+
+        if (!item.HasValidRule || changePlan?.CanApply == false)
         {
             return IsoFieldRebarReviewStatus.Invalid;
         }
