@@ -56,4 +56,35 @@ public sealed class LintelAssemblyCreationGateTests
         Assert.True(LintelAssemblyCreationGate.IsCurrentSelection([100, 200], [200, 100]));
         Assert.False(LintelAssemblyCreationGate.IsCurrentSelection([100, 200], [100, 300]));
     }
+
+    [Fact]
+    public void CanCreateOrFormatView_AllowsOnlyOneTypeWithExistingAssembly()
+    {
+        LintelTypeDiagnostic existing = CreateType(100) with
+        {
+            ExistingAssemblyName = "TB_Перемычка_ПР-1_100"
+        };
+        LintelTypeDiagnostic newType = CreateType(200);
+
+        Assert.True(LintelAssemblyCreationGate.CanCreateOrFormatView([existing]));
+        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatView([]));
+        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatView([newType]));
+        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatView([existing, newType]));
+    }
+
+    private static LintelTypeDiagnostic CreateType(long typeId)
+    {
+        return new LintelTypeDiagnostic(
+            typeId,
+            "Перемычка сварная",
+            "ПР-1",
+            1,
+            1,
+            10,
+            false,
+            1,
+            1,
+            [11],
+            []);
+    }
 }

@@ -12,7 +12,7 @@ public sealed class LintelTypeSelectionItem : INotifyPropertyChanged
     {
         Diagnostic = diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
         ArtifactPreview = LintelArtifactNameBuilder.Build(diagnostic);
-        isSelected = diagnostic.IsAssemblyReady;
+        isSelected = false;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -31,11 +31,17 @@ public sealed class LintelTypeSelectionItem : INotifyPropertyChanged
 
     public bool CanSelect => Diagnostic.IsAssemblyReady;
 
-    public string ReadyStatus => CanSelect ? "Готово" : "Заблокировано";
+    public string ReadyStatus => Diagnostic.HasExistingAssembly
+        ? "Сборка создана"
+        : CanSelect
+            ? "Готово"
+            : "Заблокировано";
 
-    public string DiagnosticText => Diagnostic.Diagnostics.Count == 0
-        ? "Вложенные компоненты с геометрией найдены."
-        : string.Join("; ", Diagnostic.Diagnostics);
+    public string DiagnosticText => Diagnostic.HasExistingAssembly
+        ? $"Сборка «{Diagnostic.ExistingAssemblyName}» уже существует. Можно создать или повторно оформить боковой вид."
+        : Diagnostic.Diagnostics.Count == 0
+            ? "Вложенные компоненты с геометрией найдены."
+            : string.Join("; ", Diagnostic.Diagnostics);
 
     public bool IsSelected
     {

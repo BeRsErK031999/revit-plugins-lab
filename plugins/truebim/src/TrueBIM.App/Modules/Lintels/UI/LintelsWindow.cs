@@ -225,23 +225,34 @@ public sealed class LintelsWindow : TrueBimWindow
         return TrueBimUi.CreateFooter(footerStatusText, createViewButton, createButton, closeButton);
     }
 
-    private void ApplyResult(LintelDiagnosticResult result)
+    private void ApplyResult(LintelDiagnosticResult result, long? selectedTypeId = null)
     {
         InvalidateAssemblyApproval();
         InvalidateViewCreationRequest();
         currentResult = result;
-        typeItems.Clear();
-        foreach (LintelTypeDiagnostic type in result.Types)
+        isBulkSelectionUpdate = true;
+        try
         {
-            LintelTypeSelectionItem item = new(type);
-            item.PropertyChanged += OnTypeItemPropertyChanged;
-            typeItems.Add(item);
+            typeItems.Clear();
+            foreach (LintelTypeDiagnostic type in result.Types)
+            {
+                LintelTypeSelectionItem item = new(type);
+                item.PropertyChanged += OnTypeItemPropertyChanged;
+                typeItems.Add(item);
+                if (selectedTypeId == type.TypeId)
+                {
+                    item.IsSelected = true;
+                }
+            }
+        }
+        finally
+        {
+            isBulkSelectionUpdate = false;
         }
 
         RefreshSummary();
         RefreshPreview();
         UpdateStatus();
-        TryPrepareActiveAssemblyViewRequest();
     }
 
     private void RefreshSummary()
@@ -289,7 +300,9 @@ public sealed class LintelsWindow : TrueBimWindow
             Foreground = TrueBimBrushes.TextPrimary,
             TextWrapping = TextWrapping.Wrap
         });
-        UIElement badge = TrueBimUi.CreateStatusBadge("Готово", TrueBimUiSeverity.Success);
+        UIElement badge = TrueBimUi.CreateStatusBadge(
+            item.Diagnostic.HasExistingAssembly ? "Сборка создана" : "Готово",
+            TrueBimUiSeverity.Success);
         Grid.SetColumn(badge, 1);
         title.Children.Add(badge);
         content.Children.Add(title);
@@ -643,7 +656,7 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         if (IsVisible)
         {
-            ApplyResult(refreshedDiagnostic);
+            ApplyResult(refreshedDiagnostic, selectedType.TypeId);
             if (result.Status is LintelAssemblyCreationStatus.Created
                 or LintelAssemblyCreationStatus.AlreadyExists)
             {
@@ -709,6 +722,34 @@ public sealed class LintelsWindow : TrueBimWindow
         preparedViewName = null;
         createViewButton.IsEnabled = false;
         string explanation = "Сначала создайте одну сборку, выберите типоразмер с существующей сборкой или откройте боковой вид Assembly, созданный TrueBIM.";
+        createViewButton.ToolTip = explanation;
+        AutomationProperties.SetHelpText(createViewButton, explanation);
+    }
+
+    private void UpdateViewCreationButtonState()
+    {
+        LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
+        if (LintelAssemblyCreationGate.CanCreateOrFormatView(selectedTypes))
+        {
+            LintelTypeDiagnostic selectedType = selectedTypes.Single();
+            PrepareAssemblyViewRequest(selectedType, selectedType.ExistingAssemblyName!);
+            return;
+        }
+
+        if (selectedTypes.Length == 0 && TryPrepareActiveAssemblyViewRequest())
+        {
+            return;
+        }
+
+        preparedAssemblyName = null;
+        preparedViewName = null;
+        createViewButton.IsEnabled = false;
+        string explanation = selectedTypes.Length switch
+        {
+            0 => "Выберите один типоразмер с уже созданной сборкой. После создания новой сборки выбранная строка сохранится.",
+            > 1 => $"Выбрано типоразмеров: {selectedTypes.Length}. Оформление доступно только для одной сборки за раз — снимите лишние отметки.",
+            _ => "Для выбранного типоразмера сборка ещё не создана. Сначала нажмите «Создать одну сборку»."
+        };
         createViewButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createViewButton, explanation);
     }
@@ -803,9 +844,9 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void UpdateCreateButtonState()
     {
-        long[] selectedTypeIds = typeItems
-            .Where(item => item.IsSelected && item.CanSelect)
-            .Select(item => item.Diagnostic.TypeId)
+        LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
+        long[] selectedTypeIds = selectedTypes
+            .Select(type => type.TypeId)
             .ToArray();
         bool hasCurrentApproval = LintelAssemblyCreationGate.CanCreate(
             approvedCreationType?.TypeId,
@@ -815,9 +856,13 @@ public sealed class LintelsWindow : TrueBimWindow
         createButton.IsEnabled = canStart;
         string explanation = hasCurrentApproval
             ? $"Создать одну Assembly «{approvedCreationPreflight!.AssemblyName}» из уже проверенного состава."
-            : canStart
-                ? "Сначала автоматически проверить выбранный состав через Revit API, затем показать подтверждение создания одной Assembly."
-                : "Оставьте выбранным ровно один типоразмер со статусом «Готово».";
+            : selectedTypes.Length == 0
+                ? "Выберите один типоразмер со статусом «Готово» или «Сборка создана»."
+                : selectedTypes.Length > 1
+                    ? $"Выбрано типоразмеров: {selectedTypes.Length}. Создание доступно только для одной сборки за раз — снимите лишние отметки."
+                    : selectedTypes[0].HasExistingAssembly
+                        ? $"Сборка «{selectedTypes[0].ExistingAssemblyName}» уже существует. Повторный запуск не создаст дубликат."
+                        : "Сначала автоматически проверить выбранный состав через Revit API, затем показать подтверждение создания одной Assembly.";
         createButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createButton, explanation);
     }
@@ -826,19 +871,25 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         int readyCount = typeItems.Count(item => item.CanSelect);
         int selectedCount = typeItems.Count(item => item.IsSelected && item.CanSelect);
+        LintelTypeDiagnostic? selectedType = selectedCount == 1
+            ? GetSelectedTypes().Single()
+            : null;
         preflightButton.IsEnabled = selectedCount > 0;
         UpdateCreateButtonState();
-        AutomationProperties.SetHelpText(
-            preflightButton,
-            selectedCount > 0
-                ? $"Проверить через Revit API выбранные типоразмеры: {selectedCount}."
-                : "Сначала выберите хотя бы один готовый типоразмер.");
+        UpdateViewCreationButtonState();
+        string preflightExplanation = selectedCount > 0
+            ? $"Проверить через Revit API выбранные типоразмеры: {selectedCount}."
+            : "Сначала выберите хотя бы один готовый типоразмер.";
+        preflightButton.ToolTip = preflightExplanation;
+        AutomationProperties.SetHelpText(preflightButton, preflightExplanation);
         string source = currentResult.Source == LintelDiagnosticSource.Selection
             ? "выделение"
             : "активный вид";
-        footerStatusText.Text = selectedCount == 1
-            ? $"Источник: {source}. Готово: {readyCount}. Выбран один типоразмер. Кнопка создания сначала выполнит проверку Revit API."
-            : $"Источник: {source}. Типоразмеров: {typeItems.Count}. Готово: {readyCount}. Выбрано: {selectedCount}. Для создания оставьте один готовый типоразмер.";
+        footerStatusText.Text = selectedType?.HasExistingAssembly == true
+            ? $"Источник: {source}. Выбран один типоразмер. Сборка «{selectedType.ExistingAssemblyName}» уже создана — можно повторить создание без дубликата или оформить вид 1:10."
+            : selectedCount == 1
+                ? $"Источник: {source}. Готово: {readyCount}. Выбран один типоразмер. Кнопка создания сначала выполнит проверку Revit API."
+                : $"Источник: {source}. Типоразмеров: {typeItems.Count}. Готово: {readyCount}. Выбрано: {selectedCount}. Для создания оставьте один готовый типоразмер.";
     }
 
     private static DataGridTextColumn CreateTextColumn(

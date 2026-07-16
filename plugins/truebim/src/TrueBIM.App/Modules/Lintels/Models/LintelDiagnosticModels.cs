@@ -52,6 +52,10 @@ public sealed record LintelTypeDiagnostic(
     IReadOnlyList<string> Diagnostics)
 {
     public bool IsAssemblyReady => ReadyInstanceCount > 0;
+
+    public string? ExistingAssemblyName { get; init; }
+
+    public bool HasExistingAssembly => !string.IsNullOrWhiteSpace(ExistingAssemblyName);
 }
 
 public sealed record LintelDiagnosticResult(

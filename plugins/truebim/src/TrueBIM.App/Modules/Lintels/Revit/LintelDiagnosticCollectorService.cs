@@ -106,7 +106,9 @@ public sealed class LintelDiagnosticCollectorService
                 : "На активном виде перемычки не найдены. Выберите нужные экземпляры явно либо уточните правило именования по рабочему RVT-файлу.");
         }
 
-        LintelDiagnosticResult result = reportBuilder.Build(source, instances, excluded, diagnostics);
+        LintelDiagnosticResult result = LintelExistingAssemblyMatcher.Apply(
+            reportBuilder.Build(source, instances, excluded, diagnostics),
+            CollectExistingAssemblyNames(document));
         logger.Info($"Lintels diagnostic completed. Source={source}; Instances={result.InstanceCount}; Types={result.Types.Count}; ReadyTypes={result.ReadyTypeCount}; Excluded={result.ExcludedElements.Count}.");
         return result;
     }
@@ -134,6 +136,15 @@ public sealed class LintelDiagnosticCollectorService
             .WhereElementIsNotElementType()
             .ToElements()
             .ToArray();
+    }
+
+    private static IEnumerable<string> CollectExistingAssemblyNames(Document document)
+    {
+        return new FilteredElementCollector(document)
+            .OfClass(typeof(AssemblyInstance))
+            .Cast<AssemblyInstance>()
+            .Select(assembly => assembly.AssemblyTypeName)
+            .Where(name => !string.IsNullOrWhiteSpace(name));
     }
 
     private static LintelInstanceSnapshot CreateSnapshot(

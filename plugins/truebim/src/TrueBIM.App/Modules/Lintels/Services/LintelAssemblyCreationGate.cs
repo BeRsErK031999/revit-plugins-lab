@@ -48,4 +48,16 @@ public static class LintelAssemblyCreationGate
             && currentTypeIds.Count == 1
             && currentTypeIds.Single() == approvedTypeId.Value;
     }
+
+    public static bool CanCreateOrFormatView(
+        IReadOnlyCollection<LintelTypeDiagnostic> selectedTypes)
+    {
+        if (selectedTypes is null)
+        {
+            throw new ArgumentNullException(nameof(selectedTypes));
+        }
+
+        return selectedTypes.Count == 1
+            && selectedTypes.Single().HasExistingAssembly;
+    }
 }
