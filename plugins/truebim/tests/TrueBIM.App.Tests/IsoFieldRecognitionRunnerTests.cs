@@ -67,6 +67,7 @@ public sealed class IsoFieldRecognitionRunnerTests
             Assert.Equal(2, result.Polylines.Count);
             Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("0,5–1,5 см²/м", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("2,5–3,5 см²/м", StringComparison.OrdinalIgnoreCase));
+            Assert.All(result.Polylines, zone => Assert.InRange(zone.LegendBandIndex!.Value, 0, 2));
             Assert.All(result.Polylines, zone => Assert.True(zone.Points.Count >= 4));
             Assert.Contains(result.Diagnostics, message => message.Contains("максимальный уровень", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(result.Diagnostics, message => message.Contains("числовые границы", StringComparison.OrdinalIgnoreCase));

@@ -47,6 +47,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
     private readonly Button recognizeButton;
+    private readonly Button correctZonesButton;
     private readonly Button showRevitPreviewButton;
     private readonly Button clearRevitPreviewButton;
     private readonly Button selectHostButton;
@@ -136,6 +137,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             176,
             "Сначала выберите JSON или полный комплект As1X, As2X, As3Y, As4Y.",
             (_, _) => RunRecognition());
+        correctZonesButton = CreateActionButton(
+            "Исправить зоны",
+            TrueBimIcon.Settings,
+            152,
+            "Сначала загрузите или распознайте зоны.",
+            (_, _) => CorrectZones());
         showRevitPreviewButton = CreateRevitPreviewButton();
         clearRevitPreviewButton = CreateClearRevitPreviewButton();
         selectHostButton = CreateActionButton(
@@ -372,6 +379,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Orientation = Orientation.Horizontal,
             Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
+        buttonRow.Children.Add(correctZonesButton);
+        showRevitPreviewButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         buttonRow.Children.Add(showRevitPreviewButton);
         buttonRow.Children.Add(clearRevitPreviewButton);
         content.Children.Add(buttonRow);
@@ -1072,6 +1081,41 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         revitActions.Raise(ShowRevitPreviewInRevitContext);
     }
 
+    private void CorrectZones()
+    {
+        if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
+        {
+            footerStatusText.Text = "Коррекция недоступна: сначала загрузите зоны.";
+            logger.Warning("IsoField zone correction was requested without recognition polylines.");
+            return;
+        }
+
+        int sourceCount = currentRecognitionResult.Polylines.Count;
+        IsoFieldZoneCorrectionWindow correctionWindow = new(currentRecognitionResult)
+        {
+            Owner = this
+        };
+        if (correctionWindow.ShowDialog() != true || correctionWindow.Result is null)
+        {
+            footerStatusText.Text = "Коррекция зон отменена. Текущий результат не изменён.";
+            logger.Info("IsoField zone correction canceled.");
+            return;
+        }
+
+        currentRecognitionResult = correctionWindow.Result;
+        recognitionStatusText.Text = $"Зоны проверены вручную. Было: {sourceCount}; стало: {currentRecognitionResult.Polylines.Count}. Диагностик: {currentRecognitionResult.Diagnostics.Count}.";
+        recognitionStatusText.ToolTip = CreateRecognitionDiagnosticsToolTip(currentRecognitionResult);
+        UpdateLegendPresentation(currentRecognitionResult);
+        RenderPreview(currentRecognitionResult);
+        ClearRulePreview("Правила сброшены после коррекции зон. Рассчитайте их заново для выбранного host-элемента.");
+        footerStatusText.Text = activeRevitPreviewIds.Count > 0
+            ? "Зоны обновлены. Повторно нажмите «Показать в Revit», чтобы заменить старые линии preview."
+            : "Зоны обновлены в текущем результате. Модель Revit не изменялась.";
+        logger.Info(
+            $"IsoField zone correction applied. SourcePolylines={sourceCount}; "
+            + $"ResultPolylines={currentRecognitionResult.Polylines.Count}; ActiveRevitPreviewIds={activeRevitPreviewIds.Count}.");
+    }
+
     private void ShowRevitPreviewInRevitContext()
     {
         if (uiDocument is null)
@@ -1652,6 +1696,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         showRevitPreviewButton.ToolTip = state.CanShowRevitPreview
             ? "Создать управляемые линии предпросмотра на активном 2D-виде."
             : "Сначала загрузите зоны из JSON или распознанного изображения.";
+        correctZonesButton.IsEnabled = state.HasZones;
+        correctZonesButton.ToolTip = state.HasZones
+            ? "Открыть таблицу ручной проверки: исключение, смена класса и объединение зон."
+            : "Сначала загрузите зоны из JSON или распознайте комплект изображений.";
         clearRevitPreviewButton.IsEnabled = state.CanClearRevitPreview;
         clearRevitPreviewButton.ToolTip = state.CanClearRevitPreview
             ? "Удалить линии предпросмотра изополей на активном виде."

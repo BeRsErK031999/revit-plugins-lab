@@ -36,7 +36,8 @@ public sealed class IsoFieldSourceSetRecognitionService
                 polyline.Points,
                 polyline.ZoneName,
                 polyline.Confidence,
-                role)));
+                role,
+                polyline.LegendBandIndex)));
             diagnostics.AddRange(result.Diagnostics.Select(message => $"[{role}] {message}"));
             legends.AddRange(result.EffectiveLegends.Select(legend => legend with { LayerRole = role }));
         }

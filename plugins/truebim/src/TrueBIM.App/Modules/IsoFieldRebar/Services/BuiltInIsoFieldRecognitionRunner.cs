@@ -905,7 +905,8 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
                 $"builtin-zone-{nextZoneId:000}",
                 hull,
                 BuildZoneName(band),
-                confidence));
+                confidence,
+                LegendBandIndex: band.Index));
             nextZoneId++;
         }
 

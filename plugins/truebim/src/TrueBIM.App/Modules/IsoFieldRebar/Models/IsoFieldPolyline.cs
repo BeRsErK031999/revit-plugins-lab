@@ -5,4 +5,5 @@ public sealed record IsoFieldPolyline(
     IReadOnlyList<IsoFieldPoint> Points,
     string? ZoneName = null,
     double? Confidence = null,
-    IsoFieldLayerRole? LayerRole = null);
+    IsoFieldLayerRole? LayerRole = null,
+    int? LegendBandIndex = null);

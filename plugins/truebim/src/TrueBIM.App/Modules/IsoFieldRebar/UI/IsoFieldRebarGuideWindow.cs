@@ -74,7 +74,8 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             CreateDiagramCard("Пример: JSON-контур становится preview, затем правилом для выбранной стены или плиты.", CreateExampleDiagram()),
             CreateNumberedList(
                 "Выберите JSON-файл изополей.",
-                "Проверьте контуры в окне и, при необходимости, покажите временные линии в Revit.",
+                "Проверьте контуры в окне. Через «Исправить зоны» можно исключить шум, изменить класс или объединить зоны одного слоя и класса.",
+                "При необходимости покажите временные линии в Revit. После коррекции повторный preview заменит старые линии.",
                 "Выберите простую стену или плиту как host-элемент.",
                 "Рассчитайте правила армирования и прочитайте диагностику.",
                 "Создавайте пробное армирование только после подтверждения и сразу проверяйте Undo.")));
@@ -197,7 +198,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
         Brush arrowBrush = MutedBrush;
         AddNode(canvas, 10, 28, 130, 70, "1. Источник", "роль из имени + заголовка", TrueBimBrushes.SuccessBackground, TrueBimBrushes.Success);
         AddArrow(canvas, 145, 63, 175, 63, arrowBrush);
-        AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "встроенный режим или CLI", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
+        AddNode(canvas, 180, 28, 130, 70, "2. Контуры", "распознавание + коррекция", TrueBimBrushes.InfoBackground, TrueBimBrushes.Info);
         AddArrow(canvas, 315, 63, 345, 63, arrowBrush);
         AddNode(canvas, 350, 28, 130, 70, "3. Preview", "картинка в окне и линии Revit", TrueBimBrushes.WarningBackground, TrueBimBrushes.Warning);
         AddArrow(canvas, 485, 63, 515, 63, arrowBrush);
@@ -389,6 +390,7 @@ public sealed class IsoFieldRebarGuideWindow : TrueBimWindow
             TrueBimBrushes.Success,
             "выбор файла и чтение JSON;",
             "preview контуров в окне;",
+            "исключение, класс и объединение зон;",
             "временные линии предпросмотра;",
             "выбор host-элемента;",
             "расчет правил и диагностика.");

@@ -75,7 +75,21 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 7. Verify the preview contains closed hotspot envelopes, zone names contain a
    numerical range in `см²/м`, and diagnostics confirm recognition of numerical
    boundaries plus the maximum-level rule inside each contour.
-8. Confirm the operation does not create or modify Revit elements.
+8. Click `Исправить зоны`. Verify the table shows layer, zone id, confidence,
+   include checkbox, legend class and current action for every contour.
+9. Exclude one zone and change the class of another. Select two included zones
+   of the same layer/class with Ctrl and click `Объединить выбранные`; verify the
+   action column and footer counters update. Cross-layer or mixed-class merging
+   must show an inline warning and remain unapplied.
+10. Change the class or inclusion of one grouped row. Verify the complete merge
+    group is removed automatically. Use `Сбросить правки` and confirm all rows
+    return to their initial state.
+11. Apply the corrections. Verify the window preview and contour count update,
+    previously calculated rules are cleared, and diagnostics contain a manual
+    correction summary. If Revit preview lines existed, repeat `Показать в Revit`
+    and verify they are replaced rather than duplicated.
+12. Confirm recognition and zone correction do not create or modify Revit
+    elements.
 
 ## Optional CLI Worker Smoke
 
