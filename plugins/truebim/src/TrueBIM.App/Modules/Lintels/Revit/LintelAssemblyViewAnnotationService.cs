@@ -104,7 +104,7 @@ public sealed class LintelAssemblyViewAnnotationService
             frameCreated = TryCreateAnnotations(
                 document,
                 () => CreateFrame(document, view, layout),
-                "Ограничивающая рамка создана четырьмя невидимыми линиями по нормализованной области.",
+                "Ограничивающая рамка создана четырьмя линиями по нормализованной области.",
                 "Не удалось создать ограничивающую рамку",
                 createdAnnotations,
                 messages);
@@ -386,17 +386,20 @@ public sealed class LintelAssemblyViewAnnotationService
         ViewSection view,
         LintelAssemblyViewAnnotationLayout layout)
     {
-        GraphicsStyle invisibleLineStyle = Category
+        GraphicsStyle? invisibleLineStyle = Category
             .GetCategory(document, BuiltInCategory.OST_InvisibleLines)?
-            .GetGraphicsStyle(GraphicsStyleType.Projection)
-            ?? throw new InvalidOperationException("В проекте недоступен системный стиль «Невидимые линии».");
+            .GetGraphicsStyle(GraphicsStyleType.Projection);
         List<Element> frame = [];
         foreach (LintelViewSegment segment in layout.CreateFrameSegments())
         {
             XYZ start = ToWorldPoint(view, segment.Start.Horizontal, segment.Start.Vertical);
             XYZ end = ToWorldPoint(view, segment.End.Horizontal, segment.End.Vertical);
             DetailCurve line = document.Create.NewDetailCurve(view, Line.CreateBound(start, end));
-            line.LineStyle = invisibleLineStyle;
+            if (invisibleLineStyle is not null)
+            {
+                line.LineStyle = invisibleLineStyle;
+            }
+
             frame.Add(line);
         }
 
