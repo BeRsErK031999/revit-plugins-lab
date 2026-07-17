@@ -3,6 +3,9 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using System.Windows.Interop;
 using TrueBIM.App.Modules.FinishSchedule;
+using TrueBIM.App.Modules.FinishSchedule.Models;
+using TrueBIM.App.Modules.FinishSchedule.Revit;
+using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Modules.FinishSchedule.UI;
 using TrueBIM.App.Services.Logging;
 
@@ -20,20 +23,34 @@ public sealed class FinishScheduleCommand : IExternalCommand
             UIDocument? uiDocument = commandData.Application.ActiveUIDocument;
             FinishScheduleModuleStatus status = FinishScheduleModuleStatus.Create(
                 uiDocument?.Document.Title);
-            FinishScheduleWindow window = new(status);
+            ParameterCatalogService catalogService = new(logger);
+            ParameterCatalog catalog = uiDocument is null
+                ? new ParameterCatalog([])
+                : catalogService.Collect(uiDocument.Document);
+            IReadOnlyList<FinishScheduleLevelOption> levels = uiDocument is null
+                ? []
+                : new FinishScheduleLevelCatalogService().Collect(uiDocument.Document);
+            FinishScheduleProfileStorage profileStorage = new(logger);
+            FinishScheduleWindow window = new(
+                status,
+                catalog,
+                ParameterCatalogService.TargetCategories,
+                levels,
+                profileStorage,
+                logger);
             new WindowInteropHelper(window)
             {
                 Owner = commandData.Application.MainWindowHandle
             };
 
             logger.Info(
-                $"Finish Schedule scaffold opened. Document='{status.DocumentName}'; HasActiveDocument={status.HasActiveDocument}.");
+                $"Finish Schedule settings opened. Document='{status.DocumentName}'; HasActiveDocument={status.HasActiveDocument}.");
             window.ShowDialog();
             return Result.Succeeded;
         }
         catch (Exception exception)
         {
-            logger.Error("Failed to open Finish Schedule scaffold.", exception);
+            logger.Error("Failed to open Finish Schedule settings.", exception);
             TaskDialog.Show(
                 "Ведомость отделки",
                 "Не удалось открыть окно ведомости отделки. Используйте логи для диагностики.");
