@@ -16,6 +16,9 @@ using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
 using RevitDocument = Autodesk.Revit.DB.Document;
+using TaskDialog = Autodesk.Revit.UI.TaskDialog;
+using TaskDialogCommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons;
+using TaskDialogResult = Autodesk.Revit.UI.TaskDialogResult;
 
 namespace TrueBIM.App.Modules.Print.UI;
 
@@ -47,7 +50,11 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly PrintCadExportService cadExportService = new();
     private readonly PrintCadExportSetupService cadExportSetupService = new();
     private readonly DwgExportOptionsFactory dwgOptionsFactory = new();
+    private readonly PrintDriverCatalogService printDriverCatalogService = new();
+    private readonly PrintManagerService printManagerService = new();
     private readonly ObservableCollection<PrintCadExportSetupOption> cadExportSetupOptions = new();
+    private readonly ObservableCollection<PrintPrinterOption> printerOptions = new();
+    private readonly ObservableCollection<PrintSetupOption> printSetupOptions = new();
     private readonly PrintSettingsService? printSettingsService;
     private readonly DwgExportProfileStorage dwgProfileStorage;
     private readonly PrintPresetStorage printPresetStorage;
@@ -74,6 +81,35 @@ public sealed class PrintWindow : TrueBimWindow
         Height = 32,
         MinWidth = 220,
         ToolTip = "Фильтр листов по открытому документу Revit."
+    };
+    private readonly ComboBox operationModeInput = new()
+    {
+        DisplayMemberPath = nameof(PrintOperationModeOption.DisplayName),
+        SelectedValuePath = nameof(PrintOperationModeOption.Mode),
+        Height = 32,
+        MinWidth = 180,
+        ToolTip = "Экспорт создает файлы, печать отправляет выбранные листы в установленный принтер."
+    };
+    private readonly ComboBox printerInput = new()
+    {
+        DisplayMemberPath = nameof(PrintPrinterOption.DisplayName),
+        Height = 32,
+        MinWidth = 240,
+        ToolTip = "Установленный в Windows принтер для фактической печати листов."
+    };
+    private readonly ComboBox printSetupInput = new()
+    {
+        DisplayMemberPath = nameof(PrintSetupOption.DisplayName),
+        Height = 32,
+        MinWidth = 220,
+        ToolTip = "Сохраненная настройка печати Revit. По умолчанию используется текущая настройка каждого документа."
+    };
+    private readonly TextBlock printerWarningText = new()
+    {
+        Text = "PDF-драйвер может открыть собственный диалог или запросить имя файла. Для управляемого PDF используйте режим «Экспорт».",
+        TextWrapping = TextWrapping.Wrap,
+        VerticalAlignment = VerticalAlignment.Center,
+        Foreground = TrueBimBrushes.Warning
     };
     private readonly TextBox exportFolderInput = new();
     private readonly TextBox fileNameMaskInput = new()
@@ -150,6 +186,10 @@ public sealed class PrintWindow : TrueBimWindow
     };
     private readonly Button exportButton = TrueBimUi.CreatePrimaryButton("Печать", TrueBimIcon.Print, isEnabled: false);
     private readonly List<UIElement> detailedSettingsRows = [];
+    private readonly List<UIElement> exportModeRows = [];
+    private readonly List<UIElement> printerModeRows = [];
+    private UIElement? printerWarningRow;
+    private DataGridColumn? fileNameColumn;
     private DwgExportProfileStoreState dwgProfileState = new();
     private PrintPresetStoreState printPresetState = new();
     private DwgExportProfile selectedDwgProfile = DwgExportOptionsFactory.CreateProfileFromOptions(
@@ -163,9 +203,10 @@ public sealed class PrintWindow : TrueBimWindow
     private bool isBatchUpdatingSelection;
     private bool isSheetNumberSortDescending;
     private bool reloadInitialSourcesForPreset;
+    private bool showDetailedExportSettings;
     private PrintSheetRow? sheetSelectionAnchor;
 
-    private const string WindowTitle = "Печать";
+    private const string WindowTitle = "Печать и экспорт";
 
     public PrintWindow(RevitDocument document, IReadOnlyList<PrintSheetInfo> sheets, ITrueBimLogger logger)
         : this(document, CreateSingleSource(document, sheets), printSettingsService: null, logger)
@@ -264,6 +305,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         LoadSourceFilterOptions();
         LoadCadExportSetupOptions();
+        LoadPrintOptions();
 
         LoadInitialDwgProfile();
         ApplyInitialSettings();
@@ -271,8 +313,8 @@ public sealed class PrintWindow : TrueBimWindow
         Title = WindowTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Print, 32);
         exportButton.Content = IconFactory.CreateButtonContent(
-            TrueBimIcon.Print,
-            "Печать",
+            TrueBimIcon.Export,
+            "Экспортировать",
             Colors.White);
         Width = 1120;
         Height = 720;
@@ -299,7 +341,7 @@ public sealed class PrintWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 WindowTitle,
-                "Выберите листы и форматы. Подробные параметры и пресеты доступны в этом же окне.",
+                "Выберите листы, затем явно укажите: создать файлы или отправить листы в принтер.",
                 TrueBimIcon.Print),
             commandBar: CreateReadSettings(),
             body: CreateSheetsSection(),
@@ -318,7 +360,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         section.Children.Add(new TextBlock
         {
-            Text = "Листы для печати",
+            Text = "Листы для печати и экспорта",
             FontSize = TrueBimTheme.SectionTitleFontSize,
             FontWeight = FontWeights.SemiBold,
             Foreground = TrueBimBrushes.TextPrimary,
@@ -468,7 +510,8 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.Columns.Add(CreateTextColumn("Имя листа", nameof(PrintSheetRow.SheetName), new DataGridLength(1, DataGridLengthUnitType.Star)));
         sheetGrid.Columns.Add(CreateTextColumn("Формат", nameof(PrintSheetRow.SheetFormat), 120));
         sheetGrid.Columns.Add(CreateStatusColumn());
-        sheetGrid.Columns.Add(CreateTextColumn("Имя файла", nameof(PrintSheetRow.FileNamePreview), 240));
+        fileNameColumn = CreateTextColumn("Имя файла", nameof(PrintSheetRow.FileNamePreview), 240);
+        sheetGrid.Columns.Add(fileNameColumn);
 
         return sheetGrid;
     }
@@ -479,12 +522,105 @@ public sealed class PrintWindow : TrueBimWindow
         {
             Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, 0)
         };
-        for (int index = 0; index < 7; index++)
+        for (int index = 0; index < 14; index++)
         {
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
 
         int rowIndex = 0;
+
+        Grid modeRow = new();
+        modeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
+        modeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        modeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        modeRow.Children.Add(new TextBlock
+        {
+            Text = "Режим",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+        operationModeInput.SelectionChanged += (_, _) => UpdateOperationModeState();
+        Grid.SetColumn(operationModeInput, 1);
+        modeRow.Children.Add(operationModeInput);
+        TextBlock modeExplanation = new()
+        {
+            Text = "Экспорт — файлы PDF/DWG/DXF/DWF; печать — задание установленному принтеру.",
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(16, 0, 0, 0),
+            Foreground = TrueBimBrushes.TextSecondary
+        };
+        Grid.SetColumn(modeExplanation, 2);
+        modeRow.Children.Add(modeExplanation);
+        Grid.SetRow(modeRow, rowIndex++);
+        root.Children.Add(modeRow);
+
+        Grid printerRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        printerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
+        printerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        printerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        printerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        printerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        printerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        printerRow.Children.Add(new TextBlock
+        {
+            Text = "Принтер",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        });
+        printerInput.SelectionChanged += (_, _) =>
+        {
+            UpdatePrinterWarning();
+            UpdateExportState();
+        };
+        Grid.SetColumn(printerInput, 1);
+        printerRow.Children.Add(printerInput);
+        TextBlock printSetupLabel = new()
+        {
+            Text = "Настройка Revit",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 8, 0)
+        };
+        Grid.SetColumn(printSetupLabel, 2);
+        printerRow.Children.Add(printSetupLabel);
+        printSetupInput.SelectionChanged += (_, _) => UpdateExportState();
+        Grid.SetColumn(printSetupInput, 3);
+        printerRow.Children.Add(printSetupInput);
+        TextBlock rangeLabel = new()
+        {
+            Text = "Диапазон",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 8, 0)
+        };
+        Grid.SetColumn(rangeLabel, 4);
+        printerRow.Children.Add(rangeLabel);
+        TextBlock rangeValue = new()
+        {
+            Text = "Выбранные листы",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontWeight = FontWeights.SemiBold,
+            ToolTip = "Печатаются только листы, отмеченные флажками в таблице."
+        };
+        Grid.SetColumn(rangeValue, 5);
+        printerRow.Children.Add(rangeValue);
+        Grid.SetRow(printerRow, rowIndex++);
+        root.Children.Add(printerRow);
+        printerModeRows.Add(printerRow);
+
+        Grid warningRow = new()
+        {
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        warningRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
+        warningRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(printerWarningText, 1);
+        warningRow.Children.Add(printerWarningText);
+        Grid.SetRow(warningRow, rowIndex++);
+        root.Children.Add(warningRow);
+        printerWarningRow = warningRow;
 
         Grid folderRow = new();
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
@@ -523,6 +659,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         Grid.SetRow(folderRow, rowIndex++);
         root.Children.Add(folderRow);
+        exportModeRows.Add(folderRow);
 
         Grid maskRow = new()
         {
@@ -845,6 +982,7 @@ public sealed class PrintWindow : TrueBimWindow
 
             DockPanel.SetDock(formatActions, Dock.Left);
             actionRow.Children.Add(formatActions);
+            exportModeRows.Add(formatActions);
         }
 
         StackPanel actions = new()
@@ -853,7 +991,7 @@ public sealed class PrintWindow : TrueBimWindow
             HorizontalAlignment = HorizontalAlignment.Right
         };
 
-        exportButton.Click += (_, _) => StartExport();
+        exportButton.Click += (_, _) => StartOperation();
         actions.Children.Add(exportButton);
 
         Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close);
@@ -867,6 +1005,7 @@ public sealed class PrintWindow : TrueBimWindow
         Grid.SetRow(actionRow, rowIndex);
         root.Children.Add(actionRow);
 
+        ApplyOperationModeVisibility();
         UpdatePdfOptionsState();
         return root;
     }
@@ -879,13 +1018,10 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void ToggleDetailedSettings(Button settingsButton)
     {
-        bool showSettings = detailedSettingsRows.Any(row => row.Visibility != Visibility.Visible);
-        foreach (UIElement row in detailedSettingsRows)
-        {
-            row.Visibility = showSettings ? Visibility.Visible : Visibility.Collapsed;
-        }
+        showDetailedExportSettings = !showDetailedExportSettings;
+        ApplyOperationModeVisibility();
 
-        settingsButton.ToolTip = showSettings
+        settingsButton.ToolTip = showDetailedExportSettings
             ? "Скрыть подробные параметры PDF и DWG."
             : "Показать подробные параметры PDF и DWG.";
     }
@@ -922,10 +1058,61 @@ public sealed class PrintWindow : TrueBimWindow
         }
     }
 
+    private void UpdateOperationModeState()
+    {
+        ApplyOperationModeVisibility();
+        ResetExportStatuses();
+        UpdateExportState();
+    }
+
+    private void ApplyOperationModeVisibility()
+    {
+        bool printToPrinter = GetSelectedOperationMode() == PrintOperationMode.Printer;
+        foreach (UIElement row in printerModeRows)
+        {
+            row.Visibility = printToPrinter ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        foreach (UIElement row in exportModeRows)
+        {
+            row.Visibility = printToPrinter ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        foreach (UIElement row in detailedSettingsRows)
+        {
+            row.Visibility = !printToPrinter && showDetailedExportSettings
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        if (fileNameColumn is not null)
+        {
+            fileNameColumn.Visibility = printToPrinter ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        UpdatePrinterWarning();
+    }
+
+    private void UpdatePrinterWarning()
+    {
+        if (printerWarningRow is null)
+        {
+            return;
+        }
+
+        printerWarningRow.Visibility = GetSelectedOperationMode() == PrintOperationMode.Printer
+            && GetSelectedPrinter()?.IsPdfDriver == true
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+    }
+
     private void ApplySharedControlStyles()
     {
         presetInput.Style = TrueBimStyles.CreateComboBoxStyle();
         sourceFilterInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        operationModeInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        printerInput.Style = TrueBimStyles.CreateComboBoxStyle();
+        printSetupInput.Style = TrueBimStyles.CreateComboBoxStyle();
         exportFolderInput.Style = TrueBimStyles.CreateTextBoxStyle();
         fileNameMaskInput.Style = TrueBimStyles.CreateTextBoxStyle();
         combinedPdfNameInput.Style = TrueBimStyles.CreateTextBoxStyle();
@@ -1147,6 +1334,63 @@ public sealed class PrintWindow : TrueBimWindow
         {
             cadExportSetupOptions.Add(option);
         }
+    }
+
+    private void LoadPrintOptions()
+    {
+        operationModeInput.ItemsSource = new[]
+        {
+            new PrintOperationModeOption(PrintOperationMode.Export, "Экспорт в файлы"),
+            new PrintOperationModeOption(PrintOperationMode.Printer, "Печать на принтер")
+        };
+        operationModeInput.SelectedValue = PrintOperationMode.Export;
+
+        printerOptions.Clear();
+        try
+        {
+            foreach (PrintPrinterOption option in printDriverCatalogService.GetInstalledPrinters())
+            {
+                printerOptions.Add(option);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to enumerate installed Windows printers.", exception);
+        }
+
+        printerInput.ItemsSource = printerOptions;
+        string? currentPrinterName = null;
+        try
+        {
+            currentPrinterName = document.PrintManager.PrinterName;
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Could not read the current Revit printer: {exception.Message}");
+        }
+
+        printerInput.SelectedItem = printerOptions.FirstOrDefault(option => string.Equals(
+                option.Name,
+                currentPrinterName,
+                StringComparison.CurrentCultureIgnoreCase))
+            ?? printerOptions.FirstOrDefault();
+
+        printSetupOptions.Clear();
+        try
+        {
+            foreach (PrintSetupOption option in printManagerService.GetPrintSetups(document))
+            {
+                printSetupOptions.Add(option);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to read Revit print setups.", exception);
+            printSetupOptions.Add(new PrintSetupOption(null, "Текущая настройка каждого документа"));
+        }
+
+        printSetupInput.ItemsSource = printSetupOptions;
+        printSetupInput.SelectedItem = printSetupOptions.FirstOrDefault();
     }
 
     private void LoadSourceFilterOptions()
@@ -1638,10 +1882,13 @@ public sealed class PrintWindow : TrueBimWindow
         combinedPdfNamePreviewText.ToolTip = string.Join(Environment.NewLine, fileNames);
     }
 
-    private void StartExport()
+    private void StartOperation()
     {
-        statusText.Text = "Печать поставлена в очередь Revit.";
-        revitActions.Raise(StartExportInRevitContext);
+        bool printToPrinter = GetSelectedOperationMode() == PrintOperationMode.Printer;
+        statusText.Text = printToPrinter
+            ? "Печать поставлена в очередь Revit."
+            : "Экспорт поставлен в очередь Revit.";
+        revitActions.Raise(printToPrinter ? StartPrintInRevitContext : StartExportInRevitContext);
     }
 
     private PrintabilityValidationResult ValidateSelectedSheetPrintability(
@@ -1685,6 +1932,111 @@ public sealed class PrintWindow : TrueBimWindow
         timer.Stop();
         logger.Info($"Validated printability for {selectedRows.Count} selected sheets in {timer.ElapsedMilliseconds} ms. Printable: {printableRows.Count}; rejected: {rejectedRows.Count}.");
         return new PrintabilityValidationResult(printableRows, rejectedRows);
+    }
+
+    private void StartPrintInRevitContext()
+    {
+        PrintPrinterOption? printer = GetSelectedPrinter();
+        if (printer is null)
+        {
+            TaskDialog.Show(WindowTitle, "Выберите установленный принтер.");
+            UpdateExportState();
+            return;
+        }
+
+        if (printer.IsPdfDriver && !ConfirmPdfDriverPrint(printer.Name))
+        {
+            statusText.Text = "Печать через PDF-драйвер отменена.";
+            return;
+        }
+
+        List<PrintSheetRow> selectedRows = sheetRows
+            .Where(row => row.IsSelected && row.CanBePrinted)
+            .ToList();
+        PrintabilityValidationResult printability = ValidateSelectedSheetPrintability(selectedRows);
+        selectedRows = printability.PrintableRows.ToList();
+        if (selectedRows.Count == 0)
+        {
+            TaskDialog.Show(
+                WindowTitle,
+                "Ни один из выбранных листов не прошел проверку печати. Проверьте статус листов в таблице.");
+            UpdateExportState();
+            return;
+        }
+
+        string? printSetupName = GetSelectedPrintSetupName();
+        logger.Info($"Print operation requested with {selectedRows.Count} sheets. Printer: {printer.Name}. PDF driver: {printer.IsPdfDriver}. Print setup: {printSetupName ?? "current document setting"}. Range: selected sheets.");
+        foreach (PrintSheetRow row in selectedRows)
+        {
+            row.ExportStatus = "Печать: в очереди";
+        }
+
+        int printedSheetCount = 0;
+        int failureCount = printability.RejectedRows.Count;
+        List<string> failureMessages = printability.RejectedRows
+            .Select(row => $"Лист {row.SheetNumber}: не прошел проверку печати")
+            .ToList();
+        foreach (IGrouping<string, PrintSheetRow> rowGroup in selectedRows.GroupBy(row => row.Sheet.SourceId))
+        {
+            if (!sheetSourcesById.TryGetValue(rowGroup.Key, out PrintSheetSource? source))
+            {
+                foreach (PrintSheetRow row in rowGroup)
+                {
+                    row.ExportStatus = "Ошибка печати";
+                    failureCount++;
+                }
+
+                failureMessages.Add($"Источник листов не найден: {rowGroup.Key}");
+                continue;
+            }
+
+            IReadOnlyList<PrintSheetRow> sourceRows = rowGroup.ToList();
+            PrintDriverResult result = printManagerService.Print(
+                source.Document,
+                sourceRows
+                    .Select(row => new PrintDriverJobItem(
+                        row.Sheet.ElementId,
+                        row.SheetNumber,
+                        row.SheetName))
+                    .ToList(),
+                printer.Name,
+                printSetupName,
+                logger);
+            printedSheetCount += result.PrintedSheetCount;
+            failureCount += result.Failures.Count;
+            HashSet<long> failedIds = result.Failures
+                .Select(failure => failure.Item.ElementId)
+                .ToHashSet();
+            foreach (PrintSheetRow row in sourceRows)
+            {
+                row.ExportStatus = failedIds.Contains(row.Sheet.ElementId)
+                    ? "Ошибка печати"
+                    : "Напечатан";
+            }
+
+            failureMessages.AddRange(result.Failures.Select(failure =>
+                $"{source.SourceName}, лист {failure.Item.SheetNumber}: {failure.Message}"));
+        }
+
+        string failureMessage = failureMessages.Count > 0
+            ? "\n\nОшибки:\n" + string.Join("\n", failureMessages.Take(3))
+            : string.Empty;
+        TaskDialog.Show(
+            WindowTitle,
+            $"Отправлено листов в принтер: {printedSheetCount}\nОшибок: {failureCount}{failureMessage}");
+        UpdateExportState();
+    }
+
+    private static bool ConfirmPdfDriverPrint(string printerName)
+    {
+        TaskDialog confirmation = new(WindowTitle)
+        {
+            MainInstruction = $"Отправить листы в PDF-драйвер «{printerName}»?",
+            MainContent = "Драйвер может открыть собственный диалог или запросить путь и имя файла. Для предсказуемого пакетного PDF используйте режим «Экспорт».",
+            CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
+            DefaultButton = TaskDialogResult.No
+        };
+        return confirmation.Show() == TaskDialogResult.Yes;
     }
 
     private void StartExportInRevitContext()
@@ -1976,6 +2328,48 @@ public sealed class PrintWindow : TrueBimWindow
         int hiddenPlaceholderCount = includePlaceholdersInput.IsChecked == true
             ? 0
             : loadedSheets.Count(sheet => sheet.IsPlaceholder);
+        if (GetSelectedOperationMode() == PrintOperationMode.Printer)
+        {
+            PrintPrinterOption? printer = GetSelectedPrinter();
+            printerInput.IsEnabled = printerOptions.Count > 0;
+            printSetupInput.IsEnabled = printSetupOptions.Count > 0;
+            foreach (PrintSheetRow row in sheetRows)
+            {
+                row.ShowFileNameWarnings = false;
+            }
+
+            exportButton.Content = IconFactory.CreateButtonContent(
+                TrueBimIcon.Print,
+                "Печатать",
+                Colors.White);
+            exportButton.IsEnabled = selectedCount > 0 && printer is not null;
+            exportButton.ToolTip = printer is null
+                ? "В Windows не найден доступный принтер."
+                : selectedCount == 0
+                    ? "Выберите хотя бы один лист."
+                    : $"Отправить выбранные листы в принтер «{printer.Name}».";
+
+            string printHiddenText = hiddenPlaceholderCount > 0
+                ? $" Скрыто неразмещенных листов (заглушек): {hiddenPlaceholderCount}."
+                : string.Empty;
+            string printSourceText = sheetSources.Count > 1
+                ? $" Источников: {sheetSources.Count}. Фильтр: {GetSelectedSourceDisplayName()}."
+                : string.Empty;
+            string printSelectedTotalText = selectedTotalCount == selectedCount
+                ? string.Empty
+                : $" Всего выбрано: {selectedTotalCount}.";
+            string setupText = printSetupInput.SelectedItem is PrintSetupOption setup
+                ? setup.DisplayName
+                : "текущая настройка каждого документа";
+            string printerText = printer?.Name ?? "не найден";
+            statusText.Text = $"Режим: печать. Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{printSelectedTotalText}{printSourceText} Принтер: {printerText}. Диапазон: выбранные листы. Настройка Revit: {setupText}.{printHiddenText}";
+            return;
+        }
+
+        exportButton.Content = IconFactory.CreateButtonContent(
+            TrueBimIcon.Export,
+            "Экспортировать",
+            Colors.White);
         int duplicateSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameDuplicate);
         int truncatedSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameTruncated);
         int unknownTokenCount = sheetRows.Count(row => row.HasUnknownFileNameTokens);
@@ -2013,7 +2407,7 @@ public sealed class PrintWindow : TrueBimWindow
         UpdateCombinedDwgNamePreview(mergedDwgPreviews);
         foreach (PrintSheetRow row in sheetRows)
         {
-            row.ShowFileNameDuplicateWarning = exportsPerSheetFiles;
+            row.ShowFileNameWarnings = exportsPerSheetFiles;
         }
 
         exportButton.IsEnabled = selectedCount > 0
@@ -2032,7 +2426,7 @@ public sealed class PrintWindow : TrueBimWindow
                     : duplicateMergedDwgFileName is not null
                         ? "Добавьте в маску общего DWG токен, различающий документы."
                         : exportButton.IsEnabled
-                            ? "Напечатать выбранные листы в отмеченные форматы."
+                            ? "Экспортировать выбранные листы в отмеченные форматы."
                             : "Выберите листы, хотя бы один формат и папку назначения.";
 
         string hiddenText = hiddenPlaceholderCount > 0
@@ -2064,7 +2458,26 @@ public sealed class PrintWindow : TrueBimWindow
             ? string.Empty
             : $" Всего выбрано: {selectedTotalCount}.";
         string formatText = $" Форматы: {GetSelectedFormatsText()}.";
-        statusText.Text = $"Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{combinedPdfMaskText}{mergedDwgMaskText}";
+        statusText.Text = $"Режим: экспорт. Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{combinedPdfMaskText}{mergedDwgMaskText}";
+    }
+
+    private PrintOperationMode GetSelectedOperationMode()
+    {
+        return operationModeInput.SelectedValue is PrintOperationMode mode
+            ? mode
+            : PrintOperationMode.Export;
+    }
+
+    private PrintPrinterOption? GetSelectedPrinter()
+    {
+        return printerInput.SelectedItem as PrintPrinterOption;
+    }
+
+    private string? GetSelectedPrintSetupName()
+    {
+        return printSetupInput.SelectedItem is PrintSetupOption option
+            ? option.SetupName
+            : null;
     }
 
     private string GetSelectedFormatsText()
@@ -2920,7 +3333,7 @@ public sealed class PrintWindow : TrueBimWindow
         private string fileNamePreview = string.Empty;
         private string exportStatus = string.Empty;
         private bool isFileNameDuplicate;
-        private bool showFileNameDuplicateWarning = true;
+        private bool showFileNameWarnings = true;
         private bool isFileNameTruncated;
         private bool hasUnknownFileNameTokens;
 
@@ -3001,17 +3414,17 @@ public sealed class PrintWindow : TrueBimWindow
             }
         }
 
-        public bool ShowFileNameDuplicateWarning
+        public bool ShowFileNameWarnings
         {
-            get => showFileNameDuplicateWarning;
+            get => showFileNameWarnings;
             set
             {
-                if (showFileNameDuplicateWarning == value)
+                if (showFileNameWarnings == value)
                 {
                     return;
                 }
 
-                showFileNameDuplicateWarning = value;
+                showFileNameWarnings = value;
                 NotifyChanged(nameof(Status));
             }
         }
@@ -3073,17 +3486,17 @@ public sealed class PrintWindow : TrueBimWindow
                     return "Заглушка — не печатается";
                 }
 
-                if (IsFileNameDuplicate && ShowFileNameDuplicateWarning)
+                if (IsFileNameDuplicate && ShowFileNameWarnings)
                 {
                     return "Дубликат имени";
                 }
 
-                if (HasUnknownFileNameTokens)
+                if (HasUnknownFileNameTokens && ShowFileNameWarnings)
                 {
                     return "Неизвестный токен";
                 }
 
-                if (IsFileNameTruncated)
+                if (IsFileNameTruncated && ShowFileNameWarnings)
                 {
                     return "Имя обрезано";
                 }

@@ -209,6 +209,9 @@ Expected logs:
 - selected DWG/DXF setup or default fallback;
 - applied DWG profile and resulting key `DWGExportOptions`;
 - exported file counts and any per-sheet failures.
+- selected printer, print setup, document and selected-sheet count;
+- submission and result of each sheet sent through the print driver;
+- driver/setup errors and restoration of the previous Revit print settings.
 
 ### Print Large Sheet List QA
 
@@ -227,6 +230,22 @@ Expected logs:
 4. Enable the option and confirm the placeholder row appears with status `Заглушка — не печатается`.
 5. Hover the status and confirm the same explanation is available directly from the row.
 6. Confirm the row checkbox is disabled and the placeholder cannot increase the selected or exported sheet count.
+
+### Actual Printer QA
+
+Run this scenario first with one safe sheet and a test printer or paused print queue.
+
+1. Open `Печать` and confirm the window title is `Печать и экспорт`, the initial mode is `Экспорт в файлы`, and the primary action is `Экспортировать`.
+2. Switch to `Печать на принтер` and confirm export folder, masks, format switches, and the filename column are hidden.
+3. Confirm the printer list contains installed Windows printers and prefers the current Revit printer when it is available.
+4. Confirm the range is explicitly shown as `Выбранные листы` and cannot include unselected rows.
+5. Keep `Текущая настройка каждого документа` or select a saved Revit print setup, then send one selected sheet to a physical/test printer.
+6. Confirm the row status changes from `Печать: в очереди` to `Напечатан`, or to `Ошибка печати` with a clear summary if the driver rejects the job.
+7. Open the native Revit print dialog after completion and confirm the printer, print-to-file flag, range, and current print setup were restored.
+8. Select a printer whose name contains `PDF`; confirm it is marked as a PDF driver, the warning is visible, and choosing `No` in the confirmation sends no job.
+9. If corporate QA allows it, confirm `Yes` delegates to the PDF driver's own dialog/path behavior; use `Экспорт в файлы` for predictable batch PDF output.
+10. With sheets from two open documents, select a named print setup and confirm a missing setup in either source produces a source-specific error instead of silently using another setup.
+11. Close and reopen the window and confirm the printer is not persisted yet; persistence remains gated by UX/version QA.
 
 Completed first-release tasks:
 
