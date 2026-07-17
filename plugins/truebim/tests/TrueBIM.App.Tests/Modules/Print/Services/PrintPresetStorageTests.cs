@@ -46,7 +46,6 @@ public sealed class PrintPresetStorageTests
             ExportDxf: false,
             ExportDwf: false,
             CombineDwg: true,
-            ExportSeparatePdfWithCombined: true,
             DwgSetupName: "  Customer A DWG  ",
             DxfSetupName: null,
             CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  ");
@@ -124,6 +123,38 @@ public sealed class PrintPresetStorageTests
 
         Assert.Empty(state.Presets);
         Assert.Null(state.LastSelectedPresetName);
+    }
+
+    [Fact]
+    public void Load_CollapsesLegacySeparateAndCombinedPdfPresetToCombinedFlag()
+    {
+        using TempDirectory temp = new();
+        string storagePath = Path.Combine(temp.Path, "print-presets.json");
+        File.WriteAllText(
+            storagePath,
+            """
+            {
+              "presets": [
+                {
+                  "name": "Legacy PDF",
+                  "settings": {
+                    "exportPdf": true,
+                    "combinePdf": true,
+                    "exportSeparatePdfWithCombined": true
+                  }
+                }
+              ],
+              "lastSelectedPresetName": "Legacy PDF"
+            }
+            """);
+
+        PrintPresetStoreState state = new PrintPresetStorage(storagePath, new TestLogger()).Load();
+
+        PrintPreset preset = Assert.Single(state.Presets);
+        Assert.NotNull(preset.Settings);
+        Assert.True(preset.Settings!.ExportPdf);
+        Assert.True(preset.Settings.CombinePdf);
+        Assert.Equal("Legacy PDF", state.LastSelectedPresetName);
     }
 
     [Fact]

@@ -122,7 +122,6 @@ public sealed class PrintWindow : TrueBimWindow
         Content = "Неразмещенные листы (заглушки)",
         ToolTip = PlaceholderSheetExplanation
     };
-    private readonly ComboBox pdfModeInput = CreatePdfSettingInput("Режим создания PDF: отдельные файлы, один общий файл или оба варианта.");
     private readonly TextBox combinedPdfNameInput = new()
     {
         Text = PrintFileNameTemplateService.DefaultCombinedTemplate,
@@ -155,7 +154,12 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly CheckBox pdfInput = new()
     {
         Content = "PDF",
-        ToolTip = "Добавить PDF в очередь печати."
+        ToolTip = "Добавить PDF в очередь экспорта."
+    };
+    private readonly CheckBox combinePdfInput = new()
+    {
+        Content = "Один PDF",
+        ToolTip = "Объединить выбранные листы каждого документа-источника в один PDF."
     };
     private readonly CheckBox dwgInput = new()
     {
@@ -744,32 +748,15 @@ public sealed class PrintWindow : TrueBimWindow
                 Margin = new Thickness(0, 8, 0, 0)
             };
             pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
-            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             pdfRow.Children.Add(new TextBlock
             {
-                Text = "Файлы PDF",
+                Text = "Маска общего PDF",
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 8, 0)
             });
-
-            BindPdfModeInput();
-            pdfModeInput.MinWidth = 220;
-            pdfModeInput.SelectionChanged += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
-            Grid.SetColumn(pdfModeInput, 1);
-            pdfRow.Children.Add(pdfModeInput);
-
-            TextBlock combinedPdfNameLabel = new()
-            {
-                Text = "Маска общего PDF",
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(16, 0, 8, 0)
-            };
-            Grid.SetColumn(combinedPdfNameLabel, 2);
-            pdfRow.Children.Add(combinedPdfNameLabel);
 
             combinedPdfNameInput.Height = 32;
             combinedPdfNameInput.TextChanged += (_, _) =>
@@ -782,11 +769,11 @@ public sealed class PrintWindow : TrueBimWindow
                 ResetExportStatuses();
                 UpdateExportState();
             };
-            Grid.SetColumn(combinedPdfNameInput, 3);
+            Grid.SetColumn(combinedPdfNameInput, 1);
             pdfRow.Children.Add(combinedPdfNameInput);
 
             Button combinedPdfTokenButton = CreateFileNameTokenButton(combinedPdfNameInput);
-            Grid.SetColumn(combinedPdfTokenButton, 4);
+            Grid.SetColumn(combinedPdfTokenButton, 2);
             pdfRow.Children.Add(combinedPdfTokenButton);
 
             Grid.SetRow(pdfRow, rowIndex++);
@@ -954,12 +941,15 @@ public sealed class PrintWindow : TrueBimWindow
             };
 
             pdfInput.Margin = new Thickness(0, 0, 16, 0);
+            combinePdfInput.Margin = new Thickness(0, 0, 16, 0);
             dwgInput.Margin = new Thickness(0, 0, 16, 0);
             dxfInput.Margin = new Thickness(0, 0, 16, 0);
             dwfInput.Margin = new Thickness(0, 0, 16, 0);
             combineDwgInput.Margin = new Thickness(0, 0, 16, 0);
             pdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             pdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
+            combinePdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
+            combinePdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             dwgInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
             dwgInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
             dxfInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
@@ -969,6 +959,7 @@ public sealed class PrintWindow : TrueBimWindow
             combineDwgInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
             combineDwgInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
             formatActions.Children.Add(pdfInput);
+            formatActions.Children.Add(combinePdfInput);
             formatActions.Children.Add(dwgInput);
             formatActions.Children.Add(combineDwgInput);
             formatActions.Children.Add(dxfInput);
@@ -1117,7 +1108,6 @@ public sealed class PrintWindow : TrueBimWindow
         fileNameMaskInput.Style = TrueBimStyles.CreateTextBoxStyle();
         combinedPdfNameInput.Style = TrueBimStyles.CreateTextBoxStyle();
         combinedDwgNameMaskInput.Style = TrueBimStyles.CreateTextBoxStyle();
-        pdfModeInput.Style = TrueBimStyles.CreateComboBoxStyle();
         pdfColorModeInput.Style = TrueBimStyles.CreateComboBoxStyle();
         pdfRasterQualityInput.Style = TrueBimStyles.CreateComboBoxStyle();
         dwgSetupInput.Style = TrueBimStyles.CreateComboBoxStyle();
@@ -1125,6 +1115,7 @@ public sealed class PrintWindow : TrueBimWindow
         includePlaceholdersInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         forceRasterPdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         pdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        combinePdfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dwgInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dxfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dwfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
@@ -1152,16 +1143,6 @@ public sealed class PrintWindow : TrueBimWindow
         };
         setupInput.SelectedItem = FindCadSetupOption(setupName) ?? cadExportSetupOptions.FirstOrDefault();
         setupInput.IsEnabled = cadExportSetupOptions.Count > 1;
-    }
-
-    private void BindPdfModeInput()
-    {
-        pdfModeInput.ItemsSource = GetPdfModeOptions();
-        pdfModeInput.SelectedValue = initialSettings.CombinePdf
-            ? initialSettings.ExportSeparatePdfWithCombined
-                ? PrintPdfExportMode.SeparateAndCombined
-                : PrintPdfExportMode.CombinedFile
-            : PrintPdfExportMode.SeparateFiles;
     }
 
     private void BindPdfColorModeInput()
@@ -1317,8 +1298,8 @@ public sealed class PrintWindow : TrueBimWindow
     private void UpdatePdfOptionsState()
     {
         bool exportPdf = pdfInput.IsChecked == true;
-        bool combinePdf = GetSelectedPdfMode() is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
-        pdfModeInput.IsEnabled = exportPdf;
+        bool combinePdf = combinePdfInput.IsChecked == true;
+        combinePdfInput.IsEnabled = exportPdf;
         combinedPdfNameInput.IsEnabled = exportPdf && combinePdf;
         pdfColorModeInput.IsEnabled = exportPdf;
         pdfRasterQualityInput.IsEnabled = exportPdf;
@@ -1858,10 +1839,10 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyDictionary<string, PrintFileNamePreview> previews)
     {
         bool useCombinedPdf = pdfInput.IsChecked == true
-            && GetSelectedPdfMode() is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
+            && combinePdfInput.IsChecked == true;
         if (!useCombinedPdf)
         {
-            combinedPdfNamePreviewText.Text = "Выберите режим с общим PDF";
+            combinedPdfNamePreviewText.Text = "Включите «Один PDF»";
             combinedPdfNamePreviewText.ToolTip = null;
             return;
         }
@@ -2052,8 +2033,7 @@ public sealed class PrintWindow : TrueBimWindow
         bool exportDwf = dwfInput.IsChecked == true;
         bool combineDwg = exportDwg && combineDwgInput.IsChecked == true;
         PrintPdfExportMode pdfMode = GetSelectedPdfMode();
-        bool combinePdf = exportPdf
-            && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
+        bool combinePdf = exportPdf && combinePdfInput.IsChecked == true;
         PrintPdfExportSettings pdfSettings = GetSelectedPdfSettings();
         string pdfModeLogText = exportPdf
             ? PrintPdfExportService.GetModeDisplayName(pdfMode)
@@ -2382,7 +2362,7 @@ public sealed class PrintWindow : TrueBimWindow
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
         bool useCombinedPdf = pdfInput.IsChecked == true
-            && GetSelectedPdfMode() is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
+            && combinePdfInput.IsChecked == true;
         IReadOnlyDictionary<string, PrintFileNamePreview> combinedPdfPreviews = useCombinedPdf
             ? BuildCombinedFileNamePreviews(combinedPdfNameInput.Text, selectedRows)
             : new Dictionary<string, PrintFileNamePreview>(StringComparer.Ordinal);
@@ -2397,8 +2377,8 @@ public sealed class PrintWindow : TrueBimWindow
         bool exportsPerSheetFiles = dwgInput.IsChecked == true && combineDwgInput.IsChecked != true
             || dxfInput.IsChecked == true
             || dwfInput.IsChecked == true
-            || (pdfInput.IsChecked == true
-                && GetSelectedPdfMode() is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined);
+            || pdfInput.IsChecked == true && combinePdfInput.IsChecked != true;
+        combinePdfInput.IsEnabled = pdfInput.IsChecked == true;
         combineDwgInput.IsEnabled = dwgInput.IsChecked == true;
         combinedDwgNameMaskInput.IsEnabled = useCombinedDwg;
         dwgSetupInput.IsEnabled = dwgInput.IsChecked == true && cadExportSetupOptions.Count > 1;
@@ -2485,7 +2465,7 @@ public sealed class PrintWindow : TrueBimWindow
         List<string> formats = new();
         if (pdfInput.IsChecked == true)
         {
-            formats.Add("PDF");
+            formats.Add(combinePdfInput.IsChecked == true ? "PDF (один файл)" : "PDF");
         }
 
         if (dwgInput.IsChecked == true)
@@ -2510,8 +2490,8 @@ public sealed class PrintWindow : TrueBimWindow
 
     private PrintPdfExportMode GetSelectedPdfMode()
     {
-        return pdfModeInput.SelectedValue is PrintPdfExportMode mode
-            ? mode
+        return combinePdfInput.IsChecked == true
+            ? PrintPdfExportMode.CombinedFile
             : PrintPdfExportMode.SeparateFiles;
     }
 
@@ -2661,7 +2641,7 @@ public sealed class PrintWindow : TrueBimWindow
             fileNameMaskInput.Text,
             includePlaceholdersInput.IsChecked == true,
             pdfInput.IsChecked == true,
-            GetSelectedPdfMode() is not PrintPdfExportMode.SeparateFiles,
+            combinePdfInput.IsChecked == true,
             combinedPdfNameInput.Text,
             GetSelectedPdfColorMode(),
             GetSelectedPdfRasterQuality(),
@@ -2670,7 +2650,6 @@ public sealed class PrintWindow : TrueBimWindow
             dxfInput.IsChecked == true,
             dwfInput.IsChecked == true,
             combineDwgInput.IsChecked == true,
-            GetSelectedPdfMode() == PrintPdfExportMode.SeparateAndCombined,
             GetSelectedSetupName(dwgSetupInput),
             GetSelectedSetupName(dxfSetupInput),
             combinedDwgNameMaskInput.Text));
@@ -2683,11 +2662,7 @@ public sealed class PrintWindow : TrueBimWindow
         fileNameMaskInput.Text = settings.FileNameMask;
         includePlaceholdersInput.IsChecked = settings.IncludePlaceholders;
         pdfInput.IsChecked = settings.ExportPdf;
-        pdfModeInput.SelectedValue = settings.CombinePdf
-            ? settings.ExportSeparatePdfWithCombined
-                ? PrintPdfExportMode.SeparateAndCombined
-                : PrintPdfExportMode.CombinedFile
-            : PrintPdfExportMode.SeparateFiles;
+        combinePdfInput.IsChecked = settings.CombinePdf;
         combinedPdfNameInput.Text = settings.CombinedPdfFileName;
         pdfColorModeInput.SelectedValue = settings.PdfColorMode;
         pdfRasterQualityInput.SelectedValue = settings.PdfRasterQuality;
@@ -3643,22 +3618,6 @@ public sealed class PrintWindow : TrueBimWindow
     private static bool StatusContains(string status, string value)
     {
         return status.IndexOf(value, StringComparison.CurrentCultureIgnoreCase) >= 0;
-    }
-
-    private static IReadOnlyList<KeyValuePair<PrintPdfExportMode, string>> GetPdfModeOptions()
-    {
-        return
-        [
-            new KeyValuePair<PrintPdfExportMode, string>(
-                PrintPdfExportMode.SeparateFiles,
-                PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.SeparateFiles)),
-            new KeyValuePair<PrintPdfExportMode, string>(
-                PrintPdfExportMode.CombinedFile,
-                PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.CombinedFile)),
-            new KeyValuePair<PrintPdfExportMode, string>(
-                PrintPdfExportMode.SeparateAndCombined,
-                PrintPdfExportService.GetModeDisplayName(PrintPdfExportMode.SeparateAndCombined))
-        ];
     }
 
     private static IReadOnlyList<KeyValuePair<PrintPdfColorMode, string>> GetPdfColorModeOptions()

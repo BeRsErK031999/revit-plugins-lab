@@ -25,7 +25,6 @@ public sealed class PrintSettingsServiceTests
         Assert.False(settings.CombineDwg);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
-        Assert.False(settings.ExportSeparatePdfWithCombined);
         Assert.Equal(PrintPdfExportService.DefaultSettings.ColorMode, settings.PdfColorMode);
     }
 
@@ -50,7 +49,6 @@ public sealed class PrintSettingsServiceTests
             ExportDxf: true,
             ExportDwf: true,
             CombineDwg: true,
-            ExportSeparatePdfWithCombined: true,
             DwgSetupName: "  Office DWG  ",
             DxfSetupName: "  Office DXF  ",
             CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  "));
@@ -70,10 +68,13 @@ public sealed class PrintSettingsServiceTests
         Assert.True(reloadedSettings.ExportDxf);
         Assert.True(reloadedSettings.ExportDwf);
         Assert.True(reloadedSettings.CombineDwg);
-        Assert.True(reloadedSettings.ExportSeparatePdfWithCombined);
         Assert.Equal("Office DWG", reloadedSettings.DwgSetupName);
         Assert.Equal("Office DXF", reloadedSettings.DxfSetupName);
         Assert.Equal("{Номер проекта}_{Имя документа}", reloadedSettings.CombinedDwgFileNameMask);
+        Assert.DoesNotContain(
+            "exportSeparatePdfWithCombined",
+            File.ReadAllText(settingsPath),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -137,6 +138,27 @@ public sealed class PrintSettingsServiceTests
         PrintSettings settings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
 
         Assert.Equal("Legacy package.pdf", settings.CombinedPdfFileName);
+    }
+
+    [Fact]
+    public void Load_CollapsesLegacySeparateAndCombinedPdfToCombinedFlag()
+    {
+        using TempDirectory temp = new();
+        string settingsPath = Path.Combine(temp.Path, "print-settings.json");
+        File.WriteAllText(
+            settingsPath,
+            """
+            {
+              "exportPdf": true,
+              "combinePdf": true,
+              "exportSeparatePdfWithCombined": true
+            }
+            """);
+
+        PrintSettings settings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
+
+        Assert.True(settings.ExportPdf);
+        Assert.True(settings.CombinePdf);
     }
 
     [Fact]
