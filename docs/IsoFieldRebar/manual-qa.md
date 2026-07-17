@@ -150,6 +150,22 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
   updated once to the new ownership metadata, then becomes `Без изменений`.
 - Cancel the diff confirmation. Expected: no elements are added, changed or deleted.
 
+## P6.3 Completion Summary And Artifacts
+
+- Export the report before apply, then apply a valid diff. Expected: the green
+  `Последнее применение` block shows added/updated/deleted/unchanged counts,
+  host and local completion time; the earlier report is explicitly marked stale.
+- Click `Обновить итоговый отчёт`. Expected: the same JSON/CSV pair is updated
+  only after the click, schema is `1.2`, `applicationSummary.applied` is `true`,
+  counts match the UI and created/deleted element ids are present.
+- Verify the update action disappears for the current report and `Открыть отчёт`
+  opens the JSON. Delete or move the JSON and verify the open action becomes
+  disabled after refresh instead of failing silently.
+- Click `Открыть лог`. Expected: `%APPDATA%\TrueBIM\Logs\truebim.log` exists and
+  opens in the associated application.
+- Change the source, binding or rule preview. Expected: the previous completion
+  summary is hidden and cannot be mistaken for the new workflow state.
+
 ## Built-in PNG Recognition Smoke
 
 1. Clear `TRUEBIM_ISOFIELD_WORKER` before starting Revit.

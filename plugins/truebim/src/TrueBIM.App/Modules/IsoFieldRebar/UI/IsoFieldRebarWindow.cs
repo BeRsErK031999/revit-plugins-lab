@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Globalization;
 using System.Windows;
@@ -129,6 +130,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly TextBlock qualityStatusText;
     private readonly StackPanel qualityIssuesPanel;
     private readonly CheckBox qualityWarningsAcceptedInput;
+    private readonly Border completionSummaryPanel;
+    private readonly TextBlock completionSummaryText;
+    private readonly TextBlock completionArtifactsText;
+    private readonly Button saveCompletionReportButton;
+    private readonly Button openLastReportButton;
+    private readonly Button openLogButton;
     private string? selectedJsonPath;
     private IsoFieldSourceSet? selectedSourceSet;
     private string? selectedSourceSetManifestPath;
@@ -149,6 +156,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private string? currentChangePlanFingerprint;
     private IsoFieldRebarQualityResult? currentQualityResult;
     private bool areQualityWarningsAccepted;
+    private IsoFieldRebarReportSaveResult? lastReportSaveResult;
+    private IsoFieldRebarCreationResult? lastApplicationResult;
+    private DateTimeOffset? lastApplicationCompletedAtUtc;
+    private IsoFieldHostElement? lastApplicationHost;
+    private int applicationRevision;
+    private int lastReportApplicationRevision = -1;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -416,6 +429,27 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             164,
             "Сначала рассчитайте валидную инженерную раскладку.",
             (_, _) => ExportRebarReport());
+        completionSummaryText = CreateMutedText("Итог применения появится после успешной записи в модель.");
+        completionArtifactsText = CreateMutedText("Итоговый отчёт ещё не сохранён.");
+        saveCompletionReportButton = CreateActionButton(
+            "Сохранить итоговый отчёт",
+            TrueBimIcon.Export,
+            214,
+            "Сохранить JSON- и CSV-отчёты с итогом последнего применения.",
+            (_, _) => SaveCompletionReport());
+        openLastReportButton = CreateActionButton(
+            "Открыть отчёт",
+            TrueBimIcon.Open,
+            158,
+            "Последний отчёт ещё не сохранён.",
+            (_, _) => OpenLastReport());
+        openLogButton = CreateActionButton(
+            "Открыть лог",
+            TrueBimIcon.Logs,
+            142,
+            "Открыть локальный файл truebim.log.",
+            (_, _) => OpenIsoFieldLog());
+        completionSummaryPanel = CreateCompletionSummaryPanel();
         createTestRebarButton = CreateActionButton(
             "Применить изменения",
             TrueBimIcon.Apply,
@@ -898,9 +932,42 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         content.Children.Add(ruleStatusText);
         rebarCreationStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(rebarCreationStatusText);
+        content.Children.Add(completionSummaryPanel);
         content.Children.Add(CreateRebarReviewPanel());
 
         return CreatePanel(content);
+    }
+
+    private Border CreateCompletionSummaryPanel()
+    {
+        StackPanel content = new();
+        content.Children.Add(new TextBlock
+        {
+            Text = "Последнее применение",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            TextWrapping = TextWrapping.Wrap
+        });
+        completionSummaryText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        content.Children.Add(completionSummaryText);
+        completionArtifactsText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        content.Children.Add(completionArtifactsText);
+
+        WrapPanel actions = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
+        };
+        actions.Children.Add(saveCompletionReportButton);
+        openLastReportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        actions.Children.Add(openLastReportButton);
+        openLogButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        actions.Children.Add(openLogButton);
+        content.Children.Add(actions);
+
+        Border panel = TrueBimUi.CreateInfoBanner(content, TrueBimUiSeverity.Success);
+        panel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
+        panel.Visibility = Visibility.Collapsed;
+        return panel;
     }
 
     private UIElement CreateQualityCheckPanel()
@@ -1309,6 +1376,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         RebarRulePreviewResult preview,
         string statusMessage)
     {
+        ResetCompletionSummaryForWorkflowChange();
         currentRulePreview = preview;
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
@@ -2760,6 +2828,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void PreviewRebarRules()
     {
+        ResetCompletionSummaryForWorkflowChange();
         if (currentRecognitionResult is null || currentRecognitionResult.Polylines.Count == 0)
         {
             logger.Warning("IsoField rebar rules preview was requested without recognition polylines.");
@@ -2889,7 +2958,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         revitActions.Raise(CompareEngineeringChangesInRevitContext);
     }
 
-    private void ExportRebarReport()
+    private void ExportRebarReport(bool reuseLastPath = false)
     {
         if (currentRulePreview?.IsEngineeringPreview != true
             || currentQualityResult is null
@@ -2899,15 +2968,22 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             return;
         }
 
-        string? initialDirectory = ResolveReportInitialDirectory();
-        string suggestedFileName = string.Concat(
-            IsoFieldRebarReportService.DefaultFileNamePrefix,
-            "-",
-            DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture),
-            ".json");
-        string? jsonPath = filePicker.PickRebarReportSavePath(
-            initialDirectory,
-            suggestedFileName);
+        string? jsonPath = reuseLastPath
+            ? lastReportSaveResult?.JsonPath
+            : null;
+        if (string.IsNullOrWhiteSpace(jsonPath))
+        {
+            string? initialDirectory = ResolveReportInitialDirectory();
+            string suggestedFileName = string.Concat(
+                IsoFieldRebarReportService.DefaultFileNamePrefix,
+                "-",
+                DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture),
+                ".json");
+            jsonPath = filePicker.PickRebarReportSavePath(
+                initialDirectory,
+                suggestedFileName);
+        }
+
         if (string.IsNullOrWhiteSpace(jsonPath))
         {
             footerStatusText.Text = "Экспорт отчёта отменён.";
@@ -2935,8 +3011,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     currentChangePlan,
                     selectedSourceSetManifestPath,
                     currentQualityResult,
-                    areQualityWarningsAccepted));
+                    areQualityWarningsAccepted,
+                    lastApplicationResult,
+                    lastApplicationCompletedAtUtc));
             IsoFieldRebarReportSaveResult result = rebarReportService.Save(report, jsonPath!);
+            lastReportSaveResult = result;
+            lastReportApplicationRevision = applicationRevision;
+            UpdateCompletionSummary();
             string comparisonText = report.ChangeSummary.Compared
                 ? "diff включён"
                 : "diff ещё не выполнен";
@@ -2973,6 +3054,143 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             rebarCreationStatusText.Text = "Отчёт не сохранён: см. логи диагностики.";
             footerStatusText.Text = "Ошибка экспорта отчёта. Модель Revit не изменялась.";
         }
+    }
+
+    private void SaveCompletionReport()
+    {
+        ExportRebarReport(reuseLastPath: lastReportSaveResult is not null);
+    }
+
+    private void OpenLastReport()
+    {
+        string? reportPath = lastReportSaveResult?.JsonPath;
+        if (string.IsNullOrWhiteSpace(reportPath) || !File.Exists(reportPath))
+        {
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Последний JSON-отчёт не найден. Сохраните итоговый отчёт ещё раз.");
+            UpdateCompletionSummary();
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = reportPath,
+                UseShellExecute = true
+            });
+            logger.Info($"IsoField rebar report opened. Path='{reportPath}'.");
+        }
+        catch (Exception exception) when (exception is Win32Exception
+            or IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or ArgumentException)
+        {
+            logger.Error("Failed to open IsoField rebar report.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось открыть последний отчёт. Проверьте путь и приложение для JSON-файлов.");
+        }
+    }
+
+    private void OpenIsoFieldLog()
+    {
+        try
+        {
+            FileTrueBimLogger fileLogger = logger as FileTrueBimLogger
+                ?? new FileTrueBimLogger(new TrueBimLogPaths());
+            new TrueBimLogFileOpener(fileLogger).OpenLogFile();
+        }
+        catch (Exception exception) when (exception is Win32Exception
+            or IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or ArgumentException)
+        {
+            logger.Error("Failed to open TrueBIM log from IsoField rebar.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось открыть truebim.log. Проверьте доступ к папке %APPDATA%\\TrueBIM\\Logs.");
+        }
+    }
+
+    private void ShowCompletionSummary(
+        IsoFieldRebarCreationResult result,
+        IsoFieldHostElement hostElement)
+    {
+        lastApplicationResult = result;
+        lastApplicationCompletedAtUtc = DateTimeOffset.UtcNow;
+        lastApplicationHost = hostElement;
+        applicationRevision++;
+        completionSummaryPanel.Visibility = Visibility.Visible;
+        UpdateCompletionSummary();
+    }
+
+    private void UpdateCompletionSummary()
+    {
+        if (lastApplicationResult is null
+            || lastApplicationCompletedAtUtc is null
+            || lastApplicationHost is null)
+        {
+            completionSummaryPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        bool hasReportPath = !string.IsNullOrWhiteSpace(lastReportSaveResult?.JsonPath);
+        bool jsonReportExists = hasReportPath
+            && File.Exists(lastReportSaveResult!.JsonPath);
+        bool reportPairExists = jsonReportExists
+            && File.Exists(lastReportSaveResult!.CsvPath);
+        bool reportIsCurrent = reportPairExists
+            && lastReportApplicationRevision == applicationRevision;
+        bool canSaveReport = currentRulePreview?.IsEngineeringPreview == true
+            && currentQualityResult is not null
+            && currentRecognitionResult is not null
+            && selectedHostElement is not null;
+        string completedAt = lastApplicationCompletedAtUtc.Value
+            .ToLocalTime()
+            .ToString("g", CultureInfo.CurrentCulture);
+        completionSummaryText.Text =
+            $"Добавлено: {lastApplicationResult.AddedCount} · обновлено: {lastApplicationResult.UpdatedCount} · "
+            + $"удалено: {lastApplicationResult.DeletedCount} · без изменений: {lastApplicationResult.UnchangedCount}.";
+        string reportStatus = reportIsCurrent
+            ? $"Итоговый отчёт актуален: {Path.GetFileName(lastReportSaveResult!.JsonPath)}."
+            : hasReportPath && !reportPairExists
+                ? $"Файлы последнего отчёта неполны: {Path.GetFileName(lastReportSaveResult!.JsonPath)}. Сохраните их повторно."
+            : hasReportPath
+                ? $"Последний отчёт создан до этого применения: {Path.GetFileName(lastReportSaveResult!.JsonPath)}. Обновите его перед передачей."
+                : "Итоговый отчёт ещё не сохранён.";
+        completionArtifactsText.Text =
+            $"{lastApplicationHost.DisplayName} · {completedAt}. {reportStatus} Лог: truebim.log.";
+
+        saveCompletionReportButton.Visibility = reportIsCurrent
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        saveCompletionReportButton.IsEnabled = canSaveReport;
+        saveCompletionReportButton.Content = IconFactory.CreateButtonContent(
+            TrueBimIcon.Export,
+            hasReportPath ? "Обновить итоговый отчёт" : "Сохранить итоговый отчёт");
+        saveCompletionReportButton.ToolTip = !canSaveReport
+            ? "Итоговый JSON/CSV доступен для рассчитанной инженерной раскладки плиты. Лог можно открыть отдельно."
+            : hasReportPath
+                ? $"Обновить JSON и CSV по пути {lastReportSaveResult!.JsonPath}."
+                : "Сохранить JSON- и CSV-отчёты с итогом последнего применения.";
+        openLastReportButton.IsEnabled = jsonReportExists;
+        openLastReportButton.ToolTip = jsonReportExists
+            ? $"Открыть {lastReportSaveResult!.JsonPath}."
+            : "Последний JSON-отчёт не найден. Сначала сохраните итоговый отчёт.";
+        openLogButton.ToolTip = $"Открыть {new TrueBimLogPaths().CurrentLogFile}.";
+        completionSummaryPanel.Visibility = Visibility.Visible;
+    }
+
+    private void ResetCompletionSummaryForWorkflowChange()
+    {
+        lastApplicationResult = null;
+        lastApplicationCompletedAtUtc = null;
+        lastApplicationHost = null;
+        completionSummaryPanel.Visibility = Visibility.Collapsed;
     }
 
     private IReadOnlyList<IsoFieldRebarReportSourceInput> BuildReportSourceInputs()
@@ -3138,6 +3356,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
             rebarCreationStatusText.Text = result.Message;
             footerStatusText.Text = result.Message;
+            ShowCompletionSummary(result, context.HostElement);
             logger.Info(
                 $"IsoField rebar apply completed. Added={result.AddedCount}; Updated={result.UpdatedCount}; "
                 + $"Deleted={result.DeletedCount}; Unchanged={result.UnchangedCount}; HostId={context.HostElement.ElementId}.");
@@ -3715,6 +3934,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ClearRulePreview(string message)
     {
+        ResetCompletionSummaryForWorkflowChange();
         currentRulePreview = null;
         calculatedRulePreview = null;
         configuredRulePreview = null;

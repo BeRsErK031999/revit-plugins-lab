@@ -10,7 +10,7 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 
 public sealed class IsoFieldRebarReportService
 {
-    public const string SchemaVersion = "1.1";
+    public const string SchemaVersion = "1.2";
     public const string DefaultFileNamePrefix = "isofield-rebar-report";
     private const double SquareFeetToSquareMeters = 0.09290304;
 
@@ -87,6 +87,7 @@ public sealed class IsoFieldRebarReportService
             layerTotals,
             BuildQualityCheck(request),
             BuildChangeSummary(request.ChangePlan),
+            BuildApplicationSummary(request),
             diagnostics.Distinct(StringComparer.Ordinal).ToArray());
     }
 
@@ -153,6 +154,14 @@ public sealed class IsoFieldRebarReportService
         AppendCsvRow(builder, ["qualityWarningsAccepted", FormatBoolean(report.QualityCheck.WarningsAccepted)]);
         AppendCsvRow(builder, ["qualityFingerprint", report.QualityCheck.Fingerprint]);
         AppendCsvRow(builder, ["compared", FormatBoolean(report.ChangeSummary.Compared)]);
+        AppendCsvRow(builder, ["applicationApplied", FormatBoolean(report.ApplicationSummary.Applied)]);
+        AppendCsvRow(builder, ["applicationCompletedAtUtc", report.ApplicationSummary.CompletedAtUtc?.ToString("O", CultureInfo.InvariantCulture)]);
+        AppendCsvRow(builder, ["applicationAddedCount", FormatInteger(report.ApplicationSummary.AddedCount)]);
+        AppendCsvRow(builder, ["applicationUpdatedCount", FormatInteger(report.ApplicationSummary.UpdatedCount)]);
+        AppendCsvRow(builder, ["applicationDeletedCount", FormatInteger(report.ApplicationSummary.DeletedCount)]);
+        AppendCsvRow(builder, ["applicationUnchangedCount", FormatInteger(report.ApplicationSummary.UnchangedCount)]);
+        AppendCsvRow(builder, ["applicationCreatedElementIds", string.Join(",", report.ApplicationSummary.CreatedElementIds)]);
+        AppendCsvRow(builder, ["applicationDeletedElementIds", string.Join(",", report.ApplicationSummary.DeletedElementIds)]);
         AppendCsvRow(builder, Array.Empty<string?>());
 
         AppendCsvRow(builder, ["ИСТОЧНИКИ"]);
@@ -394,6 +403,33 @@ public sealed class IsoFieldRebarReportService
                     issue.MeasuredValue,
                     issue.LimitValue))
                 .ToArray());
+    }
+
+    private static IsoFieldRebarReportApplicationSummary BuildApplicationSummary(
+        IsoFieldRebarReportRequest request)
+    {
+        if (request.ApplicationResult is null)
+        {
+            return new IsoFieldRebarReportApplicationSummary(
+                false,
+                null,
+                0,
+                0,
+                0,
+                0,
+                Array.Empty<long>(),
+                Array.Empty<long>());
+        }
+
+        return new IsoFieldRebarReportApplicationSummary(
+            true,
+            request.ApplicationCompletedAtUtc,
+            request.ApplicationResult.AddedCount,
+            request.ApplicationResult.UpdatedCount,
+            request.ApplicationResult.DeletedCount,
+            request.ApplicationResult.UnchangedCount,
+            request.ApplicationResult.CreatedElementIds.OrderBy(id => id).ToArray(),
+            request.ApplicationResult.DeletedElementIds.OrderBy(id => id).ToArray());
     }
 
     private static IsoFieldRebarReportBinding BuildBinding(

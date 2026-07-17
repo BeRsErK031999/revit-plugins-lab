@@ -57,7 +57,7 @@ public sealed class IsoFieldRebarReportServiceTests
         Assert.EndsWith("result.json", result.JsonPath, StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith("result.csv", result.CsvPath, StringComparison.OrdinalIgnoreCase);
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(result.JsonPath, Encoding.UTF8));
-        Assert.Equal("1.1", document.RootElement.GetProperty("schemaVersion").GetString());
+        Assert.Equal("1.2", document.RootElement.GetProperty("schemaVersion").GetString());
         Assert.Equal("As1X", document.RootElement
             .GetProperty("zones")[0]
             .GetProperty("layerRole")
@@ -113,6 +113,45 @@ public sealed class IsoFieldRebarReportServiceTests
         Assert.Single(report.QualityCheck.Issues);
         Assert.Contains("покрывает 50%", report.Diagnostics.Single(message =>
             message.Contains("покрывает", StringComparison.Ordinal)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_RecordsApplicationCountsAndElementIds()
+    {
+        using TempDirectory temp = new();
+        string sourcePath = Path.Combine(temp.Path, "As1X.png");
+        File.WriteAllText(sourcePath, "iso source", Encoding.UTF8);
+        DateTimeOffset completedAt = DateTimeOffset.Parse(
+            "2026-07-17T11:30:00Z",
+            System.Globalization.CultureInfo.InvariantCulture);
+        IsoFieldRebarReportRequest request = CreateRequest(
+            sourcePath,
+            [CreateItem("zone-a", true, 12, 10)]) with
+        {
+            ApplicationResult = new IsoFieldRebarCreationResult(
+                AddedCount: 2,
+                UpdatedCount: 1,
+                DeletedCount: 3,
+                UnchangedCount: 4,
+                CreatedElementIds: [103, 101, 102],
+                DeletedElementIds: [202, 201],
+                Message: "Готово"),
+            ApplicationCompletedAtUtc = completedAt
+        };
+
+        IsoFieldRebarReport report = service.Build(request);
+
+        Assert.True(report.ApplicationSummary.Applied);
+        Assert.Equal(completedAt, report.ApplicationSummary.CompletedAtUtc);
+        Assert.Equal(2, report.ApplicationSummary.AddedCount);
+        Assert.Equal(1, report.ApplicationSummary.UpdatedCount);
+        Assert.Equal(3, report.ApplicationSummary.DeletedCount);
+        Assert.Equal(4, report.ApplicationSummary.UnchangedCount);
+        Assert.Equal([101, 102, 103], report.ApplicationSummary.CreatedElementIds);
+        Assert.Equal([201, 202], report.ApplicationSummary.DeletedElementIds);
+        string csv = service.FormatCsv(report);
+        Assert.Contains("applicationApplied;Да", csv, StringComparison.Ordinal);
+        Assert.Contains("applicationCreatedElementIds;101,102,103", csv, StringComparison.Ordinal);
     }
 
     [Fact]

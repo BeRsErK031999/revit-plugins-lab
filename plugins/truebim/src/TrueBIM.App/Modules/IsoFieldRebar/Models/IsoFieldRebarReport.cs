@@ -14,6 +14,7 @@ public sealed record IsoFieldRebarReport(
     IReadOnlyList<IsoFieldRebarReportLayerTotal> LayerTotals,
     IsoFieldRebarReportQualityCheck QualityCheck,
     IsoFieldRebarReportChangeSummary ChangeSummary,
+    IsoFieldRebarReportApplicationSummary ApplicationSummary,
     IReadOnlyList<string> Diagnostics);
 
 public sealed record IsoFieldRebarReportHost(
@@ -136,6 +137,16 @@ public sealed record IsoFieldRebarReportChangeSummary(
     int DeleteCount,
     int UnchangedCount);
 
+public sealed record IsoFieldRebarReportApplicationSummary(
+    bool Applied,
+    DateTimeOffset? CompletedAtUtc,
+    int AddedCount,
+    int UpdatedCount,
+    int DeletedCount,
+    int UnchangedCount,
+    IReadOnlyList<long> CreatedElementIds,
+    IReadOnlyList<long> DeletedElementIds);
+
 public sealed record IsoFieldRebarReportSourceInput(
     string FilePath,
     IsoFieldLayerRole? LayerRole = null,
@@ -160,6 +171,8 @@ public sealed record IsoFieldRebarReportRequest(
     string? SourceSetManifestPath = null,
     IsoFieldRebarQualityResult? QualityResult = null,
     bool QualityWarningsAccepted = false,
+    IsoFieldRebarCreationResult? ApplicationResult = null,
+    DateTimeOffset? ApplicationCompletedAtUtc = null,
     DateTimeOffset? GeneratedAtUtc = null);
 
 public sealed record IsoFieldRebarReportSaveResult(
