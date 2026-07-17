@@ -62,7 +62,7 @@ public sealed class IsoFieldRebarReviewService
                 FormatReinforcement(components, item.Rule.ReinforcementLabel),
                 FormatArea(item.Rule),
                 item.EstimatedBarCount,
-                confidenceByZone.TryGetValue(item.ZoneId, out double? confidence) ? confidence : null,
+                ResolveConfidence(item, confidenceByZone),
                 components
                     .Select(component => component.DiameterMillimeters)
                     .Distinct()
@@ -81,7 +81,8 @@ public sealed class IsoFieldRebarReviewService
                 changes.Count(change => change.Kind == IsoFieldRebarChangeKind.Unchanged),
                 diagnostics,
                 item.IsIncluded,
-                item.IsManuallyOverridden));
+                item.IsManuallyOverridden,
+                item.EffectiveSourceZoneIds));
         }
 
         if (changePlan is not null)
@@ -109,7 +110,8 @@ public sealed class IsoFieldRebarReviewService
         string search = filter.SearchText.Trim();
         return (string.IsNullOrWhiteSpace(search)
                 || Contains(row.ZoneId, search)
-                || Contains(row.ZoneName, search))
+                || Contains(row.ZoneName, search)
+                || row.EffectiveSourceZoneIds.Any(zoneId => Contains(zoneId, search)))
             && (!filter.LayerRole.HasValue || row.LayerRole == filter.LayerRole)
             && (!filter.Status.HasValue || row.Status == filter.Status)
             && (!filter.DiameterMillimeters.HasValue
@@ -160,6 +162,20 @@ public sealed class IsoFieldRebarReviewService
             IsoFieldRebarChangeKind.Unchanged => IsoFieldRebarReviewStatus.Unchanged,
             _ => IsoFieldRebarReviewStatus.Mixed
         };
+    }
+
+    private static double? ResolveConfidence(
+        RebarRulePreviewItem item,
+        IReadOnlyDictionary<string, double?> confidenceByZone)
+    {
+        double[] values = item.EffectiveSourceZoneIds
+            .Select(zoneId => confidenceByZone.TryGetValue(zoneId, out double? confidence)
+                ? confidence
+                : null)
+            .Where(confidence => confidence.HasValue)
+            .Select(confidence => confidence!.Value)
+            .ToArray();
+        return values.Length != item.EffectiveSourceZoneIds.Count ? null : values.Min();
     }
 
     private static void AppendObsoleteRows(

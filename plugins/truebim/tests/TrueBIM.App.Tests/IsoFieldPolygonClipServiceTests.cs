@@ -95,6 +95,44 @@ public sealed class IsoFieldPolygonClipServiceTests
         Assert.True(result.WasClipped);
     }
 
+    [Fact]
+    public void UnionRegions_JoinsTouchingRegionsWithoutConvexHullExpansion()
+    {
+        IsoFieldPolygonRegion left = CreateRegion(0, 0, 2, 4);
+        IsoFieldPolygonRegion right = CreateRegion(2, 1, 5, 3);
+
+        IsoFieldPolygonRegion result = Assert.Single(service.UnionRegions([left, right]));
+
+        Assert.Equal(14, result.AreaSquareFeet, 6);
+        Assert.Contains(result.OuterBoundaryFeet, point => point.X == 2 && point.Y == 4);
+        Assert.Contains(result.OuterBoundaryFeet, point => point.X == 2 && point.Y == 3);
+    }
+
+    [Fact]
+    public void UnionRegions_KeepsDisconnectedRegionsSeparate()
+    {
+        IReadOnlyList<IsoFieldPolygonRegion> result = service.UnionRegions(
+            [CreateRegion(0, 0, 2, 2), CreateRegion(3, 0, 5, 2)]);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(8, result.Sum(region => region.AreaSquareFeet), 6);
+    }
+
+    [Fact]
+    public void UnionRegions_PreservesHoleNotCoveredByAdjacentRegion()
+    {
+        IsoFieldPolygonRegion withHole = new(
+            CreateLoop(0, 0, 4, 4),
+            [CreateLoop(1, 1, 2, 2)],
+            15);
+
+        IsoFieldPolygonRegion result = Assert.Single(service.UnionRegions(
+            [withHole, CreateRegion(4, 0, 6, 4)]));
+
+        Assert.Single(result.HoleBoundariesFeet);
+        Assert.Equal(23, result.AreaSquareFeet, 6);
+    }
+
     private static IsoFieldPolyline CreateZone(
         string id,
         double minX,
@@ -124,5 +162,17 @@ public sealed class IsoFieldPolygonClipServiceTests
             new IsoFieldPoint(minX, maxY),
             new IsoFieldPoint(minX, minY)
         ];
+    }
+
+    private static IsoFieldPolygonRegion CreateRegion(
+        double minX,
+        double minY,
+        double maxX,
+        double maxY)
+    {
+        return new IsoFieldPolygonRegion(
+            CreateLoop(minX, minY, maxX, maxY),
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
+            (maxX - minX) * (maxY - minY));
     }
 }

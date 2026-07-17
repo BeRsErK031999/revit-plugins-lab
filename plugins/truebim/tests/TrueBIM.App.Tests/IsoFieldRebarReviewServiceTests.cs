@@ -125,6 +125,47 @@ public sealed class IsoFieldRebarReviewServiceTests
         Assert.Equal(2, row.DeleteCount);
     }
 
+    [Fact]
+    public void BuildRows_DescribesMergedZoneAndUsesMinimumSourceConfidence()
+    {
+        RebarRulePreviewResult source = CreatePreview();
+        RebarRulePreviewResult preview = source with
+        {
+            Items =
+            [
+                source.Items[0] with
+                {
+                    ZoneId = "zone-merge-1234",
+                    ZoneName = "Объединение 2 зон",
+                    SourceZoneIds = ["zone-a", "zone-b"]
+                }
+            ]
+        };
+        IsoFieldRecognitionResult recognition = new(
+            [
+                new IsoFieldPolyline(
+                    "zone-a",
+                    [new IsoFieldPoint(0, 0), new IsoFieldPoint(1, 0), new IsoFieldPoint(1, 1)],
+                    "Zone A",
+                    0.91,
+                    IsoFieldLayerRole.As1X),
+                new IsoFieldPolyline(
+                    "zone-b",
+                    [new IsoFieldPoint(1, 0), new IsoFieldPoint(2, 0), new IsoFieldPoint(2, 1)],
+                    "Zone B",
+                    0.74,
+                    IsoFieldLayerRole.As1X)
+            ],
+            Array.Empty<string>());
+
+        IsoFieldRebarReviewRow row = Assert.Single(service.BuildRows(preview, recognition));
+
+        Assert.True(row.IsMerged);
+        Assert.Equal("Объединены 2 зоны", row.SettingText);
+        Assert.Equal("74%", row.ConfidenceText);
+        Assert.True(service.MatchesFilter(row, new IsoFieldRebarReviewFilter("zone-b")));
+    }
+
     [Theory]
     [InlineData("zone", null, null, null, null, null, true)]
     [InlineData("missing", null, null, null, null, null, false)]

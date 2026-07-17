@@ -50,8 +50,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldRebarReviewService rebarReviewService = new();
     private readonly IsoFieldRebarChangePlanService rebarChangePlanService = new();
     private readonly IsoFieldRebarRuleOverrideService rebarRuleOverrideService = new();
+    private readonly IsoFieldRebarZoneMergeService rebarZoneMergeService = new();
     private readonly ObservableCollection<IsoFieldRebarReviewRow> rebarReviewRows = new();
     private readonly Dictionary<string, IsoFieldRebarRuleOverride> ruleOverrides = new(StringComparer.Ordinal);
+    private readonly List<IsoFieldRebarZoneMerge> zoneMerges = new();
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
     private readonly TextBlock selectedFileText;
@@ -73,6 +75,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly Button compareChangesButton;
     private readonly Button createTestRebarButton;
     private readonly Button editZoneRuleButton;
+    private readonly Button mergeZonesButton;
+    private readonly Button unmergeZonesButton;
     private readonly Button resetZoneRulesButton;
     private readonly Button saveSourceSetManifestButton;
     private readonly TextBlock workflowSummaryText;
@@ -134,6 +138,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private long selectedHostViewId;
     private RebarRulePreviewResult? currentRulePreview;
     private RebarRulePreviewResult? calculatedRulePreview;
+    private RebarRulePreviewResult? configuredRulePreview;
     private IsoFieldRebarChangePlan? currentChangePlan;
     private string? currentChangePlanFingerprint;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
@@ -324,12 +329,24 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             184,
             "Выберите расчётную строку зоны в таблице.",
             (_, _) => EditSelectedZoneRule());
+        mergeZonesButton = CreateActionButton(
+            "Объединить выбранные",
+            TrueBimIcon.JoinCut,
+            196,
+            "Выделите минимум две соседние расчётные зоны через Ctrl или Shift.",
+            (_, _) => MergeSelectedZones());
+        unmergeZonesButton = CreateActionButton(
+            "Разъединить",
+            TrueBimIcon.Close,
+            146,
+            "Выберите ранее объединённую строку.",
+            (_, _) => UnmergeSelectedZones());
         resetZoneRulesButton = CreateActionButton(
-            "Сбросить настройки",
+            "Сбросить всё",
             TrueBimIcon.Refresh,
-            174,
-            "Ручных настроек зон пока нет.",
-            (_, _) => ResetZoneRuleOverrides());
+            146,
+            "Ручных правил и объединений пока нет.",
+            (_, _) => ResetManualZoneConfiguration());
         ruleStatusText = CreateMutedText("Правила пока не рассчитаны.");
         rebarCreationStatusText = CreateMutedText("Раскладка армирования пока не создана.");
         previewStatusText = CreateMutedText("Контуры пока не загружены.");
@@ -860,7 +877,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
         content.Children.Add(TrueBimUi.CreateInfoBanner(
-            "Проверьте строки и счётчики до применения. Фильтры меняют только отображение и не исключают зоны из раскладки.",
+            "Проверьте строки и счётчики до применения. Для объединения выделите соседние зоны через Ctrl или Shift; фильтры меняют только отображение.",
             TrueBimUiSeverity.Info));
 
         WrapPanel filters = new()
@@ -880,6 +897,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
         zoneActions.Children.Add(editZoneRuleButton);
+        mergeZonesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        zoneActions.Children.Add(mergeZonesButton);
+        unmergeZonesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        zoneActions.Children.Add(unmergeZonesButton);
         resetZoneRulesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         zoneActions.Children.Add(resetZoneRulesButton);
         content.Children.Add(zoneActions);
@@ -891,7 +912,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Header = "Проверка зон и изменений",
             Content = content,
             IsExpanded = true,
-            ToolTip = "Таблица позволяет настроить или исключить расчётную зону, а после сравнения показывает добавление, обновление, удаление и неизменённые элементы."
+            ToolTip = "Таблица позволяет настроить, исключить или объединить расчётные зоны, а после сравнения показывает добавление, обновление, удаление и неизменённые элементы."
         };
     }
 
@@ -909,7 +930,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             IsReadOnly = true,
             MinHeight = 220,
             MaxHeight = 340,
-            SelectionMode = DataGridSelectionMode.Single,
+            SelectionMode = DataGridSelectionMode.Extended,
             SelectionUnit = DataGridSelectionUnit.FullRow,
             Style = TrueBimStyles.CreateDataGridStyle(),
             ItemsSource = rebarReviewRows
@@ -922,7 +943,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         grid.Columns.Add(CreateReviewColumn("Площадь", nameof(IsoFieldRebarReviewRow.AreaText), 132));
         grid.Columns.Add(CreateReviewColumn("Стержни", nameof(IsoFieldRebarReviewRow.EstimatedBarCountText), 78));
         grid.Columns.Add(CreateReviewColumn("Confidence", nameof(IsoFieldRebarReviewRow.ConfidenceText), 92));
-        grid.Columns.Add(CreateReviewColumn("Настройка", nameof(IsoFieldRebarReviewRow.SettingText), 136));
+        grid.Columns.Add(CreateReviewColumn("Настройка", nameof(IsoFieldRebarReviewRow.SettingText), 184));
         grid.Columns.Add(CreateReviewColumn("Изменения", nameof(IsoFieldRebarReviewRow.ChangeSummary), 190));
         return grid;
     }
@@ -1042,7 +1063,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         string overrideSummary = ruleOverrides.Count > 0
             ? $"Ручных настроек: {ruleOverrides.Count}. "
             : string.Empty;
-        reviewSummaryText.Text = $"Зон: {rebarReviewRows.Count}; показано: {visibleCount}. {overrideSummary}{planSummary}";
+        string mergeSummary = zoneMerges.Count > 0
+            ? $"Объединений: {zoneMerges.Count}. "
+            : string.Empty;
+        reviewSummaryText.Text = $"Зон: {rebarReviewRows.Count}; показано: {visibleCount}. {overrideSummary}{mergeSummary}{planSummary}";
     }
 
     private static void SetReviewNumberOptions(
@@ -1079,7 +1103,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void EditSelectedZoneRule()
     {
-        if (rebarReviewGrid.SelectedItem is not IsoFieldRebarReviewRow selectedRow
+        if (rebarReviewGrid.SelectedItems.Count != 1
+            || rebarReviewGrid.SelectedItem is not IsoFieldRebarReviewRow selectedRow
+            || selectedRow.IsMerged
             || calculatedRulePreview?.EngineeringSettings is null)
         {
             return;
@@ -1119,17 +1145,85 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         ApplyZoneRuleOverrides();
     }
 
-    private void ResetZoneRuleOverrides()
+    private void MergeSelectedZones()
     {
-        if (ruleOverrides.Count == 0)
+        if (configuredRulePreview is null)
+        {
+            return;
+        }
+
+        IsoFieldRebarReviewRow[] selectedRows = rebarReviewGrid.SelectedItems
+            .OfType<IsoFieldRebarReviewRow>()
+            .ToArray();
+        if (selectedRows.Length < 2)
+        {
+            return;
+        }
+
+        try
+        {
+            IsoFieldRebarZoneMerge merge = rebarZoneMergeService.CreateMerge(
+                configuredRulePreview,
+                selectedRows.Select(row => row.ZoneId).ToArray());
+            IsoFieldRebarZoneMerge[] candidateMerges = zoneMerges
+                .Concat([merge])
+                .ToArray();
+            RebarRulePreviewResult mergedPreview = rebarZoneMergeService.Apply(
+                configuredRulePreview,
+                candidateMerges);
+            zoneMerges.Add(merge);
+            ApplyManualPreview(
+                mergedPreview,
+                $"Объединено зон: {merge.SourceZoneIds.Count}. Проверьте непрерывную раскладку и выполните сравнение заново.");
+            logger.Info($"IsoField engineering zones merged. MergeId={merge.MergedZoneId}; Sources={string.Join(",", merge.SourceZoneIds)}; MergeGroups={zoneMerges.Count}.");
+        }
+        catch (InvalidOperationException exception)
+        {
+            rebarCreationStatusText.Text = exception.Message;
+            footerStatusText.Text = "Зоны не объединены. Модель Revit не изменялась.";
+            TaskDialog.Show("Армирование по изополям", exception.Message);
+            logger.Warning($"IsoField engineering zone merge rejected. {exception.Message}");
+        }
+    }
+
+    private void UnmergeSelectedZones()
+    {
+        if (configuredRulePreview is null || zoneMerges.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> selectedMergeIds = rebarReviewGrid.SelectedItems
+            .OfType<IsoFieldRebarReviewRow>()
+            .Where(row => row.IsMerged)
+            .Select(row => row.ZoneId)
+            .ToHashSet(StringComparer.Ordinal);
+        int removed = zoneMerges.RemoveAll(merge => selectedMergeIds.Contains(merge.MergedZoneId));
+        if (removed == 0)
+        {
+            return;
+        }
+
+        RebarRulePreviewResult preview = rebarZoneMergeService.Apply(
+            configuredRulePreview,
+            zoneMerges);
+        ApplyManualPreview(
+            preview,
+            $"Снято объединений: {removed}. Исходные зоны и их stable id восстановлены в preview.");
+        logger.Info($"IsoField engineering zone merges removed. Removed={removed}; Remaining={zoneMerges.Count}.");
+    }
+
+    private void ResetManualZoneConfiguration()
+    {
+        if (ruleOverrides.Count == 0 && zoneMerges.Count == 0)
         {
             return;
         }
 
         TaskDialog dialog = new("Армирование по изополям")
         {
-            MainInstruction = "Сбросить ручные настройки зон?",
-            MainContent = $"Будут восстановлены расчётные правила для {ruleOverrides.Count} зон. Сравнение с моделью потребуется выполнить заново.",
+            MainInstruction = "Сбросить все ручные изменения раскладки?",
+            MainContent = $"Будут удалены настройки правил: {ruleOverrides.Count}; объединения: {zoneMerges.Count}. Исходные расчётные зоны восстановятся, сравнение с моделью потребуется выполнить заново.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };
@@ -1139,6 +1233,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         ruleOverrides.Clear();
+        zoneMerges.Clear();
         ApplyZoneRuleOverrides();
     }
 
@@ -1149,14 +1244,26 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             return;
         }
 
-        currentRulePreview = rebarRuleOverrideService.Apply(calculatedRulePreview, ruleOverrides);
+        configuredRulePreview = rebarRuleOverrideService.Apply(calculatedRulePreview, ruleOverrides);
+        currentRulePreview = rebarZoneMergeService.Apply(configuredRulePreview, zoneMerges);
+        ApplyManualPreview(
+            currentRulePreview,
+            currentRulePreview.CanCreateRebar
+                ? $"Ручные правила: {ruleOverrides.Count}; объединения: {zoneMerges.Count}. Выполните сравнение с моделью заново."
+                : "Ручная конфигурация содержит ошибки. Исправьте строки, выделенные в таблице.");
+        logger.Info($"IsoField manual zone configuration applied. Overrides={ruleOverrides.Count}; MergeGroups={zoneMerges.Count}; ActiveZones={currentRulePreview.ActiveItems.Count}; EstimatedBars={currentRulePreview.EstimatedBarCount}; CanCreate={currentRulePreview.CanCreateRebar}.");
+    }
+
+    private void ApplyManualPreview(
+        RebarRulePreviewResult preview,
+        string statusMessage)
+    {
+        currentRulePreview = preview;
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
         ruleStatusText.Text = FormatRulePreview(currentRulePreview);
-        rebarCreationStatusText.Text = currentRulePreview.CanCreateRebar
-            ? $"Ручные настройки применены: {ruleOverrides.Count}. Нажмите «Сравнить с моделью» и проверьте обновлённый diff."
-            : "Ручные настройки применены, но раскладка содержит ошибки. Исправьте зоны, выделенные в таблице.";
-        footerStatusText.Text = "Раскладка пересчитана после ручных настроек. Модель Revit не изменялась.";
+        rebarCreationStatusText.Text = statusMessage;
+        footerStatusText.Text = "Раскладка пересчитана после ручных изменений. Модель Revit не изменялась.";
         if (currentRecognitionResult is not null && currentSlabBinding is not null)
         {
             RenderPreview(currentRecognitionResult);
@@ -1164,13 +1271,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         RefreshRebarReviewRows();
         RefreshWorkflowState();
-        logger.Info($"IsoField zone rule overrides applied. Overrides={ruleOverrides.Count}; ActiveZones={currentRulePreview.ActiveItems.Count}; EstimatedBars={currentRulePreview.EstimatedBarCount}; CanCreate={currentRulePreview.CanCreateRebar}.");
     }
 
     private void RefreshZoneRuleActions()
     {
-        IsoFieldRebarReviewRow? selectedRow = rebarReviewGrid?.SelectedItem as IsoFieldRebarReviewRow;
+        IsoFieldRebarReviewRow[] selectedRows = rebarReviewGrid?.SelectedItems
+            .OfType<IsoFieldRebarReviewRow>()
+            .ToArray()
+            ?? Array.Empty<IsoFieldRebarReviewRow>();
+        IsoFieldRebarReviewRow? selectedRow = selectedRows.Length == 1 ? selectedRows[0] : null;
         bool canEdit = selectedRow is not null
+            && !selectedRow.IsMerged
             && calculatedRulePreview?.EngineeringSettings is not null
             && calculatedRulePreview.Items.Any(item =>
                 string.Equals(item.ZoneId, selectedRow.ZoneId, StringComparison.Ordinal)
@@ -1178,11 +1289,35 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         editZoneRuleButton.IsEnabled = canEdit;
         editZoneRuleButton.ToolTip = canEdit
             ? "Изменить сочетание диаметр/шаг или исключить выбранную зону до сравнения с моделью."
-            : "Выберите расчётную строку зоны. Ранее созданные зоны только на удаление не редактируются.";
-        resetZoneRulesButton.IsEnabled = ruleOverrides.Count > 0;
+            : selectedRow?.IsMerged == true
+                ? "Сначала разъедините строку, затем настройте исходные зоны по отдельности."
+                : "Выберите одну расчётную строку зоны. Ранее созданные зоны только на удаление не редактируются.";
+
+        bool canMerge = selectedRows.Length >= 2
+            && configuredRulePreview is not null
+            && selectedRows.All(row => !row.IsMerged
+                && configuredRulePreview.Items.Any(item =>
+                    string.Equals(item.ZoneId, row.ZoneId, StringComparison.Ordinal)));
+        mergeZonesButton.IsEnabled = canMerge;
+        mergeZonesButton.ToolTip = canMerge
+            ? $"Объединить выбранные зоны: {selectedRows.Length}. Допустимы одинаковые правила и единый непрерывный регион."
+            : "Выделите минимум две исходные расчётные зоны через Ctrl или Shift. Объединённые и устаревшие строки не подходят.";
+
+        bool canUnmerge = selectedRows.Length > 0
+            && selectedRows.All(row => row.IsMerged
+                && zoneMerges.Any(merge => string.Equals(
+                    merge.MergedZoneId,
+                    row.ZoneId,
+                    StringComparison.Ordinal)));
+        unmergeZonesButton.IsEnabled = canUnmerge;
+        unmergeZonesButton.ToolTip = canUnmerge
+            ? $"Восстановить исходные зоны для объединений: {selectedRows.Length}."
+            : "Выберите одну или несколько объединённых строк.";
+
+        resetZoneRulesButton.IsEnabled = ruleOverrides.Count > 0 || zoneMerges.Count > 0;
         resetZoneRulesButton.ToolTip = resetZoneRulesButton.IsEnabled
-            ? $"Сбросить ручные настройки всех зон: {ruleOverrides.Count}."
-            : "Ручных настроек зон пока нет.";
+            ? $"Сбросить ручные правила: {ruleOverrides.Count}; объединения: {zoneMerges.Count}."
+            : "Ручных правил и объединений пока нет.";
     }
 
     private IReadOnlyList<string> ResolveReinforcementOptions(RebarRulePreviewItem item)
@@ -2485,7 +2620,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             currentRulePreview = null;
             calculatedRulePreview = null;
+            configuredRulePreview = null;
             ruleOverrides.Clear();
+            zoneMerges.Clear();
             currentChangePlan = null;
             currentChangePlanFingerprint = null;
             RefreshRebarReviewRows();
@@ -2506,7 +2643,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             engineeringSettings);
         currentRulePreview = preview;
         calculatedRulePreview = preview;
+        configuredRulePreview = preview;
         ruleOverrides.Clear();
+        zoneMerges.Clear();
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
         RefreshRebarReviewRows();
@@ -3260,7 +3399,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         currentRulePreview = null;
         calculatedRulePreview = null;
+        configuredRulePreview = null;
         ruleOverrides.Clear();
+        zoneMerges.Clear();
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
         RefreshRebarReviewRows();

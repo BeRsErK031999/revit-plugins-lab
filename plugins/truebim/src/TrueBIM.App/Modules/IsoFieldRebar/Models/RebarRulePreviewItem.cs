@@ -9,7 +9,8 @@ public sealed record RebarRulePreviewItem(
     int EstimatedBarCount = 0,
     IReadOnlyList<string>? BaseDiagnostics = null,
     bool IsIncluded = true,
-    bool IsManuallyOverridden = false)
+    bool IsManuallyOverridden = false,
+    IReadOnlyList<string>? SourceZoneIds = null)
 {
     public bool HasValidRule => Diagnostics.Count == 0;
 
@@ -20,6 +21,11 @@ public sealed record RebarRulePreviewItem(
 
     public IReadOnlyList<string> EffectiveBaseDiagnostics =>
         BaseDiagnostics ?? Diagnostics;
+
+    public IReadOnlyList<string> EffectiveSourceZoneIds =>
+        SourceZoneIds ?? [ZoneId];
+
+    public bool IsMerged => EffectiveSourceZoneIds.Count > 1;
 
     public string DisplayName => !IsIncluded
         ? $"{ZoneName}: исключена из раскладки"

@@ -421,9 +421,13 @@ public sealed class IsoFieldRebarCreationService
 
         if (parameter is not null && !parameter.IsReadOnly)
         {
+            string sourceMetadata = previewItem.IsMerged
+                ? $"sources={string.Join(",", previewItem.EffectiveSourceZoneIds)}; "
+                : string.Empty;
             string comment = placement.Component is null
                 ? $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix} Test: {previewItem.ZoneName}; {previewItem.Rule.BarTypeName}; spacing {previewItem.Rule.SpacingMillimeters.ToString("0", CultureInfo.InvariantCulture)} mm"
                 : $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix}; id={placement.StableId}; sig={signature}; host={hostElementId}; zone={previewItem.ZoneId}; "
+                    + sourceMetadata
                     + $"layer={previewItem.Rule.LayerRole}; face={previewItem.Rule.Face}; "
                     + $"{placement.Component.DisplayName}";
             bool marked = parameter.Set(comment);

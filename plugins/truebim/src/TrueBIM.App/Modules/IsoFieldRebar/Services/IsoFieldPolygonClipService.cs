@@ -52,6 +52,43 @@ public sealed class IsoFieldPolygonClipService
             clippedArea);
     }
 
+    public IReadOnlyList<IsoFieldPolygonRegion> UnionRegions(
+        IReadOnlyList<IsoFieldPolygonRegion> regions)
+    {
+        if (regions is null)
+        {
+            throw new ArgumentNullException(nameof(regions));
+        }
+
+        if (regions.Count == 0)
+        {
+            return Array.Empty<IsoFieldPolygonRegion>();
+        }
+
+        PathGeometry combined = CreateGeometry(ToLoops(regions[0]));
+        foreach (IsoFieldPolygonRegion region in regions.Skip(1))
+        {
+            combined = Geometry.Combine(
+                combined,
+                CreateGeometry(ToLoops(region)),
+                GeometryCombineMode.Union,
+                transform: null,
+                GeometryToleranceFeet,
+                ToleranceType.Absolute);
+        }
+
+        PathGeometry flattened = combined.GetFlattenedPathGeometry(
+            GeometryToleranceFeet,
+            ToleranceType.Absolute);
+        return BuildRegions(ExtractLoops(flattened));
+    }
+
+    private static IReadOnlyList<IReadOnlyList<IsoFieldPoint>> ToLoops(
+        IsoFieldPolygonRegion region)
+    {
+        return [region.OuterBoundaryFeet, .. region.HoleBoundariesFeet];
+    }
+
     private static PathGeometry CreateGeometry(
         IReadOnlyList<IReadOnlyList<IsoFieldPoint>> loops)
     {

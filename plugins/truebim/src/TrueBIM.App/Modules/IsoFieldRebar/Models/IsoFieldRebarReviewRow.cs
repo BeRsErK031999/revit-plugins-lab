@@ -32,8 +32,13 @@ public sealed record IsoFieldRebarReviewRow(
     int UnchangedCount,
     IReadOnlyList<string> Diagnostics,
     bool IsIncluded = true,
-    bool IsManuallyOverridden = false)
+    bool IsManuallyOverridden = false,
+    IReadOnlyList<string>? SourceZoneIds = null)
 {
+    public IReadOnlyList<string> EffectiveSourceZoneIds => SourceZoneIds ?? [ZoneId];
+
+    public bool IsMerged => EffectiveSourceZoneIds.Count > 1;
+
     public string LayerText => LayerRole?.ToString() ?? "—";
 
     public string StatusText => Status switch
@@ -59,6 +64,10 @@ public sealed record IsoFieldRebarReviewRow(
 
     public string SettingText => !IsIncluded
         ? "Исключена вручную"
+        : IsMerged && IsManuallyOverridden
+            ? $"{FormatZoneCount(EffectiveSourceZoneIds.Count)} · правило изменено"
+        : IsMerged
+            ? $"Объединены {FormatZoneCount(EffectiveSourceZoneIds.Count)}"
         : IsManuallyOverridden
             ? "Правило изменено"
             : "Расчётное правило";
@@ -72,6 +81,21 @@ public sealed record IsoFieldRebarReviewRow(
         IsoFieldRebarReviewStatus.Excluded => "Не войдёт в раскладку",
         _ => $"+{AddCount} · ~{UpdateCount} · −{DeleteCount} · ={UnchangedCount}"
     };
+
+    private static string FormatZoneCount(int count)
+    {
+        int modulo100 = count % 100;
+        int modulo10 = count % 10;
+        string suffix = modulo100 is >= 11 and <= 14
+            ? "зон"
+            : modulo10 switch
+            {
+                1 => "зона",
+                2 or 3 or 4 => "зоны",
+                _ => "зон"
+            };
+        return $"{count} {suffix}";
+    }
 }
 
 public sealed record IsoFieldRebarReviewFilter(
