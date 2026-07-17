@@ -6,8 +6,6 @@ namespace TrueBIM.App.Modules.Print.Services;
 
 public sealed class PrintSheetCollectorService
 {
-    private const double MillimetersPerFoot = 304.8;
-
     public IReadOnlyList<PrintSheetInfo> Collect(Document document)
     {
         return Collect(document, CreateDefaultSourceId(document), ResolveSourceName(document), PrintSheetSourceKind.OpenDocument);
@@ -66,9 +64,9 @@ public sealed class PrintSheetCollectorService
                     ResolveGroupName(sheetParameters),
                     sheet.SheetNumber,
                     sheet.Name,
-                    ResolveSheetFormat(sheet),
+                    sheet.IsPlaceholder ? "Заглушка" : "—",
                     sheet.IsPlaceholder,
-                    !sheet.IsPlaceholder && sheet.CanBePrinted,
+                    !sheet.IsPlaceholder,
                     sheetParameters);
             })
             .OrderBy(sheet => sheet.GroupName, StringComparer.CurrentCultureIgnoreCase)
@@ -98,31 +96,6 @@ public sealed class PrintSheetCollectorService
         return string.IsNullOrWhiteSpace(document.Title)
             ? "Активный документ"
             : document.Title;
-    }
-
-    private static string ResolveSheetFormat(ViewSheet sheet)
-    {
-        if (sheet.IsPlaceholder)
-        {
-            return "Заглушка";
-        }
-
-        try
-        {
-            BoundingBoxUV outline = sheet.Outline;
-            double width = Math.Abs(outline.Max.U - outline.Min.U) * MillimetersPerFoot;
-            double height = Math.Abs(outline.Max.V - outline.Min.V) * MillimetersPerFoot;
-            if (width <= 0 || height <= 0)
-            {
-                return "Не определен";
-            }
-
-            return $"{Math.Round(width)} x {Math.Round(height)} мм";
-        }
-        catch (Exception)
-        {
-            return "Не определен";
-        }
     }
 
     private static IReadOnlyDictionary<string, string> CollectSheetParameters(

@@ -11,6 +11,7 @@ using System.Windows.Media;
 using Microsoft.Win32;
 using TrueBIM.App.Modules.Print.Services;
 using TrueBIM.App.Modules.Print.Models;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
@@ -28,6 +29,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly Dictionary<string, PrintSheetSource> sheetSourcesById;
     private readonly Dictionary<string, List<PrintSheetInfo>> sourceSheetsById;
     private readonly HashSet<string> loadedSourceIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> loadedSheetParameterNamesBySourceId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PrintFileNameContext> fileNameContextsBySourceId;
     private readonly PrintSheetSelectionState sheetSelectionState;
     private readonly RevitDocument document;
@@ -178,6 +180,12 @@ public sealed class PrintWindow : TrueBimWindow
         this.collectedFileNameMask = string.IsNullOrWhiteSpace(collectedFileNameMask)
             ? initialSettings.FileNameMask
             : collectedFileNameMask!;
+        IReadOnlyCollection<string> collectedSheetParameterNames = fileNameTemplateService.GetSheetParameterNames(this.collectedFileNameMask);
+        foreach (string sourceId in loadedSourceIds)
+        {
+            loadedSheetParameterNamesBySourceId[sourceId] = collectedSheetParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+        }
+
         IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(this.collectedFileNameMask);
         fileNameContext = CreateFileNameContext(document, projectParameterNames);
         fileNameContextsBySourceId = new Dictionary<string, PrintFileNameContext>(StringComparer.Ordinal);
@@ -1093,7 +1101,12 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(fileNameMaskInput.Text);
         foreach (PrintSheetSource source in sourcesToLoad)
         {
-            if (!reloadSources && loadedSourceIds.Contains(source.SourceId))
+            bool sourceIsLoaded = loadedSourceIds.Contains(source.SourceId);
+            bool requiredParametersAreLoaded = loadedSheetParameterNamesBySourceId.TryGetValue(
+                    source.SourceId,
+                    out HashSet<string>? loadedParameterNames)
+                && sheetParameterNames.All(loadedParameterNames.Contains);
+            if (!reloadSources && sourceIsLoaded && requiredParametersAreLoaded)
             {
                 continue;
             }
@@ -1105,6 +1118,7 @@ public sealed class PrintWindow : TrueBimWindow
                 source.SourceKind,
                 sheetParameterNames);
             sourceSheetsById[source.SourceId] = sourceSheets.ToList();
+            loadedSheetParameterNamesBySourceId[source.SourceId] = sheetParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
             fileNameContextsBySourceId[source.SourceId] = ReferenceEquals(source.Document, document)
                 ? CreateFileNameContext(document, projectParameterNames)
                 : CreateFileNameContext(source.Document, projectParameterNames);
@@ -1323,6 +1337,49 @@ public sealed class PrintWindow : TrueBimWindow
         revitActions.Raise(StartExportInRevitContext);
     }
 
+    private PrintabilityValidationResult ValidateSelectedSheetPrintability(
+        IReadOnlyList<PrintSheetRow> selectedRows)
+    {
+        Stopwatch timer = Stopwatch.StartNew();
+        List<PrintSheetRow> printableRows = new();
+        List<PrintSheetRow> rejectedRows = new();
+        foreach (PrintSheetRow row in selectedRows)
+        {
+            try
+            {
+                if (!sheetSourcesById.TryGetValue(row.Sheet.SourceId, out PrintSheetSource? source))
+                {
+                    row.SetPrintability(canBePrinted: false, "Источник недоступен");
+                    rejectedRows.Add(row);
+                    continue;
+                }
+
+                Autodesk.Revit.DB.ViewSheet? sheet = source.Document.GetElement(
+                    RevitElementIds.Create(row.Sheet.ElementId)) as Autodesk.Revit.DB.ViewSheet;
+                bool canBePrinted = sheet is not null && !sheet.IsPlaceholder && sheet.CanBePrinted;
+                row.SetPrintability(canBePrinted, canBePrinted ? string.Empty : "Не печатается");
+                if (canBePrinted)
+                {
+                    printableRows.Add(row);
+                }
+                else
+                {
+                    rejectedRows.Add(row);
+                }
+            }
+            catch (Exception exception)
+            {
+                row.SetPrintability(canBePrinted: false, "Ошибка проверки");
+                rejectedRows.Add(row);
+                logger.Error($"Failed to validate printability for sheet element id {row.Sheet.ElementId}.", exception);
+            }
+        }
+
+        timer.Stop();
+        logger.Info($"Validated printability for {selectedRows.Count} selected sheets in {timer.ElapsedMilliseconds} ms. Printable: {printableRows.Count}; rejected: {rejectedRows.Count}.");
+        return new PrintabilityValidationResult(printableRows, rejectedRows);
+    }
+
     private void StartExportInRevitContext()
     {
         SavePrintSettings();
@@ -1366,13 +1423,26 @@ public sealed class PrintWindow : TrueBimWindow
             }
         }
 
+        PrintabilityValidationResult printability = ValidateSelectedSheetPrintability(selectedRows);
+        selectedRows = printability.PrintableRows.ToList();
+        if (selectedRows.Count == 0)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show(
+                WindowTitle,
+                "Ни один из выбранных листов не прошел проверку печати. Проверьте статус листов в таблице.");
+            UpdateExportState();
+            return;
+        }
+
         logger.Info($"Print export requested for document '{document.Title}' with {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. DWG profile: {(dwgProfile is null ? "not selected" : DwgExportOptionsFactory.GetProfileSummary(dwgProfile))}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}.");
         Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row,
             _ => new List<string>());
         int exportedCount = 0;
-        int failureCount = 0;
-        List<string> failureMessages = new();
+        int failureCount = printability.RejectedRows.Count;
+        List<string> failureMessages = printability.RejectedRows
+            .Select(row => $"Лист {row.SheetNumber}: не прошел проверку печати")
+            .ToList();
         foreach (PrintSheetRow row in selectedRows)
         {
             row.ExportStatus = "Экспорт: в очереди";
@@ -1868,7 +1938,7 @@ public sealed class PrintWindow : TrueBimWindow
         statusText.Text = $"Пресет применен: {normalizedPreset.Name}.";
         if (requestSheetReload)
         {
-            RequestReloadSheets();
+            RequestLoadSheets();
         }
     }
 
@@ -2236,6 +2306,8 @@ public sealed class PrintWindow : TrueBimWindow
     private sealed class PrintSheetRow : INotifyPropertyChanged
     {
         private bool isSelected;
+        private bool canBePrinted;
+        private bool isPrintabilityVerified;
         private string fileNamePreview = string.Empty;
         private string exportStatus = string.Empty;
         private bool isFileNameDuplicate;
@@ -2246,7 +2318,9 @@ public sealed class PrintWindow : TrueBimWindow
         public PrintSheetRow(PrintSheetInfo sheet, bool isSelected)
         {
             Sheet = sheet;
-            this.isSelected = sheet.CanBePrinted && isSelected;
+            canBePrinted = sheet.CanBePrinted;
+            isPrintabilityVerified = sheet.IsPlaceholder || !sheet.CanBePrinted;
+            this.isSelected = canBePrinted && isSelected;
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -2285,7 +2359,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         public string SheetFormat => Sheet.SheetFormat;
 
-        public bool CanBePrinted => Sheet.CanBePrinted;
+        public bool CanBePrinted => canBePrinted;
 
         public string FileNamePreview
         {
@@ -2410,10 +2484,29 @@ public sealed class PrintWindow : TrueBimWindow
                     return ExportStatus;
                 }
 
-                return Sheet.CanBePrinted
-                    ? "Готов"
-                    : "Не печатается";
+                if (!isPrintabilityVerified)
+                {
+                    return "Проверка при запуске";
+                }
+
+                return CanBePrinted ? "Готов" : "Не печатается";
             }
+        }
+
+        public void SetPrintability(bool canBePrinted, string status)
+        {
+            bool selectionChanged = !canBePrinted && isSelected;
+            this.canBePrinted = canBePrinted;
+            isPrintabilityVerified = true;
+            if (selectionChanged)
+            {
+                isSelected = false;
+                NotifyChanged(nameof(IsSelected));
+            }
+
+            ExportStatus = status;
+            NotifyChanged(nameof(CanBePrinted));
+            NotifyChanged(nameof(Status));
         }
 
         public void UpdateFileNamePreview(PrintFileNamePreview preview)
@@ -2428,6 +2521,10 @@ public sealed class PrintWindow : TrueBimWindow
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
+
+    private sealed record PrintabilityValidationResult(
+        IReadOnlyList<PrintSheetRow> PrintableRows,
+        IReadOnlyList<PrintSheetRow> RejectedRows);
 
     private sealed record PrintSheetSourceFilterOption(string? SourceId, string DisplayName, bool IncludeLinked);
 

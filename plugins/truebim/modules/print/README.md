@@ -2,7 +2,7 @@
 
 Модуль пакетной печати и экспорта листов Revit в PDF, DWG и DXF.
 
-Статус: первый рабочий релиз готов как release candidate для Revit 2022 и Revit 2025. Модуль установлен через manifest `truebim.print`, доступен из TrueBIM launcher и панели `БИМ`, проходит Release build/test и локальный preflight deploy для целевых версий.
+Статус: первый рабочий релиз остается release candidate для Revit 2022 и Revit 2025. Пользовательские замечания, подтверждение по логу и этапы исправлений собраны в [`docs/print-feedback-roadmap.md`](../../docs/print-feedback-roadmap.md); первый этап оптимизации выполнен в коде и ожидает ручной проверки в Revit.
 
 ## Что сделано
 
