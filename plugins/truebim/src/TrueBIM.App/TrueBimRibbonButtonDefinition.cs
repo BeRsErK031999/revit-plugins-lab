@@ -40,6 +40,7 @@ public static class TrueBimRibbon
     public const string ParametersPanelName = "Параметры";
     public const string AdministrationPanelName = "Администрирование";
     public const string HelpPanelName = "Помощь";
+    public const string ArPanelName = "АР";
     public const string KrPanelName = "КР";
     public const string EomPanelName = "ЭОМ";
     public const string SsPanelName = "СС";
@@ -318,6 +319,7 @@ public static class TrueBimRibbon
         GeometryPanelName,
         ParametersPanelName,
         AdministrationPanelName,
+        ArPanelName,
         KrPanelName,
         EomPanelName,
         HelpPanelName
@@ -356,6 +358,14 @@ public static class TrueBimRibbon
             TrueBimIcon.ScheduleImport,
             "Распознаёт таблицы из PDF/DWG и записывает их в выбранную спецификацию Revit.",
             "Выберите PDF или DWG, проверьте предпросмотр и укажите спецификацию. TrueBIM заменит её редактируемую табличную секцию, сохранив сетку, размеры и текст исходника."),
+        new(
+            ArPanelName,
+            "TrueBIM_FinishSchedule",
+            "Ведомость\nотделки",
+            $"{CommandNamespace}.{nameof(FinishScheduleCommand)}",
+            TrueBimIcon.FinishSchedule,
+            "Открывает подготовку расчёта и формирования ведомости отделки помещений.",
+            "Первый этап: безопасный каркас без изменения модели. Следующие этапы добавят выбор параметров, геометрический анализ отделки, группировку помещений и обновление спецификации."),
         new(
             KrPanelName,
             "TrueBIM_IsoFieldRebar",
