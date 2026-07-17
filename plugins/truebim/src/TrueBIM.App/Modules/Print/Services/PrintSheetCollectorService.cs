@@ -145,9 +145,7 @@ public sealed class PrintSheetCollectorService
         }
 
         List<PrintSheetInfo> orderedSheets = sheets
-            .OrderBy(sheet => sheet.GroupName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(sheet => sheet.SheetNumber, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(sheet => sheet.SheetName, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(sheet => sheet, PrintSheetComparer.Ascending)
             .ToList();
         PrintParameterCatalog catalog = new(
             OrderParameterNames(availableSheetParameterNames),

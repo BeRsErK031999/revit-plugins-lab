@@ -158,6 +158,7 @@ public sealed class PrintWindow : TrueBimWindow
     private bool isApplyingDwgProfileToSetupInput;
     private bool isApplyingPreset;
     private bool isBatchUpdatingSelection;
+    private bool isSheetNumberSortDescending;
     private bool reloadInitialSourcesForPreset;
 
     private const string WindowTitle = "Печать";
@@ -416,6 +417,7 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.SelectionMode = DataGridSelectionMode.Extended;
         sheetGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
         sheetGrid.CanUserSortColumns = true;
+        sheetGrid.Sorting += OnSheetGridSorting;
         sheetGrid.KeyDown += OnSheetGridKeyDown;
         sheetGrid.GroupStyle.Add(CreateSheetGroupStyle());
         sheetGrid.RowStyle = CreateSheetRowStyle();
@@ -427,7 +429,9 @@ public sealed class PrintWindow : TrueBimWindow
             sheetGrid.Columns.Add(CreateTextColumn("Источник", nameof(PrintSheetRow.SourceName), 150));
         }
 
-        sheetGrid.Columns.Add(CreateTextColumn("Номер", nameof(PrintSheetRow.SheetNumber), 110));
+        DataGridTextColumn sheetNumberColumn = CreateTextColumn("Номер", nameof(PrintSheetRow.SheetNumber), 110);
+        sheetNumberColumn.SortDirection = ListSortDirection.Ascending;
+        sheetGrid.Columns.Add(sheetNumberColumn);
         sheetGrid.Columns.Add(CreateTextColumn("Имя листа", nameof(PrintSheetRow.SheetName), new DataGridLength(1, DataGridLengthUnitType.Star)));
         sheetGrid.Columns.Add(CreateTextColumn("Формат", nameof(PrintSheetRow.SheetFormat), 120));
         sheetGrid.Columns.Add(CreateStatusColumn());
@@ -1162,10 +1166,7 @@ public sealed class PrintWindow : TrueBimWindow
             visibleSheets = visibleSheets.Where(sheet => !sheet.SourceIsLinked);
         }
 
-        visibleSheets = visibleSheets
-            .OrderBy(sheet => sheet.GroupName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(sheet => sheet.SheetNumber, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(sheet => sheet.SheetName, StringComparer.CurrentCultureIgnoreCase);
+        visibleSheets = visibleSheets.OrderBy(sheet => sheet, PrintSheetComparer.Ascending);
 
         List<PrintSheetRow> rows = new();
         foreach (PrintSheetInfo sheet in visibleSheets)
@@ -1285,10 +1286,13 @@ public sealed class PrintWindow : TrueBimWindow
             groupedView.GroupDescriptions.Clear();
             groupedView.SortDescriptions.Clear();
             groupedView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PrintSheetRow.GroupName)));
-            groupedView.SortDescriptions.Add(new SortDescription(nameof(PrintSheetRow.GroupName), ListSortDirection.Ascending));
-            groupedView.SortDescriptions.Add(new SortDescription(nameof(PrintSheetRow.SheetNumber), ListSortDirection.Ascending));
-            groupedView.SortDescriptions.Add(new SortDescription(nameof(PrintSheetRow.SheetName), ListSortDirection.Ascending));
+            if (groupedView is ListCollectionView listView)
+            {
+                listView.CustomSort = new PrintSheetRowComparer(isSheetNumberSortDescending);
+            }
         }
+
+        UpdateSheetNumberSortIndicator();
     }
 
     private void UpdateFileNamePreviews()
@@ -2409,6 +2413,7 @@ public sealed class PrintWindow : TrueBimWindow
         {
             Header = header,
             Binding = new Binding(bindingPath),
+            SortMemberPath = bindingPath,
             Width = width,
             IsReadOnly = true
         };
@@ -2504,6 +2509,48 @@ public sealed class PrintWindow : TrueBimWindow
             }
         });
         return style;
+    }
+
+    private void OnSheetGridSorting(object sender, DataGridSortingEventArgs args)
+    {
+        if (!string.Equals(
+                args.Column.SortMemberPath,
+                nameof(PrintSheetRow.SheetNumber),
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ICollectionView view = CollectionViewSource.GetDefaultView(sheetRows);
+        if (view is not ListCollectionView listView)
+        {
+            return;
+        }
+
+        isSheetNumberSortDescending = args.Column.SortDirection == ListSortDirection.Ascending;
+        using (view.DeferRefresh())
+        {
+            view.SortDescriptions.Clear();
+            listView.CustomSort = new PrintSheetRowComparer(isSheetNumberSortDescending);
+        }
+
+        UpdateSheetNumberSortIndicator();
+        args.Handled = true;
+    }
+
+    private void UpdateSheetNumberSortIndicator()
+    {
+        foreach (DataGridColumn column in sheetGrid.Columns)
+        {
+            column.SortDirection = string.Equals(
+                column.SortMemberPath,
+                nameof(PrintSheetRow.SheetNumber),
+                StringComparison.Ordinal)
+                    ? isSheetNumberSortDescending
+                        ? ListSortDirection.Descending
+                        : ListSortDirection.Ascending
+                    : null;
+        }
     }
 
     private void OnSheetGridKeyDown(object sender, KeyEventArgs args)
@@ -2955,6 +3002,25 @@ public sealed class PrintWindow : TrueBimWindow
     private sealed record PrintabilityValidationResult(
         IReadOnlyList<PrintSheetRow> PrintableRows,
         IReadOnlyList<PrintSheetRow> RejectedRows);
+
+    private sealed class PrintSheetRowComparer : System.Collections.IComparer
+    {
+        private readonly PrintSheetComparer sheetComparer;
+
+        public PrintSheetRowComparer(bool descendingSheetNumbers)
+        {
+            sheetComparer = descendingSheetNumbers
+                ? PrintSheetComparer.Descending
+                : PrintSheetComparer.Ascending;
+        }
+
+        public int Compare(object? x, object? y)
+        {
+            return sheetComparer.Compare(
+                (x as PrintSheetRow)?.Sheet,
+                (y as PrintSheetRow)?.Sheet);
+        }
+    }
 
     private sealed record PrintSheetSourceFilterOption(string? SourceId, string DisplayName, bool IncludeLinked);
 
