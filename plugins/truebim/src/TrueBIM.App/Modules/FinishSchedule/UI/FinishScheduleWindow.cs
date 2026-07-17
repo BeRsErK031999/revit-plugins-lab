@@ -84,8 +84,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     {
         TextWrapping = TextWrapping.Wrap,
         Foreground = TrueBimBrushes.TextSecondary,
-        VerticalAlignment = VerticalAlignment.Center,
-        MaxWidth = 520
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        VerticalAlignment = VerticalAlignment.Center
     };
     private readonly TextBlock previewText = new()
     {
@@ -206,7 +206,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 TrueBimIcon.FinishSchedule),
             commandBar: null,
             body: CreateBody(),
-            status: null,
+            status: footerStatus,
             footer: CreateFooter());
 
         AttachEvents();
@@ -391,7 +391,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         closeButton.ToolTip = "Сохранить текущий профиль и закрыть окно без изменений модели.";
 
         return TrueBimUi.CreateFooter(
-            footerStatus,
+            null,
             saveButton,
             previewButton,
             copyReportButton,
