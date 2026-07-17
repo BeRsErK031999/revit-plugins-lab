@@ -708,7 +708,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 return;
             }
 
-            if (writePreview.TotalChangeCount > 0)
+            if (writePreview.RequiresTransaction)
             {
                 MessageBoxResult confirmation = MessageBox.Show(
                     this,
@@ -766,7 +766,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             $"Параметры помещений: изменений — {preview.RoomPlan.Changes.Count}; "
                 + $"без изменений — {preview.RoomPlan.UnchangedCount}; заблокировано — {preview.RoomPlan.BlockedCount}.",
             $"Ownership: элементов — {preview.OwnershipPlan.TargetElementCount}; "
-                + $"изменений — {preview.OwnershipPlan.Changes.Count}; пропущено preflight — {skippedOwnership}."
+                + $"изменений — {preview.OwnershipPlan.Changes.Count}; пропущено preflight — {skippedOwnership}.",
+            $"Спецификация «{preview.Schedule.Plan?.ScheduleName ?? "—"}»: "
+                + FormatScheduleAction(preview.Schedule.Action) + "."
         ];
         lines.AddRange(preview.Issues.Take(4).Select(issue => $"• {issue.Message}"));
         lines.AddRange(preview.RoomPlan.Changes
@@ -797,7 +799,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             + "один активный вариант агрегации.\n\n"
             + $"Параметры помещений: {preview.RoomPlan.Changes.Count} изменений.\n"
             + $"Ownership физических элементов: {preview.OwnershipPlan.Changes.Count} изменений.\n\n"
-            + "Все обязательные Room-параметры записываются атомарно. Спецификация будет создана на этапе FS-008."
+            + $"Спецификация: {FormatScheduleAction(preview.Schedule.Action)}.\n\n"
+            + "Параметры и управляемая спецификация создаются или обновляются атомарно."
             + sampleText
             + "\n\n"
             + "Продолжить?";
@@ -814,6 +817,13 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 + $"записано Room-значений: {result.AppliedRoomValues}.",
             $"Ownership: записано — {result.AppliedOwnershipValues}; пропущено — {result.SkippedOwnershipValues}."
         ];
+        if (result.Schedule is not null)
+        {
+            lines.Add(
+                $"Спецификация «{result.Schedule.ScheduleName}» (id {result.Schedule.ScheduleId}): "
+                    + FormatAppliedScheduleAction(result.Schedule.Action) + ".");
+        }
+
         lines.AddRange(result.Warnings.Take(4).Select(warning => $"• {warning}"));
         if (result.Warnings.Count > 4)
         {
@@ -821,6 +831,30 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         }
 
         return string.Join("\n", lines);
+    }
+
+    private static string FormatScheduleAction(FinishRoomScheduleAction action)
+    {
+        return action switch
+        {
+            FinishRoomScheduleAction.Create => "будет создана",
+            FinishRoomScheduleAction.Update => "будет обновлена",
+            FinishRoomScheduleAction.NoChanges => "уже актуальна",
+            FinishRoomScheduleAction.Blocked => "заблокирована",
+            _ => action.ToString()
+        };
+    }
+
+    private static string FormatAppliedScheduleAction(FinishRoomScheduleAction action)
+    {
+        return action switch
+        {
+            FinishRoomScheduleAction.Create => "создана",
+            FinishRoomScheduleAction.Update => "обновлена",
+            FinishRoomScheduleAction.NoChanges => "оставлена без изменений",
+            FinishRoomScheduleAction.Blocked => "заблокирована",
+            _ => action.ToString()
+        };
     }
 
     private static string CompactValue(string value)

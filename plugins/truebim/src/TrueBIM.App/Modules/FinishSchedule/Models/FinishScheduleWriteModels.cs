@@ -21,6 +21,7 @@ public enum FinishWriteIssueCode
     UnassignedOwnership,
     UnknownOwnership,
     ValueChangedAfterPreview,
+    ScheduleNameConflict,
     WriteRejected,
     WriteFailed
 }
@@ -192,7 +193,8 @@ public sealed class FinishScheduleWritePreview
         int roomCount,
         FinishWritePlan roomPlan,
         FinishWritePlan ownershipPlan,
-        IEnumerable<string> calculationWarnings)
+        IEnumerable<string> calculationWarnings,
+        FinishRoomSchedulePreflight? schedule = null)
     {
         if (groupCount < 0 || roomCount < 0)
         {
@@ -203,10 +205,16 @@ public sealed class FinishScheduleWritePreview
         RoomCount = roomCount;
         RoomPlan = roomPlan ?? throw new ArgumentNullException(nameof(roomPlan));
         OwnershipPlan = ownershipPlan ?? throw new ArgumentNullException(nameof(ownershipPlan));
+        Schedule = schedule ?? new FinishRoomSchedulePreflight(
+            null,
+            FinishRoomScheduleAction.NoChanges,
+            null,
+            []);
         CalculationWarnings = (calculationWarnings ?? throw new ArgumentNullException(nameof(calculationWarnings)))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        Issues = FinishWriteOrdering.OrderIssues(RoomPlan.Issues.Concat(OwnershipPlan.Issues));
+        Issues = FinishWriteOrdering.OrderIssues(
+            RoomPlan.Issues.Concat(OwnershipPlan.Issues).Concat(Schedule.Issues));
     }
 
     public int GroupCount { get; }
@@ -217,11 +225,15 @@ public sealed class FinishScheduleWritePreview
 
     public FinishWritePlan OwnershipPlan { get; }
 
+    public FinishRoomSchedulePreflight Schedule { get; }
+
     public IReadOnlyList<string> CalculationWarnings { get; }
 
     public IReadOnlyList<FinishWriteIssue> Issues { get; }
 
     public int TotalChangeCount => RoomPlan.Changes.Count + OwnershipPlan.Changes.Count;
+
+    public bool RequiresTransaction => TotalChangeCount > 0 || Schedule.RequiresTransaction;
 
     public bool CanApply => !Issues.Any(issue => issue.Severity == FinishWriteIssueSeverity.Critical);
 
@@ -255,7 +267,8 @@ public sealed record FinishScheduleWriteResult(
     int AppliedOwnershipValues,
     int SkippedOwnershipValues,
     IReadOnlyList<string> Warnings,
-    string Message)
+    string Message,
+    FinishRoomScheduleApplyResult? Schedule = null)
 {
     public bool Succeeded => Status is FinishScheduleWriteStatus.Applied or FinishScheduleWriteStatus.NoChanges;
 }

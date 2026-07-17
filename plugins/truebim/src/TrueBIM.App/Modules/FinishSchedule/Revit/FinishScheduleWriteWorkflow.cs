@@ -12,6 +12,8 @@ public sealed class FinishScheduleWriteWorkflow
     private readonly FinishOwnershipValueBuilder ownershipValueBuilder;
     private readonly RoomFinishParameterWriter roomWriter;
     private readonly FinishOwnershipWriter ownershipWriter;
+    private readonly FinishRoomSchedulePlanBuilder schedulePlanBuilder;
+    private readonly FinishRoomScheduleBuilder scheduleBuilder;
     private readonly ITrueBimLogger logger;
 
     public FinishScheduleWriteWorkflow(
@@ -20,6 +22,8 @@ public sealed class FinishScheduleWriteWorkflow
         FinishOwnershipValueBuilder ownershipValueBuilder,
         RoomFinishParameterWriter roomWriter,
         FinishOwnershipWriter ownershipWriter,
+        FinishRoomSchedulePlanBuilder schedulePlanBuilder,
+        FinishRoomScheduleBuilder scheduleBuilder,
         ITrueBimLogger logger)
     {
         this.calculationService = calculationService ?? throw new ArgumentNullException(nameof(calculationService));
@@ -27,6 +31,8 @@ public sealed class FinishScheduleWriteWorkflow
         this.ownershipValueBuilder = ownershipValueBuilder ?? throw new ArgumentNullException(nameof(ownershipValueBuilder));
         this.roomWriter = roomWriter ?? throw new ArgumentNullException(nameof(roomWriter));
         this.ownershipWriter = ownershipWriter ?? throw new ArgumentNullException(nameof(ownershipWriter));
+        this.schedulePlanBuilder = schedulePlanBuilder ?? throw new ArgumentNullException(nameof(schedulePlanBuilder));
+        this.scheduleBuilder = scheduleBuilder ?? throw new ArgumentNullException(nameof(scheduleBuilder));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -77,15 +83,21 @@ public sealed class FinishScheduleWriteWorkflow
             calculation.RoomSnapshots);
         FinishWritePlan roomPlan = roomWriter.Plan(document, roomTargets);
         FinishWritePlan ownershipPlan = ownershipWriter.Plan(document, ownershipTargets);
+        FinishRoomSchedulePlan schedulePlan = schedulePlanBuilder.Build(
+            settings,
+            calculation.Build.RoomScope.SelectedRooms);
+        FinishRoomSchedulePreflight schedulePreflight = scheduleBuilder.Preflight(document, schedulePlan);
         FinishScheduleWritePreview preview = new(
             calculation.Aggregation.Groups.Count,
             calculation.Aggregation.RoomOutputs.Count,
             roomPlan,
             ownershipPlan,
-            calculation.Preview.Warnings);
+            calculation.Preview.Warnings,
+            schedulePreflight);
         logger.Info(
             $"Finish Schedule write plan prepared. Rooms={preview.RoomCount}; Groups={preview.GroupCount}; "
             + $"RoomChanges={roomPlan.Changes.Count}; OwnershipChanges={ownershipPlan.Changes.Count}; "
+            + $"ScheduleAction={schedulePreflight.Action}; "
             + $"CriticalIssues={preview.Issues.Count(issue => issue.Severity == FinishWriteIssueSeverity.Critical)}; "
             + $"Warnings={preview.Issues.Count(issue => issue.Severity == FinishWriteIssueSeverity.Warning)}.");
         return preview;
@@ -139,7 +151,7 @@ public sealed class FinishScheduleWriteWorkflow
                 "Запись не начата: обязательный preflight обнаружил критические ошибки.");
         }
 
-        if (preview.TotalChangeCount == 0)
+        if (!preview.RequiresTransaction)
         {
             return new FinishScheduleWriteResult(
                 FinishScheduleWriteStatus.NoChanges,
@@ -147,10 +159,16 @@ public sealed class FinishScheduleWriteWorkflow
                 0,
                 preflightSkippedOwnership,
                 preflightWarnings,
-                "Все целевые параметры уже содержат актуальные значения; транзакции не открывались.");
+                "Параметры и управляемая спецификация уже актуальны; транзакции не открывались.",
+                preview.Schedule.ScheduleId.HasValue && preview.Schedule.Plan is not null
+                    ? new FinishRoomScheduleApplyResult(
+                        preview.Schedule.ScheduleId.Value,
+                        preview.Schedule.Plan.ScheduleName,
+                        FinishRoomScheduleAction.NoChanges)
+                    : null);
         }
 
-        using TransactionGroup group = new(document, "TrueBIM: ведомость отделки — запись параметров");
+        using TransactionGroup group = new(document, "TrueBIM: сформировать ведомость отделки");
         bool groupStarted = false;
         try
         {
@@ -160,6 +178,9 @@ public sealed class FinishScheduleWriteWorkflow
                 document,
                 preview.OwnershipPlan);
             int appliedRoomValues = roomWriter.Apply(document, preview.RoomPlan);
+            FinishRoomScheduleApplyResult scheduleResult = scheduleBuilder.Apply(
+                document,
+                preview.Schedule);
             FinishTransactionStatus.EnsureAssimilated(group);
             groupStarted = false;
 
@@ -171,6 +192,7 @@ public sealed class FinishScheduleWriteWorkflow
                 $"Finish Schedule parameters written. RoomValues={appliedRoomValues}; "
                 + $"OwnershipValues={ownershipResult.AppliedCount}; "
                 + $"OwnershipSkipped={preflightSkippedOwnership + ownershipResult.SkippedCount}; "
+                + $"ScheduleAction={scheduleResult.Action}; ScheduleId={scheduleResult.ScheduleId}; "
                 + $"Warnings={warnings.Length}.");
             return new FinishScheduleWriteResult(
                 FinishScheduleWriteStatus.Applied,
@@ -178,7 +200,10 @@ public sealed class FinishScheduleWriteWorkflow
                 ownershipResult.AppliedCount,
                 preflightSkippedOwnership + ownershipResult.SkippedCount,
                 warnings,
-                "Параметры помещений и включённая ownership-запись обновлены атомарно. Спецификация будет подключена в FS-008.");
+                scheduleResult.Action == FinishRoomScheduleAction.Create
+                    ? "Параметры обновлены, ведомость отделки создана атомарно."
+                    : "Параметры и ведомость отделки обновлены атомарно.",
+                scheduleResult);
         }
         catch (Exception exception)
         {
@@ -194,14 +219,14 @@ public sealed class FinishScheduleWriteWorkflow
                 }
             }
 
-            logger.Error("Failed to write Finish Schedule parameters.", exception);
+            logger.Error("Failed to build Finish Schedule.", exception);
             return new FinishScheduleWriteResult(
                 FinishScheduleWriteStatus.Failed,
                 0,
                 0,
                 preflightSkippedOwnership,
                 preflightWarnings,
-                "Запись отменена целиком; параметры помещений не оставлены в частично обновлённом состоянии.");
+                "Формирование отменено целиком; параметры и спецификация не оставлены в частично обновлённом состоянии.");
         }
     }
 
