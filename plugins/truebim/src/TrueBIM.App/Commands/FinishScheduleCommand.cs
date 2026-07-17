@@ -31,12 +31,21 @@ public sealed class FinishScheduleCommand : IExternalCommand
                 ? []
                 : new FinishScheduleLevelCatalogService().Collect(uiDocument.Document);
             FinishScheduleProfileStorage profileStorage = new(logger);
+            FinishSchedulePreviewService previewService = new(
+                new FinishElementCollector(logger),
+                new FinishSchedulePreviewBuilder(
+                    new RoomScopeService(),
+                    new FinishClassificationService()),
+                logger);
             FinishScheduleWindow window = new(
                 status,
                 catalog,
                 ParameterCatalogService.TargetCategories,
                 levels,
                 profileStorage,
+                uiDocument is null
+                    ? null
+                    : settings => previewService.Build(uiDocument.Document, settings),
                 logger);
             new WindowInteropHelper(window)
             {

@@ -18,8 +18,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly FinishScheduleParameterCategories categories;
     private readonly IReadOnlyList<FinishScheduleLevelOption> levels;
     private readonly FinishScheduleProfileStorage profileStorage;
+    private readonly Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory;
     private readonly ITrueBimLogger logger;
     private readonly FinishScheduleSettingsValidator validator;
+    private readonly FinishSchedulePreviewValidator previewValidator;
     private readonly FinishScheduleParameterOptionService optionService;
 
     private readonly CategoryControls walls = new(
@@ -72,9 +74,24 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         VerticalAlignment = VerticalAlignment.Center,
         MaxWidth = 520
     };
+    private readonly TextBlock previewText = new()
+    {
+        Text = "Предпросмотр ещё не выполнялся. Настройте категории и область, затем нажмите «Предпросмотр».",
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = TrueBimBrushes.TextPrimary
+    };
+    private readonly Image previewIcon = new()
+    {
+        Width = TrueBimTheme.IconSizeSmall,
+        Height = TrueBimTheme.IconSizeSmall,
+        Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0),
+        VerticalAlignment = VerticalAlignment.Center
+    };
     private readonly Button saveButton;
+    private readonly Button previewButton;
     private readonly Button generateButton;
     private readonly Border validationBanner;
+    private readonly Border previewBanner;
 
     private bool isUpdating;
 
@@ -84,6 +101,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         FinishScheduleParameterCategories categories,
         IEnumerable<FinishScheduleLevelOption> levels,
         FinishScheduleProfileStorage profileStorage,
+        Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory,
         ITrueBimLogger logger)
     {
         this.status = status ?? throw new ArgumentNullException(nameof(status));
@@ -91,10 +109,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         this.categories = categories ?? throw new ArgumentNullException(nameof(categories));
         this.levels = (levels ?? throw new ArgumentNullException(nameof(levels))).ToArray();
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
+        this.previewFactory = previewFactory;
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         ParameterCatalogMatcher matcher = new();
         validator = new FinishScheduleSettingsValidator(matcher);
+        previewValidator = new FinishSchedulePreviewValidator();
         optionService = new FinishScheduleParameterOptionService(matcher);
 
         saveButton = TrueBimUi.CreateSecondaryButton(
@@ -104,6 +124,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             minWidth: 150);
         saveButton.ToolTip = "Сохранить текущие настройки локально, даже если конфигурация ещё не завершена.";
 
+        previewButton = TrueBimUi.CreateSecondaryButton(
+            "Предпросмотр",
+            TrueBimIcon.Preview,
+            (_, _) => RunPreview(),
+            isEnabled: false,
+            minWidth: 140);
+        ToolTipService.SetShowOnDisabled(previewButton, true);
+
         generateButton = TrueBimUi.CreatePrimaryButton(
             "Сформировать",
             TrueBimIcon.Apply,
@@ -111,9 +139,11 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             minWidth: 140);
         ToolTipService.SetShowOnDisabled(generateButton, true);
 
-        validationBanner = CreateValidationBanner();
+        previewBanner = CreateStatusBanner(previewIcon, previewText);
+        ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Info);
+        validationBanner = CreateStatusBanner(validationIcon, validationText);
         validationBanner.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        ApplyBannerSeverity(validationBanner, TrueBimUiSeverity.Warning);
+        ApplyBannerSeverity(validationBanner, validationIcon, TrueBimUiSeverity.Warning);
 
         ConfigureChoices();
 
@@ -187,6 +217,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             status.HasActiveDocument ? TrueBimUiSeverity.Info : TrueBimUiSeverity.Warning);
         contextBanner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         content.Children.Add(contextBanner);
+
+        previewBanner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        content.Children.Add(previewBanner);
 
         AddCard(content, "1. Категории отделки", CreateCategorySelectionContent());
         AddCard(content, "2. Классификация элементов", CreateClassificationContent());
@@ -313,7 +346,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         closeButton.IsCancel = true;
         closeButton.ToolTip = "Сохранить текущий профиль и закрыть окно без изменений модели.";
 
-        return TrueBimUi.CreateFooter(footerStatus, saveButton, generateButton, closeButton);
+        return TrueBimUi.CreateFooter(
+            footerStatus,
+            saveButton,
+            previewButton,
+            generateButton,
+            closeButton);
     }
 
     private void AttachEvents()
@@ -357,6 +395,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         RefreshParameterOptions();
         RefreshDependentState();
+        InvalidatePreview();
         UpdateValidation();
     }
 
@@ -372,6 +411,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             RefreshDependentState();
         }
 
+        InvalidatePreview();
         UpdateValidation();
     }
 
@@ -550,9 +590,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         FinishScheduleLaunchState launchState = FinishScheduleLaunchState.Create(
             validation,
             WorkflowAvailable);
+        FinishScheduleValidationResult previewValidation = previewValidator.Validate(ReadSettings());
 
         generateButton.IsEnabled = launchState.CanGenerate;
         generateButton.ToolTip = launchState.GenerateToolTip;
+        previewButton.IsEnabled = status.HasActiveDocument
+            && previewFactory is not null
+            && previewValidation.IsValid;
+        previewButton.ToolTip = CreatePreviewToolTip(previewValidation);
         footerStatus.Text = launchState.StatusText;
         footerStatus.Foreground = launchState.IsConfigurationValid
             ? TrueBimBrushes.Success
@@ -561,7 +606,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         if (validation.IsValid)
         {
             validationText.Text = "Все обязательные поля заполнены, выбранные параметры совместимы. Профиль можно безопасно сохранить.";
-            ApplyBannerSeverity(validationBanner, TrueBimUiSeverity.Success);
+            ApplyBannerSeverity(validationBanner, validationIcon, TrueBimUiSeverity.Success);
             return;
         }
 
@@ -572,7 +617,85 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             ? $"\n• Ещё ошибок: {validation.Issues.Count - 5}."
             : string.Empty;
         validationText.Text = $"Конфигурация пока не готова:\n{string.Join("\n", visibleIssues)}{remaining}";
-        ApplyBannerSeverity(validationBanner, TrueBimUiSeverity.Warning);
+        ApplyBannerSeverity(validationBanner, validationIcon, TrueBimUiSeverity.Warning);
+    }
+
+    private string CreatePreviewToolTip(FinishScheduleValidationResult validation)
+    {
+        if (!status.HasActiveDocument || previewFactory is null)
+        {
+            return "Откройте документ Revit, чтобы собрать read-only предпросмотр.";
+        }
+
+        return validation.IsValid
+            ? "Один раз собрать помещения, стены, перекрытия и типы без изменения модели."
+            : validation.Issues[0].Message;
+    }
+
+    private void InvalidatePreview()
+    {
+        previewText.Text = "Настройки изменены. Обновите предпросмотр, чтобы увидеть актуальный состав области.";
+        ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Info);
+    }
+
+    private void RunPreview()
+    {
+        FinishScheduleSettings settings = ReadSettings();
+        FinishScheduleValidationResult validation = previewValidator.Validate(settings);
+        if (!validation.IsValid || previewFactory is null)
+        {
+            previewText.Text = validation.IsValid
+                ? "Документ Revit недоступен для предпросмотра."
+                : string.Join("\n", validation.Issues.Select(issue => $"• {issue.Message}"));
+            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Warning);
+            return;
+        }
+
+        try
+        {
+            FinishSchedulePreviewResult result = previewFactory(settings);
+            previewText.Text = FormatPreview(result, settings);
+            ApplyBannerSeverity(
+                previewBanner,
+                previewIcon,
+                result.Warnings.Count == 0 ? TrueBimUiSeverity.Success : TrueBimUiSeverity.Warning);
+            footerStatus.Text = "Предпросмотр обновлён. Модель Revit не изменялась.";
+            footerStatus.Foreground = TrueBimBrushes.Success;
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to build Finish Schedule preview.", exception);
+            previewText.Text = "Не удалось собрать предпросмотр. Подробности записаны в лог TrueBIM.";
+            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Danger);
+        }
+    }
+
+    private static string FormatPreview(
+        FinishSchedulePreviewResult result,
+        FinishScheduleSettings settings)
+    {
+        List<string> lines =
+        [
+            $"Помещения в области: {result.RoomScope.SelectedRooms.Count} из {result.CollectedRooms}; "
+                + $"невалидных — {result.RoomScope.InvalidRooms.Count}, вне области — {result.RoomScope.OutsideScopeCount}.",
+            FormatCategory("Стены", settings.Walls.IsEnabled, result.Walls),
+            FormatCategory("Полы", settings.Floors.IsEnabled, result.Floors),
+            FormatCategory("Потолки", settings.Ceilings.IsEnabled, result.Ceilings),
+            $"Spatial index: {result.Index.IndexedElements} элементов; "
+                + $"потенциальных пар помещение–элемент — {result.Index.PotentialRoomElementPairs}."
+        ];
+        lines.AddRange(result.Warnings.Take(3).Select(warning => $"• {warning}"));
+        return string.Join("\n", lines);
+    }
+
+    private static string FormatCategory(
+        string name,
+        bool enabled,
+        FinishPreviewCategoryCounts counts)
+    {
+        return enabled
+            ? $"{name}: в области — {counts.InScope}; классифицировано — {counts.Classified}; собрано источников — {counts.SourceCollected}."
+            : $"{name}: категория отключена.";
     }
 
     private void SaveProfile(bool showFeedback)
@@ -811,14 +934,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         };
     }
 
-    private Border CreateValidationBanner()
+    private static Border CreateStatusBanner(Image icon, TextBlock text)
     {
         DockPanel content = new()
         {
             LastChildFill = true
         };
-        content.Children.Add(validationIcon);
-        content.Children.Add(validationText);
+        content.Children.Add(icon);
+        content.Children.Add(text);
 
         return new Border
         {
@@ -829,7 +952,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         };
     }
 
-    private void ApplyBannerSeverity(Border banner, TrueBimUiSeverity severity)
+    private static void ApplyBannerSeverity(
+        Border banner,
+        Image iconControl,
+        TrueBimUiSeverity severity)
     {
         banner.Background = TrueBimBrushes.BackgroundForSeverity(severity);
         banner.BorderBrush = TrueBimBrushes.ForSeverity(severity);
@@ -840,7 +966,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             TrueBimUiSeverity.Danger => TrueBimIcon.Error,
             _ => TrueBimIcon.Info
         };
-        validationIcon.Source = IconFactory.CreateImage(
+        iconControl.Source = IconFactory.CreateImage(
             icon,
             TrueBimBrushes.ForSeverity(severity).Color);
     }

@@ -26,6 +26,9 @@ public sealed class FinishScheduleModuleStatusTests
             status.ReadyCapabilities,
             item => item.Contains("finish-schedule", StringComparison.Ordinal));
         Assert.Contains(
+            status.ReadyCapabilities,
+            item => item.Contains("preview", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
             status.PendingCapabilities,
             item => item.Contains("геометр", StringComparison.CurrentCultureIgnoreCase));
     }

@@ -83,7 +83,9 @@ public sealed class ParameterCatalogService
         {
             foreach (Parameter parameter in element.Parameters)
             {
-                ParameterReference? reference = CreateReference(parameter, bindingKind);
+                ParameterReference? reference = RevitParameterReferenceFactory.Create(
+                    parameter,
+                    bindingKind);
                 if (reference is null)
                 {
                     continue;
@@ -103,70 +105,6 @@ public sealed class ParameterCatalogService
             logger.Warning(
                 $"Finish Schedule skipped parameters of element {RevitElementIds.GetValue(element.Id)}: {exception.Message}");
         }
-    }
-
-    private static ParameterReference? CreateReference(
-        Parameter parameter,
-        ParameterBindingKind bindingKind)
-    {
-        Definition? definition = parameter.Definition;
-        if (definition is null || parameter.Id == ElementId.InvalidElementId)
-        {
-            return null;
-        }
-
-        string name = definition.Name;
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return null;
-        }
-
-        ParameterStorageKind storageKind = MapStorageKind(parameter.StorageType);
-        long definitionElementId = RevitElementIds.GetValue(parameter.Id);
-
-        if (definition is InternalDefinition internalDefinition
-            && internalDefinition.BuiltInParameter != BuiltInParameter.INVALID)
-        {
-            return ParameterReference.BuiltIn(
-                name,
-                (long)internalDefinition.BuiltInParameter,
-                bindingKind,
-                storageKind,
-                definitionElementId);
-        }
-
-        if (parameter.IsShared)
-        {
-            Guid guid = parameter.GUID;
-            if (guid != Guid.Empty)
-            {
-                return ParameterReference.Shared(
-                    name,
-                    guid,
-                    definitionElementId,
-                    bindingKind,
-                    storageKind);
-            }
-        }
-
-        return ParameterReference.Project(
-            name,
-            definitionElementId,
-            bindingKind,
-            storageKind);
-    }
-
-    private static ParameterStorageKind MapStorageKind(StorageType storageType)
-    {
-        return storageType switch
-        {
-            StorageType.String => ParameterStorageKind.String,
-            StorageType.Integer => ParameterStorageKind.Integer,
-            StorageType.Double => ParameterStorageKind.Double,
-            StorageType.ElementId => ParameterStorageKind.ElementId,
-            StorageType.None => ParameterStorageKind.None,
-            _ => ParameterStorageKind.None
-        };
     }
 
     private sealed class ParameterBucket
