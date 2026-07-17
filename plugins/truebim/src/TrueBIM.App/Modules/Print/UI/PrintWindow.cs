@@ -2153,7 +2153,7 @@ public sealed class PrintWindow : TrueBimWindow
         Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row,
             _ => new List<string>());
-        int exportedCount = 0;
+        List<string> exportedFiles = new();
         int failureCount = printability.RejectedRows.Count;
         List<string> failureMessages = printability.RejectedRows
             .Select(row => $"Лист {row.SheetNumber}: не прошел проверку печати")
@@ -2193,7 +2193,7 @@ public sealed class PrintWindow : TrueBimWindow
                     sourceCombinedPdfName,
                     pdfSettings,
                     logger);
-                exportedCount += result.ExportedFiles.Count;
+                exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyPdfStatus(rowStatuses, sourceRows, result);
                 failureMessages.AddRange(result.Failures.Select(failure => $"PDF {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
@@ -2213,7 +2213,7 @@ public sealed class PrintWindow : TrueBimWindow
                     combineDwg,
                     combineDwg ? mergedDwgFileNamesBySourceId[source.SourceId] : null,
                     logger);
-                exportedCount += result.ExportedFiles.Count;
+                exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyCadStatus(rowStatuses, sourceRows, result);
                 failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
@@ -2230,7 +2230,7 @@ public sealed class PrintWindow : TrueBimWindow
                     PrintCadExportFormat.Dxf,
                     dxfSetupName,
                     logger);
-                exportedCount += result.ExportedFiles.Count;
+                exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyCadStatus(rowStatuses, sourceRows, result);
                 failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
@@ -2247,7 +2247,7 @@ public sealed class PrintWindow : TrueBimWindow
                     PrintCadExportFormat.Dwf,
                     setupName: null,
                     logger);
-                exportedCount += result.ExportedFiles.Count;
+                exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyCadStatus(rowStatuses, sourceRows, result);
                 failureMessages.AddRange(result.Failures.Select(failure => $"{PrintCadExportService.GetDisplayName(failure.Format)} {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
@@ -2261,13 +2261,23 @@ public sealed class PrintWindow : TrueBimWindow
                 : string.Empty;
         }
 
-        string failureMessage = failureMessages.Count > 0
-            ? "\n\nОшибки:\n" + string.Join("\n", failureMessages.Take(3))
-            : string.Empty;
-        Autodesk.Revit.UI.TaskDialog.Show(
-            WindowTitle,
-            $"Экспортировано файлов: {exportedCount}\nОшибок: {failureCount}{failureMessage}");
-        OpenExportFolderAfterCompletion(exportedCount);
+        PrintExportSummary summary = PrintExportSummaryBuilder.Build(
+            exportedFiles,
+            failureCount,
+            failureMessages);
+        TaskDialog summaryDialog = new(WindowTitle)
+        {
+            MainInstruction = summary.MainInstruction,
+            MainContent = summary.MainContent,
+            CommonButtons = TaskDialogCommonButtons.Close
+        };
+        if (!string.IsNullOrWhiteSpace(summary.ExpandedContent))
+        {
+            summaryDialog.ExpandedContent = summary.ExpandedContent;
+        }
+
+        summaryDialog.Show();
+        OpenExportFolderAfterCompletion(summary.ExportedFileCount);
         UpdateExportState();
     }
 

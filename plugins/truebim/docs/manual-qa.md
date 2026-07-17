@@ -222,6 +222,14 @@ Expected logs:
 4. Save a preset with the option enabled, switch it off, reload the preset, and confirm the option is restored.
 5. Close and reopen `Печать` and confirm the last value is restored from `print-settings.json`.
 
+### Print Export Summary QA
+
+1. Export at least four files across PDF, DWG, DXF, or DWF and confirm the final dialog reports the unique created-file count and zero errors.
+2. Confirm the short result shows the first three full output paths and reports how many additional files are available in the details.
+3. Expand the dialog details and confirm every created file is listed by its actual full path.
+4. Run a mixed-success export and confirm the title changes to `Экспорт завершен с ошибками`, while both created paths and errors remain visible.
+5. Run a fully failed export and confirm the title is `Экспорт не выполнен`, the result says `Файлы не созданы`, and no nonexistent path is reported as created.
+
 ### Print Large Sheet List QA
 
 1. Open a project or several sources containing at least 95 visible sheets.
