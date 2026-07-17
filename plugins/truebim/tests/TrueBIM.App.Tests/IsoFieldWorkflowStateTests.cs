@@ -66,4 +66,24 @@ public sealed class IsoFieldWorkflowStateTests
         Assert.False(state.CanCreateRebar);
         Assert.Contains("трём контрольным точкам", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void UnsupportedHostGeometry_BlocksRulesBeforeBindingOrCreation()
+    {
+        IsoFieldWorkflowState state = new(
+            true,
+            true,
+            true,
+            false,
+            false,
+            true,
+            true,
+            HasValidHostBinding: true,
+            HasSupportedHostGeometry: false);
+
+        Assert.False(state.HasReadyHost);
+        Assert.False(state.CanCalculateRules);
+        Assert.False(state.CanCreateRebar);
+        Assert.Contains("прямую базовую стену", state.NextAction, StringComparison.OrdinalIgnoreCase);
+    }
 }

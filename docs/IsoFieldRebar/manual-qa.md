@@ -166,6 +166,23 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - Change the source, binding or rule preview. Expected: the previous completion
   summary is hidden and cannot be mistaken for the new workflow state.
 
+## P7.1 Host Geometry Preflight
+
+- Select a straight basic wall. Expected: host status explicitly says this is a
+  legacy probe without engineering diff; legacy rule preview remains available.
+- Select a curved, stacked or curtain wall. Expected: the host stays visible,
+  its status shows the unsupported reason, its tooltip shows the preflight code,
+  and rule preview and apply stay disabled. No transaction or partial Rebar
+  creation may start.
+- Select a horizontal slab with a planar top face. Expected: preflight marks it
+  as the engineering profile and asks for three-point binding before rules.
+- Select a sloped slab or a slab whose horizontal top face cannot be resolved.
+  Expected: binding, engineering parameters, rule preview and apply stay disabled
+  with the same geometry-specific explanation.
+- After selecting a supported straight wall, change its type/curve before apply.
+  Expected: the live pre-transaction check rejects the stale selection and asks
+  to select the host and calculate again.
+
 ## Built-in PNG Recognition Smoke
 
 1. Clear `TRUEBIM_ISOFIELD_WORKER` before starting Revit.

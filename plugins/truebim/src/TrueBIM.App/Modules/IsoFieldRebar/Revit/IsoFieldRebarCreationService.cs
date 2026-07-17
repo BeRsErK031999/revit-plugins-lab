@@ -20,6 +20,7 @@ public sealed class IsoFieldRebarCreationService
     private readonly SlabRebarPlacementService slabPlacementService = new();
     private readonly WallRebarPlacementService wallPlacementService = new();
     private readonly IsoFieldRebarChangePlanService changePlanService = new();
+    private readonly IsoFieldHostSupportService hostSupportService = new();
     private readonly ITrueBimLogger logger;
 
     public IsoFieldRebarCreationService(ITrueBimLogger logger)
@@ -47,6 +48,8 @@ public sealed class IsoFieldRebarCreationService
         {
             throw new ArgumentNullException(nameof(rulePreview));
         }
+
+        EnsureSupportedHost(hostElement);
 
         IReadOnlyList<RebarRulePreviewItem> previewItems = ResolvePreviewItems(rulePreview, hostElement.HostKind);
         Document document = uiDocument.Document;
@@ -135,6 +138,8 @@ public sealed class IsoFieldRebarCreationService
             throw new ArgumentNullException(nameof(rulePreview));
         }
 
+        EnsureSupportedHost(hostElement);
+
         if (!rulePreview.IsEngineeringPreview)
         {
             throw new InvalidOperationException("Diff повторного запуска доступен только для инженерной раскладки плиты.");
@@ -194,6 +199,26 @@ public sealed class IsoFieldRebarCreationService
         if (!string.Equals(actualHostKind, selectedHost.HostKind, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Выбранный host-элемент больше не соответствует сохраненному типу стены или плиты.");
+        }
+
+        if (string.Equals(actualHostKind, WallHostKind, StringComparison.Ordinal)
+            && selectedHost.GeometryProfile != IsoFieldHostGeometryProfile.Unknown)
+        {
+            IsoFieldHostGeometryProfile actualProfile = IsoFieldHostSelectionService.ResolveWallGeometryProfile(host);
+            if (actualProfile != selectedHost.GeometryProfile)
+            {
+                throw new InvalidOperationException(
+                    "Геометрия стены изменилась после выбора. Выберите host заново и повторите расчёт.");
+            }
+        }
+    }
+
+    private void EnsureSupportedHost(IsoFieldHostElement hostElement)
+    {
+        IsoFieldHostSupportResult support = hostSupportService.Analyze(hostElement);
+        if (!support.CanApplyRebar)
+        {
+            throw new InvalidOperationException(support.Message);
         }
     }
 

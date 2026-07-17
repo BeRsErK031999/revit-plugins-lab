@@ -116,12 +116,28 @@ public sealed class IsoFieldHostSelectionService
         IsoFieldHostGeometry? geometry = string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
             ? TryCreateSlabGeometry(element)
             : null;
+        IsoFieldHostGeometryProfile geometryProfile = string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
+            ? geometry is null
+                ? IsoFieldHostGeometryProfile.NonHorizontalOrUnresolvedSlab
+                : IsoFieldHostGeometryProfile.HorizontalSlab
+            : ResolveWallGeometryProfile(element);
         return new IsoFieldHostElement(
             elementId,
             hostKind,
             hostKindDisplayName,
             ResolveElementName(element, elementId),
-            geometry);
+            geometry,
+            geometryProfile);
+    }
+
+    internal static IsoFieldHostGeometryProfile ResolveWallGeometryProfile(Element element)
+    {
+        return element is Wall wall
+            && wall.WallType.Kind == WallKind.Basic
+            && wall.Location is LocationCurve locationCurve
+            && locationCurve.Curve is Line
+                ? IsoFieldHostGeometryProfile.StraightBasicWall
+                : IsoFieldHostGeometryProfile.UnsupportedWall;
     }
 
     private static IsoFieldHostGeometry? TryCreateSlabGeometry(Element element)
