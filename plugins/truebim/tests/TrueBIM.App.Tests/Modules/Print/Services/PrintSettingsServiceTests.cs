@@ -23,6 +23,7 @@ public sealed class PrintSettingsServiceTests
         Assert.False(settings.ExportDxf);
         Assert.False(settings.ExportDwf);
         Assert.False(settings.CombineDwg);
+        Assert.False(settings.OpenExportFolderAfterCompletion);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
         Assert.Equal(PrintPdfExportService.DefaultSettings.ColorMode, settings.PdfColorMode);
@@ -49,6 +50,7 @@ public sealed class PrintSettingsServiceTests
             ExportDxf: true,
             ExportDwf: true,
             CombineDwg: true,
+            OpenExportFolderAfterCompletion: true,
             DwgSetupName: "  Office DWG  ",
             DxfSetupName: "  Office DXF  ",
             CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  "));
@@ -68,6 +70,7 @@ public sealed class PrintSettingsServiceTests
         Assert.True(reloadedSettings.ExportDxf);
         Assert.True(reloadedSettings.ExportDwf);
         Assert.True(reloadedSettings.CombineDwg);
+        Assert.True(reloadedSettings.OpenExportFolderAfterCompletion);
         Assert.Equal("Office DWG", reloadedSettings.DwgSetupName);
         Assert.Equal("Office DXF", reloadedSettings.DxfSetupName);
         Assert.Equal("{Номер проекта}_{Имя документа}", reloadedSettings.CombinedDwgFileNameMask);
@@ -124,6 +127,7 @@ public sealed class PrintSettingsServiceTests
 
         Assert.True(settings.ExportDwg);
         Assert.True(settings.CombineDwg);
+        Assert.False(settings.OpenExportFolderAfterCompletion);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
     }

@@ -24,6 +24,7 @@ public sealed class PrintSettingsService
         ExportDxf: false,
         ExportDwf: false,
         CombineDwg: false,
+        OpenExportFolderAfterCompletion: false,
         DwgSetupName: null,
         DxfSetupName: null,
         CombinedDwgFileNameMask: PrintFileNameTemplateService.DefaultCombinedTemplate);
@@ -119,6 +120,7 @@ public sealed class PrintSettingsService
             ExportDxf: settings.ExportDxf,
             ExportDwf: settings.ExportDwf,
             CombineDwg: settings.CombineDwg,
+            OpenExportFolderAfterCompletion: settings.OpenExportFolderAfterCompletion,
             DwgSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DwgSetupName),
             DxfSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DxfSetupName),
             CombinedDwgFileNameMask: string.IsNullOrWhiteSpace(settings.CombinedDwgFileNameMask)
@@ -142,6 +144,7 @@ public sealed class PrintSettingsService
             dto.ExportDxf ?? DefaultSettings.ExportDxf,
             dto.ExportDwf ?? DefaultSettings.ExportDwf,
             dto.CombineDwg ?? DefaultSettings.CombineDwg,
+            dto.OpenExportFolderAfterCompletion ?? DefaultSettings.OpenExportFolderAfterCompletion,
             dto.DwgSetupName,
             dto.DxfSetupName,
             dto.CombinedDwgFileNameMask ?? DefaultSettings.CombinedDwgFileNameMask);
@@ -164,6 +167,7 @@ public sealed class PrintSettingsService
             ExportDxf = settings.ExportDxf,
             ExportDwf = settings.ExportDwf,
             CombineDwg = settings.CombineDwg,
+            OpenExportFolderAfterCompletion = settings.OpenExportFolderAfterCompletion,
             DwgSetupName = settings.DwgSetupName,
             DxfSetupName = settings.DxfSetupName,
             CombinedDwgFileNameMask = settings.CombinedDwgFileNameMask
@@ -228,6 +232,9 @@ public sealed class PrintSettingsService
 
         [JsonPropertyName("combineDwg")]
         public bool? CombineDwg { get; init; }
+
+        [JsonPropertyName("openExportFolderAfterCompletion")]
+        public bool? OpenExportFolderAfterCompletion { get; init; }
 
         [JsonPropertyName("dwgSetupName")]
         public string? DwgSetupName { get; init; }

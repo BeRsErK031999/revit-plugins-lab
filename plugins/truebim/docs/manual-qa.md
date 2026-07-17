@@ -180,7 +180,7 @@ Status: the first working release is implemented and preflight-verified. Repeat 
 1. Open a sample project with several printable sheets.
 2. Open `TrueBIM`.
 3. Confirm the ribbon contains one `Печать` button and does not contain separate `Печать PDF` / `Печать DWG` buttons.
-4. Open `Печать` and confirm the export row contains `PDF`, `Один PDF`, `DWG`, `Один DWG`, `DXF`, and `DWF`, without a separate PDF mode dropdown.
+4. Open `Печать` and confirm the export row contains `PDF`, `Один PDF`, `DWG`, `Один DWG`, `DXF`, `DWF`, and `Открыть папку`, without a separate PDF mode dropdown.
 5. Confirm the window lists printable sheets with source, sheet number, sheet name, format, export status, and filename preview columns.
 6. If more than one document is open, change the source filter and confirm selected sheets are preserved when switching back.
 7. Set an export folder.
@@ -196,7 +196,7 @@ Status: the first working release is implemented and preflight-verified. Repeat 
 17. Click `Настройки DWG...`, change a safe option such as `FileVersion`, `Colors`, or `SharedCoords`, save the TrueBIM profile, then apply it.
 18. Click `Проверить настройки` and confirm the summary shows sheet count, folder, DWG version, color mode, coordinates, and profile.
 19. Export 1-2 safe sheets and confirm DWG/DXF files are created or a clear Revit export error is shown.
-20. Enter a customer name in the preset field and click `Сохранить`. Change several formats/settings, select the saved preset again, and confirm both `Один PDF` and `Один DWG` are restored. A legacy preset with `отдельные PDF и один общий` must load as `Один PDF`.
+20. Enter a customer name in the preset field and click `Сохранить`. Change several formats/settings, select the saved preset again, and confirm `Один PDF`, `Один DWG`, and `Открыть папку` are restored. A legacy preset with `отдельные PDF и один общий` must load as `Один PDF`.
 21. Delete a temporary preset and confirm another preset remains selected and usable.
 22. Close and reopen `Печать`.
 23. Confirm the last window state and selected preset are restored from `%APPDATA%\TrueBIM\<RevitVersion>\print-settings.json`, `%APPDATA%\TrueBIM\<RevitVersion>\print-presets.json`, and `%APPDATA%\TrueBIM\<RevitVersion>\dwg-export-profiles.json`.
@@ -209,9 +209,18 @@ Expected logs:
 - selected DWG/DXF setup or default fallback;
 - applied DWG profile and resulting key `DWGExportOptions`;
 - exported file counts and any per-sheet failures.
+- configured open-folder option and a single successful folder-open log after an export that created files;
 - selected printer, print setup, document and selected-sheet count;
 - submission and result of each sheet sent through the print driver;
 - driver/setup errors and restoration of the previous Revit print settings.
+
+### Print Export Folder Completion QA
+
+1. Disable `Открыть папку`, complete a successful export, and confirm Explorer does not open.
+2. Enable `Открыть папку`, export several sheets and formats from one or more source documents, close the final summary, and confirm exactly one Explorer window opens for the configured export folder.
+3. Repeat a run where every selected output is skipped, rejected, or fails and confirm Explorer does not open because no new file was created.
+4. Save a preset with the option enabled, switch it off, reload the preset, and confirm the option is restored.
+5. Close and reopen `Печать` and confirm the last value is restored from `print-settings.json`.
 
 ### Print Large Sheet List QA
 

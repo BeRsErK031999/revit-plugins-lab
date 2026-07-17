@@ -46,6 +46,7 @@ public sealed class PrintPresetStorageTests
             ExportDxf: false,
             ExportDwf: false,
             CombineDwg: true,
+            OpenExportFolderAfterCompletion: true,
             DwgSetupName: "  Customer A DWG  ",
             DxfSetupName: null,
             CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  ");
@@ -81,6 +82,7 @@ public sealed class PrintPresetStorageTests
         Assert.True(preset.Settings.ExportDwg);
         Assert.True(preset.Settings.CombinePdf);
         Assert.True(preset.Settings.CombineDwg);
+        Assert.True(preset.Settings.OpenExportFolderAfterCompletion);
         Assert.Equal("{Номер проекта}_Customer A", preset.Settings.CombinedPdfFileName);
         Assert.Equal("{Номер проекта}_{Имя документа}", preset.Settings.CombinedDwgFileNameMask);
         Assert.Equal("Customer A DWG", preset.Settings.DwgSetupName);

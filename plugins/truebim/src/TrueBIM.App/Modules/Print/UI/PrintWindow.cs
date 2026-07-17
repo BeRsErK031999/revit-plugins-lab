@@ -181,6 +181,11 @@ public sealed class PrintWindow : TrueBimWindow
         Content = "Один DWG",
         ToolTip = "Экспортировать выбранные DWG в один файл через MergedViews."
     };
+    private readonly CheckBox openExportFolderInput = new()
+    {
+        Content = "Открыть папку",
+        ToolTip = "Открыть папку результата после завершения, если создан хотя бы один файл."
+    };
     private readonly ComboBox dwgSetupInput = CreateCadSetupInput("Настройка экспорта DWG из сохраненных настроек Revit.");
     private readonly ComboBox dxfSetupInput = CreateCadSetupInput("Настройка экспорта DXF из сохраненных настроек Revit.");
     private readonly TextBlock dwgProfileSourceText = new()
@@ -946,6 +951,7 @@ public sealed class PrintWindow : TrueBimWindow
             dxfInput.Margin = new Thickness(0, 0, 16, 0);
             dwfInput.Margin = new Thickness(0, 0, 16, 0);
             combineDwgInput.Margin = new Thickness(0, 0, 16, 0);
+            openExportFolderInput.Margin = new Thickness(0, 0, 16, 0);
             pdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             pdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             combinePdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
@@ -964,6 +970,7 @@ public sealed class PrintWindow : TrueBimWindow
             formatActions.Children.Add(combineDwgInput);
             formatActions.Children.Add(dxfInput);
             formatActions.Children.Add(dwfInput);
+            formatActions.Children.Add(openExportFolderInput);
 
             Button settingsButton = CreateActionButton("Настройки...", TrueBimIcon.Settings, isEnabled: true);
             settingsButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
@@ -1120,6 +1127,7 @@ public sealed class PrintWindow : TrueBimWindow
         dxfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dwfInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         combineDwgInput.Style = TrueBimStyles.CreateCheckBoxStyle();
+        openExportFolderInput.Style = TrueBimStyles.CreateCheckBoxStyle();
         dwgProfileSourceText.Foreground = TrueBimBrushes.TextSecondary;
     }
 
@@ -2141,7 +2149,7 @@ public sealed class PrintWindow : TrueBimWindow
         string combinedPdfLogText = combinePdf
             ? string.Join(", ", combinedPdfFileNamesBySourceId.Select(pair => $"{pair.Key}={pair.Value}"))
             : "not combined";
-        logger.Info($"Print export requested for document '{document.Title}' with {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. DWG profile: {(dwgProfile is null ? "not selected" : DwgExportOptionsFactory.GetProfileSummary(dwgProfile))}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}. Combined PDF names: {combinedPdfLogText}. Merged DWG names: {mergedDwgLogText}.");
+        logger.Info($"Print export requested for document '{document.Title}' with {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. DWG profile: {(dwgProfile is null ? "not selected" : DwgExportOptionsFactory.GetProfileSummary(dwgProfile))}. Folder: {exportFolderInput.Text}. Open folder after completion: {openExportFolderInput.IsChecked == true}. Mask: {fileNameMaskInput.Text}. Combined PDF names: {combinedPdfLogText}. Merged DWG names: {mergedDwgLogText}.");
         Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row,
             _ => new List<string>());
@@ -2259,7 +2267,39 @@ public sealed class PrintWindow : TrueBimWindow
         Autodesk.Revit.UI.TaskDialog.Show(
             WindowTitle,
             $"Экспортировано файлов: {exportedCount}\nОшибок: {failureCount}{failureMessage}");
+        OpenExportFolderAfterCompletion(exportedCount);
         UpdateExportState();
+    }
+
+    private void OpenExportFolderAfterCompletion(int exportedFileCount)
+    {
+        if (!PrintExportCompletionPolicy.ShouldOpenExportFolder(
+                openExportFolderInput.IsChecked == true,
+                exportedFileCount))
+        {
+            return;
+        }
+
+        string exportFolder = exportFolderInput.Text;
+        if (!Directory.Exists(exportFolder))
+        {
+            logger.Warning($"Print export folder was not opened because it does not exist: '{exportFolder}'.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exportFolder,
+                UseShellExecute = true
+            });
+            logger.Info($"Opened print export folder after completion: '{exportFolder}'. Exported files: {exportedFileCount}.");
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"Failed to open print export folder '{exportFolder}': {exception.Message}");
+        }
     }
 
     private static void ApplyPdfStatus(
@@ -2650,6 +2690,7 @@ public sealed class PrintWindow : TrueBimWindow
             dxfInput.IsChecked == true,
             dwfInput.IsChecked == true,
             combineDwgInput.IsChecked == true,
+            openExportFolderInput.IsChecked == true,
             GetSelectedSetupName(dwgSetupInput),
             GetSelectedSetupName(dxfSetupInput),
             combinedDwgNameMaskInput.Text));
@@ -2671,6 +2712,7 @@ public sealed class PrintWindow : TrueBimWindow
         dxfInput.IsChecked = settings.ExportDxf;
         dwfInput.IsChecked = settings.ExportDwf;
         combineDwgInput.IsChecked = settings.CombineDwg;
+        openExportFolderInput.IsChecked = settings.OpenExportFolderAfterCompletion;
         combinedDwgNameMaskInput.Text = settings.CombinedDwgFileNameMask;
         dwgSetupInput.SelectedItem = FindCadSetupOption(settings.DwgSetupName) ?? cadExportSetupOptions.FirstOrDefault();
         dxfSetupInput.SelectedItem = FindCadSetupOption(settings.DxfSetupName) ?? cadExportSetupOptions.FirstOrDefault();

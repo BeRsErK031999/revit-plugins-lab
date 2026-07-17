@@ -14,6 +14,7 @@ public sealed record PrintSettings(
     bool ExportDxf,
     bool ExportDwf,
     bool CombineDwg,
+    bool OpenExportFolderAfterCompletion,
     string? DwgSetupName,
     string? DxfSetupName,
     string CombinedDwgFileNameMask = "{Имя документа}");
