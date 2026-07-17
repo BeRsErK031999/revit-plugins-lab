@@ -67,11 +67,13 @@ internal static class TrueBimCommandActions
                 logger);
             PrintPresetStoreState presetState = presetStorage.Load();
             PrintPreset? selectedPreset = presetState.FindPreset(presetState.LastSelectedPresetName);
-            string collectionFileNameMask = selectedPreset is null
-                ? initialSettings.FileNameMask
-                : PrintPresetStorage.NormalizePreset(selectedPreset).Settings!.FileNameMask;
-            IReadOnlyCollection<string> sheetParameterNames = new PrintFileNameTemplateService()
-                .GetSheetParameterNames(collectionFileNameMask);
+            PrintSettings collectionSettings = selectedPreset is null
+                ? PrintSettingsService.Normalize(initialSettings)
+                : PrintPresetStorage.NormalizePreset(selectedPreset).Settings!;
+            PrintFileNameTemplateService fileNameTemplateService = new();
+            IReadOnlyCollection<string> sheetParameterNames = fileNameTemplateService.GetSheetParameterNames(
+                collectionSettings.FileNameMask,
+                collectionSettings.CombinedDwgFileNameMask);
             Stopwatch collectionTimer = Stopwatch.StartNew();
             IReadOnlyList<PrintSheetSource> sheetSources = CollectPrintSheetSources(
                 commandData.Application.Application.Documents.Cast<Document>().ToList(),
@@ -81,7 +83,13 @@ internal static class TrueBimCommandActions
             int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
             logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents in {collectionTimer.ElapsedMilliseconds} ms. Loaded custom sheet parameters: {sheetParameterNames.Count}.");
             Stopwatch windowTimer = Stopwatch.StartNew();
-            PrintWindow printWindow = new(activeDocument, sheetSources, settingsService, logger, collectionFileNameMask)
+            PrintWindow printWindow = new(
+                activeDocument,
+                sheetSources,
+                settingsService,
+                logger,
+                collectionSettings.FileNameMask,
+                collectionSettings.CombinedDwgFileNameMask)
             {
                 ShowInTaskbar = true
             };

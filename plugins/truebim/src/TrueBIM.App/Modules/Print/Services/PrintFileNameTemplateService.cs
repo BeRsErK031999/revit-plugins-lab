@@ -8,24 +8,42 @@ namespace TrueBIM.App.Modules.Print.Services;
 public sealed class PrintFileNameTemplateService
 {
     public const string DefaultTemplate = "{Номер листа}_{Имя листа}";
+    public const string DefaultCombinedTemplate = "{Имя документа}";
 
     private const int MaxFileNameLength = 180;
     private static readonly Regex TokenRegex = new(@"\{([^{}]+)\}", RegexOptions.Compiled);
 
-    public IReadOnlyCollection<string> GetSheetParameterNames(string? template)
+    public IReadOnlyCollection<string> GetSheetParameterNames(params string?[] templates)
     {
         return GetDictionaryTokenNames(
-            template,
+            templates,
             "SheetParameter:",
             "Параметр листа:");
     }
 
-    public IReadOnlyCollection<string> GetProjectParameterNames(string? template)
+    public IReadOnlyCollection<string> GetProjectParameterNames(params string?[] templates)
     {
         return GetDictionaryTokenNames(
-            template,
+            templates,
             "ProjectParameter:",
             "Параметр проекта:");
+    }
+
+    public PrintFileNamePreview BuildCombined(
+        string? template,
+        IReadOnlyList<PrintSheetInfo> sheets,
+        PrintFileNameContext context)
+    {
+        Guard.NotNull(sheets, nameof(sheets));
+        if (sheets.Count == 0)
+        {
+            throw new ArgumentException("At least one sheet is required to build a combined file name.", nameof(sheets));
+        }
+
+        string sourceTemplate = string.IsNullOrWhiteSpace(template)
+            ? DefaultCombinedTemplate
+            : template!;
+        return Build(sourceTemplate, sheets[0], context, counter: 1);
     }
 
     public PrintFileNamePreview Build(
@@ -123,22 +141,27 @@ public sealed class PrintFileNameTemplateService
     }
 
     private static IReadOnlyCollection<string> GetDictionaryTokenNames(
-        string? template,
+        IReadOnlyCollection<string?> templates,
         string englishPrefix,
         string russianPrefix)
     {
-        string sourceTemplate = string.IsNullOrWhiteSpace(template)
-            ? DefaultTemplate
-            : template!;
+        Guard.NotNull(templates, nameof(templates));
+
         HashSet<string> parameterNames = new(StringComparer.CurrentCultureIgnoreCase);
-        foreach (Match match in TokenRegex.Matches(sourceTemplate))
+        foreach (string? template in templates)
         {
-            string token = match.Groups[1].Value.Trim();
-            string? parameterName = GetDictionaryTokenName(token, englishPrefix, StringComparison.Ordinal)
-                ?? GetDictionaryTokenName(token, russianPrefix, StringComparison.CurrentCultureIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(parameterName))
+            string sourceTemplate = string.IsNullOrWhiteSpace(template)
+                ? DefaultTemplate
+                : template!;
+            foreach (Match match in TokenRegex.Matches(sourceTemplate))
             {
-                parameterNames.Add(parameterName!);
+                string token = match.Groups[1].Value.Trim();
+                string? parameterName = GetDictionaryTokenName(token, englishPrefix, StringComparison.Ordinal)
+                    ?? GetDictionaryTokenName(token, russianPrefix, StringComparison.CurrentCultureIgnoreCase);
+                if (!string.IsNullOrWhiteSpace(parameterName))
+                {
+                    parameterNames.Add(parameterName!);
+                }
             }
         }
 

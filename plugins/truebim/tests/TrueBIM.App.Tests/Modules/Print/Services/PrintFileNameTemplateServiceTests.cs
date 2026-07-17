@@ -35,6 +35,29 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void BuildCombined_UsesMaskWithoutAddingServiceSuffix()
+    {
+        PrintFileNamePreview preview = service.BuildCombined(
+            "{Номер проекта}_{Имя документа}",
+            [Sheet("A-101", "План"), Sheet("A-102", "Разрез")],
+            Context("РД", "P-42", "Model"));
+
+        Assert.Equal("P-42_Model", preview.FileName);
+        Assert.False(preview.HasUnknownTokens);
+    }
+
+    [Fact]
+    public void BuildCombined_UsesDocumentNameAsDefault()
+    {
+        PrintFileNamePreview preview = service.BuildCombined(
+            "  ",
+            [Sheet("A-101", "План")],
+            Context("РД", "P-42", "Model"));
+
+        Assert.Equal("Model", preview.FileName);
+    }
+
+    [Fact]
     public void Build_ReplacesDateAndCounterTokens()
     {
         PrintFileNamePreview preview = service.Build(
@@ -118,6 +141,24 @@ public sealed class PrintFileNameTemplateServiceTests
         Assert.Equal(2, names.Count);
         Assert.Contains("Шифр", names);
         Assert.Contains("Стадия", names);
+    }
+
+    [Fact]
+    public void GetParameterNames_CombinesPerSheetAndMergedTemplates()
+    {
+        IReadOnlyCollection<string> sheetNames = service.GetSheetParameterNames(
+            "{Параметр листа:Том}_{Номер листа}",
+            "{SheetParameter:Комплект}_{Имя документа}");
+        IReadOnlyCollection<string> projectNames = service.GetProjectParameterNames(
+            "{Параметр проекта:Шифр}_{Номер листа}",
+            "{ProjectParameter:Стадия}_{Имя документа}");
+
+        Assert.Equal(2, sheetNames.Count);
+        Assert.Contains("Том", sheetNames);
+        Assert.Contains("Комплект", sheetNames);
+        Assert.Equal(2, projectNames.Count);
+        Assert.Contains("Шифр", projectNames);
+        Assert.Contains("Стадия", projectNames);
     }
 
     [Fact]

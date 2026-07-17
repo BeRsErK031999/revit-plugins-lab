@@ -48,7 +48,8 @@ public sealed class PrintPresetStorageTests
             CombineDwg: true,
             ExportSeparatePdfWithCombined: true,
             DwgSetupName: "  Customer A DWG  ",
-            DxfSetupName: null);
+            DxfSetupName: null,
+            CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  ");
         PrintPresetStoreState state = new()
         {
             Presets =
@@ -81,6 +82,7 @@ public sealed class PrintPresetStorageTests
         Assert.True(preset.Settings.ExportDwg);
         Assert.True(preset.Settings.CombinePdf);
         Assert.True(preset.Settings.CombineDwg);
+        Assert.Equal("{Номер проекта}_{Имя документа}", preset.Settings.CombinedDwgFileNameMask);
         Assert.Equal("Customer A DWG", preset.Settings.DwgSetupName);
         Assert.NotNull(preset.DwgProfile);
         Assert.Equal("Заказчик А DWG", preset.DwgProfile!.ProfileName);

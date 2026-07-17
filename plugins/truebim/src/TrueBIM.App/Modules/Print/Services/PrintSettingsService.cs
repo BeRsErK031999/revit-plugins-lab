@@ -26,7 +26,8 @@ public sealed class PrintSettingsService
         CombineDwg: false,
         ExportSeparatePdfWithCombined: false,
         DwgSetupName: null,
-        DxfSetupName: null);
+        DxfSetupName: null,
+        CombinedDwgFileNameMask: PrintFileNameTemplateService.DefaultCombinedTemplate);
 
     private readonly string settingsPath;
     private readonly ITrueBimLogger logger;
@@ -119,7 +120,10 @@ public sealed class PrintSettingsService
             CombineDwg: settings.CombineDwg,
             ExportSeparatePdfWithCombined: settings.ExportSeparatePdfWithCombined,
             DwgSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DwgSetupName),
-            DxfSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DxfSetupName));
+            DxfSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DxfSetupName),
+            CombinedDwgFileNameMask: string.IsNullOrWhiteSpace(settings.CombinedDwgFileNameMask)
+                ? DefaultSettings.CombinedDwgFileNameMask
+                : settings.CombinedDwgFileNameMask.Trim());
     }
 
     private static PrintSettings FromDto(PrintSettingsDto dto)
@@ -140,7 +144,8 @@ public sealed class PrintSettingsService
             dto.CombineDwg ?? DefaultSettings.CombineDwg,
             dto.ExportSeparatePdfWithCombined ?? DefaultSettings.ExportSeparatePdfWithCombined,
             dto.DwgSetupName,
-            dto.DxfSetupName);
+            dto.DxfSetupName,
+            dto.CombinedDwgFileNameMask ?? DefaultSettings.CombinedDwgFileNameMask);
     }
 
     private static PrintSettingsDto ToDto(PrintSettings settings)
@@ -162,7 +167,8 @@ public sealed class PrintSettingsService
             CombineDwg = settings.CombineDwg,
             ExportSeparatePdfWithCombined = settings.ExportSeparatePdfWithCombined,
             DwgSetupName = settings.DwgSetupName,
-            DxfSetupName = settings.DxfSetupName
+            DxfSetupName = settings.DxfSetupName,
+            CombinedDwgFileNameMask = settings.CombinedDwgFileNameMask
         };
     }
 
@@ -233,5 +239,8 @@ public sealed class PrintSettingsService
 
         [JsonPropertyName("dxfSetupName")]
         public string? DxfSetupName { get; init; }
+
+        [JsonPropertyName("combinedDwgFileNameMask")]
+        public string? CombinedDwgFileNameMask { get; init; }
     }
 }
