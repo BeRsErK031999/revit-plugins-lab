@@ -307,7 +307,34 @@ public sealed class PrintWindow : TrueBimWindow
 
     private UIElement CreateSheetsSection()
     {
-        return TrueBimUi.CreateSectionCard("Листы для печати", CreateSheetGrid());
+        Grid section = new()
+        {
+            Margin = TrueBimTheme.SectionPadding
+        };
+        section.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        section.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        section.Children.Add(new TextBlock
+        {
+            Text = "Листы для печати",
+            FontSize = TrueBimTheme.SectionTitleFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        });
+
+        UIElement grid = CreateSheetGrid();
+        Grid.SetRow(grid, 1);
+        section.Children.Add(grid);
+
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Child = section
+        };
     }
 
     private UIElement CreateReadSettings()
@@ -418,7 +445,7 @@ public sealed class PrintWindow : TrueBimWindow
         ScrollViewer.SetCanContentScroll(sheetGrid, true);
         sheetGrid.HeadersVisibility = DataGridHeadersVisibility.Column;
         sheetGrid.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
-        sheetGrid.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        sheetGrid.VerticalScrollBarVisibility = ScrollBarVisibility.Visible;
         sheetGrid.SelectionMode = DataGridSelectionMode.Extended;
         sheetGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
         sheetGrid.CanUserSortColumns = true;

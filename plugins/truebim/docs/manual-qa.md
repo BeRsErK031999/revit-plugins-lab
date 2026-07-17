@@ -210,6 +210,15 @@ Expected logs:
 - applied DWG profile and resulting key `DWGExportOptions`;
 - exported file counts and any per-sheet failures.
 
+### Print Large Sheet List QA
+
+1. Open a project or several sources containing at least 95 visible sheets.
+2. Open `Печать` and confirm the vertical scrollbar is visible on the sheet table immediately.
+3. Resize the window down to its minimum height and confirm the table keeps a bounded viewport instead of extending below the window.
+4. Expand all source and volume groups and scroll from the first sheet to the last with the mouse wheel and scrollbar thumb.
+5. Sort by sheet number, switch the source filter, and confirm the scrollbar remains visible and usable.
+6. Confirm row virtualization remains responsive while scrolling the full list.
+
 Completed first-release tasks:
 
 - ribbon/launcher registration;
