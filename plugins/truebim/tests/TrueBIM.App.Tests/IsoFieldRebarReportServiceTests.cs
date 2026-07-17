@@ -206,6 +206,57 @@ public sealed class IsoFieldRebarReportServiceTests
         Assert.Contains(report.Diagnostics, diagnostic => diagnostic.Contains("Файл отсутствует", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Build_LabelsThreePointBindingForStraightWall()
+    {
+        using TempDirectory temp = new();
+        string sourcePath = Path.Combine(temp.Path, "As1X.png");
+        File.WriteAllText(sourcePath, "iso source", Encoding.UTF8);
+        IsoFieldRebarReportRequest request = CreateRequest(
+            sourcePath,
+            [CreateItem("zone-a", true, 12, 10)]);
+        IsoFieldHostGeometry geometry = new(
+            new IsoFieldRebarPoint3D(0, 0, 0),
+            new IsoFieldRebarPoint3D(1, 0, 0),
+            new IsoFieldRebarPoint3D(0, 0, 1),
+            new IsoFieldRebarPoint3D(0, -1, 0),
+            [
+                [
+                    new IsoFieldPoint(0, 0),
+                    new IsoFieldPoint(12, 0),
+                    new IsoFieldPoint(12, 3),
+                    new IsoFieldPoint(0, 3),
+                    new IsoFieldPoint(0, 0)
+                ]
+            ]);
+        IsoFieldSlabBindingAnalysis binding = new IsoFieldSlabBindingService().Analyze(
+            request.Recognition,
+            geometry,
+            new IsoFieldSlabBindingInput(
+                new IsoFieldPoint(0, 0),
+                new IsoFieldPoint(10, 0),
+                new IsoFieldPoint(0, 0),
+                new IsoFieldPoint(10, 0),
+                MirrorImageY: false,
+                ImagePoint3: new IsoFieldPoint(0, 1),
+                HostPoint3Feet: new IsoFieldPoint(0, 1)));
+        request = request with
+        {
+            Host = new IsoFieldHostElement(
+                43,
+                "Wall",
+                "Стена",
+                "Basic Wall 300",
+                geometry,
+                IsoFieldHostGeometryProfile.StraightBasicWall),
+            SlabBinding = binding
+        };
+
+        IsoFieldRebarReport report = service.Build(request);
+
+        Assert.Equal("WallThreePoint", report.Binding.Kind);
+    }
+
     private static IsoFieldRebarReportRequest CreateRequest(
         string sourcePath,
         IReadOnlyList<RebarRulePreviewItem> items)

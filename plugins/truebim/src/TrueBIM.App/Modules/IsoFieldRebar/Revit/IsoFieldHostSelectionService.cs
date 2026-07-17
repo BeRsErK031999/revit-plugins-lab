@@ -37,7 +37,7 @@ public sealed class IsoFieldHostSelectionService
         return CreateHostElement(selectedElement);
     }
 
-    public IsoFieldPoint PickSlabControlPoint(
+    public IsoFieldPoint PickPlanarControlPoint(
         UIDocument uiDocument,
         IsoFieldHostElement hostElement,
         int pointNumber)
@@ -52,18 +52,19 @@ public sealed class IsoFieldHostSelectionService
             throw new ArgumentNullException(nameof(hostElement));
         }
 
-        if (!hostElement.IsSlab || hostElement.Geometry is null)
+        if (hostElement.Geometry is null)
         {
             throw new InvalidOperationException(
-                "Контрольные точки доступны только для плиты с распознанной горизонтальной верхней гранью.");
+                "Контрольные точки доступны только для host с распознанной опорной плоскостью.");
         }
 
+        string faceName = hostElement.IsWall ? "наружной плоскости стены" : "верхней грани плиты";
         Reference reference = uiDocument.Selection.PickObject(
             ObjectType.Face,
             new HostFaceSelectionFilter(hostElement.ElementId),
-            $"Укажите контрольную точку {pointNumber} на верхней грани выбранной плиты.");
+            $"Укажите контрольную точку {pointNumber} на {faceName}.");
         XYZ worldPoint = reference.GlobalPoint
-            ?? throw new InvalidOperationException("Не удалось определить координаты выбранной точки плиты.");
+            ?? throw new InvalidOperationException("Не удалось определить координаты выбранной точки host.");
         IsoFieldHostGeometry geometry = hostElement.Geometry;
         XYZ origin = ToXyz(geometry.OriginFeet);
         XYZ axisX = ToXyz(geometry.AxisX);
@@ -74,7 +75,7 @@ public sealed class IsoFieldHostSelectionService
         if (planeDistance > PointPlaneToleranceFeet)
         {
             throw new InvalidOperationException(
-                "Выбранная точка не лежит на верхней плоскости плиты. Укажите точку на верхней грани.");
+                $"Выбранная точка не лежит на {faceName}. Укажите точку на опорной плоскости.");
         }
 
         return new IsoFieldPoint(
@@ -102,7 +103,7 @@ public sealed class IsoFieldHostSelectionService
             : null;
     }
 
-    private static IsoFieldHostElement CreateHostElement(Element element)
+    internal static IsoFieldHostElement CreateHostElement(Element element)
     {
         Category category = element.Category
             ?? throw new InvalidOperationException("У выбранного элемента нет категории.");
@@ -115,12 +116,14 @@ public sealed class IsoFieldHostSelectionService
         long elementId = RevitElementIds.GetValue(element.Id);
         IsoFieldHostGeometry? geometry = string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
             ? TryCreateSlabGeometry(element)
-            : null;
+            : TryCreateWallGeometry(element);
         IsoFieldHostGeometryProfile geometryProfile = string.Equals(hostKind, SlabHostKind, StringComparison.Ordinal)
             ? geometry is null
                 ? IsoFieldHostGeometryProfile.NonHorizontalOrUnresolvedSlab
                 : IsoFieldHostGeometryProfile.HorizontalSlab
-            : ResolveWallGeometryProfile(element);
+            : IsStraightBasicWall(element)
+                ? IsoFieldHostGeometryProfile.StraightBasicWall
+                : IsoFieldHostGeometryProfile.UnsupportedWall;
         return new IsoFieldHostElement(
             elementId,
             hostKind,
@@ -132,12 +135,92 @@ public sealed class IsoFieldHostSelectionService
 
     internal static IsoFieldHostGeometryProfile ResolveWallGeometryProfile(Element element)
     {
+        return IsStraightBasicWall(element)
+            ? IsoFieldHostGeometryProfile.StraightBasicWall
+            : IsoFieldHostGeometryProfile.UnsupportedWall;
+    }
+
+    private static bool IsStraightBasicWall(Element element)
+    {
         return element is Wall wall
             && wall.WallType.Kind == WallKind.Basic
             && wall.Location is LocationCurve locationCurve
-            && locationCurve.Curve is Line
-                ? IsoFieldHostGeometryProfile.StraightBasicWall
-                : IsoFieldHostGeometryProfile.UnsupportedWall;
+            && locationCurve.Curve is Line;
+    }
+
+    private static IsoFieldHostGeometry? TryCreateWallGeometry(Element element)
+    {
+        if (element is not Wall wall || !IsStraightBasicWall(wall))
+        {
+            return null;
+        }
+
+        try
+        {
+            return CreateWallGeometry(wall);
+        }
+        catch (Exception exception) when (exception is
+            Autodesk.Revit.Exceptions.ApplicationException
+            or ArgumentException
+            or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static IsoFieldHostGeometry? CreateWallGeometry(Wall wall)
+    {
+        PlanarFace[] exteriorFaces = HostObjectUtils.GetSideFaces(wall, ShellLayerType.Exterior)
+            .Select(reference => wall.GetGeometryObjectFromReference(reference))
+            .OfType<PlanarFace>()
+            .Where(face => Math.Abs(face.FaceNormal.Normalize().DotProduct(XYZ.BasisZ)) <= 1 - HorizontalNormalTolerance)
+            .OrderByDescending(face => face.Area)
+            .ToArray();
+        if (exteriorFaces.Length != 1)
+        {
+            return null;
+        }
+
+        PlanarFace exteriorFace = exteriorFaces[0];
+
+        List<IReadOnlyList<XYZ>> worldLoops = exteriorFace.GetEdgesAsCurveLoops()
+            .Select(BuildWorldLoop)
+            .Where(loop => loop.Count >= 4)
+            .ToList();
+        if (worldLoops.Count == 0)
+        {
+            return null;
+        }
+
+        XYZ normal = exteriorFace.FaceNormal.Normalize();
+        XYZ axisY = XYZ.BasisZ;
+        XYZ axisX = axisY.CrossProduct(normal);
+        if (axisX.GetLength() <= GeometryToleranceFeet)
+        {
+            return null;
+        }
+
+        axisX = axisX.Normalize();
+        XYZ average = Average(worldLoops.SelectMany(loop => loop));
+        XYZ origin = average - (normal * (average - exteriorFace.Origin).DotProduct(normal));
+        IReadOnlyList<IReadOnlyList<IsoFieldPoint>> localLoops = worldLoops
+            .Select(loop => (IReadOnlyList<IsoFieldPoint>)loop
+                .Select(point =>
+                {
+                    XYZ delta = point - origin;
+                    return new IsoFieldPoint(
+                        delta.DotProduct(axisX),
+                        delta.DotProduct(axisY));
+                })
+                .ToArray())
+            .ToArray();
+
+        return new IsoFieldHostGeometry(
+            ToPoint3D(origin),
+            ToPoint3D(axisX),
+            ToPoint3D(axisY),
+            ToPoint3D(normal),
+            localLoops);
     }
 
     private static IsoFieldHostGeometry? TryCreateSlabGeometry(Element element)

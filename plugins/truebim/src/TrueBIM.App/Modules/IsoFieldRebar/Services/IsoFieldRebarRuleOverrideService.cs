@@ -84,7 +84,7 @@ public sealed class IsoFieldRebarRuleOverrideService
 
         if (calculatedPreview.EngineeringSettings is null)
         {
-            throw new InvalidOperationException("Ручные настройки зон доступны только для инженерной раскладки плиты.");
+            throw new InvalidOperationException("Ручные настройки зон доступны только для инженерной раскладки host.");
         }
 
         IsoFieldEngineeringSettings settings = calculatedPreview.EngineeringSettings;

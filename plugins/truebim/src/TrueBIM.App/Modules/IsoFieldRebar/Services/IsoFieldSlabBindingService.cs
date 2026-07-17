@@ -109,8 +109,8 @@ public sealed class IsoFieldSlabBindingService
 
         ValidatePoint(input.ImagePoint1, "Первая точка изображения");
         ValidatePoint(input.ImagePoint2, "Вторая точка изображения");
-        ValidatePoint(input.HostPoint1Feet, "Первая точка плиты");
-        ValidatePoint(input.HostPoint2Feet, "Вторая точка плиты");
+        ValidatePoint(input.HostPoint1Feet, "Первая точка host");
+        ValidatePoint(input.HostPoint2Feet, "Вторая точка host");
 
         double imageDeltaX = input.ImagePoint2.X - input.ImagePoint1.X;
         double imageDeltaY = input.ImagePoint2.Y - input.ImagePoint1.Y;
@@ -132,7 +132,7 @@ public sealed class IsoFieldSlabBindingService
         if (hostSpan < MinimumHostSpanFeet)
         {
             throw new InvalidOperationException(
-                "Контрольные точки плиты расположены слишком близко друг к другу.");
+                "Контрольные точки host расположены слишком близко друг к другу.");
         }
 
         double rotation = Math.Atan2(hostDeltaY, hostDeltaX)
@@ -152,11 +152,11 @@ public sealed class IsoFieldSlabBindingService
         if (input.ImagePoint3 is null || input.HostPoint3Feet is null)
         {
             throw new InvalidOperationException(
-                "Для независимой проверки привязки укажите третью точку на карте и на плите.");
+                "Для независимой проверки привязки укажите третью точку на карте и на host.");
         }
 
         ValidatePoint(input.ImagePoint3, "Третья точка изображения");
-        ValidatePoint(input.HostPoint3Feet, "Третья точка плиты");
+        ValidatePoint(input.HostPoint3Feet, "Третья точка host");
         double imageOffset = PerpendicularDistance(
             input.ImagePoint3,
             input.ImagePoint1,
@@ -174,7 +174,7 @@ public sealed class IsoFieldSlabBindingService
         if (hostOffset < MinimumHostSpanFeet)
         {
             throw new InvalidOperationException(
-                "Третья точка плиты должна находиться в стороне от линии первых двух контрольных точек.");
+                "Третья точка host должна находиться в стороне от линии первых двух контрольных точек.");
         }
 
         IsoFieldPoint expectedHostPoint = transform.Map(input.ImagePoint3);
@@ -197,7 +197,7 @@ public sealed class IsoFieldSlabBindingService
             || hostGeometry.BoundaryLoopsFeet.Any(loop => loop.Count < 4))
         {
             throw new InvalidOperationException(
-                "Контур верхней грани плиты не содержит замкнутых границ для привязки.");
+                "Опорная плоскость host не содержит замкнутых границ для привязки.");
         }
     }
 
@@ -298,11 +298,11 @@ public sealed class IsoFieldSlabBindingService
                 + $"отражение Y: {(transform.MirrorImageY ? "да" : "нет")}.",
             $"Третья точка: отклонение {thirdPoint.DeviationMillimeters.ToString("0.#", culture)} мм "
                 + $"при допуске {ThirdPointToleranceMillimeters.ToString("0.#", culture)} мм.",
-            $"Геометрия плиты: отверстий {holeCount}; сохранено {(retainedAreaRatio * 100).ToString("0.#", culture)}% площади зон."
+            $"Геометрия host: отверстий {holeCount}; сохранено {(retainedAreaRatio * 100).ToString("0.#", culture)}% площади зон."
         ];
         if (!controlPointsInside)
         {
-            diagnostics.Add("Одна или несколько контрольных точек находятся вне допустимого контура плиты.");
+            diagnostics.Add("Одна или несколько контрольных точек находятся вне допустимого контура host.");
         }
 
         if (!thirdPoint.IsValid)
@@ -312,7 +312,7 @@ public sealed class IsoFieldSlabBindingService
 
         if (clippedZoneCount > 0)
         {
-            diagnostics.Add($"По контуру плиты и отверстиям обрезано зон: {clippedZoneCount} из {zoneCount}.");
+            diagnostics.Add($"По контуру host и отверстиям обрезано зон: {clippedZoneCount} из {zoneCount}.");
         }
 
         if (removedZoneCount > 0)
@@ -322,7 +322,7 @@ public sealed class IsoFieldSlabBindingService
 
         diagnostics.Add(canProceed
             ? "Привязка и отсечение зон проверены. Можно переходить к расчёту правил."
-            : "Привязка требует исправления; расчёт правил для плиты заблокирован.");
+            : "Привязка требует исправления; расчёт правил для host заблокирован.");
         return diagnostics;
     }
 

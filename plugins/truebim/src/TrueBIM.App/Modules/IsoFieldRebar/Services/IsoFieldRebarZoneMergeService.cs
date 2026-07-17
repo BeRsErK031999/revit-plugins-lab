@@ -44,7 +44,7 @@ public sealed class IsoFieldRebarZoneMergeService
         if (preview.EngineeringSettings is null)
         {
             throw new InvalidOperationException(
-                "Объединение зон доступно только для инженерной раскладки плиты.");
+                "Объединение зон доступно только для инженерной раскладки host.");
         }
 
         if (merges.Count == 0)
@@ -205,7 +205,7 @@ public sealed class IsoFieldRebarZoneMergeService
         if (members.Any(member => member.EffectiveRegions.Count == 0))
         {
             throw new InvalidOperationException(
-                "У одной из выбранных зон нет допустимой геометрии после отсечения по плите.");
+                "У одной из выбранных зон нет допустимой геометрии после отсечения по host.");
         }
     }
 

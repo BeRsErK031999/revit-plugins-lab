@@ -30,15 +30,17 @@ public sealed class RebarRuleValidationService
             throw new ArgumentNullException(nameof(recognitionResult));
         }
 
-        if (hostElement is null
-            || !string.Equals(hostElement.HostKind, SlabHostKind, StringComparison.Ordinal))
+        bool supportsEngineeringLayout = hostElement?.Geometry is not null
+            && (hostElement.IsSlab
+                || hostElement.GeometryProfile == IsoFieldHostGeometryProfile.StraightBasicWall);
+        if (!supportsEngineeringLayout)
         {
             return BuildLegacyPreview(recognitionResult, hostElement);
         }
 
-        return BuildSlabEngineeringPreview(
+        return BuildPlanarEngineeringPreview(
             recognitionResult,
-            hostElement,
+            hostElement!,
             sourceSet,
             slabBinding,
             engineeringSettings);
@@ -90,7 +92,7 @@ public sealed class RebarRuleValidationService
         return diagnostics;
     }
 
-    private RebarRulePreviewResult BuildSlabEngineeringPreview(
+    private RebarRulePreviewResult BuildPlanarEngineeringPreview(
         IsoFieldRecognitionResult recognitionResult,
         IsoFieldHostElement hostElement,
         IsoFieldSourceSet? sourceSet,
@@ -105,7 +107,7 @@ public sealed class RebarRuleValidationService
 
         if (sourceSet is null || !sourceSet.IsComplete)
         {
-            diagnostics.Add("Для инженерной раскладки плиты нужен полный комплект из четырёх карт, а не одиночный JSON.");
+            diagnostics.Add("Для инженерной раскладки host нужен полный комплект из четырёх карт, а не одиночный JSON.");
         }
         else if (!sourceSet.HasConfirmedLayerMappings)
         {
@@ -114,7 +116,7 @@ public sealed class RebarRuleValidationService
 
         if (slabBinding?.CanProceed != true)
         {
-            diagnostics.Add("Перед расчётом раскладки выполните проверенную трёхточечную привязку и отсечение зон по плите.");
+            diagnostics.Add("Перед расчётом раскладки выполните проверенную трёхточечную привязку и отсечение зон по контуру host.");
         }
 
         diagnostics.AddRange(layoutService.ValidateSettings(settings));
@@ -147,7 +149,7 @@ public sealed class RebarRuleValidationService
 
             if (!clippedByZoneId.TryGetValue(polyline.Id, out IsoFieldClippedZone? clippedZone))
             {
-                baseDiagnostics.Add("После отсечения по плите зона не содержит допустимой геометрии.");
+                baseDiagnostics.Add("После отсечения по контуру host зона не содержит допустимой геометрии.");
             }
 
             IsoFieldLayerMapping? mapping = polyline.LayerRole.HasValue

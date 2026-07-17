@@ -142,7 +142,7 @@ public sealed class IsoFieldRebarCreationService
 
         if (!rulePreview.IsEngineeringPreview)
         {
-            throw new InvalidOperationException("Diff повторного запуска доступен только для инженерной раскладки плиты.");
+            throw new InvalidOperationException("Diff повторного запуска доступен только для инженерной раскладки host.");
         }
 
         IReadOnlyList<RebarRulePreviewItem> previewItems = ResolvePreviewItems(rulePreview, hostElement.HostKind);
@@ -201,16 +201,65 @@ public sealed class IsoFieldRebarCreationService
             throw new InvalidOperationException("Выбранный host-элемент больше не соответствует сохраненному типу стены или плиты.");
         }
 
-        if (string.Equals(actualHostKind, WallHostKind, StringComparison.Ordinal)
-            && selectedHost.GeometryProfile != IsoFieldHostGeometryProfile.Unknown)
+        IsoFieldHostElement actualHost = IsoFieldHostSelectionService.CreateHostElement(host);
+        if (selectedHost.GeometryProfile != IsoFieldHostGeometryProfile.Unknown
+            && actualHost.GeometryProfile != selectedHost.GeometryProfile)
         {
-            IsoFieldHostGeometryProfile actualProfile = IsoFieldHostSelectionService.ResolveWallGeometryProfile(host);
-            if (actualProfile != selectedHost.GeometryProfile)
+            throw new InvalidOperationException(
+                "Профиль host изменился после выбора. Выберите host заново и повторите расчёт.");
+        }
+
+        if (selectedHost.Geometry is not null
+            && (actualHost.Geometry is null
+                || !HostGeometryMatches(selectedHost.Geometry, actualHost.Geometry)))
+        {
+            throw new InvalidOperationException(
+                "Геометрия или отверстия host изменились после привязки. Выберите host заново и повторите расчёт.");
+        }
+    }
+
+    private static bool HostGeometryMatches(
+        IsoFieldHostGeometry selected,
+        IsoFieldHostGeometry actual)
+    {
+        if (!PointsMatch(selected.OriginFeet, actual.OriginFeet)
+            || !PointsMatch(selected.AxisX, actual.AxisX)
+            || !PointsMatch(selected.AxisY, actual.AxisY)
+            || !PointsMatch(selected.Normal, actual.Normal)
+            || selected.BoundaryLoopsFeet.Count != actual.BoundaryLoopsFeet.Count)
+        {
+            return false;
+        }
+
+        for (int loopIndex = 0; loopIndex < selected.BoundaryLoopsFeet.Count; loopIndex++)
+        {
+            IReadOnlyList<IsoFieldPoint> selectedLoop = selected.BoundaryLoopsFeet[loopIndex];
+            IReadOnlyList<IsoFieldPoint> actualLoop = actual.BoundaryLoopsFeet[loopIndex];
+            if (selectedLoop.Count != actualLoop.Count)
             {
-                throw new InvalidOperationException(
-                    "Геометрия стены изменилась после выбора. Выберите host заново и повторите расчёт.");
+                return false;
+            }
+
+            for (int pointIndex = 0; pointIndex < selectedLoop.Count; pointIndex++)
+            {
+                if (Math.Abs(selectedLoop[pointIndex].X - actualLoop[pointIndex].X) > GeometryComparisonToleranceFeet
+                    || Math.Abs(selectedLoop[pointIndex].Y - actualLoop[pointIndex].Y) > GeometryComparisonToleranceFeet)
+                {
+                    return false;
+                }
             }
         }
+
+        return true;
+    }
+
+    private static bool PointsMatch(
+        IsoFieldRebarPoint3D first,
+        IsoFieldRebarPoint3D second)
+    {
+        return Math.Abs(first.XFeet - second.XFeet) <= GeometryComparisonToleranceFeet
+            && Math.Abs(first.YFeet - second.YFeet) <= GeometryComparisonToleranceFeet
+            && Math.Abs(first.ZFeet - second.ZFeet) <= GeometryComparisonToleranceFeet;
     }
 
     private void EnsureSupportedHost(IsoFieldHostElement hostElement)
@@ -291,9 +340,28 @@ public sealed class IsoFieldRebarCreationService
     {
         if (string.Equals(hostElement.HostKind, WallHostKind, StringComparison.Ordinal) && host is Wall wall)
         {
-            foreach (IsoFieldRebarPlacement placement in wallPlacementService.BuildPlacements(
-                BuildWallPlacementFrame(wall),
-                previewItems))
+            IReadOnlyList<IsoFieldRebarPlacement> placements;
+            if (rulePreview.IsEngineeringPreview)
+            {
+                if (slabBinding?.CanProceed != true || hostElement.Geometry is null)
+                {
+                    throw new InvalidOperationException(
+                        "Инженерная раскладка стены требует актуальную проверенную привязку и геометрию наружной плоскости.");
+                }
+
+                placements = wallPlacementService.BuildEngineeringPlacements(
+                    hostElement.Geometry,
+                    wall.Width,
+                    rulePreview);
+            }
+            else
+            {
+                placements = wallPlacementService.BuildPlacements(
+                    BuildWallPlacementFrame(wall),
+                    previewItems);
+            }
+
+            foreach (IsoFieldRebarPlacement placement in placements)
             {
                 logger.Info($"IsoField wall rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
                 yield return CreateRequest(
@@ -643,7 +711,7 @@ public sealed class IsoFieldRebarCreationService
         List<long> deletedIds = new();
         logger.Info(
             $"IsoField engineering rebar change transaction starting. HostId={hostElement.ElementId}; {changePlan.Summary}");
-        using Transaction transaction = new(document, "TrueBIM: обновить армирование плиты по изополям");
+        using Transaction transaction = new(document, "TrueBIM: обновить армирование по изополям");
         transaction.Start();
         try
         {

@@ -29,7 +29,7 @@ public sealed class IsoFieldRebarReportService
         if (request.Preview.EngineeringSettings is null || !request.Preview.IsEngineeringPreview)
         {
             throw new InvalidOperationException(
-                "Отчёт доступен только для рассчитанной инженерной раскладки плиты.");
+                "Отчёт доступен только для рассчитанной инженерной раскладки host.");
         }
 
         IsoFieldRebarReportSourceFile[] sourceFiles = request.SourceFiles
@@ -454,7 +454,7 @@ public sealed class IsoFieldRebarReportService
 
         IsoFieldPlanarTransform transform = request.SlabBinding.Transform;
         return new IsoFieldRebarReportBinding(
-            "SlabThreePoint",
+            request.Host.IsWall ? "WallThreePoint" : "SlabThreePoint",
             transform.ImageAnchor.X,
             transform.ImageAnchor.Y,
             transform.HostAnchorFeet.X,

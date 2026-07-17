@@ -16,7 +16,8 @@ public sealed class IsoFieldHostSupportService
 
         return hostElement.GeometryProfile switch
         {
-            IsoFieldHostGeometryProfile.StraightBasicWall => CreateStraightWallResult(),
+            IsoFieldHostGeometryProfile.StraightBasicWall when hostElement.Geometry is not null => CreateStraightWallResult(),
+            IsoFieldHostGeometryProfile.StraightBasicWall => CreateUnresolvedWallResult(),
             IsoFieldHostGeometryProfile.UnsupportedWall => CreateUnsupportedWallResult(),
             IsoFieldHostGeometryProfile.HorizontalSlab when hostElement.Geometry is not null => CreateHorizontalSlabResult(),
             IsoFieldHostGeometryProfile.HorizontalSlab => CreateUnsupportedSlabResult(),
@@ -51,9 +52,9 @@ public sealed class IsoFieldHostSupportService
     private static IsoFieldHostSupportResult CreateStraightWallResult()
     {
         return new IsoFieldHostSupportResult(
-            IsoFieldHostSupportMode.LegacyProbe,
-            "WALL_STRAIGHT_BASIC_LEGACY",
-            "Прямая базовая стена поддерживается только в legacy-режиме пробного армирования без инженерного diff.");
+            IsoFieldHostSupportMode.Engineering,
+            "WALL_STRAIGHT_BASIC_ENGINEERING",
+            "Прямая базовая стена поддерживается в инженерном режиме после проверки трёхточечной привязки наружной плоскости.");
     }
 
     private static IsoFieldHostSupportResult CreateUnsupportedWallResult()
@@ -62,6 +63,14 @@ public sealed class IsoFieldHostSupportService
             IsoFieldHostSupportMode.Unsupported,
             "WALL_GEOMETRY_UNSUPPORTED",
             "Поддерживаются только прямые базовые стены. Криволинейные, составные и витражные стены пока заблокированы до расчёта и записи.");
+    }
+
+    private static IsoFieldHostSupportResult CreateUnresolvedWallResult()
+    {
+        return new IsoFieldHostSupportResult(
+            IsoFieldHostSupportMode.Unsupported,
+            "WALL_PLANE_UNRESOLVED",
+            "Единственная непрерывная наружная плоскость прямой стены не распознана. Фрагментированная геометрия пока не поддерживается; расчёт и запись заблокированы.");
     }
 
     private static IsoFieldHostSupportResult CreateHorizontalSlabResult()

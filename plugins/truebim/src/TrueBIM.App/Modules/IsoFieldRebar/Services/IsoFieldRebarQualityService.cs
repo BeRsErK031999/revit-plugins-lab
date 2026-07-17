@@ -251,7 +251,7 @@ public sealed class IsoFieldRebarQualityService
             issues.Add(new IsoFieldRebarQualityIssue(
                 IsoFieldRebarQualityCode.SourceZoneOutsideHost,
                 IsoFieldRebarQualitySeverity.Warning,
-                $"Исходные зоны вне host: {outsideZoneIds.Length}. Проверьте привязку и назначение плиты.",
+                $"Исходные зоны вне host: {outsideZoneIds.Length}. Проверьте привязку и назначение опорной плоскости.",
                 ZoneIds: outsideZoneIds,
                 MeasuredValue: outsideZoneIds.Length,
                 LimitValue: 0));

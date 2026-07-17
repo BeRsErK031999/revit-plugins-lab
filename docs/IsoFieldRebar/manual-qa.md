@@ -46,8 +46,9 @@ the current MVP behavior without requiring a production recognition worker.
     `TrueBIM IsoFieldRebar` comment. One Undo must remove the entire transaction.
 13. Recalculate and apply the same layout. Expected: every bar is `без изменений`,
     no transaction starts and no duplicate is created.
-14. Repeat the source, preview, host, rule, and creation steps with
-    `sample-wall-zones.json` and a straight wall host; slab binding must not be required.
+14. Repeat the four-map source, preview, host, binding, rule, diff and creation
+    steps with a straight basic wall. Assign each X/Y pair to one interior and
+    one exterior layer; `sample-wall-zones.json` remains parser/preview-only.
 15. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
     preview, rule preview, and write-flow entries.
 
@@ -58,7 +59,8 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - the ribbon button opens the same window;
 - preview creation and cleanup work on a 2D view;
 - wall and slab host selection both update the host status;
-- engineering slab creation is guarded by explicit confirmation and reports its bar count;
+- engineering slab and straight-wall creation are guarded by explicit confirmation
+  and report their bar counts;
 - logs contain the same workflow milestones.
 
 ## Cancel And Guard Flows
@@ -76,12 +78,12 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - Click `Применить изменения` and choose `No` in the confirmation dialog. Expected:
   no rebar is created and log records user cancellation.
 
-## Slab Binding Guard Flows
+## Planar Host Binding Guard Flows
 
 - Select a slab before zones are loaded. Expected: the binding section expands,
   controls remain disabled, and the status asks to load or recognize zones.
-- Select a wall. Expected: the slab binding section collapses and rules do not
-  require slab control points.
+- Select a straight basic wall. Expected: the binding section expands and asks
+  for three points on the exterior wall plane.
 - Pick the first two control points at the same slab location or enter coincident image
   points. Expected: binding is rejected with a precise diagnostic.
 - Put point 3 on the baseline of points 1–2. Expected: binding is rejected because
@@ -169,7 +171,7 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 ## P7.1 Host Geometry Preflight
 
 - Select a straight basic wall. Expected: host status explicitly says this is a
-  legacy probe without engineering diff; legacy rule preview remains available.
+  supported engineering profile and asks for three-point binding before rules.
 - Select a curved, stacked or curtain wall. Expected: the host stays visible,
   its status shows the unsupported reason, its tooltip shows the preflight code,
   and rule preview and apply stay disabled. No transaction or partial Rebar
@@ -182,6 +184,27 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - After selecting a supported straight wall, change its type/curve before apply.
   Expected: the live pre-transaction check rejects the stale selection and asks
   to select the host and calculate again.
+
+## P7.2 Straight Wall Engineering
+
+- Load and recognize the complete As1X/As2X/As3Y/As4Y set, then select a straight
+  basic wall with at least one opening. Expected: the exterior planar contour and
+  opening loops are available for binding; curved, stacked and curtain walls remain blocked.
+- Confirm one interior and one exterior map for X and Y. Expected: the same stored
+  two-face contract is shown as `Внутренняя/Наружная` while the wall is selected.
+- Pick three non-collinear points on the exterior wall face and verify the binding.
+  Expected: overlay uses local X along the wall and local Y upward; zones are clipped
+  by the outer contour and openings.
+- Calculate rules and compare with the model. Expected: engineering preview, QA,
+  report and stable-id diff work exactly as for the slab, without changing Revit
+  before explicit apply confirmation.
+- Apply, repeat the same calculation and compare again. Expected: no duplicates;
+  all bars are unchanged. Modify one zone and repeat. Expected: only owned bars for
+  the changed stable ids are updated in one transaction.
+- Change the wall length, opening geometry or wall profile after binding. Expected:
+  the live check rejects the stale geometry before any transaction starts.
+- Select a straight wall whose exterior is split into multiple separate planar faces.
+  Expected: preflight reports `WALL_PLANE_UNRESOLVED`; no partial contour is used.
 
 ## Built-in PNG Recognition Smoke
 
@@ -274,10 +297,12 @@ must override the built-in runner.
   A nonstandard font or scaled header falls back to file-name/manual assignment.
 - P4.1 creates individual engineering bars, not grouped `Rebar Set` or
   `Area Reinforcement` elements. Neighboring zones are not merged.
-- Wall placement supports simple straight walls, not curved or stacked walls.
+- Wall placement supports engineering layouts on straight basic walls, including
+  clipped exterior-plane openings, but not curved, stacked or curtain walls.
 - Slab placement consumes clipped top-face regions and holes. Full-combination
   mode does not create a background base mesh outside recognized zones; laps,
   anchorage, sloped slabs and compound structures remain unsupported.
 - P5.1 diff is summarized before confirmation; there is no separate filterable
-  per-stable-id diff table yet. The legacy straight-wall probe is not idempotent.
+  per-stable-id diff table yet. Straight-wall engineering uses the same stable-id
+  idempotency contract as the slab.
 - Manual QA still needs real Revit for visual preview and rebar creation checks.

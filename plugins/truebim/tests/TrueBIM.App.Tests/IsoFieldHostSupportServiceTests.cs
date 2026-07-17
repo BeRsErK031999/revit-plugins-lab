@@ -9,10 +9,30 @@ public sealed class IsoFieldHostSupportServiceTests
     private readonly IsoFieldHostSupportService service = new();
 
     [Fact]
-    public void Analyze_StraightBasicWall_ReturnsLegacyProbeCapability()
+    public void Analyze_StraightBasicWall_ReturnsEngineeringCapability()
     {
         IsoFieldHostElement host = new(
             10,
+            "Wall",
+            "Стена",
+            "Basic Wall",
+            CreateWallGeometry(),
+            GeometryProfile: IsoFieldHostGeometryProfile.StraightBasicWall);
+
+        IsoFieldHostSupportResult result = service.Analyze(host);
+
+        Assert.Equal(IsoFieldHostSupportMode.Engineering, result.Mode);
+        Assert.True(result.CanCalculateRules);
+        Assert.True(result.CanApplyRebar);
+        Assert.True(result.RequiresPlanarBinding);
+        Assert.Equal("WALL_STRAIGHT_BASIC_ENGINEERING", result.Code);
+    }
+
+    [Fact]
+    public void Analyze_StraightWallWithoutResolvedPlane_BlocksWorkflow()
+    {
+        IsoFieldHostElement host = new(
+            16,
             "Wall",
             "Стена",
             "Basic Wall",
@@ -20,11 +40,8 @@ public sealed class IsoFieldHostSupportServiceTests
 
         IsoFieldHostSupportResult result = service.Analyze(host);
 
-        Assert.Equal(IsoFieldHostSupportMode.LegacyProbe, result.Mode);
-        Assert.True(result.CanCalculateRules);
-        Assert.True(result.CanApplyRebar);
-        Assert.False(result.RequiresSlabBinding);
-        Assert.Equal("WALL_STRAIGHT_BASIC_LEGACY", result.Code);
+        Assert.False(result.IsSupported);
+        Assert.Equal("WALL_PLANE_UNRESOLVED", result.Code);
     }
 
     [Fact]
@@ -123,6 +140,24 @@ public sealed class IsoFieldHostSupportServiceTests
                     new IsoFieldPoint(10, 0),
                     new IsoFieldPoint(10, 10),
                     new IsoFieldPoint(0, 10),
+                    new IsoFieldPoint(0, 0)
+                ]
+            ]);
+    }
+
+    private static IsoFieldHostGeometry CreateWallGeometry()
+    {
+        return new IsoFieldHostGeometry(
+            new IsoFieldRebarPoint3D(0, 0, 0),
+            new IsoFieldRebarPoint3D(1, 0, 0),
+            new IsoFieldRebarPoint3D(0, 0, 1),
+            new IsoFieldRebarPoint3D(0, -1, 0),
+            [
+                [
+                    new IsoFieldPoint(0, 0),
+                    new IsoFieldPoint(10, 0),
+                    new IsoFieldPoint(10, 3),
+                    new IsoFieldPoint(0, 3),
                     new IsoFieldPoint(0, 0)
                 ]
             ]);

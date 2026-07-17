@@ -1,4 +1,5 @@
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
+using TrueBIM.App.Modules.IsoFieldRebar.Services;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.Revit;
 
@@ -9,6 +10,100 @@ public sealed class WallRebarPlacementService
     private const double MinimumTestLengthFeet = 0.5;
     private const double MaximumTestLengthFeet = 4.0;
     private const double MinimumOffsetFeet = 0.25;
+    private const double DirectionLayerClearanceMillimeters = 5;
+    private readonly IsoFieldSlabRebarLayoutService engineeringLayoutService = new();
+
+    public IReadOnlyList<IsoFieldRebarPlacement> BuildEngineeringPlacements(
+        IsoFieldHostGeometry hostGeometry,
+        double wallThicknessFeet,
+        RebarRulePreviewResult preview)
+    {
+        if (hostGeometry is null)
+        {
+            throw new ArgumentNullException(nameof(hostGeometry));
+        }
+
+        if (preview is null)
+        {
+            throw new ArgumentNullException(nameof(preview));
+        }
+
+        if (!preview.IsEngineeringPreview || preview.EngineeringSettings is null)
+        {
+            throw new InvalidOperationException("Для раскладки стены нужен валидный инженерный preview.");
+        }
+
+        if (preview.ActiveItems.Any(item =>
+            !string.Equals(item.Rule.HostKind, WallHostKind, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Инженерная раскладка стены содержит правило другого типа host.");
+        }
+
+        if (!IsFinite(wallThicknessFeet) || wallThicknessFeet <= 0)
+        {
+            throw new InvalidOperationException("Не удалось определить положительную толщину стены.");
+        }
+
+        IReadOnlyList<IsoFieldSlabRebarSegment> segments = engineeringLayoutService.BuildSegments(
+            preview.Items,
+            preview.EngineeringSettings);
+        Dictionary<IsoFieldRebarFace, double> maximumXDiameterByFace = segments
+            .Where(segment => segment.Direction == IsoFieldRebarDirection.X)
+            .GroupBy(segment => segment.Face)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Max(segment => segment.Component.DiameterMillimeters));
+        Dictionary<IsoFieldSlabRebarSegment, double> centerFromFaceBySegment = segments
+            .ToDictionary(
+                segment => segment,
+                segment => ResolveCenterFromFaceMillimeters(
+                    segment,
+                    preview.EngineeringSettings,
+                    maximumXDiameterByFace));
+        double requiredThicknessMillimeters = Enum
+            .GetValues(typeof(IsoFieldRebarFace))
+            .Cast<IsoFieldRebarFace>()
+            .Where(face => face is IsoFieldRebarFace.Bottom or IsoFieldRebarFace.Top)
+            .Sum(face => segments
+                .Where(segment => segment.Face == face)
+                .Select(segment => centerFromFaceBySegment[segment]
+                    + (segment.Component.DiameterMillimeters / 2))
+                .DefaultIfEmpty(0)
+                .Max());
+        if (segments.Select(segment => segment.Face).Distinct().Count() > 1)
+        {
+            requiredThicknessMillimeters += DirectionLayerClearanceMillimeters;
+        }
+
+        if ((wallThicknessFeet * MillimetersPerFoot) <= requiredThicknessMillimeters)
+        {
+            throw new InvalidOperationException(
+                $"Толщины стены недостаточно для защитного слоя и разнесения четырёх слоёв. Нужно больше {requiredThicknessMillimeters:0.#} мм.");
+        }
+
+        Dictionary<string, RebarRulePreviewItem> itemsByZone = preview.Items
+            .ToDictionary(item => item.ZoneId, StringComparer.Ordinal);
+        List<IsoFieldRebarPlacement> placements = new(segments.Count);
+        foreach (IsoFieldSlabRebarSegment segment in segments)
+        {
+            RebarRulePreviewItem item = itemsByZone[segment.ZoneId];
+            double centerFromFaceFeet = centerFromFaceBySegment[segment] / MillimetersPerFoot;
+            double planeOffsetFeet = segment.Face == IsoFieldRebarFace.Top
+                ? -centerFromFaceFeet
+                : -wallThicknessFeet + centerFromFaceFeet;
+            placements.Add(new IsoFieldRebarPlacement(
+                segment.ZoneId,
+                item.ZoneName,
+                item.Rule,
+                ToWorldPoint(hostGeometry, segment.StartFeet, planeOffsetFeet),
+                ToWorldPoint(hostGeometry, segment.EndFeet, planeOffsetFeet),
+                hostGeometry.Normal,
+                segment.Component,
+                segment.StableId));
+        }
+
+        return placements;
+    }
 
     public IReadOnlyList<IsoFieldRebarPlacement> BuildPlacements(
         IsoFieldWallPlacementFrame frame,
@@ -140,6 +235,43 @@ public sealed class WallRebarPlacementService
         return Math.Min(requestedStep, maximumStep);
     }
 
+    private static double ResolveCenterFromFaceMillimeters(
+        IsoFieldSlabRebarSegment segment,
+        IsoFieldEngineeringSettings settings,
+        IReadOnlyDictionary<IsoFieldRebarFace, double> maximumXDiameterByFace)
+    {
+        double center = settings.ConcreteCoverMillimeters
+            + (segment.Component.DiameterMillimeters / 2);
+        if (segment.Direction == IsoFieldRebarDirection.Y)
+        {
+            center += maximumXDiameterByFace.TryGetValue(segment.Face, out double xDiameter)
+                ? xDiameter + DirectionLayerClearanceMillimeters
+                : 0;
+        }
+
+        return center;
+    }
+
+    private static IsoFieldRebarPoint3D ToWorldPoint(
+        IsoFieldHostGeometry geometry,
+        IsoFieldPoint localPoint,
+        double normalOffsetFeet)
+    {
+        return new IsoFieldRebarPoint3D(
+            geometry.OriginFeet.XFeet
+                + (geometry.AxisX.XFeet * localPoint.X)
+                + (geometry.AxisY.XFeet * localPoint.Y)
+                + (geometry.Normal.XFeet * normalOffsetFeet),
+            geometry.OriginFeet.YFeet
+                + (geometry.AxisX.YFeet * localPoint.X)
+                + (geometry.AxisY.YFeet * localPoint.Y)
+                + (geometry.Normal.YFeet * normalOffsetFeet),
+            geometry.OriginFeet.ZFeet
+                + (geometry.AxisX.ZFeet * localPoint.X)
+                + (geometry.AxisY.ZFeet * localPoint.Y)
+                + (geometry.Normal.ZFeet * normalOffsetFeet));
+    }
+
     private static IsoFieldRebarPoint3D Add(
         IsoFieldRebarPoint3D first,
         IsoFieldRebarPoint3D second)
@@ -175,5 +307,10 @@ public sealed class WallRebarPlacementService
             Math.Pow(point.XFeet, 2)
             + Math.Pow(point.YFeet, 2)
             + Math.Pow(point.ZFeet, 2));
+    }
+
+    private static bool IsFinite(double value)
+    {
+        return !double.IsNaN(value) && !double.IsInfinity(value);
     }
 }

@@ -157,7 +157,7 @@ public sealed record IsoFieldSourceSet(
                     if (directionMappings.Count(mapping => mapping.Face == IsoFieldRebarFace.Bottom) != 1
                         || directionMappings.Count(mapping => mapping.Face == IsoFieldRebarFace.Top) != 1)
                     {
-                        messages.Add($"Для направления {direction} назначьте ровно один нижний и один верхний слой.");
+                        messages.Add($"Для направления {direction} назначьте ровно по одному слою на каждую из двух граней host.");
                     }
                 }
             }

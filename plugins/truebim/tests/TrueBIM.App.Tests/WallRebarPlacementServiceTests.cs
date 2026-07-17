@@ -75,6 +75,79 @@ public sealed class WallRebarPlacementServiceTests
         Assert.Contains("стены", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildEngineeringPlacements_MapsLocalLineToInteriorWallFace()
+    {
+        IsoFieldRebarComponent component = new(10, 304.8, 0, 1);
+        IsoFieldPolygonRegion region = new(
+            [
+                new IsoFieldPoint(0, 0),
+                new IsoFieldPoint(2, 0),
+                new IsoFieldPoint(2, 1),
+                new IsoFieldPoint(0, 1),
+                new IsoFieldPoint(0, 0)
+            ],
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
+            AreaSquareFeet: 2);
+        RebarRulePreviewItem item = new(
+            "As1X:zone-a",
+            "Zone A",
+            new RebarRule(
+                "Rule A",
+                "Wall",
+                component.BarTypeName,
+                component.SpacingMillimeters,
+                PlacementDirection: "X",
+                RequiredAreaSquareCentimetersPerMeter: component.AreaSquareCentimetersPerMeter,
+                ProvidedAreaSquareCentimetersPerMeter: component.AreaSquareCentimetersPerMeter,
+                ReinforcementLabel: component.DisplayName,
+                LayerRole: IsoFieldLayerRole.As1X,
+                Face: IsoFieldRebarFace.Bottom,
+                Components: [component],
+                ReinforcementMode: IsoFieldReinforcementMode.FullCombination),
+            Array.Empty<string>(),
+            [region]);
+        IsoFieldEngineeringSettings settings = new(
+            IsoFieldReinforcementMode.FullCombination,
+            ConcreteCoverMillimeters: 30,
+            BoundaryOffsetMillimeters: 30.48,
+            MinimumBarLengthMillimeters: 100);
+        RebarRulePreviewResult preview = new([item], Array.Empty<string>(), settings, 1);
+        IsoFieldHostGeometry geometry = new(
+            new IsoFieldRebarPoint3D(100, 200, 10),
+            new IsoFieldRebarPoint3D(1, 0, 0),
+            new IsoFieldRebarPoint3D(0, 0, 1),
+            new IsoFieldRebarPoint3D(0, -1, 0),
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>());
+
+        IsoFieldRebarPlacement placement = Assert.Single(
+            service.BuildEngineeringPlacements(geometry, wallThicknessFeet: 1, preview));
+
+        Assert.Equal(100.1, placement.Start.XFeet, 6);
+        Assert.Equal(200 + 1 - (35d / 304.8), placement.Start.YFeet, 6);
+        Assert.Equal(10.1, placement.Start.ZFeet, 6);
+        Assert.Equal(component, placement.Component);
+        Assert.Contains("As1X:zone-a", placement.StableId, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildEngineeringPlacements_RejectsWallThatIsTooThinForBothFaces()
+    {
+        IsoFieldRebarComponent component = new(16, 100, 0, 1);
+        RebarRulePreviewResult preview = CreateEngineeringPreview(component);
+        IsoFieldHostGeometry geometry = new(
+            new IsoFieldRebarPoint3D(0, 0, 0),
+            new IsoFieldRebarPoint3D(1, 0, 0),
+            new IsoFieldRebarPoint3D(0, 0, 1),
+            new IsoFieldRebarPoint3D(0, -1, 0),
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>());
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.BuildEngineeringPlacements(geometry, wallThicknessFeet: 0.2, preview));
+
+        Assert.Contains("Толщины стены недостаточно", exception.Message, StringComparison.Ordinal);
+    }
+
     private static IsoFieldWallPlacementFrame CreateFrame(
         double centerZFeet = 2,
         double heightFeet = 4)
@@ -102,5 +175,56 @@ public sealed class WallRebarPlacementServiceTests
                 spacingMillimeters,
                 PlacementDirection: placementDirection),
             Array.Empty<string>());
+    }
+
+    private static RebarRulePreviewResult CreateEngineeringPreview(IsoFieldRebarComponent component)
+    {
+        IsoFieldPolygonRegion region = new(
+            [
+                new IsoFieldPoint(0, 0),
+                new IsoFieldPoint(2, 0),
+                new IsoFieldPoint(2, 2),
+                new IsoFieldPoint(0, 2),
+                new IsoFieldPoint(0, 0)
+            ],
+            Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
+            AreaSquareFeet: 4);
+        RebarRulePreviewItem CreateItem(string id, IsoFieldRebarFace face)
+        {
+            return new RebarRulePreviewItem(
+                id,
+                id,
+                new RebarRule(
+                    id,
+                    "Wall",
+                    component.BarTypeName,
+                    component.SpacingMillimeters,
+                    PlacementDirection: "X",
+                    RequiredAreaSquareCentimetersPerMeter: component.AreaSquareCentimetersPerMeter,
+                    ProvidedAreaSquareCentimetersPerMeter: component.AreaSquareCentimetersPerMeter,
+                    ReinforcementLabel: component.DisplayName,
+                    LayerRole: face == IsoFieldRebarFace.Bottom
+                        ? IsoFieldLayerRole.As1X
+                        : IsoFieldLayerRole.As2X,
+                    Face: face,
+                    Components: [component],
+                    ReinforcementMode: IsoFieldReinforcementMode.FullCombination),
+                Array.Empty<string>(),
+                [region]);
+        }
+
+        IsoFieldEngineeringSettings settings = new(
+            IsoFieldReinforcementMode.FullCombination,
+            ConcreteCoverMillimeters: 30,
+            BoundaryOffsetMillimeters: 0,
+            MinimumBarLengthMillimeters: 100);
+        return new RebarRulePreviewResult(
+            [
+                CreateItem("interior", IsoFieldRebarFace.Bottom),
+                CreateItem("exterior", IsoFieldRebarFace.Top)
+            ],
+            Array.Empty<string>(),
+            settings,
+            2);
     }
 }

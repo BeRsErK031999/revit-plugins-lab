@@ -18,5 +18,7 @@ public sealed record IsoFieldHostSupportResult(
 
     public bool CanApplyRebar => IsSupported;
 
-    public bool RequiresSlabBinding => Mode == IsoFieldHostSupportMode.Engineering;
+    public bool RequiresPlanarBinding => Mode == IsoFieldHostSupportMode.Engineering;
+
+    public bool RequiresSlabBinding => RequiresPlanarBinding;
 }

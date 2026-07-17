@@ -32,12 +32,17 @@ public sealed record RebarRulePreviewItem(
         : Rule.IsEngineeringRule
         ? $"{ZoneName}: требуется {Rule.RequiredAreaSquareCentimetersPerMeter:0.###}, "
             + $"принято {Rule.ProvidedAreaSquareCentimetersPerMeter:0.###} см²/м · "
-            + $"{Rule.ReinforcementLabel} · {Rule.PlacementDirection}/{FormatFace(Rule.Face)} · "
+            + $"{Rule.ReinforcementLabel} · {Rule.PlacementDirection}/{FormatFace(Rule.HostKind, Rule.Face)} · "
             + $"стержней {EstimatedBarCount}"
         : $"{ZoneName}: {Rule.BarTypeName}, шаг {Rule.SpacingMillimeters:0} мм, направление {Rule.PlacementDirection}";
 
-    private static string FormatFace(IsoFieldRebarFace? face)
+    private static string FormatFace(string hostKind, IsoFieldRebarFace? face)
     {
+        if (string.Equals(hostKind, "Wall", StringComparison.Ordinal))
+        {
+            return face == IsoFieldRebarFace.Bottom ? "внутренняя" : "наружная";
+        }
+
         return face == IsoFieldRebarFace.Bottom ? "низ" : "верх";
     }
 }

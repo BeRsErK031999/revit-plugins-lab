@@ -99,6 +99,32 @@ public sealed class RebarRuleValidationServiceTests
     }
 
     [Fact]
+    public void BuildPreview_UsesPlanarBindingForStraightWallEngineeringRules()
+    {
+        IsoFieldRecognitionResult recognition = CreateEngineeringRecognition(maximumValue: 7.85);
+        IsoFieldHostElement host = CreateWallHost();
+
+        RebarRulePreviewResult result = service.BuildPreview(
+            recognition,
+            host,
+            CreateSourceSet(),
+            CreateBinding(recognition, host.Geometry!),
+            new IsoFieldEngineeringSettings(
+                IsoFieldReinforcementMode.AdditionalOverBase,
+                ConcreteCoverMillimeters: 30,
+                BoundaryOffsetMillimeters: 0,
+                MinimumBarLengthMillimeters: 100));
+
+        RebarRulePreviewItem item = Assert.Single(result.Items);
+        Assert.True(result.CanCreateRebar, string.Join(Environment.NewLine, result.Diagnostics.Concat(item.Diagnostics)));
+        Assert.True(result.IsEngineeringPreview);
+        Assert.Equal("Wall", item.Rule.HostKind);
+        Assert.Equal(IsoFieldRebarFace.Bottom, item.Rule.Face);
+        Assert.NotEmpty(item.EffectiveRegions);
+        Assert.True(result.EstimatedBarCount > 0);
+    }
+
+    [Fact]
     public void BuildPreview_BlocksCombinationBelowUpperLegendBoundary()
     {
         IsoFieldRecognitionResult recognition = CreateEngineeringRecognition(maximumValue: 8.1);
@@ -214,6 +240,23 @@ public sealed class RebarRuleValidationServiceTests
             new IsoFieldRebarPoint3D(0, 0, 1),
             [CreateLoop(0, 0, 10, 10)]);
         return new IsoFieldHostElement(42, "Slab", "Плита", "Floor 200", geometry);
+    }
+
+    private static IsoFieldHostElement CreateWallHost()
+    {
+        IsoFieldHostGeometry geometry = new(
+            new IsoFieldRebarPoint3D(0, 0, 0),
+            new IsoFieldRebarPoint3D(1, 0, 0),
+            new IsoFieldRebarPoint3D(0, 0, 1),
+            new IsoFieldRebarPoint3D(0, -1, 0),
+            [CreateLoop(0, 0, 10, 10)]);
+        return new IsoFieldHostElement(
+            43,
+            "Wall",
+            "Стена",
+            "Basic Wall 300",
+            geometry,
+            IsoFieldHostGeometryProfile.StraightBasicWall);
     }
 
     private static IsoFieldSlabBindingAnalysis CreateBinding(
