@@ -33,9 +33,10 @@ public sealed class FinishSchedulePreviewTests
             new RoomScopeService(),
             new FinishClassificationService());
 
-        FinishSchedulePreviewResult result = builder.Build(
+        FinishSchedulePreviewBuild build = builder.BuildDetailed(
             collection,
             FinishScheduleSettings.CreateDefault());
+        FinishSchedulePreviewResult result = build.Preview;
 
         Assert.Equal(2, result.RoomScope.SelectedRooms.Count);
         Assert.Single(result.RoomScope.InvalidRooms);
@@ -45,6 +46,7 @@ public sealed class FinishSchedulePreviewTests
         Assert.Equal(2, result.Index.IndexedElements);
         Assert.Equal(1, result.Index.ElementsWithoutBounds);
         Assert.Equal(2, result.Index.PotentialRoomElementPairs);
+        Assert.Equal([101L, 103L], build.InScopeElements.Select(element => element.Element.ElementId));
         Assert.NotEmpty(result.Warnings);
     }
 

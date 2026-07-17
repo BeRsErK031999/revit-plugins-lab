@@ -35,8 +35,14 @@ public sealed class FinishScheduleModuleStatusTests
             status.ReadyCapabilities,
             item => item.Contains("агрегац", StringComparison.CurrentCultureIgnoreCase));
         Assert.Contains(
+            status.ReadyCapabilities,
+            item => item.Contains("TransactionGroup", StringComparison.Ordinal));
+        Assert.Contains(
+            status.ReadyCapabilities,
+            item => item.Contains("ownership", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
             status.PendingCapabilities,
-            item => item.Contains("параметр", StringComparison.CurrentCultureIgnoreCase));
+            item => item.Contains("спецификац", StringComparison.CurrentCultureIgnoreCase));
     }
 
     [Fact]

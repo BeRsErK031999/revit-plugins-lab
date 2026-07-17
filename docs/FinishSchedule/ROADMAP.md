@@ -31,7 +31,9 @@
 | Runtime smoke `FS-005` | Ожидает ручной проверки | Нужно сверить площади стен и overlap одной плиты между несколькими помещениями на реальной модели |
 | `FS-006` Чистая нормализация и агрегация | Выполнен в коде | Добавлены нормализованные snapshots, группировка без площадей в ключе и синхронное форматирование description/area |
 | Runtime smoke `FS-006` | Ожидает ручной проверки | Нужно сверить группы, естественную сортировку и одинаковые output-значения помещений на реальной модели |
-| `FS-007` и далее | Не начаты | Запись ownership/параметров помещений и создание спецификации ещё не реализованы |
+| `FS-007` Запись ownership и параметров помещений | Выполнен в коде | Добавлены change plan, write preflight, атомарный Room writer и необязательный ownership writer |
+| Runtime smoke `FS-007` | Ожидает ручной проверки | Нужно проверить запись, повторный запуск, rollback и locked worksharing elements на реальной модели |
+| `FS-008` и далее | Не начаты | Создание/обновление спецификации, metadata и финальный отчёт ещё не реализованы |
 
 Статусы `compile verified`, `automated tests verified` и `runtime smoke tested` в отчётах всегда фиксируются отдельно.
 
@@ -40,7 +42,7 @@
 - `dotnet format TrueBIM.sln --verify-no-changes` — пройдено;
 - compile Revit 2019–2024 (`net48`) и Revit 2025 (`net8.0-windows`) — пройдено;
 - Revit 2026 compile не запускался: локальный `RevitAPI.dll` этой версии отсутствует;
-- `dotnet test TrueBIM.sln --configuration Release --no-build` — 628 тестов пройдено;
+- `dotnet test TrueBIM.sln --configuration Release --no-build` — 654 теста пройдено;
 - runtime smoke не выполнялся.
 
 ## Результаты архитектурного аудита `FS-000`
@@ -245,13 +247,17 @@ FinishScheduleCommand
 
 ### `FS-007` — запись ownership и параметров помещений
 
-- Реализовать `FinishOwnershipWriter` и `RoomFinishParameterWriter`.
-- Проверять editability и `StorageType.String` до начала основной транзакции.
-- Формировать план изменений и preview старых/новых значений.
-- Выполнять запись идемпотентно внутри управляемой группы транзакций.
-- Для необязательного ownership разрешить пропуск locked elements с warnings.
+- Реализованы чистые builders целевых значений, `FinishParameterChangePlanner`, `FinishOwnershipWriter`, `RoomFinishParameterWriter` и `FinishScheduleWriteWorkflow`.
+- Geometry, scope, quantity и aggregation полностью выполняются до начала `TransactionGroup`; ownership ограничен bounding-box кандидатами текущего scope.
+- Preflight повторно находит параметр по стабильной identity и проверяет каждый target element, `StorageType.String`, read-only и worksharing checkout status.
+- План хранит старые и новые значения, отделяет unchanged от реальных изменений и показывается пользователю до подтверждения записи.
+- Одинаковые значения группы записываются во все целевые помещения; повторный запуск с актуальными значениями не открывает транзакции.
+- Обязательные Room-параметры записываются отдельной транзакцией внутри `TransactionGroup`; любой отказ записи откатывает также ранее выполненный ownership-срез.
+- Ownership использует реальные идентификаторы помещений, natural sort и удаление дублей; locked/missing элементы пропускаются с warnings.
+- Элемент без помещений текущего scope получает план очистки с warning, но `Unknown` geometry не очищает ранее записанную принадлежность.
+- UI включает `Сформировать` только для валидной конфигурации, показывает примеры old/new и предупреждает об одном активном aggregation profile.
 
-Критерий готовности: повторный запуск не дублирует данные; обязательная ошибка откатывает весь результат.
+Критерий готовности выполнен в коде и unit-тестах: повторный запуск идемпотентен, обязательный blocker запрещает старт записи, а optional ownership blocker остаётся warning. Runtime-проверка rollback и worksharing locks остаётся отдельной ручной проверкой.
 
 ### `FS-008` — создание и обновление спецификации
 

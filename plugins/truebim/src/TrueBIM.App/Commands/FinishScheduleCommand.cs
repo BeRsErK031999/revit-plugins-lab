@@ -37,6 +37,14 @@ public sealed class FinishScheduleCommand : IExternalCommand
                     new RoomScopeService(),
                     new FinishClassificationService()),
                 logger);
+            FinishParameterChangePlanner changePlanner = new();
+            FinishScheduleWriteWorkflow writeWorkflow = new(
+                previewService,
+                new RoomFinishWriteValueBuilder(),
+                new FinishOwnershipValueBuilder(),
+                new RoomFinishParameterWriter(changePlanner),
+                new FinishOwnershipWriter(changePlanner),
+                logger);
             FinishScheduleWindow window = new(
                 status,
                 catalog,
@@ -46,6 +54,12 @@ public sealed class FinishScheduleCommand : IExternalCommand
                 uiDocument is null
                     ? null
                     : settings => previewService.Build(uiDocument.Document, settings),
+                uiDocument is null
+                    ? null
+                    : settings => writeWorkflow.Prepare(uiDocument.Document, settings),
+                uiDocument is null
+                    ? null
+                    : preview => writeWorkflow.Apply(uiDocument.Document, preview),
                 logger);
             new WindowInteropHelper(window)
             {

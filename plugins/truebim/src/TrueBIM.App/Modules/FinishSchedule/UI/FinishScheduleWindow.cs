@@ -12,14 +12,14 @@ namespace TrueBIM.App.Modules.FinishSchedule.UI;
 
 public sealed class FinishScheduleWindow : TrueBimWindow
 {
-    private const bool WorkflowAvailable = false;
-
     private readonly FinishScheduleModuleStatus status;
     private readonly ParameterCatalog catalog;
     private readonly FinishScheduleParameterCategories categories;
     private readonly IReadOnlyList<FinishScheduleLevelOption> levels;
     private readonly FinishScheduleProfileStorage profileStorage;
     private readonly Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory;
+    private readonly Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory;
+    private readonly Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory;
     private readonly ITrueBimLogger logger;
     private readonly FinishScheduleSettingsValidator validator;
     private readonly FinishSchedulePreviewValidator previewValidator;
@@ -45,7 +45,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         "Текстовый параметр экземпляра помещения для пользовательского идентификатора.");
     private readonly CheckBox writeOwnershipInput = CreateCheckBox(
         "Записывать фактическую принадлежность в элементы отделки",
-        "Параметры физических элементов будут только выбраны и проверены. Запись появится в FS-007.");
+        "В выбранные параметры физических элементов будут записаны реальные идентификаторы связанных помещений.");
     private readonly ComboBox roomListOutputInput = CreateParameterInput(
         "Записываемый текстовый параметр экземпляра помещения для списка помещений группы.");
     private readonly ComboBox scopeModeInput = CreateChoiceInput();
@@ -103,6 +103,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         IEnumerable<FinishScheduleLevelOption> levels,
         FinishScheduleProfileStorage profileStorage,
         Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory,
+        Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory,
+        Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory,
         ITrueBimLogger logger)
     {
         this.status = status ?? throw new ArgumentNullException(nameof(status));
@@ -111,6 +113,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         this.levels = (levels ?? throw new ArgumentNullException(nameof(levels))).ToArray();
         this.profileStorage = profileStorage ?? throw new ArgumentNullException(nameof(profileStorage));
         this.previewFactory = previewFactory;
+        this.writePreviewFactory = writePreviewFactory;
+        this.writeApplyFactory = writeApplyFactory;
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         ParameterCatalogMatcher matcher = new();
@@ -136,6 +140,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         generateButton = TrueBimUi.CreatePrimaryButton(
             "Сформировать",
             TrueBimIcon.Apply,
+            (_, _) => RunGeneration(),
             isEnabled: false,
             minWidth: 140);
         ToolTipService.SetShowOnDisabled(generateButton, true);
@@ -590,7 +595,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             categories);
         FinishScheduleLaunchState launchState = FinishScheduleLaunchState.Create(
             validation,
-            WorkflowAvailable);
+            writePreviewFactory is not null && writeApplyFactory is not null);
         FinishScheduleValidationResult previewValidation = previewValidator.Validate(ReadSettings());
 
         generateButton.IsEnabled = launchState.CanGenerate;
@@ -669,6 +674,163 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             previewText.Text = "Не удалось собрать предпросмотр. Подробности записаны в лог TrueBIM.";
             ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Danger);
         }
+    }
+
+    private void RunGeneration()
+    {
+        FinishScheduleSettings settings = ReadSettings();
+        FinishScheduleValidationResult validation = validator.Validate(
+            settings,
+            catalog,
+            categories);
+        if (!validation.IsValid || writePreviewFactory is null || writeApplyFactory is null)
+        {
+            previewText.Text = validation.IsValid
+                ? "Workflow записи недоступен для текущего документа."
+                : string.Join("\n", validation.Issues.Select(issue => $"• {issue.Message}"));
+            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Warning);
+            return;
+        }
+
+        try
+        {
+            SaveProfile(showFeedback: false);
+            FinishScheduleWritePreview writePreview = writePreviewFactory(settings);
+            previewText.Text = FormatWritePreview(writePreview);
+            ApplyBannerSeverity(
+                previewBanner,
+                previewIcon,
+                writePreview.CanApply ? TrueBimUiSeverity.Info : TrueBimUiSeverity.Danger);
+            if (!writePreview.CanApply)
+            {
+                footerStatus.Text = "Запись не начата: исправьте критические ошибки preflight.";
+                footerStatus.Foreground = TrueBimBrushes.Danger;
+                return;
+            }
+
+            if (writePreview.TotalChangeCount > 0)
+            {
+                MessageBoxResult confirmation = MessageBox.Show(
+                    this,
+                    CreateWriteConfirmation(writePreview),
+                    "Ведомость отделки — подтверждение записи",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning,
+                    MessageBoxResult.No);
+                if (confirmation != MessageBoxResult.Yes)
+                {
+                    footerStatus.Text = "Применение отменено. Модель Revit не изменялась.";
+                    footerStatus.Foreground = TrueBimBrushes.TextSecondary;
+                    return;
+                }
+            }
+
+            FinishScheduleWriteResult result = writeApplyFactory(writePreview);
+            previewText.Text = FormatWriteResult(writePreview, result);
+            ApplyBannerSeverity(
+                previewBanner,
+                previewIcon,
+                result.Status switch
+                {
+                    FinishScheduleWriteStatus.Applied => result.Warnings.Count == 0
+                        ? TrueBimUiSeverity.Success
+                        : TrueBimUiSeverity.Warning,
+                    FinishScheduleWriteStatus.NoChanges => TrueBimUiSeverity.Info,
+                    _ => TrueBimUiSeverity.Danger
+                });
+            footerStatus.Text = result.Message;
+            footerStatus.Foreground = result.Succeeded
+                ? TrueBimBrushes.Success
+                : TrueBimBrushes.Danger;
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to prepare or apply Finish Schedule write plan.", exception);
+            previewText.Text = "Не удалось подготовить или применить план записи. Подробности записаны в лог TrueBIM.";
+            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Danger);
+            footerStatus.Text = "Модель не оставлена в частично обновлённом состоянии.";
+            footerStatus.Foreground = TrueBimBrushes.Danger;
+        }
+    }
+
+    private static string FormatWritePreview(FinishScheduleWritePreview preview)
+    {
+        int skippedOwnership = Math.Max(
+            0,
+            preview.OwnershipPlan.TargetElementCount
+                - preview.OwnershipPlan.Changes.Count
+                - preview.OwnershipPlan.UnchangedCount);
+        List<string> lines =
+        [
+            $"План записи: помещений — {preview.RoomCount}; групп — {preview.GroupCount}.",
+            $"Параметры помещений: изменений — {preview.RoomPlan.Changes.Count}; "
+                + $"без изменений — {preview.RoomPlan.UnchangedCount}; заблокировано — {preview.RoomPlan.BlockedCount}.",
+            $"Ownership: элементов — {preview.OwnershipPlan.TargetElementCount}; "
+                + $"изменений — {preview.OwnershipPlan.Changes.Count}; пропущено preflight — {skippedOwnership}."
+        ];
+        lines.AddRange(preview.Issues.Take(4).Select(issue => $"• {issue.Message}"));
+        lines.AddRange(preview.RoomPlan.Changes
+            .Concat(preview.OwnershipPlan.Changes)
+            .Take(5)
+            .Select(change =>
+                $"• {change.Role}, id {change.ElementId}: «{CompactValue(change.PreviousValue)}» → «{CompactValue(change.NewValue)}»"));
+        if (preview.TotalChangeCount > 5)
+        {
+            lines.Add($"• Ещё изменений: {preview.TotalChangeCount - 5}.");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private static string CreateWriteConfirmation(FinishScheduleWritePreview preview)
+    {
+        string[] samples = preview.RoomPlan.Changes
+            .Concat(preview.OwnershipPlan.Changes)
+            .Take(3)
+            .Select(change =>
+                $"• {change.Role}, id {change.ElementId}: «{CompactValue(change.PreviousValue)}» → «{CompactValue(change.NewValue)}»")
+            .ToArray();
+        string sampleText = samples.Length == 0
+            ? string.Empty
+            : $"\n\nПримеры изменений:\n{string.Join("\n", samples)}";
+        return "Выбранные параметры помещений будут обновлены. Один комплект параметров поддерживает "
+            + "один активный вариант агрегации.\n\n"
+            + $"Параметры помещений: {preview.RoomPlan.Changes.Count} изменений.\n"
+            + $"Ownership физических элементов: {preview.OwnershipPlan.Changes.Count} изменений.\n\n"
+            + "Все обязательные Room-параметры записываются атомарно. Спецификация будет создана на этапе FS-008."
+            + sampleText
+            + "\n\n"
+            + "Продолжить?";
+    }
+
+    private static string FormatWriteResult(
+        FinishScheduleWritePreview preview,
+        FinishScheduleWriteResult result)
+    {
+        List<string> lines =
+        [
+            result.Message,
+            $"Помещений: {preview.RoomCount}; групп: {preview.GroupCount}; "
+                + $"записано Room-значений: {result.AppliedRoomValues}.",
+            $"Ownership: записано — {result.AppliedOwnershipValues}; пропущено — {result.SkippedOwnershipValues}."
+        ];
+        lines.AddRange(result.Warnings.Take(4).Select(warning => $"• {warning}"));
+        if (result.Warnings.Count > 4)
+        {
+            lines.Add($"• Ещё предупреждений: {result.Warnings.Count - 4}.");
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private static string CompactValue(string value)
+    {
+        string compact = string.IsNullOrEmpty(value)
+            ? "пусто"
+            : value.Replace("\r\n", " / ").Replace("\n", " / ").Trim();
+        return compact.Length <= 80
+            ? compact
+            : $"{compact.Substring(0, 77)}…";
     }
 
     private static string FormatPreview(

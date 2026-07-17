@@ -370,4 +370,5 @@ public sealed class FinishSchedulePreviewResult
 public sealed record FinishSchedulePreviewBuild(
     FinishSchedulePreviewResult Preview,
     FinishRoomScopeResult RoomScope,
-    FinishClassificationResult Classification);
+    FinishClassificationResult Classification,
+    IReadOnlyList<FinishClassifiedElement> InScopeElements);

@@ -25,19 +25,27 @@ public sealed class FinishSchedulePreviewService
         Document document,
         FinishScheduleSettings settings)
     {
+        return BuildDetailed(document, settings).Preview;
+    }
+
+    public FinishScheduleCalculationResult BuildDetailed(
+        Document document,
+        FinishScheduleSettings settings)
+    {
         FinishElementCollection collection = collector.Collect(document, settings);
         FinishSchedulePreviewBuild build = builder.BuildDetailed(collection, settings);
         IFinishQuantitySource quantitySource = new PhysicalFinishQuantitySource(document, logger);
         FinishQuantityResult quantities = quantitySource.Calculate(new FinishQuantityRequest(
             build.RoomScope.SelectedRooms,
-            build.Classification.Elements));
+            build.InScopeElements));
         FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
+        RoomFinishSnapshotBuildResult? roomSnapshots = null;
         FinishAggregationResult? aggregation = null;
         if (settings.DescriptionParameter is not null
             && (settings.RoomIdentifier.Mode != RoomIdentifierMode.CustomParameter
                 || settings.RoomIdentifier.CustomParameter is not null))
         {
-            RoomFinishSnapshotBuildResult roomSnapshots = new RoomFinishSnapshotBuilder(
+            roomSnapshots = new RoomFinishSnapshotBuilder(
                 new FinishDescriptionNormalizer()).Build(new RoomFinishSnapshotRequest(
                     settings,
                     build.RoomScope.SelectedRooms,
@@ -56,6 +64,12 @@ public sealed class FinishSchedulePreviewService
             + $"Pairs={result.Index.PotentialRoomElementPairs}; Occurrences={quantities.Occurrences.Count}; "
             + $"GeometryWarnings={quantities.Warnings.Count}; Groups={aggregation?.Groups.Count ?? 0}; "
             + $"AggregationWarnings={aggregation?.Warnings.Count ?? 0}.");
-        return result;
+        return new FinishScheduleCalculationResult(
+            result,
+            collection,
+            build,
+            quantities,
+            roomSnapshots,
+            aggregation);
     }
 }

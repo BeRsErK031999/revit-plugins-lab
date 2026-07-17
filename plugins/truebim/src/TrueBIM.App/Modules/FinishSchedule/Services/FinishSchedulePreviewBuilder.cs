@@ -74,6 +74,11 @@ public sealed class FinishSchedulePreviewBuilder
             inScopeIds);
 
         List<string> warnings = BuildWarnings(roomScope, classification, index);
+        FinishClassifiedElement[] inScopeElements = classification.Elements
+            .Where(element => inScopeIds[element.Category].Contains(element.Element.ElementId))
+            .OrderBy(element => element.Element.ElementId)
+            .ThenBy(element => element.Category)
+            .ToArray();
         FinishSchedulePreviewResult preview = new(
             collection.Rooms.Count,
             roomScope,
@@ -85,7 +90,11 @@ public sealed class FinishSchedulePreviewBuilder
                 index.ElementsWithoutBounds,
                 potentialPairs),
             warnings);
-        return new FinishSchedulePreviewBuild(preview, roomScope, classification);
+        return new FinishSchedulePreviewBuild(
+            preview,
+            roomScope,
+            classification,
+            inScopeElements);
     }
 
     private static FinishPreviewCategoryCounts CreateCounts(
