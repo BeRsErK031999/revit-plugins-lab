@@ -388,7 +388,7 @@ public sealed class PrintSheetCollectorService
 
     private static double ConvertLengthFromInternalUnits(double internalLength)
     {
-#if REVIT2022_OR_GREATER
+#if REVIT2021_OR_GREATER
         return UnitUtils.ConvertFromInternalUnits(internalLength, UnitTypeId.Millimeters);
 #else
         return UnitUtils.ConvertFromInternalUnits(internalLength, DisplayUnitType.DUT_MILLIMETERS);
