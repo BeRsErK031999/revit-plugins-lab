@@ -26,11 +26,17 @@ public sealed class FinishSchedulePreviewService
         FinishScheduleSettings settings)
     {
         FinishElementCollection collection = collector.Collect(document, settings);
-        FinishSchedulePreviewResult result = builder.Build(collection, settings);
+        FinishSchedulePreviewBuild build = builder.BuildDetailed(collection, settings);
+        IFinishQuantitySource quantitySource = new PhysicalFinishQuantitySource(document, logger);
+        FinishQuantityResult quantities = quantitySource.Calculate(new FinishQuantityRequest(
+            build.RoomScope.SelectedRooms,
+            build.Classification.Elements));
+        FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
         logger.Info(
             $"Finish Schedule preview built. Rooms={result.RoomScope.SelectedRooms.Count}/{result.CollectedRooms}; "
             + $"Walls={result.Walls.InScope}; Floors={result.Floors.InScope}; Ceilings={result.Ceilings.InScope}; "
-            + $"Pairs={result.Index.PotentialRoomElementPairs}.");
+            + $"Pairs={result.Index.PotentialRoomElementPairs}; Occurrences={quantities.Occurrences.Count}; "
+            + $"GeometryWarnings={quantities.Warnings.Count}.");
         return result;
     }
 }

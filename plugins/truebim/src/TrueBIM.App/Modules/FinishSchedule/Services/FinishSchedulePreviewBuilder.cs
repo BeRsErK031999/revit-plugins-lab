@@ -20,6 +20,13 @@ public sealed class FinishSchedulePreviewBuilder
         FinishElementCollection collection,
         FinishScheduleSettings settings)
     {
+        return BuildDetailed(collection, settings).Preview;
+    }
+
+    public FinishSchedulePreviewBuild BuildDetailed(
+        FinishElementCollection collection,
+        FinishScheduleSettings settings)
+    {
         if (collection is null)
         {
             throw new ArgumentNullException(nameof(collection));
@@ -67,7 +74,7 @@ public sealed class FinishSchedulePreviewBuilder
             inScopeIds);
 
         List<string> warnings = BuildWarnings(roomScope, classification, index);
-        return new FinishSchedulePreviewResult(
+        FinishSchedulePreviewResult preview = new(
             collection.Rooms.Count,
             roomScope,
             walls,
@@ -78,6 +85,7 @@ public sealed class FinishSchedulePreviewBuilder
                 index.ElementsWithoutBounds,
                 potentialPairs),
             warnings);
+        return new FinishSchedulePreviewBuild(preview, roomScope, classification);
     }
 
     private static FinishPreviewCategoryCounts CreateCounts(

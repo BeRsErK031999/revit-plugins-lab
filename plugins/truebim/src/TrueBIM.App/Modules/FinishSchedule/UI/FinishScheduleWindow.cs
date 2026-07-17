@@ -1,4 +1,5 @@
 using System.IO;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using TrueBIM.App.Modules.FinishSchedule.Models;
@@ -678,9 +679,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         [
             $"Помещения в области: {result.RoomScope.SelectedRooms.Count} из {result.CollectedRooms}; "
                 + $"невалидных — {result.RoomScope.InvalidRooms.Count}, вне области — {result.RoomScope.OutsideScopeCount}.",
-            FormatCategory("Стены", settings.Walls.IsEnabled, result.Walls),
-            FormatCategory("Полы", settings.Floors.IsEnabled, result.Floors),
-            FormatCategory("Потолки", settings.Ceilings.IsEnabled, result.Ceilings),
+            FormatCategory("Стены", settings.Walls.IsEnabled, result.Walls, result.Quantities?.Walls),
+            FormatCategory("Полы", settings.Floors.IsEnabled, result.Floors, result.Quantities?.Floors),
+            FormatCategory("Потолки", settings.Ceilings.IsEnabled, result.Ceilings, result.Quantities?.Ceilings),
             $"Spatial index: {result.Index.IndexedElements} элементов; "
                 + $"потенциальных пар помещение–элемент — {result.Index.PotentialRoomElementPairs}."
         ];
@@ -691,11 +692,20 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private static string FormatCategory(
         string name,
         bool enabled,
-        FinishPreviewCategoryCounts counts)
+        FinishPreviewCategoryCounts counts,
+        FinishQuantityCategorySummary? quantities)
     {
-        return enabled
-            ? $"{name}: в области — {counts.InScope}; классифицировано — {counts.Classified}; собрано источников — {counts.SourceCollected}."
-            : $"{name}: категория отключена.";
+        if (!enabled)
+        {
+            return $"{name}: категория отключена.";
+        }
+
+        string geometry = quantities is null
+            ? string.Empty
+            : $"; геометрия — {quantities.OccurrenceCount} связей / "
+                + $"{quantities.AreaSquareMeters.ToString("N2", CultureInfo.GetCultureInfo("ru-RU"))} м²";
+        return $"{name}: в области — {counts.InScope}; классифицировано — {counts.Classified}; "
+            + $"собрано источников — {counts.SourceCollected}{geometry}.";
     }
 
     private void SaveProfile(bool showFeedback)

@@ -275,7 +275,8 @@ public sealed class FinishSchedulePreviewResult
         FinishPreviewCategoryCounts floors,
         FinishPreviewCategoryCounts ceilings,
         FinishPreviewIndexCounts index,
-        IEnumerable<string> warnings)
+        IEnumerable<string> warnings,
+        FinishQuantityPreviewSummary? quantities = null)
     {
         CollectedRooms = collectedRooms;
         RoomScope = roomScope ?? throw new ArgumentNullException(nameof(roomScope));
@@ -284,6 +285,7 @@ public sealed class FinishSchedulePreviewResult
         Ceilings = ceilings;
         Index = index;
         Warnings = (warnings ?? throw new ArgumentNullException(nameof(warnings))).ToArray();
+        Quantities = quantities;
     }
 
     public int CollectedRooms { get; }
@@ -299,4 +301,34 @@ public sealed class FinishSchedulePreviewResult
     public FinishPreviewIndexCounts Index { get; }
 
     public IReadOnlyList<string> Warnings { get; }
+
+    public FinishQuantityPreviewSummary? Quantities { get; }
+
+    public FinishSchedulePreviewResult WithQuantities(FinishQuantityResult result)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        string[] mergedWarnings = Warnings
+            .Concat(result.Warnings.Select(warning => warning.Message))
+            .GroupBy(warning => warning, StringComparer.Ordinal)
+            .Select(group => group.Key)
+            .ToArray();
+        return new FinishSchedulePreviewResult(
+            CollectedRooms,
+            RoomScope,
+            Walls,
+            Floors,
+            Ceilings,
+            Index,
+            mergedWarnings,
+            result.Summary);
+    }
 }
+
+public sealed record FinishSchedulePreviewBuild(
+    FinishSchedulePreviewResult Preview,
+    FinishRoomScopeResult RoomScope,
+    FinishClassificationResult Classification);
