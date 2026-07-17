@@ -61,6 +61,8 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
 
     public string RunnerName => "Встроенный";
 
+    public string RunnerVersion => GetType().Assembly.GetName().Version?.ToString() ?? "unknown";
+
     public IsoFieldRecognitionResult Run(string? sourcePath)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))

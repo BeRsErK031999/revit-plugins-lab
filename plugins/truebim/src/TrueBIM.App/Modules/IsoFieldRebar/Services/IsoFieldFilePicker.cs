@@ -45,4 +45,27 @@ public sealed class IsoFieldFilePicker : IIsoFieldFilePicker
             ? dialog.FileName
             : null;
     }
+
+    public string? PickRebarReportSavePath(string? initialDirectory, string? suggestedFileName)
+    {
+        SaveFileDialog dialog = new()
+        {
+            Title = "Сохранить отчёт армирования по изополям",
+            Filter = "JSON + CSV отчёт (*.json)|*.json",
+            FileName = string.IsNullOrWhiteSpace(suggestedFileName)
+                ? IsoFieldRebarReportService.DefaultFileNamePrefix + ".json"
+                : suggestedFileName,
+            DefaultExt = ".json",
+            AddExtension = true,
+            OverwritePrompt = true
+        };
+        if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+        {
+            dialog.InitialDirectory = initialDirectory;
+        }
+
+        return dialog.ShowDialog() == true
+            ? dialog.FileName
+            : null;
+    }
 }

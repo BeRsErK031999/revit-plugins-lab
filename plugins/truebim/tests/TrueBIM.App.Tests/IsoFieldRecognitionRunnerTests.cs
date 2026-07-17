@@ -17,7 +17,9 @@ public sealed class IsoFieldRecognitionRunnerTests
 
         Assert.Empty(result.Polylines);
         Assert.Empty(result.Diagnostics);
-        Assert.Equal("Stub", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
+        IIsoFieldRecognitionRunnerDiagnostics diagnostics = Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner);
+        Assert.Equal("Stub", diagnostics.RunnerName);
+        Assert.False(string.IsNullOrWhiteSpace(diagnostics.RunnerVersion));
     }
 
     [Fact]
@@ -31,7 +33,9 @@ public sealed class IsoFieldRecognitionRunnerTests
             IIsoFieldRecognitionRunner runner = IsoFieldRecognitionRunnerFactory.Create(new TestLogger());
 
             Assert.IsType<BuiltInIsoFieldRecognitionRunner>(runner);
-            Assert.Equal("Встроенный", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
+            IIsoFieldRecognitionRunnerDiagnostics diagnostics = Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner);
+            Assert.Equal("Встроенный", diagnostics.RunnerName);
+            Assert.False(string.IsNullOrWhiteSpace(diagnostics.RunnerVersion));
         }
         finally
         {
@@ -190,7 +194,9 @@ public sealed class IsoFieldRecognitionRunnerTests
             IIsoFieldRecognitionRunner runner = IsoFieldRecognitionRunnerFactory.Create(new TestLogger());
 
             Assert.IsType<IsoFieldCliRecognitionRunner>(runner);
-            Assert.Equal("CLI", Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner).RunnerName);
+            IIsoFieldRecognitionRunnerDiagnostics diagnostics = Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner);
+            Assert.Equal("CLI", diagnostics.RunnerName);
+            Assert.False(string.IsNullOrWhiteSpace(diagnostics.RunnerVersion));
         }
         finally
         {

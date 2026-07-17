@@ -51,6 +51,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldRebarChangePlanService rebarChangePlanService = new();
     private readonly IsoFieldRebarRuleOverrideService rebarRuleOverrideService = new();
     private readonly IsoFieldRebarZoneMergeService rebarZoneMergeService = new();
+    private readonly IsoFieldRebarReportService rebarReportService = new();
     private readonly ObservableCollection<IsoFieldRebarReviewRow> rebarReviewRows = new();
     private readonly Dictionary<string, IsoFieldRebarRuleOverride> ruleOverrides = new(StringComparer.Ordinal);
     private readonly List<IsoFieldRebarZoneMerge> zoneMerges = new();
@@ -73,6 +74,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly Button clearHostButton;
     private readonly Button previewRulesButton;
     private readonly Button compareChangesButton;
+    private readonly Button exportReportButton;
     private readonly Button createTestRebarButton;
     private readonly Button editZoneRuleButton;
     private readonly Button mergeZonesButton;
@@ -389,6 +391,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             196,
             "Сначала рассчитайте валидную инженерную раскладку.",
             (_, _) => CompareEngineeringChanges());
+        exportReportButton = CreateActionButton(
+            "Экспорт отчёта",
+            TrueBimIcon.Export,
+            164,
+            "Сначала рассчитайте валидную инженерную раскладку.",
+            (_, _) => ExportRebarReport());
         createTestRebarButton = CreateActionButton(
             "Применить изменения",
             TrueBimIcon.Apply,
@@ -855,6 +863,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         compareChangesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
         buttonRow.Children.Add(compareChangesButton);
+
+        exportReportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        buttonRow.Children.Add(exportReportButton);
 
         createTestRebarButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
         buttonRow.Children.Add(createTestRebarButton);
@@ -2724,6 +2735,118 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         revitActions.Raise(CompareEngineeringChangesInRevitContext);
     }
 
+    private void ExportRebarReport()
+    {
+        if (currentRulePreview?.CanCreateRebar != true
+            || !currentRulePreview.IsEngineeringPreview
+            || currentRecognitionResult is null
+            || selectedHostElement is null)
+        {
+            return;
+        }
+
+        string? initialDirectory = ResolveReportInitialDirectory();
+        string suggestedFileName = string.Concat(
+            IsoFieldRebarReportService.DefaultFileNamePrefix,
+            "-",
+            DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture),
+            ".json");
+        string? jsonPath = filePicker.PickRebarReportSavePath(
+            initialDirectory,
+            suggestedFileName);
+        if (string.IsNullOrWhiteSpace(jsonPath))
+        {
+            footerStatusText.Text = "Экспорт отчёта отменён.";
+            logger.Info("IsoField rebar report export canceled.");
+            return;
+        }
+
+        try
+        {
+            IsoFieldRebarReport report = rebarReportService.Build(
+                new IsoFieldRebarReportRequest(
+                    documentTitle,
+                    documentKey,
+                    selectedHostElement,
+                    currentRulePreview,
+                    currentRecognitionResult,
+                    BuildReportSourceInputs(),
+                    selectedSourceSet is null ? "RecognitionJson" : "ImageSourceSet",
+                    ResolveRecognitionRunnerName(),
+                    ResolveRecognitionRunnerVersion(),
+                    GetType().Assembly.GetName().Version?.ToString() ?? "unknown",
+                    currentCalibration,
+                    currentSlabBinding,
+                    availableSlabBindingProfile,
+                    currentChangePlan,
+                    selectedSourceSetManifestPath));
+            IsoFieldRebarReportSaveResult result = rebarReportService.Save(report, jsonPath!);
+            string comparisonText = report.ChangeSummary.Compared
+                ? "diff включён"
+                : "diff ещё не выполнен";
+            rebarCreationStatusText.Text =
+                $"Отчёт сохранён: зон {report.Zones.Count}, слоёв {report.LayerTotals.Count}; {comparisonText}.";
+            footerStatusText.Text =
+                $"Сохранены JSON и CSV: {Path.GetFileNameWithoutExtension(result.JsonPath)}. Модель Revit не изменялась.";
+            TaskDialog dialog = new("Армирование по изополям")
+            {
+                MainInstruction = "Отчёт сохранён",
+                MainContent = $"JSON: {result.JsonPath}{Environment.NewLine}CSV: {result.CsvPath}{Environment.NewLine}Зон: {report.Zones.Count}; слоёв: {report.LayerTotals.Count}; {comparisonText}."
+            };
+            dialog.Show();
+            logger.Info(
+                $"IsoField rebar report exported. Json='{result.JsonPath}'; Csv='{result.CsvPath}'; "
+                + $"Zones={report.Zones.Count}; Layers={report.LayerTotals.Count}; Compared={report.ChangeSummary.Compared}.");
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or ArgumentException)
+        {
+            logger.Error("Failed to export IsoField rebar report.", exception);
+            TaskDialog.Show(
+                "Армирование по изополям",
+                "Не удалось сохранить отчёт. Проверьте путь, доступ к исходным файлам и логи диагностики.");
+            rebarCreationStatusText.Text = "Отчёт не сохранён: см. логи диагностики.";
+            footerStatusText.Text = "Ошибка экспорта отчёта. Модель Revit не изменялась.";
+        }
+    }
+
+    private IReadOnlyList<IsoFieldRebarReportSourceInput> BuildReportSourceInputs()
+    {
+        if (selectedSourceSet is not null)
+        {
+            return selectedSourceSet.Files
+                .Select(file => new IsoFieldRebarReportSourceInput(
+                    file.FilePath,
+                    file.Role,
+                    file.PixelWidth,
+                    file.PixelHeight))
+                .ToArray();
+        }
+
+        return string.IsNullOrWhiteSpace(selectedJsonPath)
+            ? Array.Empty<IsoFieldRebarReportSourceInput>()
+            : [new IsoFieldRebarReportSourceInput(selectedJsonPath!)];
+    }
+
+    private string? ResolveReportInitialDirectory()
+    {
+        string? path = selectedSourceSetManifestPath
+            ?? selectedJsonPath
+            ?? selectedSourceSet?.Files.FirstOrDefault()?.FilePath;
+        string? directory = string.IsNullOrWhiteSpace(path)
+            ? null
+            : Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+        {
+            return directory;
+        }
+
+        string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        return Directory.Exists(documents) ? documents : null;
+    }
+
     private void CompareEngineeringChangesInRevitContext()
     {
         ReadyRebarContext? context = ResolveReadyRebarContext();
@@ -3528,6 +3651,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             : state.CanCreateRebar
                 ? "Сравнение по зонам доступно для инженерной раскладки горизонтальной плиты."
                 : "Сначала рассчитайте валидную инженерную раскладку.";
+        exportReportButton.IsEnabled = state.CanCreateRebar && isEngineeringPreview;
+        exportReportButton.ToolTip = exportReportButton.IsEnabled
+            ? currentChangePlan is null
+                ? "Сохранить JSON и CSV по зонам и слоям. Отчёт явно отметит, что сравнение с моделью ещё не выполнено."
+                : $"Сохранить JSON и CSV с источниками, hashes, привязкой, правилами и текущим diff: {currentChangePlan.Summary}"
+            : "Сначала рассчитайте валидную инженерную раскладку плиты.";
         createTestRebarButton.IsEnabled = state.CanCreateRebar
             && (!isEngineeringPreview
                 || currentChangePlan?.CanApply == true && currentChangePlan.HasChanges);
@@ -3828,6 +3957,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         return recognitionRunner is IIsoFieldRecognitionRunnerDiagnostics diagnostics
             ? diagnostics.RunnerName
             : recognitionRunner.GetType().Name;
+    }
+
+    private string ResolveRecognitionRunnerVersion()
+    {
+        return recognitionRunner is IIsoFieldRecognitionRunnerDiagnostics diagnostics
+            ? diagnostics.RunnerVersion
+            : recognitionRunner.GetType().Assembly.GetName().Version?.ToString() ?? "unknown";
     }
 
     private static string FormatNumber(double value)

@@ -6,6 +6,8 @@ public sealed class StubIsoFieldRecognitionRunner : IIsoFieldRecognitionRunner, 
 {
     public string RunnerName => "Stub";
 
+    public string RunnerVersion => GetType().Assembly.GetName().Version?.ToString() ?? "unknown";
+
     public IsoFieldRecognitionResult Run(string? sourcePath)
     {
         return IsoFieldRecognitionResult.Empty;

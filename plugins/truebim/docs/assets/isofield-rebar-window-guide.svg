@@ -1,6 +1,6 @@
 <svg width="960" height="620" viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Окно модуля армирования по изополям с кнопкой методички</title>
-  <desc id="desc">Схема показывает кнопку вопроса, подсказку при наведении и workflow с ручной настройкой, исключением и объединением зон армирования.</desc>
+  <desc id="desc">Схема показывает кнопку вопроса и workflow с ручной настройкой зон, сравнением, экспортом JSON/CSV и применением армирования.</desc>
   <rect width="960" height="620" rx="22" fill="#F7F9FB"/>
   <rect x="56" y="48" width="848" height="524" rx="14" fill="#FFFFFF" stroke="#D7DEE8" stroke-width="2"/>
 
@@ -35,10 +35,12 @@
 
     <rect x="80" y="446" width="492" height="76" rx="8" fill="#FFFFFF" stroke="#D7DEE8"/>
     <text x="104" y="476" fill="#12263A" font-size="18" font-weight="700">Инженерная раскладка</text>
-    <rect x="104" y="486" width="170" height="26" rx="6" fill="#EAF0FA" stroke="#3564A8"/>
-    <text x="189" y="504" text-anchor="middle" fill="#3564A8" font-size="12" font-weight="700">Сравнить с моделью</text>
-    <rect x="282" y="486" width="170" height="26" rx="6" fill="#FCEBEB" stroke="#B23A48"/>
-    <text x="367" y="504" text-anchor="middle" fill="#B23A48" font-size="12" font-weight="700">Применить изменения</text>
+    <rect x="104" y="486" width="145" height="26" rx="6" fill="#EAF0FA" stroke="#3564A8"/>
+    <text x="176" y="504" text-anchor="middle" fill="#3564A8" font-size="11" font-weight="700">Сравнить с моделью</text>
+    <rect x="257" y="486" width="150" height="26" rx="6" fill="#FCEBEB" stroke="#B23A48"/>
+    <text x="332" y="504" text-anchor="middle" fill="#B23A48" font-size="11" font-weight="700">Применить изменения</text>
+    <rect x="415" y="486" width="157" height="26" rx="6" fill="#EAF7F2" stroke="#1F8A70"/>
+    <text x="493" y="504" text-anchor="middle" fill="#1F8A70" font-size="11" font-weight="700">Экспорт JSON + CSV</text>
 
     <rect x="602" y="284" width="258" height="238" rx="8" fill="#FFF3DB" stroke="#B06F00" stroke-width="2"/>
     <text x="624" y="316" fill="#12263A" font-size="20" font-weight="700">Готовность: 4 из 5</text>
@@ -48,6 +50,6 @@
     <text x="624" y="434" fill="#1F8A70" font-size="16">✓ Плита привязана</text>
     <text x="624" y="462" fill="#4A5A6A" font-size="16">○ Раскладка проверена</text>
     <text x="624" y="490" fill="#4A5A6A" font-size="14">Строки можно настроить, исключить</text>
-    <text x="624" y="510" fill="#4A5A6A" font-size="14">или объединить до проверки diff</text>
+    <text x="624" y="510" fill="#4A5A6A" font-size="14">объединить и сохранить отчёт diff</text>
   </g>
 </svg>

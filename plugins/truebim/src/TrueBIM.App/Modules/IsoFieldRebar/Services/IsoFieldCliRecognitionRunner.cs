@@ -37,6 +37,8 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
 
     public string RunnerName => "CLI";
 
+    public string RunnerVersion => ResolveRunnerVersion();
+
     public IsoFieldRecognitionResult Run(string? sourcePath)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
@@ -199,6 +201,32 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
         }
 
         return Math.Max(1, (int)milliseconds);
+    }
+
+    private string ResolveRunnerVersion()
+    {
+        try
+        {
+            string workerPath = Path.GetFullPath(options.ExecutablePath);
+            if (!File.Exists(workerPath))
+            {
+                return "unknown";
+            }
+
+            FileVersionInfo versionInfo = FileVersionInfo.GetVersionInfo(workerPath);
+            return !string.IsNullOrWhiteSpace(versionInfo.ProductVersion)
+                ? versionInfo.ProductVersion!
+                : !string.IsNullOrWhiteSpace(versionInfo.FileVersion)
+                    ? versionInfo.FileVersion!
+                    : "unknown";
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or System.Security.SecurityException)
+        {
+            return "unknown";
+        }
     }
 
     private static string EscapeArgumentValue(string value)
