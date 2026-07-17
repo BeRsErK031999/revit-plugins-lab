@@ -294,6 +294,16 @@ FinishScheduleCommand
 - Ручные сценарии из ТЗ, локальный deploy и installer validation из чистого коммита.
 - Финальный отчёт разделяет compile, automated и runtime результаты.
 
+Статус релизного gate от 2026-07-17:
+
+- `dotnet format --verify-no-changes`, Release-сборка без предупреждений и `686/686` автоматических тестов прошли;
+- payload для Revit 2019–2025 собран с реальными API и получил `Ready`; Revit 2026 отмечен `Skipped`, потому что Revit 2026 и его API не установлены на машине;
+- собран `dist/installer/TrueBIM-Setup.exe`, SHA-256 `CC7DB9E910C930F103BE7680F1E25663229759FBD053F81A87292490EFF1222E`;
+- установщик выполнен локально, file validation для Revit 2019–2025 прошла, SHA-256 установленных `TrueBIM.App.dll` совпадает с payload каждой версии;
+- runtime smoke, ручные сценарии ТЗ, clipboard, переход к спецификации, rollback и worksharing locks не отмечаются как пройденные до проверки в реально запущенном Revit.
+
+Compile, automated, packaging и installed-file части `FS-010` выполнены. Для закрытия `FS-010` остаётся runtime QA на пользовательском проекте.
+
 ## Обязательные unit-тесты чистой логики
 
 1. Одинаковые описания и разные площади дают одну группу.
@@ -356,4 +366,4 @@ FinishScheduleCommand
 
 ## Следующая задача
 
-Перейти к `FS-006`: реализовать нормализацию описаний, room snapshots, group key без площади и детерминированную многострочную агрегацию.
+Запустить Revit 2022 или 2025 на пользовательском проекте и пройти manual/integration сценарии выше. Для каждого замечания фиксировать версию Revit, шаги воспроизведения, ожидаемый и фактический результат; при ошибке также приложить `%APPDATA%\TrueBIM\Logs\truebim.log`.
