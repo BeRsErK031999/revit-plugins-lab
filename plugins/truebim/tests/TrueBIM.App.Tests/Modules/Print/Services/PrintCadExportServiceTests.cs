@@ -6,6 +6,22 @@ namespace TrueBIM.App.Tests.Modules.Print.Services;
 
 public sealed class PrintCadExportServiceTests
 {
+    [Theory]
+    [InlineData(true, false, DwfExportTransactionMode.UseExistingTransaction)]
+    [InlineData(false, false, DwfExportTransactionMode.StartTemporaryTransaction)]
+    [InlineData(false, true, DwfExportTransactionMode.RejectReadOnlyDocument)]
+    public void DwfExportTransactionPolicy_ResolvesDocumentContext(
+        bool documentIsModifiable,
+        bool documentIsReadOnly,
+        DwfExportTransactionMode expected)
+    {
+        DwfExportTransactionMode actual = DwfExportTransactionPolicy.Resolve(
+            documentIsModifiable,
+            documentIsReadOnly);
+
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void NormalizeCadFileName_AddsDwgExtension()
     {

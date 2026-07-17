@@ -204,6 +204,69 @@ public sealed class PrintCadExportService
         List<string> exportedFiles,
         List<PrintCadExportFailure> failures)
     {
+        DwfExportTransactionMode transactionMode = DwfExportTransactionPolicy.Resolve(
+            document.IsModifiable,
+            document.IsReadOnly);
+        if (transactionMode == DwfExportTransactionMode.RejectReadOnlyDocument)
+        {
+            const string message = "DWF нельзя экспортировать: документ Revit доступен только для чтения.";
+            logger.Warning(message);
+            AddFailureForItems(PrintCadExportFormat.Dwf, items, failures, message);
+            return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
+        }
+
+        Transaction? temporaryTransaction = null;
+        try
+        {
+            if (transactionMode == DwfExportTransactionMode.StartTemporaryTransaction)
+            {
+                temporaryTransaction = new Transaction(document, "TrueBIM: временный экспорт DWF");
+                TransactionStatus startStatus = temporaryTransaction.Start();
+                if (startStatus != TransactionStatus.Started)
+                {
+                    throw new InvalidOperationException(
+                        $"Revit не начал временную транзакцию для экспорта DWF. Статус: {startStatus}.");
+                }
+
+                logger.Info("Started temporary Revit transaction for DWF export.");
+            }
+            else
+            {
+                logger.Info("Using existing Revit transaction for DWF export.");
+            }
+
+            return ExportDwfCore(
+                document,
+                exportFolder,
+                items,
+                mergeViews,
+                mergedFileName,
+                logger,
+                exportedFiles,
+                failures);
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to prepare modifiable Revit document for DWF export.", exception);
+            AddFailureForItems(PrintCadExportFormat.Dwf, items, failures, exception.Message);
+            return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
+        }
+        finally
+        {
+            RollBackTemporaryDwfTransaction(temporaryTransaction, logger);
+        }
+    }
+
+    private static PrintCadExportResult ExportDwfCore(
+        Document document,
+        string exportFolder,
+        IReadOnlyList<PrintCadExportItem> items,
+        bool mergeViews,
+        string? mergedFileName,
+        ITrueBimLogger logger,
+        List<string> exportedFiles,
+        List<PrintCadExportFailure> failures)
+    {
         if (mergeViews)
         {
             try
@@ -277,6 +340,39 @@ public sealed class PrintCadExportService
         }
 
         return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
+    }
+
+    private static void RollBackTemporaryDwfTransaction(Transaction? transaction, ITrueBimLogger logger)
+    {
+        if (transaction is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (transaction.GetStatus() == TransactionStatus.Started)
+            {
+                TransactionStatus rollbackStatus = transaction.RollBack();
+                if (rollbackStatus == TransactionStatus.RolledBack)
+                {
+                    logger.Info("Rolled back temporary Revit transaction after DWF export.");
+                }
+                else
+                {
+                    logger.Warning(
+                        $"Temporary DWF export transaction returned unexpected rollback status: {rollbackStatus}.");
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to roll back temporary Revit transaction after DWF export.", exception);
+        }
+        finally
+        {
+            transaction.Dispose();
+        }
     }
 
     public static string NormalizeCadFileName(string fileName, PrintCadExportFormat format)
