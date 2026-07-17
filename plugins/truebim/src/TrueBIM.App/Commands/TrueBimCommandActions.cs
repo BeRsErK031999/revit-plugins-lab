@@ -75,14 +75,19 @@ internal static class TrueBimCommandActions
                 collectionSettings.FileNameMask,
                 collectionSettings.CombinedPdfFileName,
                 collectionSettings.CombinedDwgFileNameMask);
+            IReadOnlyCollection<string> titleBlockParameterNames = fileNameTemplateService.GetTitleBlockParameterNames(
+                collectionSettings.FileNameMask,
+                collectionSettings.CombinedPdfFileName,
+                collectionSettings.CombinedDwgFileNameMask);
             Stopwatch collectionTimer = Stopwatch.StartNew();
             IReadOnlyList<PrintSheetSource> sheetSources = CollectPrintSheetSources(
                 commandData.Application.Application.Documents.Cast<Document>().ToList(),
                 activeDocument,
-                sheetParameterNames);
+                sheetParameterNames,
+                titleBlockParameterNames);
             collectionTimer.Stop();
             int sheetCount = sheetSources.Sum(source => source.Sheets.Count);
-            logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents in {collectionTimer.ElapsedMilliseconds} ms. Loaded custom sheet parameters: {sheetParameterNames.Count}.");
+            logger.Info($"{windowTitle} collected {sheetCount} sheets from {sheetSources.Count} open documents in {collectionTimer.ElapsedMilliseconds} ms. Loaded custom sheet parameters: {sheetParameterNames.Count}; title block parameters: {titleBlockParameterNames.Count}.");
             Stopwatch windowTimer = Stopwatch.StartNew();
             PrintWindow printWindow = new(
                 activeDocument,
@@ -237,7 +242,8 @@ internal static class TrueBimCommandActions
     private static IReadOnlyList<PrintSheetSource> CollectPrintSheetSources(
         IReadOnlyList<Document> openDocuments,
         Document activeDocument,
-        IReadOnlyCollection<string> sheetParameterNames)
+        IReadOnlyCollection<string> sheetParameterNames,
+        IReadOnlyCollection<string> titleBlockParameterNames)
     {
         PrintSheetCollectorService collector = new();
         List<Document> orderedDocuments = openDocuments
@@ -258,15 +264,28 @@ internal static class TrueBimCommandActions
             PrintSheetSourceKind sourceKind = IsLinkedDocument(document)
                 ? PrintSheetSourceKind.LinkedDocument
                 : PrintSheetSourceKind.OpenDocument;
-            IReadOnlyList<PrintSheetInfo> sheets = ReferenceEquals(document, activeDocument)
-                ? collector.Collect(document, sourceId, sourceName, sourceKind, sheetParameterNames)
-                : Array.Empty<PrintSheetInfo>();
+            PrintSheetCollection? collection = ReferenceEquals(document, activeDocument)
+                ? collector.CollectWithCatalog(
+                    document,
+                    sourceId,
+                    sourceName,
+                    sourceKind,
+                    sheetParameterNames,
+                    titleBlockParameterNames)
+                : null;
+            IReadOnlyList<PrintSheetInfo> sheets = collection?.Sheets ?? Array.Empty<PrintSheetInfo>();
             if (sheets.Count == 0 && ReferenceEquals(document, activeDocument))
             {
                 continue;
             }
 
-            sources.Add(new PrintSheetSource(sourceId, sourceName, sourceKind, document, sheets));
+            sources.Add(new PrintSheetSource(
+                sourceId,
+                sourceName,
+                sourceKind,
+                document,
+                sheets,
+                collection?.ParameterCatalog));
         }
 
         return sources;

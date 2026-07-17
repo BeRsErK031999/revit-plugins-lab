@@ -29,6 +29,14 @@ public sealed class PrintFileNameTemplateService
             "Параметр проекта:");
     }
 
+    public IReadOnlyCollection<string> GetTitleBlockParameterNames(params string?[] templates)
+    {
+        return GetDictionaryTokenNames(
+            templates,
+            "TitleBlockParameter:",
+            "Параметр основной надписи:");
+    }
+
     public PrintFileNamePreview BuildCombined(
         string? template,
         IReadOnlyList<PrintSheetInfo> sheets,
@@ -117,6 +125,14 @@ public sealed class PrintFileNameTemplateService
                 sheet.SheetParameters,
                 token,
                 "Параметр листа:"),
+            _ when token.StartsWith("TitleBlockParameter:", StringComparison.Ordinal) => ResolveDictionaryToken(
+                sheet.TitleBlockParameters,
+                token,
+                "TitleBlockParameter:"),
+            _ when token.StartsWith("Параметр основной надписи:", StringComparison.CurrentCultureIgnoreCase) => ResolveDictionaryToken(
+                sheet.TitleBlockParameters,
+                token,
+                "Параметр основной надписи:"),
             _ when token.StartsWith("ProjectParameter:", StringComparison.Ordinal) => ResolveDictionaryToken(
                 context.ProjectParameters,
                 token,

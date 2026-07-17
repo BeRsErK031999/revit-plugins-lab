@@ -11,4 +11,5 @@ public sealed record PrintSheetInfo(
     string SheetFormat,
     bool IsPlaceholder,
     bool CanBePrinted,
-    IReadOnlyDictionary<string, string> SheetParameters);
+    IReadOnlyDictionary<string, string> SheetParameters,
+    IReadOnlyDictionary<string, string> TitleBlockParameters);

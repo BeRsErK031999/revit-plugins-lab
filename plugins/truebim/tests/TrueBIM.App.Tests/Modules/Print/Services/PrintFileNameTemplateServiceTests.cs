@@ -135,6 +135,27 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void Build_ReplacesEnglishAndRussianTitleBlockParameterTokens()
+    {
+        PrintFileNamePreview preview = service.Build(
+            "{TitleBlockParameter:Формат}_{Параметр основной надписи:Разработал}_{Номер листа}",
+            Sheet(
+                "A-101",
+                "План",
+                new Dictionary<string, string>(),
+                new Dictionary<string, string>
+                {
+                    ["Формат"] = "A1",
+                    ["Разработал"] = "Иванов"
+                }),
+            Context("РД", "P-42", "Model"),
+            counter: 1);
+
+        Assert.Equal("A1_Иванов_A-101", preview.FileName);
+        Assert.False(preview.HasUnknownTokens);
+    }
+
+    [Fact]
     public void GetSheetParameterNames_ReturnsOnlyUniqueSheetParameterTokens()
     {
         IReadOnlyCollection<string> names = service.GetSheetParameterNames(
@@ -154,6 +175,17 @@ public sealed class PrintFileNameTemplateServiceTests
         Assert.Equal(2, names.Count);
         Assert.Contains("Шифр", names);
         Assert.Contains("Стадия", names);
+    }
+
+    [Fact]
+    public void GetTitleBlockParameterNames_ReturnsEnglishAndRussianParameterTokens()
+    {
+        IReadOnlyCollection<string> names = service.GetTitleBlockParameterNames(
+            "{TitleBlockParameter:Формат}_{Параметр основной надписи:Разработал}_{Номер листа}");
+
+        Assert.Equal(2, names.Count);
+        Assert.Contains("Формат", names);
+        Assert.Contains("Разработал", names);
     }
 
     [Fact]
@@ -236,6 +268,15 @@ public sealed class PrintFileNameTemplateServiceTests
         string name,
         IReadOnlyDictionary<string, string> sheetParameters)
     {
+        return Sheet(number, name, sheetParameters, new Dictionary<string, string>());
+    }
+
+    private static PrintSheetInfo Sheet(
+        string number,
+        string name,
+        IReadOnlyDictionary<string, string> sheetParameters,
+        IReadOnlyDictionary<string, string> titleBlockParameters)
+    {
         return new PrintSheetInfo(
             10,
             "model",
@@ -247,7 +288,8 @@ public sealed class PrintFileNameTemplateServiceTests
             "841 x 594 мм",
             IsPlaceholder: false,
             CanBePrinted: true,
-            sheetParameters);
+            sheetParameters,
+            titleBlockParameters);
     }
 
     private static PrintFileNameContext Context(string projectName, string projectNumber, string documentName)

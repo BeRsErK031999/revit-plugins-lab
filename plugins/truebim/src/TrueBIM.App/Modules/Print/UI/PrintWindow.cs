@@ -30,12 +30,16 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly Dictionary<string, List<PrintSheetInfo>> sourceSheetsById;
     private readonly HashSet<string> loadedSourceIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> loadedSheetParameterNamesBySourceId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> loadedTitleBlockParameterNamesBySourceId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> loadedProjectParameterNamesBySourceId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PrintParameterCatalog> parameterCatalogsBySourceId;
     private readonly Dictionary<string, PrintFileNameContext> fileNameContextsBySourceId;
     private readonly PrintSheetSelectionState sheetSelectionState;
     private readonly RevitDocument document;
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
     private readonly PrintFileNameTemplateService fileNameTemplateService = new();
+    private readonly PrintFileNameTokenCatalogService fileNameTokenCatalogService = new();
     private readonly PrintPdfExportService pdfExportService = new();
     private readonly PrintCadExportService cadExportService = new();
     private readonly PrintCadExportSetupService cadExportSetupService = new();
@@ -72,7 +76,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly TextBox fileNameMaskInput = new()
     {
         Text = PrintFileNameTemplateService.DefaultTemplate,
-        ToolTip = "Маска имени файла. Доступны токены: {Номер листа}, {Имя листа}, {Номер проекта}, {Имя проекта}, {Имя документа}, {Дата:yyyy-MM-dd}, {Счетчик}, {Счетчик:000}. После добавления токена параметра нажмите «Обновить». Старые английские токены тоже поддерживаются."
+        ToolTip = "Маска имени файла. Кнопка «Токены» вставляет системные токены и параметры листа, основной надписи или проекта в позицию курсора. Старые английские токены тоже поддерживаются."
     };
     private readonly CheckBox includePlaceholdersInput = new()
     {
@@ -83,7 +87,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly TextBox combinedPdfNameInput = new()
     {
         Text = PrintFileNameTemplateService.DefaultCombinedTemplate,
-        ToolTip = "Маска общего PDF. Поддерживает те же токены, что маска листов. Токены листа берутся из первого выбранного листа каждого документа; после добавления параметра нажмите «Обновить»."
+        ToolTip = "Маска общего PDF. Поддерживает те же токены, что маска листов; параметры листа и основной надписи берутся из первого выбранного листа каждого документа."
     };
     private readonly TextBlock combinedPdfNamePreviewText = new()
     {
@@ -94,7 +98,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly TextBox combinedDwgNameMaskInput = new()
     {
         Text = PrintFileNameTemplateService.DefaultCombinedTemplate,
-        ToolTip = "Маска общего DWG. Поддерживает те же токены, что маска листов. Токены листа берутся из первого выбранного листа каждого документа; после добавления параметра нажмите «Обновить»."
+        ToolTip = "Маска общего DWG. Поддерживает те же токены, что маска листов; параметры листа и основной надписи берутся из первого выбранного листа каждого документа."
     };
     private readonly TextBlock combinedDwgNamePreviewText = new()
     {
@@ -192,6 +196,10 @@ public sealed class PrintWindow : TrueBimWindow
                 return sourceSheets;
             },
             StringComparer.Ordinal);
+        parameterCatalogsBySourceId = this.sheetSources.ToDictionary(
+            source => source.SourceId,
+            source => source.AvailableParameters,
+            StringComparer.Ordinal);
         sheetSelectionState = new PrintSheetSelectionState(GetAllLoadedSheets());
         sheetSourcesById = this.sheetSources.ToDictionary(source => source.SourceId, StringComparer.Ordinal);
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -212,22 +220,28 @@ public sealed class PrintWindow : TrueBimWindow
             this.collectedFileNameMask,
             this.collectedCombinedPdfFileNameMask,
             this.collectedCombinedDwgFileNameMask);
-        foreach (string sourceId in loadedSourceIds)
-        {
-            loadedSheetParameterNamesBySourceId[sourceId] = collectedSheetParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
-        }
-
-        IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(
+        IReadOnlyCollection<string> collectedTitleBlockParameterNames = fileNameTemplateService.GetTitleBlockParameterNames(
             this.collectedFileNameMask,
             this.collectedCombinedPdfFileNameMask,
             this.collectedCombinedDwgFileNameMask);
-        fileNameContext = CreateFileNameContext(document, projectParameterNames);
+        IReadOnlyCollection<string> collectedProjectParameterNames = fileNameTemplateService.GetProjectParameterNames(
+            this.collectedFileNameMask,
+            this.collectedCombinedPdfFileNameMask,
+            this.collectedCombinedDwgFileNameMask);
+        foreach (string sourceId in loadedSourceIds)
+        {
+            loadedSheetParameterNamesBySourceId[sourceId] = collectedSheetParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+            loadedTitleBlockParameterNamesBySourceId[sourceId] = collectedTitleBlockParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+            loadedProjectParameterNamesBySourceId[sourceId] = collectedProjectParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+        }
+
+        fileNameContext = CreateFileNameContext(document, collectedProjectParameterNames);
         fileNameContextsBySourceId = new Dictionary<string, PrintFileNameContext>(StringComparer.Ordinal);
         foreach (PrintSheetSource source in this.sheetSources.Where(source => loadedSourceIds.Contains(source.SourceId)))
         {
             fileNameContextsBySourceId[source.SourceId] = ReferenceEquals(source.Document, document)
                 ? fileNameContext
-                : CreateFileNameContext(source.Document, projectParameterNames);
+                : CreateFileNameContext(source.Document, collectedProjectParameterNames);
         }
 
         string revitVersion = GetRevitVersion(document);
@@ -479,6 +493,7 @@ public sealed class PrintWindow : TrueBimWindow
         };
         maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
         maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        maskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         maskRow.Children.Add(new TextBlock
         {
             Text = "Маска имени",
@@ -491,6 +506,10 @@ public sealed class PrintWindow : TrueBimWindow
         Grid.SetColumn(fileNameMaskInput, 1);
         maskRow.Children.Add(fileNameMaskInput);
 
+        Button fileNameTokenButton = CreateFileNameTokenButton(fileNameMaskInput);
+        Grid.SetColumn(fileNameTokenButton, 2);
+        maskRow.Children.Add(fileNameTokenButton);
+
         Grid.SetRow(maskRow, rowIndex++);
         root.Children.Add(maskRow);
         RegisterDetailedSettingsRow(maskRow);
@@ -501,6 +520,7 @@ public sealed class PrintWindow : TrueBimWindow
         };
         combinedDwgMaskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
         combinedDwgMaskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        combinedDwgMaskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         combinedDwgMaskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         combinedDwgMaskRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         combinedDwgMaskRow.Children.Add(new TextBlock
@@ -524,16 +544,20 @@ public sealed class PrintWindow : TrueBimWindow
         Grid.SetColumn(combinedDwgNameMaskInput, 1);
         combinedDwgMaskRow.Children.Add(combinedDwgNameMaskInput);
 
+        Button combinedDwgTokenButton = CreateFileNameTokenButton(combinedDwgNameMaskInput);
+        Grid.SetColumn(combinedDwgTokenButton, 2);
+        combinedDwgMaskRow.Children.Add(combinedDwgTokenButton);
+
         TextBlock combinedDwgPreviewLabel = new()
         {
             Text = "Итог",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(16, 0, 8, 0)
         };
-        Grid.SetColumn(combinedDwgPreviewLabel, 2);
+        Grid.SetColumn(combinedDwgPreviewLabel, 3);
         combinedDwgMaskRow.Children.Add(combinedDwgPreviewLabel);
 
-        Grid.SetColumn(combinedDwgNamePreviewText, 3);
+        Grid.SetColumn(combinedDwgNamePreviewText, 4);
         combinedDwgMaskRow.Children.Add(combinedDwgNamePreviewText);
 
         Grid.SetRow(combinedDwgMaskRow, rowIndex++);
@@ -549,6 +573,7 @@ public sealed class PrintWindow : TrueBimWindow
             pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pdfRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             pdfRow.Children.Add(new TextBlock
             {
@@ -585,6 +610,10 @@ public sealed class PrintWindow : TrueBimWindow
             };
             Grid.SetColumn(combinedPdfNameInput, 3);
             pdfRow.Children.Add(combinedPdfNameInput);
+
+            Button combinedPdfTokenButton = CreateFileNameTokenButton(combinedPdfNameInput);
+            Grid.SetColumn(combinedPdfTokenButton, 4);
+            pdfRow.Children.Add(combinedPdfTokenButton);
 
             Grid.SetRow(pdfRow, rowIndex++);
             root.Children.Add(pdfRow);
@@ -1200,6 +1229,10 @@ public sealed class PrintWindow : TrueBimWindow
             fileNameMaskInput.Text,
             combinedPdfNameInput.Text,
             combinedDwgNameMaskInput.Text);
+        IReadOnlyCollection<string> titleBlockParameterNames = fileNameTemplateService.GetTitleBlockParameterNames(
+            fileNameMaskInput.Text,
+            combinedPdfNameInput.Text,
+            combinedDwgNameMaskInput.Text);
         IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(
             fileNameMaskInput.Text,
             combinedPdfNameInput.Text,
@@ -1210,25 +1243,37 @@ public sealed class PrintWindow : TrueBimWindow
             bool requiredParametersAreLoaded = loadedSheetParameterNamesBySourceId.TryGetValue(
                     source.SourceId,
                     out HashSet<string>? loadedParameterNames)
-                && sheetParameterNames.All(loadedParameterNames.Contains);
+                && sheetParameterNames.All(loadedParameterNames.Contains)
+                && loadedTitleBlockParameterNamesBySourceId.TryGetValue(
+                    source.SourceId,
+                    out HashSet<string>? loadedTitleBlockParameterNames)
+                && titleBlockParameterNames.All(loadedTitleBlockParameterNames.Contains)
+                && loadedProjectParameterNamesBySourceId.TryGetValue(
+                    source.SourceId,
+                    out HashSet<string>? loadedProjectParameterNames)
+                && projectParameterNames.All(loadedProjectParameterNames.Contains);
             if (!reloadSources && sourceIsLoaded && requiredParametersAreLoaded)
             {
                 continue;
             }
 
-            IReadOnlyList<PrintSheetInfo> sourceSheets = collector.Collect(
+            PrintSheetCollection collection = collector.CollectWithCatalog(
                 source.Document,
                 source.SourceId,
                 source.SourceName,
                 source.SourceKind,
-                sheetParameterNames);
-            sourceSheetsById[source.SourceId] = sourceSheets.ToList();
+                sheetParameterNames,
+                titleBlockParameterNames);
+            sourceSheetsById[source.SourceId] = collection.Sheets.ToList();
+            parameterCatalogsBySourceId[source.SourceId] = collection.ParameterCatalog;
             loadedSheetParameterNamesBySourceId[source.SourceId] = sheetParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+            loadedTitleBlockParameterNamesBySourceId[source.SourceId] = titleBlockParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+            loadedProjectParameterNamesBySourceId[source.SourceId] = projectParameterNames.ToHashSet(StringComparer.CurrentCultureIgnoreCase);
             fileNameContextsBySourceId[source.SourceId] = ReferenceEquals(source.Document, document)
                 ? CreateFileNameContext(document, projectParameterNames)
                 : CreateFileNameContext(source.Document, projectParameterNames);
             loadedSourceIds.Add(source.SourceId);
-            logger.Info($"Loaded {sourceSheets.Count} sheets for print source '{source.SourceName}' with {sheetParameterNames.Count} custom sheet parameters.");
+            logger.Info($"Loaded {collection.Sheets.Count} sheets for print source '{source.SourceName}' with {sheetParameterNames.Count} custom sheet parameters and {titleBlockParameterNames.Count} title block parameters.");
         }
     }
 
@@ -2504,6 +2549,63 @@ public sealed class PrintWindow : TrueBimWindow
             MinWidth = 160,
             ToolTip = tooltip
         };
+    }
+
+    private Button CreateFileNameTokenButton(TextBox targetInput)
+    {
+        Button button = CreateActionButton("Токены", TrueBimIcon.Parameter, isEnabled: true);
+        button.Margin = new Thickness(8, 0, 0, 0);
+        button.ToolTip = "Выбрать токен и вставить его в позицию курсора этой маски.";
+        button.Click += (_, _) => OpenFileNameTokenMenu(button, targetInput);
+        return button;
+    }
+
+    private void OpenFileNameTokenMenu(Button owner, TextBox targetInput)
+    {
+        IReadOnlyList<PrintFileNameTokenOption> options = fileNameTokenCatalogService.BuildOptions(
+            parameterCatalogsBySourceId.Values);
+        ContextMenu menu = new()
+        {
+            PlacementTarget = owner,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
+        };
+
+        foreach (IGrouping<string, PrintFileNameTokenOption> category in options.GroupBy(
+            option => option.Category,
+            StringComparer.CurrentCultureIgnoreCase))
+        {
+            MenuItem categoryItem = new() { Header = category.Key };
+            foreach (PrintFileNameTokenOption option in category)
+            {
+                MenuItem tokenItem = new()
+                {
+                    Header = option.DisplayName,
+                    ToolTip = option.Token
+                };
+                tokenItem.Click += (_, _) => InsertFileNameToken(targetInput, option);
+                categoryItem.Items.Add(tokenItem);
+            }
+
+            menu.Items.Add(categoryItem);
+        }
+
+        menu.IsOpen = true;
+    }
+
+    private void InsertFileNameToken(TextBox targetInput, PrintFileNameTokenOption option)
+    {
+        PrintFileNameTokenInsertion insertion = fileNameTokenCatalogService.InsertAtCaret(
+            targetInput.Text,
+            targetInput.CaretIndex,
+            option.Token);
+        targetInput.Text = insertion.Text;
+        targetInput.CaretIndex = insertion.CaretIndex;
+        targetInput.Focus();
+
+        if (!string.Equals(option.Category, "Системные", StringComparison.CurrentCultureIgnoreCase))
+        {
+            RequestLoadSheets();
+        }
     }
 
     private static Button CreateActionButton(string text, TrueBimIcon icon, bool isEnabled)

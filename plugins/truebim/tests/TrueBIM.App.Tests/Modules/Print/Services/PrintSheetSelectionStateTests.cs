@@ -68,6 +68,7 @@ public sealed class PrintSheetSelectionStateTests
             "A1",
             IsPlaceholder: !canBePrinted,
             CanBePrinted: canBePrinted,
+            new Dictionary<string, string>(),
             new Dictionary<string, string>());
     }
 }
