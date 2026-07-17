@@ -374,8 +374,8 @@ public sealed class PrintSheetCollectorService
         double? height = GetTitleBlockDimension(titleBlock, BuiltInParameter.SHEET_HEIGHT);
         if (width is > 0 && height is > 0)
         {
-            double widthMillimeters = UnitUtils.ConvertFromInternalUnits(width.Value, UnitTypeId.Millimeters);
-            double heightMillimeters = UnitUtils.ConvertFromInternalUnits(height.Value, UnitTypeId.Millimeters);
+            double widthMillimeters = ConvertLengthFromInternalUnits(width.Value);
+            double heightMillimeters = ConvertLengthFromInternalUnits(height.Value);
             return $"{Math.Round(widthMillimeters)} x {Math.Round(heightMillimeters)} мм";
         }
 
@@ -384,6 +384,15 @@ public sealed class PrintSheetCollectorService
         return string.IsNullOrWhiteSpace(familyName)
             ? typeName
             : $"{familyName}: {typeName}";
+    }
+
+    private static double ConvertLengthFromInternalUnits(double internalLength)
+    {
+#if REVIT2022_OR_GREATER
+        return UnitUtils.ConvertFromInternalUnits(internalLength, UnitTypeId.Millimeters);
+#else
+        return UnitUtils.ConvertFromInternalUnits(internalLength, DisplayUnitType.DUT_MILLIMETERS);
+#endif
     }
 
     private static double? GetTitleBlockDimension(
