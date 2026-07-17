@@ -15,7 +15,7 @@ public sealed class RevitActionDispatcher
         externalEvent = ExternalEvent.Create(handler);
     }
 
-    public void Raise(Action action)
+    public bool Raise(Action action)
     {
         handler.Enqueue(action ?? throw new ArgumentNullException(nameof(action)));
         ExternalEventRequest request = externalEvent.Raise();
@@ -23,7 +23,10 @@ public sealed class RevitActionDispatcher
         {
             handler.Cancel(action);
             handler.ReportRejected(request);
+            return false;
         }
+
+        return true;
     }
 
     private sealed class RevitActionExternalEventHandler : IExternalEventHandler

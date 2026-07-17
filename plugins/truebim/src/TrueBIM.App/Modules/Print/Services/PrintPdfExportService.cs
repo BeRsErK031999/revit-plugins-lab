@@ -56,7 +56,8 @@ public sealed class PrintPdfExportService
         PrintPdfExportMode mode,
         string? combinedFileName,
         PrintPdfExportSettings settings,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<PrintOperationProgressStep>? progress = null)
     {
         Guard.NotNull(document, nameof(document));
         Guard.NotNullOrWhiteSpace(exportFolder, nameof(exportFolder));
@@ -93,9 +94,9 @@ public sealed class PrintPdfExportService
 
         return mode switch
         {
-            PrintPdfExportMode.SeparateFiles => ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures),
-            PrintPdfExportMode.CombinedFile => ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures),
-            PrintPdfExportMode.SeparateAndCombined => ExportSeparateAndCombined(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures),
+            PrintPdfExportMode.SeparateFiles => ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures, progress),
+            PrintPdfExportMode.CombinedFile => ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures, progress),
+            PrintPdfExportMode.SeparateAndCombined => ExportSeparateAndCombined(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures, progress),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported PDF export mode.")
         };
 #endif
@@ -110,10 +111,11 @@ public sealed class PrintPdfExportService
         PrintPdfExportSettings settings,
         ITrueBimLogger logger,
         List<string> exportedFiles,
-        List<PrintPdfExportFailure> failures)
+        List<PrintPdfExportFailure> failures,
+        Action<PrintOperationProgressStep>? progress)
     {
-        ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures);
-        ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures);
+        ExportSeparateFiles(document, exportFolder, items, settings, logger, exportedFiles, failures, progress);
+        ExportCombinedFile(document, exportFolder, items, combinedFileName, settings, logger, exportedFiles, failures, progress);
         return new PrintPdfExportResult(exportedFiles, failures);
     }
 
@@ -124,10 +126,15 @@ public sealed class PrintPdfExportService
         PrintPdfExportSettings settings,
         ITrueBimLogger logger,
         List<string> exportedFiles,
-        List<PrintPdfExportFailure> failures)
+        List<PrintPdfExportFailure> failures,
+        Action<PrintOperationProgressStep>? progress)
     {
         foreach (PrintPdfExportItem item in items)
         {
+            progress?.Invoke(new PrintOperationProgressStep(
+                "PDF",
+                item.FileName,
+                PrintOperationProgressPhase.Started));
             try
             {
                 string pdfFileName = NormalizePdfFileName(item.FileName);
@@ -158,6 +165,13 @@ public sealed class PrintPdfExportService
                 logger.Error($"Failed to export PDF for sheet element id {item.ElementId}.", exception);
                 failures.Add(new PrintPdfExportFailure(item, exception.Message));
             }
+            finally
+            {
+                progress?.Invoke(new PrintOperationProgressStep(
+                    "PDF",
+                    item.FileName,
+                    PrintOperationProgressPhase.Completed));
+            }
         }
 
         return new PrintPdfExportResult(exportedFiles, failures);
@@ -171,8 +185,16 @@ public sealed class PrintPdfExportService
         PrintPdfExportSettings settings,
         ITrueBimLogger logger,
         List<string> exportedFiles,
-        List<PrintPdfExportFailure> failures)
+        List<PrintPdfExportFailure> failures,
+        Action<PrintOperationProgressStep>? progress)
     {
+        string progressItemName = string.IsNullOrWhiteSpace(combinedFileName)
+            ? DefaultCombinedPdfFileName
+            : combinedFileName!;
+        progress?.Invoke(new PrintOperationProgressStep(
+            "PDF",
+            progressItemName,
+            PrintOperationProgressPhase.Started));
         try
         {
             string pdfFileName = BuildCombinedPdfFileName(combinedFileName);
@@ -201,6 +223,13 @@ public sealed class PrintPdfExportService
         {
             logger.Error("Failed to export combined PDF.", exception);
             AddCombinedFailure(items, failures, exception.Message);
+        }
+        finally
+        {
+            progress?.Invoke(new PrintOperationProgressStep(
+                "PDF",
+                progressItemName,
+                PrintOperationProgressPhase.Completed));
         }
 
         return new PrintPdfExportResult(exportedFiles, failures);

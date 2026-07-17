@@ -34,7 +34,8 @@ public sealed class PrintManagerService
         IReadOnlyList<PrintDriverJobItem> items,
         string printerName,
         string? printSetupName,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<PrintOperationProgressStep>? progress = null)
     {
         if (document is null)
         {
@@ -86,6 +87,11 @@ public sealed class PrintManagerService
             List<PrintDriverFailure> failures = new();
             foreach (PrintDriverJobItem item in items)
             {
+                string itemName = $"{item.SheetNumber} — {item.SheetName}";
+                progress?.Invoke(new PrintOperationProgressStep(
+                    "Печать",
+                    itemName,
+                    PrintOperationProgressPhase.Started));
                 try
                 {
                     ViewSheet? sheet = document.GetElement(RevitElementIds.Create(item.ElementId)) as ViewSheet;
@@ -109,6 +115,13 @@ public sealed class PrintManagerService
                 {
                     failures.Add(new PrintDriverFailure(item, exception.Message));
                     logger.Error($"Print driver failed for sheet element id {item.ElementId} on printer '{printerName}'.", exception);
+                }
+                finally
+                {
+                    progress?.Invoke(new PrintOperationProgressStep(
+                        "Печать",
+                        itemName,
+                        PrintOperationProgressPhase.Completed));
                 }
             }
 

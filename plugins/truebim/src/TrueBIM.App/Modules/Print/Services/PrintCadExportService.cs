@@ -33,9 +33,10 @@ public sealed class PrintCadExportService
         IReadOnlyList<PrintCadExportItem> items,
         PrintCadExportFormat format,
         string? setupName,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<PrintOperationProgressStep>? progress = null)
     {
-        return Export(document, exportFolder, items, format, setupName, mergeViews: false, mergedFileName: null, logger);
+        return Export(document, exportFolder, items, format, setupName, mergeViews: false, mergedFileName: null, logger, progress);
     }
 
     public PrintCadExportResult Export(
@@ -46,9 +47,10 @@ public sealed class PrintCadExportService
         string? setupName,
         bool mergeViews,
         string? mergedFileName,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<PrintOperationProgressStep>? progress = null)
     {
-        return Export(document, exportFolder, items, format, setupName, dwgProfile: null, mergeViews, mergedFileName, logger);
+        return Export(document, exportFolder, items, format, setupName, dwgProfile: null, mergeViews, mergedFileName, logger, progress);
     }
 
     public PrintCadExportResult Export(
@@ -60,7 +62,8 @@ public sealed class PrintCadExportService
         DwgExportProfile? dwgProfile,
         bool mergeViews,
         string? mergedFileName,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Action<PrintOperationProgressStep>? progress = null)
     {
         Guard.NotNull(document, nameof(document));
         Guard.NotNullOrWhiteSpace(exportFolder, nameof(exportFolder));
@@ -85,17 +88,22 @@ public sealed class PrintCadExportService
 
         if (format == PrintCadExportFormat.Dwf)
         {
-            return ExportDwf(document, exportFolder, items, mergeViews, mergedFileName, logger, exportedFiles, failures);
+            return ExportDwf(document, exportFolder, items, mergeViews, mergedFileName, logger, exportedFiles, failures, progress);
         }
 
         BaseExportOptions options = CreateExportOptions(document, format, setupName, dwgProfile, logger);
         if (mergeViews && format == PrintCadExportFormat.Dwg)
         {
-            return ExportMergedDwg(document, exportFolder, items, mergedFileName, options, logger, exportedFiles, failures);
+            return ExportMergedDwg(document, exportFolder, items, mergedFileName, options, logger, exportedFiles, failures, progress);
         }
 
         foreach (PrintCadExportItem item in items)
         {
+            string formatName = GetDisplayName(format);
+            progress?.Invoke(new PrintOperationProgressStep(
+                formatName,
+                item.FileName,
+                PrintOperationProgressPhase.Started));
             try
             {
                 string cadFileName = NormalizeCadFileName(item.FileName, format);
@@ -122,8 +130,15 @@ public sealed class PrintCadExportService
             }
             catch (Exception exception)
             {
-                logger.Error($"Failed to export {GetDisplayName(format)} for sheet element id {item.ElementId}.", exception);
+                logger.Error($"Failed to export {formatName} for sheet element id {item.ElementId}.", exception);
                 failures.Add(new PrintCadExportFailure(format, item, exception.Message));
+            }
+            finally
+            {
+                progress?.Invoke(new PrintOperationProgressStep(
+                    formatName,
+                    item.FileName,
+                    PrintOperationProgressPhase.Completed));
             }
         }
 
@@ -153,8 +168,16 @@ public sealed class PrintCadExportService
         BaseExportOptions options,
         ITrueBimLogger logger,
         List<string> exportedFiles,
-        List<PrintCadExportFailure> failures)
+        List<PrintCadExportFailure> failures,
+        Action<PrintOperationProgressStep>? progress)
     {
+        string progressItemName = string.IsNullOrWhiteSpace(mergedFileName)
+            ? "Объединенный DWG"
+            : mergedFileName!;
+        progress?.Invoke(new PrintOperationProgressStep(
+            "DWG",
+            progressItemName,
+            PrintOperationProgressPhase.Started));
         try
         {
             string cadFileName = NormalizeCadFileName(
@@ -190,6 +213,13 @@ public sealed class PrintCadExportService
             logger.Error("Failed to export merged DWG.", exception);
             AddFailureForItems(PrintCadExportFormat.Dwg, items, failures, exception.Message);
         }
+        finally
+        {
+            progress?.Invoke(new PrintOperationProgressStep(
+                "DWG",
+                progressItemName,
+                PrintOperationProgressPhase.Completed));
+        }
 
         return new PrintCadExportResult(PrintCadExportFormat.Dwg, exportedFiles, failures);
     }
@@ -202,7 +232,8 @@ public sealed class PrintCadExportService
         string? mergedFileName,
         ITrueBimLogger logger,
         List<string> exportedFiles,
-        List<PrintCadExportFailure> failures)
+        List<PrintCadExportFailure> failures,
+        Action<PrintOperationProgressStep>? progress)
     {
         DwfExportTransactionMode transactionMode = DwfExportTransactionPolicy.Resolve(
             document.IsModifiable,
@@ -243,7 +274,8 @@ public sealed class PrintCadExportService
                 mergedFileName,
                 logger,
                 exportedFiles,
-                failures);
+                failures,
+                progress);
         }
         catch (Exception exception)
         {
@@ -265,10 +297,18 @@ public sealed class PrintCadExportService
         string? mergedFileName,
         ITrueBimLogger logger,
         List<string> exportedFiles,
-        List<PrintCadExportFailure> failures)
+        List<PrintCadExportFailure> failures,
+        Action<PrintOperationProgressStep>? progress)
     {
         if (mergeViews)
         {
+            string progressItemName = string.IsNullOrWhiteSpace(mergedFileName)
+                ? "Объединенный DWF"
+                : mergedFileName!;
+            progress?.Invoke(new PrintOperationProgressStep(
+                "DWF",
+                progressItemName,
+                PrintOperationProgressPhase.Started));
             try
             {
                 string dwfFileName = NormalizeCadFileName(
@@ -301,12 +341,23 @@ public sealed class PrintCadExportService
                 logger.Error("Failed to export merged DWF.", exception);
                 AddFailureForItems(PrintCadExportFormat.Dwf, items, failures, exception.Message);
             }
+            finally
+            {
+                progress?.Invoke(new PrintOperationProgressStep(
+                    "DWF",
+                    progressItemName,
+                    PrintOperationProgressPhase.Completed));
+            }
 
             return new PrintCadExportResult(PrintCadExportFormat.Dwf, exportedFiles, failures);
         }
 
         foreach (PrintCadExportItem item in items)
         {
+            progress?.Invoke(new PrintOperationProgressStep(
+                "DWF",
+                item.FileName,
+                PrintOperationProgressPhase.Started));
             try
             {
                 string dwfFileName = NormalizeCadFileName(item.FileName, PrintCadExportFormat.Dwf);
@@ -336,6 +387,13 @@ public sealed class PrintCadExportService
             {
                 logger.Error($"Failed to export DWF for sheet element id {item.ElementId}.", exception);
                 failures.Add(new PrintCadExportFailure(PrintCadExportFormat.Dwf, item, exception.Message));
+            }
+            finally
+            {
+                progress?.Invoke(new PrintOperationProgressStep(
+                    "DWF",
+                    item.FileName,
+                    PrintOperationProgressPhase.Completed));
             }
         }
 

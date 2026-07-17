@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using TrueBIM.App.Modules.Print.Services;
 using TrueBIM.App.Modules.Print.Models;
@@ -194,6 +195,12 @@ public sealed class PrintWindow : TrueBimWindow
         VerticalAlignment = VerticalAlignment.Center
     };
     private readonly Button exportButton = TrueBimUi.CreatePrimaryButton("Печать", TrueBimIcon.Print, isEnabled: false);
+    private readonly Border operationProgressPanel = new();
+    private readonly TextBlock operationProgressTitleText = new();
+    private readonly TextBlock operationProgressCountText = new();
+    private readonly TextBlock operationProgressSummaryText = new();
+    private readonly TextBlock operationProgressCurrentText = new();
+    private readonly ProgressBar operationProgressBar = new();
     private readonly List<UIElement> detailedSettingsRows = [];
     private readonly List<UIElement> exportModeRows = [];
     private readonly List<UIElement> printerModeRows = [];
@@ -213,6 +220,10 @@ public sealed class PrintWindow : TrueBimWindow
     private bool isSheetNumberSortDescending;
     private bool reloadInitialSourcesForPreset;
     private bool showDetailedExportSettings;
+    private bool isOperationRunning;
+    private UIElement? operationSettingsPanel;
+    private PrintOperationProgressTracker? operationProgressTracker;
+    private string operationProgressName = string.Empty;
     private PrintSheetRow? sheetSelectionAnchor;
 
     private const string WindowTitle = "Печать и экспорт";
@@ -481,7 +492,60 @@ public sealed class PrintWindow : TrueBimWindow
     {
         statusText.Foreground = TrueBimBrushes.TextPrimary;
         statusText.TextWrapping = TextWrapping.Wrap;
-        return TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info);
+
+        Grid progressContent = new();
+        progressContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        progressContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        progressContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        progressContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        Grid progressHeader = new();
+        progressHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        progressHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        operationProgressTitleText.FontWeight = FontWeights.SemiBold;
+        operationProgressTitleText.Foreground = TrueBimBrushes.TextPrimary;
+        progressHeader.Children.Add(operationProgressTitleText);
+        operationProgressCountText.Foreground = TrueBimBrushes.Info;
+        operationProgressCountText.FontWeight = FontWeights.SemiBold;
+        operationProgressCountText.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
+        Grid.SetColumn(operationProgressCountText, 1);
+        progressHeader.Children.Add(operationProgressCountText);
+        progressContent.Children.Add(progressHeader);
+
+        operationProgressBar.Minimum = 0;
+        operationProgressBar.Maximum = 1;
+        operationProgressBar.Height = TrueBimTheme.Spacing8;
+        operationProgressBar.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        operationProgressBar.Foreground = TrueBimBrushes.Info;
+        operationProgressBar.Background = TrueBimBrushes.SurfaceAlt;
+        Grid.SetRow(operationProgressBar, 1);
+        progressContent.Children.Add(operationProgressBar);
+
+        operationProgressSummaryText.Foreground = TrueBimBrushes.TextSecondary;
+        operationProgressSummaryText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        Grid.SetRow(operationProgressSummaryText, 2);
+        progressContent.Children.Add(operationProgressSummaryText);
+
+        operationProgressCurrentText.Foreground = TrueBimBrushes.TextMuted;
+        operationProgressCurrentText.FontSize = TrueBimTheme.CaptionFontSize;
+        operationProgressCurrentText.TextTrimming = TextTrimming.CharacterEllipsis;
+        operationProgressCurrentText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        Grid.SetRow(operationProgressCurrentText, 3);
+        progressContent.Children.Add(operationProgressCurrentText);
+
+        operationProgressPanel.Background = TrueBimBrushes.Surface;
+        operationProgressPanel.BorderBrush = TrueBimBrushes.Info;
+        operationProgressPanel.BorderThickness = new Thickness(TrueBimTheme.BorderWidth);
+        operationProgressPanel.CornerRadius = new CornerRadius(TrueBimTheme.Radius8);
+        operationProgressPanel.Padding = new Thickness(TrueBimTheme.Spacing12);
+        operationProgressPanel.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        operationProgressPanel.Visibility = Visibility.Collapsed;
+        operationProgressPanel.Child = progressContent;
+
+        StackPanel root = new();
+        root.Children.Add(TrueBimUi.CreateInfoBanner(statusText, TrueBimUiSeverity.Info));
+        root.Children.Add(operationProgressPanel);
+        return root;
     }
 
     private UIElement CreateSheetGrid()
@@ -1005,6 +1069,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         ApplyOperationModeVisibility();
         UpdatePdfOptionsState();
+        operationSettingsPanel = root;
         return root;
     }
 
@@ -1873,11 +1938,146 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void StartOperation()
     {
+        if (isOperationRunning)
+        {
+            return;
+        }
+
         bool printToPrinter = GetSelectedOperationMode() == PrintOperationMode.Printer;
+        List<PrintSheetRow> selectedRows = sheetRows
+            .Where(row => row.IsSelected && row.CanBePrinted)
+            .ToList();
+        int estimatedTotalCount = printToPrinter
+            ? selectedRows.Count
+            : CalculateExportProgressCount(selectedRows);
+        BeginOperationProgress(
+            printToPrinter ? "Печать" : "Экспорт",
+            estimatedTotalCount,
+            printToPrinter ? PrintOperationProgressUnit.Sheet : PrintOperationProgressUnit.File);
         statusText.Text = printToPrinter
             ? "Печать поставлена в очередь Revit."
             : "Экспорт поставлен в очередь Revit.";
-        revitActions.Raise(printToPrinter ? StartPrintInRevitContext : StartExportInRevitContext);
+        Action operation = printToPrinter ? StartPrintInRevitContext : StartExportInRevitContext;
+        Action trackedOperation = () =>
+        {
+            try
+            {
+                operation();
+            }
+            finally
+            {
+                FinishOperationProgress();
+            }
+        };
+        if (!revitActions.Raise(trackedOperation))
+        {
+            FinishOperationProgress();
+        }
+    }
+
+    private int CalculateExportProgressCount(IReadOnlyList<PrintSheetRow> selectedRows)
+    {
+        int selectedSourceCount = selectedRows
+            .Select(row => row.Sheet.SourceId)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
+        return PrintOperationProgressTracker.CalculateExportFileCount(
+            selectedRows.Count,
+            selectedSourceCount,
+            pdfInput.IsChecked == true,
+            GetSelectedPdfMode(),
+            dwgInput.IsChecked == true,
+            combineDwgInput.IsChecked == true,
+            dxfInput.IsChecked == true,
+            dwfInput.IsChecked == true);
+    }
+
+    private void BeginOperationProgress(
+        string operationName,
+        int totalCount,
+        PrintOperationProgressUnit unit)
+    {
+        operationProgressName = operationName;
+        operationProgressTracker = new PrintOperationProgressTracker(totalCount, unit);
+        isOperationRunning = true;
+        sheetGrid.IsEnabled = false;
+        if (operationSettingsPanel is not null)
+        {
+            operationSettingsPanel.IsEnabled = false;
+        }
+
+        operationProgressPanel.Visibility = Visibility.Visible;
+        operationProgressTitleText.Text = $"{operationName} выполняется";
+        operationProgressCurrentText.Text = "Подготовка операции в Revit…";
+        operationProgressCurrentText.ToolTip = null;
+        RenderOperationProgress(operationProgressTracker.BeginStep(string.Empty, string.Empty));
+        logger.Info($"{operationName} progress started. Total work items: {totalCount}; unit: {unit}.");
+    }
+
+    private void ResetOperationProgress(int totalCount, PrintOperationProgressUnit unit)
+    {
+        operationProgressTracker = new PrintOperationProgressTracker(totalCount, unit);
+        RenderOperationProgress(operationProgressTracker.BeginStep(string.Empty, string.Empty));
+    }
+
+    private void HandleOperationProgress(PrintOperationProgressStep step)
+    {
+        if (operationProgressTracker is null)
+        {
+            return;
+        }
+
+        PrintOperationProgressSnapshot snapshot = step.Phase == PrintOperationProgressPhase.Started
+            ? operationProgressTracker.BeginStep(step.OperationName, step.ItemName)
+            : operationProgressTracker.CompleteStep(step.OperationName, step.ItemName);
+        operationProgressCurrentText.Text = step.Phase == PrintOperationProgressPhase.Started
+            ? $"Сейчас: {step.OperationName} • {step.ItemName}"
+            : $"Обработано: {step.OperationName} • {step.ItemName}";
+        operationProgressCurrentText.ToolTip = operationProgressCurrentText.Text;
+        RenderOperationProgress(snapshot);
+    }
+
+    private void FinishOperationProgress()
+    {
+        if (!isOperationRunning || operationProgressTracker is null)
+        {
+            return;
+        }
+
+        PrintOperationProgressSnapshot snapshot = operationProgressTracker.Finish(operationProgressName);
+        RenderOperationProgress(snapshot);
+        operationProgressTitleText.Text = operationProgressName == "Печать"
+            ? "Печать завершена"
+            : "Экспорт завершён";
+        operationProgressCurrentText.Text = "Операция завершена. Можно продолжать работу.";
+        operationProgressCurrentText.ToolTip = null;
+        isOperationRunning = false;
+        sheetGrid.IsEnabled = true;
+        if (operationSettingsPanel is not null)
+        {
+            operationSettingsPanel.IsEnabled = true;
+        }
+
+        UpdateExportState();
+        RefreshOperationProgressUi();
+        logger.Info($"{operationProgressName} progress completed. Processed work items: {snapshot.CompletedCount}.");
+    }
+
+    private void RenderOperationProgress(PrintOperationProgressSnapshot snapshot)
+    {
+        operationProgressBar.Maximum = Math.Max(1, snapshot.TotalCount);
+        operationProgressBar.Value = snapshot.CompletedCount;
+        operationProgressCountText.Text = $"{snapshot.CompletedCount} / {snapshot.TotalCount}";
+        string remainingUnit = PrintOperationProgressTracker.GetUnitDisplayName(snapshot.RemainingCount, snapshot.Unit);
+        operationProgressSummaryText.Text =
+            $"Обработано: {snapshot.CompletedCount} из {snapshot.TotalCount} • Осталось: {snapshot.RemainingCount} {remainingUnit}";
+        RefreshOperationProgressUi();
+    }
+
+    private void RefreshOperationProgressUi()
+    {
+        operationProgressPanel.UpdateLayout();
+        Dispatcher.Invoke(DispatcherPriority.Render, new Action(() => { }));
     }
 
     private PrintabilityValidationResult ValidateSelectedSheetPrintability(
@@ -1953,6 +2153,7 @@ public sealed class PrintWindow : TrueBimWindow
             return;
         }
 
+        ResetOperationProgress(selectedRows.Count, PrintOperationProgressUnit.Sheet);
         string? printSetupName = GetSelectedPrintSetupName();
         logger.Info($"Print operation requested with {selectedRows.Count} sheets. Printer: {printer.Name}. PDF driver: {printer.IsPdfDriver}. Print setup: {printSetupName ?? "current document setting"}. Range: selected sheets.");
         foreach (PrintSheetRow row in selectedRows)
@@ -1990,7 +2191,8 @@ public sealed class PrintWindow : TrueBimWindow
                     .ToList(),
                 printer.Name,
                 printSetupName,
-                logger);
+                logger,
+                HandleOperationProgress);
             printedSheetCount += result.PrintedSheetCount;
             failureCount += result.Failures.Count;
             HashSet<long> failedIds = result.Failures
@@ -2166,6 +2368,17 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyList<IGrouping<string, PrintSheetRow>> rowGroups = selectedRows
             .GroupBy(row => row.Sheet.SourceId)
             .ToList();
+        ResetOperationProgress(
+            PrintOperationProgressTracker.CalculateExportFileCount(
+                selectedRows.Count,
+                rowGroups.Count,
+                exportPdf,
+                pdfMode,
+                exportDwg,
+                combineDwg,
+                exportDxf,
+                exportDwf),
+            PrintOperationProgressUnit.File);
 
         foreach (IGrouping<string, PrintSheetRow> rowGroup in rowGroups)
         {
@@ -2192,7 +2405,8 @@ public sealed class PrintWindow : TrueBimWindow
                     pdfMode,
                     sourceCombinedPdfName,
                     pdfSettings,
-                    logger);
+                    logger,
+                    HandleOperationProgress);
                 exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyPdfStatus(rowStatuses, sourceRows, result);
@@ -2212,7 +2426,8 @@ public sealed class PrintWindow : TrueBimWindow
                     dwgProfile,
                     combineDwg,
                     combineDwg ? mergedDwgFileNamesBySourceId[source.SourceId] : null,
-                    logger);
+                    logger,
+                    HandleOperationProgress);
                 exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyCadStatus(rowStatuses, sourceRows, result);
@@ -2229,7 +2444,8 @@ public sealed class PrintWindow : TrueBimWindow
                         .ToList(),
                     PrintCadExportFormat.Dxf,
                     dxfSetupName,
-                    logger);
+                    logger,
+                    HandleOperationProgress);
                 exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyCadStatus(rowStatuses, sourceRows, result);
@@ -2246,7 +2462,8 @@ public sealed class PrintWindow : TrueBimWindow
                         .ToList(),
                     PrintCadExportFormat.Dwf,
                     setupName: null,
-                    logger);
+                    logger,
+                    progress: HandleOperationProgress);
                 exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyCadStatus(rowStatuses, sourceRows, result);
@@ -2393,6 +2610,7 @@ public sealed class PrintWindow : TrueBimWindow
                 : "текущая настройка каждого документа";
             string printerText = printer?.Name ?? "не найден";
             statusText.Text = $"Режим: печать. Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{printSelectedTotalText}{printSourceText} Принтер: {printerText}. Диапазон: выбранные листы. Настройка Revit: {setupText}.{printHiddenText}";
+            ApplyOperationRunningState();
             return;
         }
 
@@ -2489,6 +2707,18 @@ public sealed class PrintWindow : TrueBimWindow
             : $" Всего выбрано: {selectedTotalCount}.";
         string formatText = $" Форматы: {GetSelectedFormatsText()}.";
         statusText.Text = $"Режим: экспорт. Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{combinedPdfMaskText}{mergedDwgMaskText}";
+        ApplyOperationRunningState();
+    }
+
+    private void ApplyOperationRunningState()
+    {
+        if (!isOperationRunning)
+        {
+            return;
+        }
+
+        exportButton.IsEnabled = false;
+        exportButton.ToolTip = "Дождитесь завершения текущей операции.";
     }
 
     private PrintOperationMode GetSelectedOperationMode()
