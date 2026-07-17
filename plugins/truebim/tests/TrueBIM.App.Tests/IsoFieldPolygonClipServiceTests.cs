@@ -133,6 +133,27 @@ public sealed class IsoFieldPolygonClipServiceTests
         Assert.Equal(23, result.AreaSquareFeet, 6);
     }
 
+    [Fact]
+    public void IntersectRegions_ReturnsOnlySharedPositiveArea()
+    {
+        IReadOnlyList<IsoFieldPolygonRegion> result = service.IntersectRegions(
+            [CreateRegion(0, 0, 4, 4)],
+            [CreateRegion(2, 1, 6, 3)]);
+
+        IsoFieldPolygonRegion intersection = Assert.Single(result);
+        Assert.Equal(4, intersection.AreaSquareFeet, 6);
+    }
+
+    [Fact]
+    public void IntersectRegions_TouchingEdgesHaveNoArea()
+    {
+        IReadOnlyList<IsoFieldPolygonRegion> result = service.IntersectRegions(
+            [CreateRegion(0, 0, 2, 2)],
+            [CreateRegion(2, 0, 4, 2)]);
+
+        Assert.Empty(result);
+    }
+
     private static IsoFieldPolyline CreateZone(
         string id,
         double minX,

@@ -12,6 +12,7 @@ public sealed record IsoFieldRebarReport(
     string RuleProfileSha256,
     IReadOnlyList<IsoFieldRebarReportZone> Zones,
     IReadOnlyList<IsoFieldRebarReportLayerTotal> LayerTotals,
+    IsoFieldRebarReportQualityCheck QualityCheck,
     IsoFieldRebarReportChangeSummary ChangeSummary,
     IReadOnlyList<string> Diagnostics);
 
@@ -102,6 +103,31 @@ public sealed record IsoFieldRebarReportLayerTotal(
     int UnchangedCount,
     int DiagnosticCount);
 
+public sealed record IsoFieldRebarReportQualityCheck(
+    bool Evaluated,
+    int BlockingErrorCount,
+    int WarningCount,
+    bool WarningsAccepted,
+    string? Fingerprint,
+    IReadOnlyList<IsoFieldRebarReportQualityCoverage> LayerCoverage,
+    IReadOnlyList<IsoFieldRebarReportQualityIssue> Issues);
+
+public sealed record IsoFieldRebarReportQualityCoverage(
+    IsoFieldLayerRole LayerRole,
+    int IncludedZoneCount,
+    double CoveredAreaSquareMeters,
+    double HostAreaSquareMeters,
+    double CoverageRatio);
+
+public sealed record IsoFieldRebarReportQualityIssue(
+    IsoFieldRebarQualityCode Code,
+    IsoFieldRebarQualitySeverity Severity,
+    string Message,
+    IsoFieldLayerRole? LayerRole,
+    IReadOnlyList<string> ZoneIds,
+    double? MeasuredValue,
+    double? LimitValue);
+
 public sealed record IsoFieldRebarReportChangeSummary(
     bool Compared,
     bool CanApply,
@@ -132,6 +158,8 @@ public sealed record IsoFieldRebarReportRequest(
     IsoFieldSlabBindingProfile? BindingProfile = null,
     IsoFieldRebarChangePlan? ChangePlan = null,
     string? SourceSetManifestPath = null,
+    IsoFieldRebarQualityResult? QualityResult = null,
+    bool QualityWarningsAccepted = false,
     DateTimeOffset? GeneratedAtUtc = null);
 
 public sealed record IsoFieldRebarReportSaveResult(

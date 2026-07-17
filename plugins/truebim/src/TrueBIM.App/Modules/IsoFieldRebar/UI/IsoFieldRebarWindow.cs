@@ -52,6 +52,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldRebarRuleOverrideService rebarRuleOverrideService = new();
     private readonly IsoFieldRebarZoneMergeService rebarZoneMergeService = new();
     private readonly IsoFieldRebarReportService rebarReportService = new();
+    private readonly IsoFieldRebarQualityService rebarQualityService = new();
     private readonly ObservableCollection<IsoFieldRebarReviewRow> rebarReviewRows = new();
     private readonly Dictionary<string, IsoFieldRebarRuleOverride> ruleOverrides = new(StringComparer.Ordinal);
     private readonly List<IsoFieldRebarZoneMerge> zoneMerges = new();
@@ -125,6 +126,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly WpfComboBox reviewConfidenceFilter;
     private readonly DataGrid rebarReviewGrid;
     private readonly TextBlock reviewSummaryText;
+    private readonly TextBlock qualityStatusText;
+    private readonly StackPanel qualityIssuesPanel;
+    private readonly CheckBox qualityWarningsAcceptedInput;
     private string? selectedJsonPath;
     private IsoFieldSourceSet? selectedSourceSet;
     private string? selectedSourceSetManifestPath;
@@ -143,6 +147,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private RebarRulePreviewResult? configuredRulePreview;
     private IsoFieldRebarChangePlan? currentChangePlan;
     private string? currentChangePlanFingerprint;
+    private IsoFieldRebarQualityResult? currentQualityResult;
+    private bool areQualityWarningsAccepted;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -324,6 +330,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             nameof(IsoFieldReviewNumberOption.Label),
             150);
         reviewSummaryText = CreateMutedText("Таблица появится после расчёта раскладки.");
+        qualityStatusText = CreateMutedText("Контроль качества будет выполнен после расчёта раскладки.");
+        qualityIssuesPanel = new StackPanel
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
+        qualityWarningsAcceptedInput = new CheckBox
+        {
+            Content = "Я проверил предупреждения и принимаю их для текущей раскладки",
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0),
+            Style = TrueBimStyles.CreateCheckBoxStyle(),
+            Visibility = Visibility.Collapsed,
+            ToolTip = "Подтверждение действует только для текущего preview и сбрасывается после изменения источника, привязки или правил."
+        };
         rebarReviewGrid = CreateRebarReviewGrid();
         editZoneRuleButton = CreateActionButton(
             "Настроить выбранную",
@@ -440,6 +459,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         reviewConfidenceFilter.SelectionChanged += (_, _) => RefreshRebarReviewFilter();
         rebarReviewGrid.SelectionChanged += (_, _) => RefreshZoneRuleActions();
         rebarReviewGrid.MouseDoubleClick += (_, _) => EditSelectedZoneRule();
+        qualityWarningsAcceptedInput.Checked += (_, _) => SetQualityWarningsAccepted(true);
+        qualityWarningsAcceptedInput.Unchecked += (_, _) => SetQualityWarningsAccepted(false);
 
         Title = "Армирование по изополям";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
@@ -853,15 +874,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             IsExpanded = true,
             ToolTip = "Параметры влияют на расчёт количества и фактическое положение стержней."
         });
+        previewRulesButton.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing4);
+        content.Children.Add(previewRulesButton);
+        content.Children.Add(CreateQualityCheckPanel());
 
         WrapPanel buttonRow = new()
         {
             Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
 
-        buttonRow.Children.Add(previewRulesButton);
-
-        compareChangesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        compareChangesButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
         buttonRow.Children.Add(compareChangesButton);
 
         exportReportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
@@ -879,6 +901,24 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         content.Children.Add(CreateRebarReviewPanel());
 
         return CreatePanel(content);
+    }
+
+    private UIElement CreateQualityCheckPanel()
+    {
+        StackPanel content = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
+        content.Children.Add(qualityStatusText);
+        content.Children.Add(qualityIssuesPanel);
+        content.Children.Add(qualityWarningsAcceptedInput);
+        return new Expander
+        {
+            Header = "Контроль качества геометрии",
+            Content = content,
+            IsExpanded = true,
+            ToolTip = "Проверяет покрытие четырёх слоёв, пересечения зон одного слоя, выход за host и соответствие принятой площади требуемой."
+        };
     }
 
     private UIElement CreateRebarReviewPanel()
@@ -1272,6 +1312,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         currentRulePreview = preview;
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
+        EvaluateQualityCheck();
         ruleStatusText.Text = FormatRulePreview(currentRulePreview);
         rebarCreationStatusText.Text = statusMessage;
         footerStatusText.Text = "Раскладка пересчитана после ручных изменений. Модель Revit не изменялась.";
@@ -1282,6 +1323,108 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         RefreshRebarReviewRows();
         RefreshWorkflowState();
+    }
+
+    private void EvaluateQualityCheck()
+    {
+        areQualityWarningsAccepted = false;
+        currentQualityResult = currentRulePreview?.IsEngineeringPreview == true
+            && currentSlabBinding is not null
+            ? rebarQualityService.Analyze(currentRulePreview, currentSlabBinding)
+            : null;
+        qualityWarningsAcceptedInput.IsChecked = false;
+        UpdateQualityCheckPresentation();
+        if (currentQualityResult is not null)
+        {
+            logger.Info(
+                $"IsoField geometry quality evaluated. Blocking={currentQualityResult.BlockingIssues.Count}; "
+                + $"Warnings={currentQualityResult.Warnings.Count}; Fingerprint={currentQualityResult.Fingerprint}.");
+        }
+    }
+
+    private void ResetQualityCheck()
+    {
+        currentQualityResult = null;
+        areQualityWarningsAccepted = false;
+        qualityWarningsAcceptedInput.IsChecked = false;
+        UpdateQualityCheckPresentation();
+    }
+
+    private void SetQualityWarningsAccepted(bool accepted)
+    {
+        areQualityWarningsAccepted = accepted
+            && currentQualityResult?.Warnings.Count > 0;
+        UpdateQualityCheckPresentation();
+        RefreshWorkflowState();
+        if (areQualityWarningsAccepted)
+        {
+            logger.Info(
+                $"IsoField geometry quality warnings accepted by user. "
+                + $"Warnings={currentQualityResult!.Warnings.Count}; Fingerprint={currentQualityResult.Fingerprint}.");
+        }
+    }
+
+    private void UpdateQualityCheckPresentation()
+    {
+        qualityIssuesPanel.Children.Clear();
+        if (currentQualityResult is null)
+        {
+            qualityStatusText.Text = "Контроль качества будет выполнен после расчёта инженерной раскладки.";
+            qualityStatusText.Foreground = TrueBimBrushes.TextMuted;
+            qualityStatusText.ToolTip = null;
+            qualityWarningsAcceptedInput.Visibility = Visibility.Collapsed;
+            qualityWarningsAcceptedInput.IsEnabled = false;
+            return;
+        }
+
+        int blockingCount = currentQualityResult.BlockingIssues.Count;
+        int warningCount = currentQualityResult.Warnings.Count;
+        TrueBimUiSeverity severity = blockingCount > 0
+            ? TrueBimUiSeverity.Danger
+            : warningCount > 0
+                ? TrueBimUiSeverity.Warning
+                : TrueBimUiSeverity.Success;
+        qualityStatusText.Text = blockingCount > 0
+            ? $"QA заблокировал раскладку: ошибок {blockingCount}, предупреждений {warningCount}."
+            : warningCount > 0
+                ? areQualityWarningsAccepted
+                    ? $"QA: предупреждений {warningCount}; пользователь подтвердил текущую раскладку."
+                    : $"QA: предупреждений {warningCount}. Проверьте список и подтвердите решение."
+                : "QA пройден: пересечений, выхода за host и дефицита площади не найдено.";
+        qualityStatusText.Foreground = TrueBimBrushes.ForSeverity(severity);
+        string coverageText = string.Join(
+            " · ",
+            currentQualityResult.LayerCoverage.Select(coverage =>
+                $"{coverage.LayerRole} {coverage.CoverageRatio:P0}"));
+        qualityStatusText.ToolTip = "Покрытие host: " + coverageText;
+
+        const int visibleIssueCount = 8;
+        foreach (IsoFieldRebarQualityIssue issue in currentQualityResult.Issues.Take(visibleIssueCount))
+        {
+            qualityIssuesPanel.Children.Add(new TextBlock
+            {
+                Text = issue.Severity == IsoFieldRebarQualitySeverity.Blocking
+                    ? "Ошибка: " + issue.Message
+                    : "Предупреждение: " + issue.Message,
+                Foreground = issue.Severity == IsoFieldRebarQualitySeverity.Blocking
+                    ? TrueBimBrushes.Danger
+                    : TrueBimBrushes.Warning,
+                Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4),
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+
+        int hiddenIssueCount = Math.Max(0, currentQualityResult.Issues.Count - visibleIssueCount);
+        if (hiddenIssueCount > 0)
+        {
+            qualityIssuesPanel.Children.Add(CreateMutedText(
+                $"Ещё сообщений: {hiddenIssueCount}. Полный список сохраняется в JSON/CSV отчёте."));
+        }
+
+        qualityWarningsAcceptedInput.Visibility = warningCount > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        qualityWarningsAcceptedInput.IsEnabled = warningCount > 0;
     }
 
     private void RefreshZoneRuleActions()
@@ -2636,6 +2779,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             zoneMerges.Clear();
             currentChangePlan = null;
             currentChangePlanFingerprint = null;
+            ResetQualityCheck();
             RefreshRebarReviewRows();
             ruleStatusText.Text = settingsError;
             rebarCreationStatusText.Text = "Раскладка недоступна: исправьте инженерные параметры.";
@@ -2659,24 +2803,34 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         zoneMerges.Clear();
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
+        EvaluateQualityCheck();
         RefreshRebarReviewRows();
         ruleStatusText.Text = FormatRulePreview(preview);
         bool mappingsReady = selectedSourceSet is null || selectedSourceSet.HasConfirmedLayerMappings;
+        int qualityBlockingCount = currentQualityResult?.BlockingIssues.Count ?? 0;
+        int qualityWarningCount = currentQualityResult?.Warnings.Count ?? 0;
         rebarCreationStatusText.Text = preview.CanCreateRebar && mappingsReady
             ? preview.IsEngineeringPreview
-                ? $"Рассчитано {preview.EstimatedBarCount} стержней. Теперь нажмите «Сравнить с моделью» и проверьте таблицу."
+                ? qualityBlockingCount > 0
+                    ? $"Раскладка рассчитана, но QA нашёл блокирующие ошибки: {qualityBlockingCount}."
+                    : qualityWarningCount > 0
+                        ? $"Рассчитано {preview.EstimatedBarCount} стержней. Проверьте предупреждения QA: {qualityWarningCount}; сравнение с моделью доступно без записи."
+                        : $"Рассчитано {preview.EstimatedBarCount} стержней. QA пройден; сравните раскладку с моделью."
                 : "Готово к созданию пробного армирования после подтверждения."
             : preview.CanCreateRebar
                 ? "Правила готовы, но назначение верх/низ не подтверждено."
                 : "Армирование недоступно: проверьте диагностику правил и раскладки.";
         footerStatusText.Text = preview.CanCreateRebar && mappingsReady
             ? preview.IsEngineeringPreview
-                ? $"Инженерная раскладка рассчитана: зон {preview.Items.Count}, стержней {preview.EstimatedBarCount}. Модель Revit не изменялась."
+                ? $"Инженерная раскладка рассчитана: зон {preview.Items.Count}, стержней {preview.EstimatedBarCount}; QA ошибок {qualityBlockingCount}, предупреждений {qualityWarningCount}. Модель Revit не изменялась."
                 : $"Правила армирования рассчитаны: {preview.Items.Count}. Модель Revit не изменялась."
             : preview.CanCreateRebar
                 ? "Правила рассчитаны; подтвердите назначение верх/низ перед созданием."
                 : "Правила армирования требуют проверки.";
-        logger.Info($"IsoField rebar rules preview calculated. Items={preview.Items.Count}; EstimatedBars={preview.EstimatedBarCount}; Engineering={preview.IsEngineeringPreview}; Diagnostics={preview.Diagnostics.Count}; CanCreateRebar={preview.CanCreateRebar}.");
+        logger.Info(
+            $"IsoField rebar rules preview calculated. Items={preview.Items.Count}; EstimatedBars={preview.EstimatedBarCount}; "
+            + $"Engineering={preview.IsEngineeringPreview}; Diagnostics={preview.Diagnostics.Count}; "
+            + $"QualityBlocking={qualityBlockingCount}; QualityWarnings={qualityWarningCount}; CanCreateRebar={preview.CanCreateRebar}.");
         if (currentSlabBinding is not null)
         {
             RenderPreview(currentRecognitionResult);
@@ -2737,8 +2891,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ExportRebarReport()
     {
-        if (currentRulePreview?.CanCreateRebar != true
-            || !currentRulePreview.IsEngineeringPreview
+        if (currentRulePreview?.IsEngineeringPreview != true
+            || currentQualityResult is null
             || currentRecognitionResult is null
             || selectedHostElement is null)
         {
@@ -2779,24 +2933,33 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     currentSlabBinding,
                     availableSlabBindingProfile,
                     currentChangePlan,
-                    selectedSourceSetManifestPath));
+                    selectedSourceSetManifestPath,
+                    currentQualityResult,
+                    areQualityWarningsAccepted));
             IsoFieldRebarReportSaveResult result = rebarReportService.Save(report, jsonPath!);
             string comparisonText = report.ChangeSummary.Compared
                 ? "diff включён"
                 : "diff ещё не выполнен";
+            string qualityText = report.QualityCheck.BlockingErrorCount > 0
+                ? $"QA ошибок {report.QualityCheck.BlockingErrorCount}"
+                : report.QualityCheck.WarningCount > 0
+                    ? $"QA предупреждений {report.QualityCheck.WarningCount}"
+                    : "QA пройден";
             rebarCreationStatusText.Text =
-                $"Отчёт сохранён: зон {report.Zones.Count}, слоёв {report.LayerTotals.Count}; {comparisonText}.";
+                $"Отчёт сохранён: зон {report.Zones.Count}, слоёв {report.LayerTotals.Count}; {qualityText}; {comparisonText}.";
             footerStatusText.Text =
                 $"Сохранены JSON и CSV: {Path.GetFileNameWithoutExtension(result.JsonPath)}. Модель Revit не изменялась.";
             TaskDialog dialog = new("Армирование по изополям")
             {
                 MainInstruction = "Отчёт сохранён",
-                MainContent = $"JSON: {result.JsonPath}{Environment.NewLine}CSV: {result.CsvPath}{Environment.NewLine}Зон: {report.Zones.Count}; слоёв: {report.LayerTotals.Count}; {comparisonText}."
+                MainContent = $"JSON: {result.JsonPath}{Environment.NewLine}CSV: {result.CsvPath}{Environment.NewLine}Зон: {report.Zones.Count}; слоёв: {report.LayerTotals.Count}; {qualityText}; {comparisonText}."
             };
             dialog.Show();
             logger.Info(
                 $"IsoField rebar report exported. Json='{result.JsonPath}'; Csv='{result.CsvPath}'; "
-                + $"Zones={report.Zones.Count}; Layers={report.LayerTotals.Count}; Compared={report.ChangeSummary.Compared}.");
+                + $"Zones={report.Zones.Count}; Layers={report.LayerTotals.Count}; "
+                + $"QualityBlocking={report.QualityCheck.BlockingErrorCount}; QualityWarnings={report.QualityCheck.WarningCount}; "
+                + $"QualityWarningsAccepted={report.QualityCheck.WarningsAccepted}; Compared={report.ChangeSummary.Compared}.");
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
@@ -2849,7 +3012,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void CompareEngineeringChangesInRevitContext()
     {
-        ReadyRebarContext? context = ResolveReadyRebarContext();
+        ReadyRebarContext? context = ResolveReadyRebarContext(requireWarningAcceptance: false);
         if (context is null)
         {
             return;
@@ -2990,7 +3153,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
     }
 
-    private ReadyRebarContext? ResolveReadyRebarContext()
+    private ReadyRebarContext? ResolveReadyRebarContext(
+        bool requireWarningAcceptance = true)
     {
         if (uiDocument is null)
         {
@@ -3038,6 +3202,37 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             TaskDialog.Show("Армирование по изополям", "Перед созданием армирования исправьте диагностику правил и раскладки.");
             rebarCreationStatusText.Text = "Армирование не создано: правила не готовы.";
             return null;
+        }
+
+        if (preview.IsEngineeringPreview)
+        {
+            if (currentQualityResult is null)
+            {
+                EvaluateQualityCheck();
+            }
+
+            if (currentQualityResult is null || !currentQualityResult.CanCompare)
+            {
+                int blockingCount = currentQualityResult?.BlockingIssues.Count ?? 1;
+                logger.Warning($"IsoField action blocked by geometry quality errors. Blocking={blockingCount}.");
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    $"Контроль качества нашёл блокирующие ошибки: {blockingCount}. Исправьте геометрию или правила и пересчитайте раскладку.");
+                rebarCreationStatusText.Text = "Действие заблокировано контролем качества геометрии.";
+                return null;
+            }
+
+            if (requireWarningAcceptance
+                && !currentQualityResult.CanApply(areQualityWarningsAccepted))
+            {
+                logger.Warning(
+                    $"IsoField apply blocked by unaccepted geometry quality warnings. Warnings={currentQualityResult.Warnings.Count}.");
+                TaskDialog.Show(
+                    "Армирование по изополям",
+                    $"Проверьте предупреждения QA ({currentQualityResult.Warnings.Count}) и подтвердите их в окне перед применением изменений.");
+                rebarCreationStatusText.Text = "Изменения не применены: предупреждения QA не подтверждены.";
+                return null;
+            }
         }
 
         return new ReadyRebarContext(preview, selectedHostElement);
@@ -3527,6 +3722,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         zoneMerges.Clear();
         currentChangePlan = null;
         currentChangePlanFingerprint = null;
+        ResetQualityCheck();
         RefreshRebarReviewRows();
         ruleStatusText.Text = message;
         rebarCreationStatusText.Text = "Армирование не создано: сначала рассчитайте валидную раскладку.";
@@ -3645,22 +3841,40 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 ? "Для плиты сначала выполните привязку по трём контрольным точкам; полностью потерянных зон быть не должно."
                 : "Сначала загрузите зоны и выберите host-элемент.";
         bool isEngineeringPreview = currentRulePreview?.IsEngineeringPreview == true;
-        compareChangesButton.IsEnabled = state.CanCreateRebar && isEngineeringPreview;
+        int qualityBlockingCount = currentQualityResult?.BlockingIssues.Count ?? 0;
+        int qualityWarningCount = currentQualityResult?.Warnings.Count ?? 0;
+        bool qualityCanCompare = !isEngineeringPreview
+            || currentQualityResult?.CanCompare == true;
+        bool qualityCanApply = !isEngineeringPreview
+            || currentQualityResult?.CanApply(areQualityWarningsAccepted) == true;
+        compareChangesButton.IsEnabled = state.CanCreateRebar
+            && isEngineeringPreview
+            && qualityCanCompare;
         compareChangesButton.ToolTip = compareChangesButton.IsEnabled
             ? $"Сравнить {currentRulePreview!.EstimatedBarCount} расчётных стержней с принадлежащей модулю арматурой без изменения модели."
-            : state.CanCreateRebar
+            : qualityBlockingCount > 0
+                ? $"Контроль качества нашёл блокирующие ошибки: {qualityBlockingCount}. Исправьте геометрию или правила."
+                : state.CanCreateRebar
                 ? "Сравнение по зонам доступно для инженерной раскладки горизонтальной плиты."
                 : "Сначала рассчитайте валидную инженерную раскладку.";
-        exportReportButton.IsEnabled = state.CanCreateRebar && isEngineeringPreview;
+        exportReportButton.IsEnabled = isEngineeringPreview
+            && currentQualityResult is not null
+            && currentRecognitionResult is not null
+            && selectedHostElement is not null;
         exportReportButton.ToolTip = exportReportButton.IsEnabled
             ? currentChangePlan is null
-                ? "Сохранить JSON и CSV по зонам и слоям. Отчёт явно отметит, что сравнение с моделью ещё не выполнено."
-                : $"Сохранить JSON и CSV с источниками, hashes, привязкой, правилами и текущим diff: {currentChangePlan.Summary}"
-            : "Сначала рассчитайте валидную инженерную раскладку плиты.";
+                ? "Сохранить JSON и CSV по зонам, слоям и QA. Отчёт явно отметит, что сравнение с моделью ещё не выполнено."
+                : $"Сохранить JSON и CSV с источниками, hashes, привязкой, QA, правилами и текущим diff: {currentChangePlan.Summary}"
+            : "Сначала рассчитайте инженерную раскладку и дождитесь контроля качества.";
         createTestRebarButton.IsEnabled = state.CanCreateRebar
+            && qualityCanApply
             && (!isEngineeringPreview
                 || currentChangePlan?.CanApply == true && currentChangePlan.HasChanges);
-        createTestRebarButton.ToolTip = state.CanCreateRebar
+        createTestRebarButton.ToolTip = qualityBlockingCount > 0
+            ? $"Применение заблокировано: ошибок QA {qualityBlockingCount}."
+            : qualityWarningCount > 0 && !areQualityWarningsAccepted
+                ? $"Проверьте и подтвердите предупреждения QA: {qualityWarningCount}."
+            : state.CanCreateRebar
             ? isEngineeringPreview
                 ? currentChangePlan is null
                     ? "Сначала нажмите «Сравнить с моделью» и проверьте таблицу."
@@ -3676,10 +3890,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     ? "Проверьте трёхточечную привязку и отсечение зон по плите."
                 : "Сначала рассчитайте раскладку без ошибок.";
 
-        string nextAction = selectedSourceSet is not null && !selectedSourceSet.IsComplete
-            ? FormatSourceSetIssues(selectedSourceSet)
-            : state.NextAction;
-        workflowSummaryText.Text = $"Готово {state.CompletedStepCount} из 5. {nextAction}";
+        string nextAction = qualityBlockingCount > 0
+            ? $"Исправьте блокирующие ошибки QA: {qualityBlockingCount}."
+            : qualityWarningCount > 0 && !areQualityWarningsAccepted
+                ? $"Проверьте и подтвердите предупреждения QA: {qualityWarningCount}."
+                : selectedSourceSet is not null && !selectedSourceSet.IsComplete
+                    ? FormatSourceSetIssues(selectedSourceSet)
+                    : state.NextAction;
+        bool areRulesReady = state.HasValidRules && qualityCanApply;
+        int completedStepCount = state.CompletedStepCount
+            - (state.HasValidRules && !areRulesReady ? 1 : 0);
+        workflowSummaryText.Text = $"Готово {completedStepCount} из 5. {nextAction}";
         UpdateWorkflowStep(
             sourceStepText,
             state.HasSource,
@@ -3697,7 +3918,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             _ => "Host выбран"
         };
         UpdateWorkflowStep(hostStepText, state.HasReadyHost, hostStepLabel);
-        UpdateWorkflowStep(rulesStepText, state.HasValidRules, "Правила проверены");
+        UpdateWorkflowStep(
+            rulesStepText,
+            areRulesReady,
+            qualityBlockingCount > 0
+                ? "Правила заблокированы QA"
+                : qualityWarningCount > 0 && !areQualityWarningsAccepted
+                    ? "Ожидается решение по предупреждениям QA"
+                    : "Правила и QA проверены");
         RefreshZoneRuleActions();
     }
 

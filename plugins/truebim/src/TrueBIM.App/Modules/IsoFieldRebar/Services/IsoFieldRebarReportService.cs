@@ -10,7 +10,7 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 
 public sealed class IsoFieldRebarReportService
 {
-    public const string SchemaVersion = "1.0";
+    public const string SchemaVersion = "1.1";
     public const string DefaultFileNamePrefix = "isofield-rebar-report";
     private const double SquareFeetToSquareMeters = 0.09290304;
 
@@ -58,6 +58,8 @@ public sealed class IsoFieldRebarReportService
         diagnostics.AddRange(request.Recognition.Diagnostics);
         diagnostics.AddRange(request.SlabBinding?.Diagnostics ?? Array.Empty<string>());
         diagnostics.AddRange(request.ChangePlan?.Diagnostics ?? Array.Empty<string>());
+        diagnostics.AddRange(request.QualityResult?.Issues.Select(issue => issue.Message)
+            ?? Array.Empty<string>());
         diagnostics.AddRange(sourceFiles
             .Where(file => !string.Equals(file.Status, "Готов", StringComparison.Ordinal))
             .Select(file => $"Источник {file.FileName}: {file.Status}."));
@@ -83,6 +85,7 @@ public sealed class IsoFieldRebarReportService
             BuildRuleProfileSha256(request.Preview),
             zones,
             layerTotals,
+            BuildQualityCheck(request),
             BuildChangeSummary(request.ChangePlan),
             diagnostics.Distinct(StringComparer.Ordinal).ToArray());
     }
@@ -144,6 +147,11 @@ public sealed class IsoFieldRebarReportService
         AppendCsvRow(builder, ["concreteCoverMillimeters", FormatDouble(report.EngineeringSettings.ConcreteCoverMillimeters)]);
         AppendCsvRow(builder, ["boundaryOffsetMillimeters", FormatDouble(report.EngineeringSettings.BoundaryOffsetMillimeters)]);
         AppendCsvRow(builder, ["minimumBarLengthMillimeters", FormatDouble(report.EngineeringSettings.MinimumBarLengthMillimeters)]);
+        AppendCsvRow(builder, ["qualityEvaluated", FormatBoolean(report.QualityCheck.Evaluated)]);
+        AppendCsvRow(builder, ["qualityBlockingErrorCount", FormatInteger(report.QualityCheck.BlockingErrorCount)]);
+        AppendCsvRow(builder, ["qualityWarningCount", FormatInteger(report.QualityCheck.WarningCount)]);
+        AppendCsvRow(builder, ["qualityWarningsAccepted", FormatBoolean(report.QualityCheck.WarningsAccepted)]);
+        AppendCsvRow(builder, ["qualityFingerprint", report.QualityCheck.Fingerprint]);
         AppendCsvRow(builder, ["compared", FormatBoolean(report.ChangeSummary.Compared)]);
         AppendCsvRow(builder, Array.Empty<string?>());
 
@@ -241,6 +249,44 @@ public sealed class IsoFieldRebarReportService
             ]);
         }
 
+        AppendCsvRow(builder, Array.Empty<string?>());
+        AppendCsvRow(builder, ["КОНТРОЛЬ КАЧЕСТВА"]);
+        AppendCsvRow(builder,
+        [
+            "Тип", "Код", "Слой", "Зоны", "Измерено", "Предел", "Сообщение"
+        ]);
+        foreach (IsoFieldRebarReportQualityIssue issue in report.QualityCheck.Issues)
+        {
+            AppendCsvRow(builder,
+            [
+                issue.Severity.ToString(),
+                issue.Code.ToString(),
+                issue.LayerRole?.ToString(),
+                string.Join(",", issue.ZoneIds),
+                FormatNullableDouble(issue.MeasuredValue),
+                FormatNullableDouble(issue.LimitValue),
+                issue.Message
+            ]);
+        }
+
+        AppendCsvRow(builder, Array.Empty<string?>());
+        AppendCsvRow(builder, ["ПОКРЫТИЕ СЛОЁВ"]);
+        AppendCsvRow(builder,
+        [
+            "Слой", "Включено зон", "Покрыто, м2", "Площадь host, м2", "Доля покрытия"
+        ]);
+        foreach (IsoFieldRebarReportQualityCoverage coverage in report.QualityCheck.LayerCoverage)
+        {
+            AppendCsvRow(builder,
+            [
+                coverage.LayerRole.ToString(),
+                FormatInteger(coverage.IncludedZoneCount),
+                FormatDouble(coverage.CoveredAreaSquareMeters),
+                FormatDouble(coverage.HostAreaSquareMeters),
+                FormatDouble(coverage.CoverageRatio)
+            ]);
+        }
+
         if (report.Diagnostics.Count > 0)
         {
             AppendCsvRow(builder, Array.Empty<string?>());
@@ -306,6 +352,48 @@ public sealed class IsoFieldRebarReportService
                 null,
                 $"Ошибка чтения: {exception.Message}");
         }
+    }
+
+    private static IsoFieldRebarReportQualityCheck BuildQualityCheck(
+        IsoFieldRebarReportRequest request)
+    {
+        if (request.QualityResult is null)
+        {
+            return new IsoFieldRebarReportQualityCheck(
+                false,
+                0,
+                0,
+                false,
+                null,
+                Array.Empty<IsoFieldRebarReportQualityCoverage>(),
+                Array.Empty<IsoFieldRebarReportQualityIssue>());
+        }
+
+        return new IsoFieldRebarReportQualityCheck(
+            true,
+            request.QualityResult.BlockingIssues.Count,
+            request.QualityResult.Warnings.Count,
+            request.QualityWarningsAccepted,
+            request.QualityResult.Fingerprint,
+            request.QualityResult.LayerCoverage
+                .OrderBy(coverage => coverage.LayerRole)
+                .Select(coverage => new IsoFieldRebarReportQualityCoverage(
+                    coverage.LayerRole,
+                    coverage.IncludedZoneCount,
+                    coverage.CoveredAreaSquareMeters,
+                    coverage.HostAreaSquareMeters,
+                    coverage.CoverageRatio))
+                .ToArray(),
+            request.QualityResult.Issues
+                .Select(issue => new IsoFieldRebarReportQualityIssue(
+                    issue.Code,
+                    issue.Severity,
+                    issue.Message,
+                    issue.LayerRole,
+                    issue.EffectiveZoneIds,
+                    issue.MeasuredValue,
+                    issue.LimitValue))
+                .ToArray());
     }
 
     private static IsoFieldRebarReportBinding BuildBinding(

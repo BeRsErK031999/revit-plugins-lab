@@ -57,7 +57,7 @@ public sealed class IsoFieldRebarReportServiceTests
         Assert.EndsWith("result.json", result.JsonPath, StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith("result.csv", result.CsvPath, StringComparison.OrdinalIgnoreCase);
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(result.JsonPath, Encoding.UTF8));
-        Assert.Equal("1.0", document.RootElement.GetProperty("schemaVersion").GetString());
+        Assert.Equal("1.1", document.RootElement.GetProperty("schemaVersion").GetString());
         Assert.Equal("As1X", document.RootElement
             .GetProperty("zones")[0]
             .GetProperty("layerRole")
@@ -69,7 +69,50 @@ public sealed class IsoFieldRebarReportServiceTests
         Assert.Contains("ИСТОЧНИКИ", csv, StringComparison.Ordinal);
         Assert.Contains("ЗОНЫ", csv, StringComparison.Ordinal);
         Assert.Contains("ИТОГИ ПО СЛОЯМ", csv, StringComparison.Ordinal);
+        Assert.Contains("КОНТРОЛЬ КАЧЕСТВА", csv, StringComparison.Ordinal);
+        Assert.Contains("ПОКРЫТИЕ СЛОЁВ", csv, StringComparison.Ordinal);
         Assert.Contains("zone-a", csv, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_RecordsQualityIssuesAndWarningAcceptance()
+    {
+        using TempDirectory temp = new();
+        string sourcePath = Path.Combine(temp.Path, "As1X.png");
+        File.WriteAllText(sourcePath, "iso source", Encoding.UTF8);
+        IsoFieldRebarQualityResult quality = new(
+        [
+            new IsoFieldRebarQualityIssue(
+                IsoFieldRebarQualityCode.PartialLayerCoverage,
+                IsoFieldRebarQualitySeverity.Warning,
+                "Слой As1X покрывает 50%.",
+                IsoFieldLayerRole.As1X,
+                ["zone-a"],
+                0.5,
+                0.995)
+        ],
+        [
+            new IsoFieldRebarLayerCoverage(IsoFieldLayerRole.As1X, 1, 5, 10, 0.5)
+        ],
+        "quality-fingerprint");
+        IsoFieldRebarReportRequest request = CreateRequest(
+            sourcePath,
+            [CreateItem("zone-a", true, 12, 10)]) with
+        {
+            QualityResult = quality,
+            QualityWarningsAccepted = true
+        };
+
+        IsoFieldRebarReport report = service.Build(request);
+
+        Assert.True(report.QualityCheck.Evaluated);
+        Assert.Equal(0, report.QualityCheck.BlockingErrorCount);
+        Assert.Equal(1, report.QualityCheck.WarningCount);
+        Assert.True(report.QualityCheck.WarningsAccepted);
+        Assert.Equal("quality-fingerprint", report.QualityCheck.Fingerprint);
+        Assert.Single(report.QualityCheck.Issues);
+        Assert.Contains("покрывает 50%", report.Diagnostics.Single(message =>
+            message.Contains("покрывает", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     [Fact]

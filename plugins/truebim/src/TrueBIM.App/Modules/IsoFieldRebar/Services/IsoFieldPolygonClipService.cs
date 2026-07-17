@@ -190,6 +190,38 @@ public sealed class IsoFieldPolygonClipService
             .ToArray();
     }
 
+    public IReadOnlyList<IsoFieldPolygonRegion> IntersectRegions(
+        IReadOnlyList<IsoFieldPolygonRegion> first,
+        IReadOnlyList<IsoFieldPolygonRegion> second)
+    {
+        if (first is null)
+        {
+            throw new ArgumentNullException(nameof(first));
+        }
+
+        if (second is null)
+        {
+            throw new ArgumentNullException(nameof(second));
+        }
+
+        if (first.Count == 0 || second.Count == 0)
+        {
+            return Array.Empty<IsoFieldPolygonRegion>();
+        }
+
+        PathGeometry intersection = Geometry.Combine(
+            CreateGeometry(first.SelectMany(ToLoops).ToArray()),
+            CreateGeometry(second.SelectMany(ToLoops).ToArray()),
+            GeometryCombineMode.Intersect,
+            transform: null,
+            GeometryToleranceFeet,
+            ToleranceType.Absolute);
+        PathGeometry flattened = intersection.GetFlattenedPathGeometry(
+            GeometryToleranceFeet,
+            ToleranceType.Absolute);
+        return BuildRegions(ExtractLoops(flattened));
+    }
+
     private static IReadOnlyList<IsoFieldPoint> NormalizeLoop(
         IReadOnlyList<IsoFieldPoint> points,
         string label)
