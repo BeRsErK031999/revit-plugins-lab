@@ -66,14 +66,42 @@ public sealed class PrintSheetNumberComparerTests
         Assert.Equal(["A-10", "A-2"], result.Select(sheet => sheet.SheetNumber));
     }
 
-    private static PrintSheetInfo Sheet(long elementId, string number, string name)
+    [Fact]
+    public void HierarchyComparer_SortsBySourceOrderThenGroupAndNaturalNumber()
+    {
+        IReadOnlyDictionary<string, int> sourceOrder = new Dictionary<string, int>
+        {
+            ["active"] = 0,
+            ["secondary"] = 1
+        };
+        PrintSheetInfo[] sheets =
+        [
+            Sheet(50, "A-1", "План", "secondary", "Secondary", "Том 1"),
+            Sheet(40, "A-10", "План", "active", "Active", "Том 2"),
+            Sheet(30, "A-2", "План", "active", "Active", "Том 2"),
+            Sheet(20, "A-5", "План", "active", "Active", "Том 1")
+        ];
+        PrintSheetHierarchyComparer comparer = new(sourceOrder);
+
+        PrintSheetInfo[] result = sheets.OrderBy(sheet => sheet, comparer).ToArray();
+
+        Assert.Equal([20L, 30L, 40L, 50L], result.Select(sheet => sheet.ElementId));
+    }
+
+    private static PrintSheetInfo Sheet(
+        long elementId,
+        string number,
+        string name,
+        string sourceId = "model",
+        string sourceName = "Model",
+        string groupName = "Без группы")
     {
         return new PrintSheetInfo(
             elementId,
-            "model",
-            "Model",
+            sourceId,
+            sourceName,
             SourceIsLinked: false,
-            GroupName: "Без группы",
+            GroupName: groupName,
             number,
             name,
             "A1",

@@ -148,3 +148,74 @@ public sealed class PrintSheetComparer : IComparer<PrintSheetInfo>
             : StringComparer.Ordinal.Compare(x.SourceId, y.SourceId);
     }
 }
+
+public sealed class PrintSheetHierarchyComparer : IComparer<PrintSheetInfo>
+{
+    private readonly IReadOnlyDictionary<string, int> sourceOrderById;
+    private readonly PrintSheetComparer sheetComparer;
+
+    public PrintSheetHierarchyComparer(
+        IReadOnlyDictionary<string, int> sourceOrderById,
+        bool descendingSheetNumbers = false)
+    {
+        Guard.NotNull(sourceOrderById, nameof(sourceOrderById));
+        this.sourceOrderById = sourceOrderById;
+        sheetComparer = descendingSheetNumbers
+            ? PrintSheetComparer.Descending
+            : PrintSheetComparer.Ascending;
+    }
+
+    public int Compare(PrintSheetInfo? x, PrintSheetInfo? y)
+    {
+        if (ReferenceEquals(x, y))
+        {
+            return 0;
+        }
+
+        if (x is null)
+        {
+            return -1;
+        }
+
+        if (y is null)
+        {
+            return 1;
+        }
+
+        if (!string.Equals(x.SourceId, y.SourceId, StringComparison.Ordinal))
+        {
+            int comparison = GetSourceOrder(x.SourceId).CompareTo(GetSourceOrder(y.SourceId));
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = x.SourceIsLinked.CompareTo(y.SourceIsLinked);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.CurrentCultureIgnoreCase.Compare(x.SourceName, y.SourceName);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(x.SourceId, y.SourceId);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+        }
+
+        return sheetComparer.Compare(x, y);
+    }
+
+    private int GetSourceOrder(string sourceId)
+    {
+        return sourceOrderById.TryGetValue(sourceId, out int sourceOrder)
+            ? sourceOrder
+            : int.MaxValue;
+    }
+}

@@ -27,6 +27,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly ObservableCollection<PrintSheetSourceFilterOption> sourceFilterOptions = new();
     private readonly IReadOnlyList<PrintSheetSource> sheetSources;
     private readonly Dictionary<string, PrintSheetSource> sheetSourcesById;
+    private readonly IReadOnlyDictionary<string, int> sheetSourceOrderById;
     private readonly Dictionary<string, List<PrintSheetInfo>> sourceSheetsById;
     private readonly HashSet<string> loadedSourceIds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> loadedSheetParameterNamesBySourceId = new(StringComparer.Ordinal);
@@ -184,6 +185,9 @@ public sealed class PrintWindow : TrueBimWindow
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
         this.sheetSources = sheetSources ?? throw new ArgumentNullException(nameof(sheetSources));
+        sheetSourceOrderById = this.sheetSources
+            .Select((source, index) => new { source.SourceId, Index = index })
+            .ToDictionary(item => item.SourceId, item => item.Index, StringComparer.Ordinal);
         sourceSheetsById = this.sheetSources.ToDictionary(
             source => source.SourceId,
             source =>
@@ -419,7 +423,6 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.CanUserSortColumns = true;
         sheetGrid.Sorting += OnSheetGridSorting;
         sheetGrid.KeyDown += OnSheetGridKeyDown;
-        sheetGrid.GroupStyle.Add(CreateSheetGroupStyle());
         sheetGrid.RowStyle = CreateSheetRowStyle();
         sheetGrid.ToolTip = "Список листов. Shift выделяет диапазон, Space переключает выбор выделенных строк.";
 
@@ -1280,15 +1283,29 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void ConfigureSheetView()
     {
+        bool includeSourceLevel = sheetRows
+            .Select(row => row.Sheet.SourceId)
+            .Distinct(StringComparer.Ordinal)
+            .Skip(1)
+            .Any();
+        ConfigureSheetGroupStyles(includeSourceLevel);
+
         ICollectionView groupedView = CollectionViewSource.GetDefaultView(sheetRows);
         using (groupedView.DeferRefresh())
         {
             groupedView.GroupDescriptions.Clear();
             groupedView.SortDescriptions.Clear();
+            if (includeSourceLevel)
+            {
+                groupedView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PrintSheetRow.SourceName)));
+            }
+
             groupedView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(PrintSheetRow.GroupName)));
             if (groupedView is ListCollectionView listView)
             {
-                listView.CustomSort = new PrintSheetRowComparer(isSheetNumberSortDescending);
+                listView.CustomSort = new PrintSheetRowComparer(
+                    sheetSourceOrderById,
+                    isSheetNumberSortDescending);
             }
         }
 
@@ -2475,11 +2492,22 @@ public sealed class PrintWindow : TrueBimWindow
         };
     }
 
-    private static GroupStyle CreateSheetGroupStyle()
+    private void ConfigureSheetGroupStyles(bool includeSourceLevel)
+    {
+        sheetGrid.GroupStyle.Clear();
+        if (includeSourceLevel)
+        {
+            sheetGrid.GroupStyle.Add(CreateSheetGroupStyle("Источник: {0}"));
+        }
+
+        sheetGrid.GroupStyle.Add(CreateSheetGroupStyle("Том / группа: {0}"));
+    }
+
+    private static GroupStyle CreateSheetGroupStyle(string headerFormat)
     {
         FrameworkElementFactory expander = new(typeof(Expander));
         expander.SetValue(Expander.IsExpandedProperty, true);
-        expander.SetBinding(HeaderedContentControl.HeaderProperty, new Binding("Name") { StringFormat = "Группа: {0}" });
+        expander.SetBinding(HeaderedContentControl.HeaderProperty, new Binding("Name") { StringFormat = headerFormat });
         FrameworkElementFactory presenter = new(typeof(ItemsPresenter));
         expander.AppendChild(presenter);
 
@@ -2531,7 +2559,9 @@ public sealed class PrintWindow : TrueBimWindow
         using (view.DeferRefresh())
         {
             view.SortDescriptions.Clear();
-            listView.CustomSort = new PrintSheetRowComparer(isSheetNumberSortDescending);
+            listView.CustomSort = new PrintSheetRowComparer(
+                sheetSourceOrderById,
+                isSheetNumberSortDescending);
         }
 
         UpdateSheetNumberSortIndicator();
@@ -3005,13 +3035,15 @@ public sealed class PrintWindow : TrueBimWindow
 
     private sealed class PrintSheetRowComparer : System.Collections.IComparer
     {
-        private readonly PrintSheetComparer sheetComparer;
+        private readonly PrintSheetHierarchyComparer sheetComparer;
 
-        public PrintSheetRowComparer(bool descendingSheetNumbers)
+        public PrintSheetRowComparer(
+            IReadOnlyDictionary<string, int> sourceOrderById,
+            bool descendingSheetNumbers)
         {
-            sheetComparer = descendingSheetNumbers
-                ? PrintSheetComparer.Descending
-                : PrintSheetComparer.Ascending;
+            sheetComparer = new PrintSheetHierarchyComparer(
+                sourceOrderById,
+                descendingSheetNumbers);
         }
 
         public int Compare(object? x, object? y)
