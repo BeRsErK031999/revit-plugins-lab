@@ -17,6 +17,7 @@ public sealed class PrintSettingsServiceTests
         PrintSettings settings = service.Load();
 
         Assert.Equal(PrintFileNameTemplateService.DefaultTemplate, settings.FileNameMask);
+        Assert.False(settings.IncludePlaceholders);
         Assert.True(settings.ExportPdf);
         Assert.False(settings.ExportDwg);
         Assert.False(settings.ExportDxf);

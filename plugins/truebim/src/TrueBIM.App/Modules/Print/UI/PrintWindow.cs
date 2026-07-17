@@ -22,6 +22,8 @@ namespace TrueBIM.App.Modules.Print.UI;
 public sealed class PrintWindow : TrueBimWindow
 {
     private const double ExportLabelWidth = 132;
+    private const string PlaceholderSheetExplanation =
+        "Предварительный лист из ведомости, для которого обычный лист Revit еще не создан. Он отображается только для контроля и не включается в печать.";
 
     private IReadOnlyList<PrintSheetRow> sheetRows = Array.Empty<PrintSheetRow>();
     private readonly ObservableCollection<PrintSheetSourceFilterOption> sourceFilterOptions = new();
@@ -81,8 +83,8 @@ public sealed class PrintWindow : TrueBimWindow
     };
     private readonly CheckBox includePlaceholdersInput = new()
     {
-        Content = "Листы-заглушки",
-        ToolTip = "Показывает листы-заглушки в таблице. Они не выбираются для печати."
+        Content = "Неразмещенные листы (заглушки)",
+        ToolTip = PlaceholderSheetExplanation
     };
     private readonly ComboBox pdfModeInput = CreatePdfSettingInput("Режим создания PDF: отдельные файлы, один общий файл или оба варианта.");
     private readonly TextBox combinedPdfNameInput = new()
@@ -2034,7 +2036,7 @@ public sealed class PrintWindow : TrueBimWindow
                             : "Выберите листы, хотя бы один формат и папку назначения.";
 
         string hiddenText = hiddenPlaceholderCount > 0
-            ? $" Скрыто листов-заглушек: {hiddenPlaceholderCount}."
+            ? $" Скрыто неразмещенных листов (заглушек): {hiddenPlaceholderCount}."
             : string.Empty;
         string duplicateText = exportsPerSheetFiles && duplicateSelectedCount > 0
             ? $" Дубли имен: {duplicateSelectedCount}."
@@ -2508,6 +2510,7 @@ public sealed class PrintWindow : TrueBimWindow
         badge.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         badge.SetBinding(Border.BackgroundProperty, new Binding(nameof(PrintSheetRow.Status)) { Converter = new PrintStatusBackgroundConverter() });
         badge.SetBinding(Border.BorderBrushProperty, new Binding(nameof(PrintSheetRow.Status)) { Converter = new PrintStatusBrushConverter() });
+        badge.SetBinding(FrameworkElement.ToolTipProperty, new Binding(nameof(PrintSheetRow.StatusToolTip)));
 
         FrameworkElementFactory text = new(typeof(TextBlock));
         text.SetValue(TextBlock.FontSizeProperty, TrueBimTheme.CaptionFontSize);
@@ -2525,7 +2528,7 @@ public sealed class PrintWindow : TrueBimWindow
             {
                 VisualTree = badge
             },
-            Width = 150,
+            Width = 190,
             IsReadOnly = true
         };
     }
@@ -3067,7 +3070,7 @@ public sealed class PrintWindow : TrueBimWindow
             {
                 if (Sheet.IsPlaceholder)
                 {
-                    return "Лист-заглушка";
+                    return "Заглушка — не печатается";
                 }
 
                 if (IsFileNameDuplicate && ShowFileNameDuplicateWarning)
@@ -3098,6 +3101,10 @@ public sealed class PrintWindow : TrueBimWindow
                 return CanBePrinted ? "Готов" : "Не печатается";
             }
         }
+
+        public string? StatusToolTip => Sheet.IsPlaceholder
+            ? PlaceholderSheetExplanation
+            : null;
 
         public void SetPrintability(bool canBePrinted, string status)
         {

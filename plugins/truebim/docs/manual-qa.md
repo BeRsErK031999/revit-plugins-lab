@@ -219,6 +219,15 @@ Expected logs:
 5. Sort by sheet number, switch the source filter, and confirm the scrollbar remains visible and usable.
 6. Confirm row virtualization remains responsive while scrolling the full list.
 
+### Print Placeholder Sheet QA
+
+1. Open a project whose sheet list contains at least one Revit placeholder sheet.
+2. Open `Печать` with fresh/default settings and confirm placeholder sheets are hidden.
+3. Confirm the option is named `Неразмещенные листы (заглушки)` and its tooltip explains that these are preliminary sheet-list rows without a created regular Revit sheet.
+4. Enable the option and confirm the placeholder row appears with status `Заглушка — не печатается`.
+5. Hover the status and confirm the same explanation is available directly from the row.
+6. Confirm the row checkbox is disabled and the placeholder cannot increase the selected or exported sheet count.
+
 Completed first-release tasks:
 
 - ribbon/launcher registration;
