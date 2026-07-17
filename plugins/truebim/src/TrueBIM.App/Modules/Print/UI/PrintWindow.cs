@@ -161,6 +161,7 @@ public sealed class PrintWindow : TrueBimWindow
     private bool isBatchUpdatingSelection;
     private bool isSheetNumberSortDescending;
     private bool reloadInitialSourcesForPreset;
+    private PrintSheetRow? sheetSelectionAnchor;
 
     private const string WindowTitle = "Печать";
 
@@ -424,7 +425,7 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.Sorting += OnSheetGridSorting;
         sheetGrid.KeyDown += OnSheetGridKeyDown;
         sheetGrid.RowStyle = CreateSheetRowStyle();
-        sheetGrid.ToolTip = "Список листов. Shift выделяет диапазон, Space переключает выбор выделенных строк.";
+        sheetGrid.ToolTip = "Щёлкните чекбокс опорного листа, затем используйте Shift+Click для выбора диапазона. Space переключает отмеченные строки.";
 
         sheetGrid.Columns.Add(CreateSelectionColumn());
         if (sheetSources.Count > 1)
@@ -1189,6 +1190,7 @@ public sealed class PrintWindow : TrueBimWindow
             rows.Add(row);
         }
 
+        sheetSelectionAnchor = null;
         sheetRows = rows;
         sheetGrid.ItemsSource = sheetRows;
         ConfigureSheetView();
@@ -2436,11 +2438,14 @@ public sealed class PrintWindow : TrueBimWindow
         };
     }
 
-    private static DataGridTemplateColumn CreateSelectionColumn()
+    private DataGridTemplateColumn CreateSelectionColumn()
     {
         FrameworkElementFactory checkBox = new(typeof(CheckBox));
         checkBox.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
         checkBox.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        checkBox.SetBinding(
+            UIElement.IsEnabledProperty,
+            new Binding(nameof(PrintSheetRow.CanBePrinted)));
         checkBox.SetBinding(
             CheckBox.IsCheckedProperty,
             new Binding(nameof(PrintSheetRow.IsSelected))
@@ -2448,6 +2453,12 @@ public sealed class PrintWindow : TrueBimWindow
                 Mode = BindingMode.TwoWay,
                 UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
             });
+        checkBox.AddHandler(
+            UIElement.PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnSheetSelectionCheckBoxPreviewMouseLeftButtonDown));
+        checkBox.AddHandler(
+            CheckBox.ClickEvent,
+            new RoutedEventHandler(OnSheetSelectionCheckBoxClick));
 
         return new DataGridTemplateColumn
         {
@@ -2603,6 +2614,67 @@ public sealed class PrintWindow : TrueBimWindow
         SetRowsSelected(selectedRows, shouldSelect);
 
         args.Handled = true;
+    }
+
+    private void OnSheetSelectionCheckBoxClick(object sender, RoutedEventArgs args)
+    {
+        if (sender is CheckBox { DataContext: PrintSheetRow row } && row.CanBePrinted)
+        {
+            sheetSelectionAnchor = row;
+        }
+    }
+
+    private void OnSheetSelectionCheckBoxPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs args)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == 0
+            || sheetSelectionAnchor is null
+            || sender is not CheckBox { DataContext: PrintSheetRow targetRow }
+            || !targetRow.CanBePrinted)
+        {
+            return;
+        }
+
+        List<PrintSheetRow> orderedRows = CollectionViewSource
+            .GetDefaultView(sheetRows)
+            .Cast<object>()
+            .OfType<PrintSheetRow>()
+            .ToList();
+        int anchorIndex = orderedRows.IndexOf(sheetSelectionAnchor);
+        int targetIndex = orderedRows.IndexOf(targetRow);
+        PrintSheetSelectionRange? selectionRange = PrintSheetSelectionRange.Resolve(
+            orderedRows.Count,
+            anchorIndex,
+            targetIndex,
+            sheetSelectionAnchor.IsSelected);
+        if (selectionRange is null)
+        {
+            sheetSelectionAnchor = null;
+            return;
+        }
+
+        List<PrintSheetRow> rangeRows = orderedRows.GetRange(
+            selectionRange.StartIndex,
+            selectionRange.Count);
+        SetRowsSelected(
+            rangeRows.Where(row => row.CanBePrinted),
+            selectionRange.IsSelected);
+        SelectSheetGridRows(rangeRows, targetRow);
+        logger.Info(
+            $"Print sheet range selection changed: selected={selectionRange.IsSelected}, rows={rangeRows.Count}.");
+
+        args.Handled = true;
+    }
+
+    private void SelectSheetGridRows(IEnumerable<PrintSheetRow> rows, PrintSheetRow currentRow)
+    {
+        sheetGrid.SelectedItems.Clear();
+        foreach (PrintSheetRow row in rows)
+        {
+            sheetGrid.SelectedItems.Add(row);
+        }
+
+        sheetGrid.CurrentItem = currentRow;
+        sheetGrid.ScrollIntoView(currentRow);
     }
 
     private static ComboBox CreateCadSetupInput(string tooltip)
