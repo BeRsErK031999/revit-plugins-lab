@@ -32,8 +32,11 @@ public sealed class FinishScheduleModuleStatusTests
             status.ReadyCapabilities,
             item => item.Contains("геометр", StringComparison.CurrentCultureIgnoreCase));
         Assert.Contains(
-            status.PendingCapabilities,
+            status.ReadyCapabilities,
             item => item.Contains("агрегац", StringComparison.CurrentCultureIgnoreCase));
+        Assert.Contains(
+            status.PendingCapabilities,
+            item => item.Contains("параметр", StringComparison.CurrentCultureIgnoreCase));
     }
 
     [Fact]

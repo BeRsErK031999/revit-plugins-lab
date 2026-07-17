@@ -104,13 +104,17 @@ public sealed class FinishRoomCandidateSnapshot
         double area,
         bool hasLocation,
         AxisAlignedBox3D? bounds,
-        IReadOnlyDictionary<string, FinishParameterValueSnapshot>? parameterValues = null)
+        IReadOnlyDictionary<string, FinishParameterValueSnapshot>? parameterValues = null,
+        string number = "",
+        string name = "")
     {
         ElementId = elementId;
         LevelId = levelId;
         Area = area;
         HasLocation = hasLocation;
         Bounds = bounds;
+        Number = number ?? string.Empty;
+        Name = name ?? string.Empty;
         this.parameterValues = parameterValues is null
             ? new Dictionary<string, FinishParameterValueSnapshot>(StringComparer.Ordinal)
             : parameterValues.ToDictionary(
@@ -128,6 +132,10 @@ public sealed class FinishRoomCandidateSnapshot
     public bool HasLocation { get; }
 
     public AxisAlignedBox3D? Bounds { get; }
+
+    public string Number { get; }
+
+    public string Name { get; }
 
     public bool TryGetParameterValue(
         ParameterReference reference,
@@ -151,7 +159,9 @@ public sealed record FinishElementCandidateSnapshot(
 public sealed record FinishTypeSnapshot(
     long TypeId,
     string? ClassificationValue,
-    bool HasClassificationParameter);
+    bool HasClassificationParameter,
+    FinishParameterValueSnapshot? DescriptionValue = null,
+    bool HasDescriptionParameter = false);
 
 public sealed class FinishElementCollection
 {
@@ -276,7 +286,8 @@ public sealed class FinishSchedulePreviewResult
         FinishPreviewCategoryCounts ceilings,
         FinishPreviewIndexCounts index,
         IEnumerable<string> warnings,
-        FinishQuantityPreviewSummary? quantities = null)
+        FinishQuantityPreviewSummary? quantities = null,
+        FinishAggregationPreviewSummary? aggregation = null)
     {
         CollectedRooms = collectedRooms;
         RoomScope = roomScope ?? throw new ArgumentNullException(nameof(roomScope));
@@ -286,6 +297,7 @@ public sealed class FinishSchedulePreviewResult
         Index = index;
         Warnings = (warnings ?? throw new ArgumentNullException(nameof(warnings))).ToArray();
         Quantities = quantities;
+        Aggregation = aggregation;
     }
 
     public int CollectedRooms { get; }
@@ -303,6 +315,8 @@ public sealed class FinishSchedulePreviewResult
     public IReadOnlyList<string> Warnings { get; }
 
     public FinishQuantityPreviewSummary? Quantities { get; }
+
+    public FinishAggregationPreviewSummary? Aggregation { get; }
 
     public FinishSchedulePreviewResult WithQuantities(FinishQuantityResult result)
     {
@@ -324,6 +338,31 @@ public sealed class FinishSchedulePreviewResult
             Ceilings,
             Index,
             mergedWarnings,
+            result.Summary,
+            Aggregation);
+    }
+
+    public FinishSchedulePreviewResult WithAggregation(FinishAggregationResult result)
+    {
+        if (result is null)
+        {
+            throw new ArgumentNullException(nameof(result));
+        }
+
+        string[] mergedWarnings = Warnings
+            .Concat(result.Warnings.Select(warning => warning.Message))
+            .GroupBy(warning => warning, StringComparer.Ordinal)
+            .Select(group => group.Key)
+            .ToArray();
+        return new FinishSchedulePreviewResult(
+            CollectedRooms,
+            RoomScope,
+            Walls,
+            Floors,
+            Ceilings,
+            Index,
+            mergedWarnings,
+            Quantities,
             result.Summary);
     }
 }

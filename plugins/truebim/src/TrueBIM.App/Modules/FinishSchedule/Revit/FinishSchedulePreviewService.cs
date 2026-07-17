@@ -32,11 +32,30 @@ public sealed class FinishSchedulePreviewService
             build.RoomScope.SelectedRooms,
             build.Classification.Elements));
         FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
+        FinishAggregationResult? aggregation = null;
+        if (settings.DescriptionParameter is not null
+            && (settings.RoomIdentifier.Mode != RoomIdentifierMode.CustomParameter
+                || settings.RoomIdentifier.CustomParameter is not null))
+        {
+            RoomFinishSnapshotBuildResult roomSnapshots = new RoomFinishSnapshotBuilder(
+                new FinishDescriptionNormalizer()).Build(new RoomFinishSnapshotRequest(
+                    settings,
+                    build.RoomScope.SelectedRooms,
+                    build.Classification.Elements,
+                    collection.Types,
+                    quantities));
+            aggregation = new FinishAggregationService(
+                new FinishGroupKeyBuilder(),
+                new FinishAggregationFormatter()).Aggregate(roomSnapshots);
+            result = result.WithAggregation(aggregation);
+        }
+
         logger.Info(
             $"Finish Schedule preview built. Rooms={result.RoomScope.SelectedRooms.Count}/{result.CollectedRooms}; "
             + $"Walls={result.Walls.InScope}; Floors={result.Floors.InScope}; Ceilings={result.Ceilings.InScope}; "
             + $"Pairs={result.Index.PotentialRoomElementPairs}; Occurrences={quantities.Occurrences.Count}; "
-            + $"GeometryWarnings={quantities.Warnings.Count}.");
+            + $"GeometryWarnings={quantities.Warnings.Count}; Groups={aggregation?.Groups.Count ?? 0}; "
+            + $"AggregationWarnings={aggregation?.Warnings.Count ?? 0}.");
         return result;
     }
 }

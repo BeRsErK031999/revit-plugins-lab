@@ -685,6 +685,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             $"Spatial index: {result.Index.IndexedElements} элементов; "
                 + $"потенциальных пар помещение–элемент — {result.Index.PotentialRoomElementPairs}."
         ];
+        if (result.Aggregation is not null)
+        {
+            lines.Insert(
+                4,
+                $"Группировка: {result.Aggregation.GroupCount}; "
+                    + $"помещений с подготовленным output — {result.Aggregation.RoomCount}.");
+        }
+
         lines.AddRange(result.Warnings.Take(3).Select(warning => $"• {warning}"));
         return string.Join("\n", lines);
     }

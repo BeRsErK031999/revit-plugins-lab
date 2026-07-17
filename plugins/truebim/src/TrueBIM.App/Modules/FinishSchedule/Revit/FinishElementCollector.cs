@@ -30,10 +30,7 @@ public sealed class FinishElementCollector
             throw new ArgumentNullException(nameof(settings));
         }
 
-        ParameterReference? sectionParameter = settings.Scope.Kind == ReportScopeKind.Section
-            ? settings.Scope.SectionParameter
-            : null;
-        List<FinishRoomCandidateSnapshot> rooms = CollectRooms(document, sectionParameter);
+        List<FinishRoomCandidateSnapshot> rooms = CollectRooms(document, settings);
         List<FinishElementCandidateSnapshot> walls = CollectPhysicalElements(
             document,
             BuiltInCategory.OST_Walls,
@@ -44,7 +41,8 @@ public sealed class FinishElementCollector
             FinishPhysicalCategory.Floor);
         Dictionary<long, FinishTypeSnapshot> types = CollectTypes(
             document,
-            walls.Concat(floors));
+            walls.Concat(floors),
+            settings.DescriptionParameter);
 
         logger.Info(
             $"Finish Schedule candidates collected. Rooms={rooms.Count}; Walls={walls.Count}; Floors={floors.Count}; Types={types.Count}.");
@@ -53,8 +51,17 @@ public sealed class FinishElementCollector
 
     private List<FinishRoomCandidateSnapshot> CollectRooms(
         Document document,
-        ParameterReference? sectionParameter)
+        FinishScheduleSettings settings)
     {
+        ParameterReference?[] requestedParameters =
+        [
+            settings.Scope.Kind == ReportScopeKind.Section
+                ? settings.Scope.SectionParameter
+                : null,
+            settings.RoomIdentifier.Mode == RoomIdentifierMode.CustomParameter
+                ? settings.RoomIdentifier.CustomParameter
+                : null
+        ];
         List<FinishRoomCandidateSnapshot> result = [];
         foreach (Room room in new FilteredElementCollector(document)
                      .OfCategory(BuiltInCategory.OST_Rooms)
@@ -63,16 +70,19 @@ public sealed class FinishElementCollector
         {
             try
             {
-                IReadOnlyDictionary<string, FinishParameterValueSnapshot>? values = sectionParameter is null
-                    ? null
-                    : ReadParameterValues(room, sectionParameter);
+                IReadOnlyDictionary<string, FinishParameterValueSnapshot> values = ReadParameterValues(
+                    room,
+                    requestedParameters.OfType<ParameterReference>(),
+                    ParameterBindingKind.Instance);
                 result.Add(new FinishRoomCandidateSnapshot(
                     RevitElementIds.GetValue(room.Id),
                     RevitElementIds.GetValue(room.LevelId),
                     room.Area,
                     room.Location is not null,
                     ReadBounds(room),
-                    values));
+                    values,
+                    room.Number,
+                    room.Name));
             }
             catch (Exception exception)
             {
@@ -114,7 +124,8 @@ public sealed class FinishElementCollector
 
     private Dictionary<long, FinishTypeSnapshot> CollectTypes(
         Document document,
-        IEnumerable<FinishElementCandidateSnapshot> elements)
+        IEnumerable<FinishElementCandidateSnapshot> elements,
+        ParameterReference? descriptionReference)
     {
         Dictionary<long, FinishTypeSnapshot> result = [];
         foreach (long typeId in elements
@@ -134,10 +145,18 @@ public sealed class FinishElementCollector
                 Parameter? classification = type
                     .GetParameters(FinishScheduleSettings.ClassificationParameterName)
                     .FirstOrDefault();
+                FinishParameterValueSnapshot? description = descriptionReference is null
+                    ? null
+                    : FindParameterValue(
+                        type,
+                        descriptionReference,
+                        ParameterBindingKind.Type);
                 result[typeId] = new FinishTypeSnapshot(
                     typeId,
                     classification is null ? null : ReadParameterValue(classification).DisplayValue,
-                    classification is not null);
+                    classification is not null,
+                    description,
+                    description is not null);
             }
             catch (Exception exception)
             {
@@ -151,22 +170,44 @@ public sealed class FinishElementCollector
 
     private static IReadOnlyDictionary<string, FinishParameterValueSnapshot> ReadParameterValues(
         Element element,
-        ParameterReference requestedReference)
+        IEnumerable<ParameterReference> requestedReferences,
+        ParameterBindingKind bindingKind)
     {
+        Dictionary<string, ParameterReference> requested = (requestedReferences
+                ?? throw new ArgumentNullException(nameof(requestedReferences)))
+            .GroupBy(reference => reference.StableKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         Dictionary<string, FinishParameterValueSnapshot> result = new(StringComparer.Ordinal);
         foreach (Parameter parameter in element.Parameters)
         {
             ParameterReference? reference = RevitParameterReferenceFactory.Create(
                 parameter,
-                ParameterBindingKind.Instance);
-            if (reference?.StableKey == requestedReference.StableKey)
+                bindingKind);
+            if (reference is not null && requested.ContainsKey(reference.StableKey))
             {
                 result[reference.StableKey] = ReadParameterValue(parameter);
-                break;
+                if (result.Count == requested.Count)
+                {
+                    break;
+                }
             }
         }
 
         return result;
+    }
+
+    private static FinishParameterValueSnapshot? FindParameterValue(
+        Element element,
+        ParameterReference requestedReference,
+        ParameterBindingKind bindingKind)
+    {
+        IReadOnlyDictionary<string, FinishParameterValueSnapshot> values = ReadParameterValues(
+            element,
+            [requestedReference],
+            bindingKind);
+        return values.TryGetValue(requestedReference.StableKey, out FinishParameterValueSnapshot? value)
+            ? value
+            : null;
     }
 
     private static FinishParameterValueSnapshot ReadParameterValue(Parameter parameter)
