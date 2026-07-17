@@ -22,6 +22,7 @@ public sealed class PrintSettingsServiceTests
         Assert.False(settings.ExportDxf);
         Assert.False(settings.ExportDwf);
         Assert.False(settings.CombineDwg);
+        Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
         Assert.False(settings.ExportSeparatePdfWithCombined);
         Assert.Equal(PrintPdfExportService.DefaultSettings.ColorMode, settings.PdfColorMode);
@@ -40,7 +41,7 @@ public sealed class PrintSettingsServiceTests
             IncludePlaceholders: true,
             ExportPdf: false,
             CombinePdf: true,
-            "Combined:File",
+            "  {Номер проекта}_{Имя документа}  ",
             PrintPdfColorMode.GrayScale,
             PrintPdfRasterQuality.Medium,
             AlwaysUseRasterPdf: true,
@@ -60,7 +61,7 @@ public sealed class PrintSettingsServiceTests
         Assert.True(reloadedSettings.IncludePlaceholders);
         Assert.False(reloadedSettings.ExportPdf);
         Assert.True(reloadedSettings.CombinePdf);
-        Assert.Equal("Combined_File.pdf", reloadedSettings.CombinedPdfFileName);
+        Assert.Equal("{Номер проекта}_{Имя документа}", reloadedSettings.CombinedPdfFileName);
         Assert.Equal(PrintPdfColorMode.GrayScale, reloadedSettings.PdfColorMode);
         Assert.Equal(PrintPdfRasterQuality.Medium, reloadedSettings.PdfRasterQuality);
         Assert.True(reloadedSettings.AlwaysUseRasterPdf);
@@ -96,14 +97,14 @@ public sealed class PrintSettingsServiceTests
 
         Assert.Null(settings.ExportFolder);
         Assert.Equal(PrintFileNameTemplateService.DefaultTemplate, settings.FileNameMask);
-        Assert.Equal(PrintPdfExportService.BuildCombinedPdfFileName(null), settings.CombinedPdfFileName);
+        Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
         Assert.Equal("Office DWG", settings.DwgSetupName);
         Assert.Null(settings.DxfSetupName);
     }
 
     [Fact]
-    public void Load_UsesCombinedDwgDefaultForLegacySettingsFile()
+    public void Load_UsesCombinedDefaultsForLegacySettingsFile()
     {
         using TempDirectory temp = new();
         string settingsPath = Path.Combine(temp.Path, "print-settings.json");
@@ -121,7 +122,20 @@ public sealed class PrintSettingsServiceTests
 
         Assert.True(settings.ExportDwg);
         Assert.True(settings.CombineDwg);
+        Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
+    }
+
+    [Fact]
+    public void Load_PreservesLegacyCombinedPdfLiteralAsMask()
+    {
+        using TempDirectory temp = new();
+        string settingsPath = Path.Combine(temp.Path, "print-settings.json");
+        File.WriteAllText(settingsPath, "{ \"combinedPdfFileName\": \"Legacy package.pdf\" }");
+
+        PrintSettings settings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
+
+        Assert.Equal("Legacy package.pdf", settings.CombinedPdfFileName);
     }
 
     [Fact]

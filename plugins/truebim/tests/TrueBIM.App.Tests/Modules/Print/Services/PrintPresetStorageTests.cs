@@ -38,7 +38,7 @@ public sealed class PrintPresetStorageTests
             IncludePlaceholders: true,
             ExportPdf: true,
             CombinePdf: true,
-            "Customer A package",
+            "  {Номер проекта}_Customer A  ",
             PrintPdfColorMode.GrayScale,
             PrintPdfRasterQuality.High,
             AlwaysUseRasterPdf: false,
@@ -82,6 +82,7 @@ public sealed class PrintPresetStorageTests
         Assert.True(preset.Settings.ExportDwg);
         Assert.True(preset.Settings.CombinePdf);
         Assert.True(preset.Settings.CombineDwg);
+        Assert.Equal("{Номер проекта}_Customer A", preset.Settings.CombinedPdfFileName);
         Assert.Equal("{Номер проекта}_{Имя документа}", preset.Settings.CombinedDwgFileNameMask);
         Assert.Equal("Customer A DWG", preset.Settings.DwgSetupName);
         Assert.NotNull(preset.DwgProfile);

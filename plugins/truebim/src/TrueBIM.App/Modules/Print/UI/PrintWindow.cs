@@ -46,6 +46,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly PrintPresetStorage printPresetStorage;
     private readonly PrintSettings initialSettings;
     private readonly string collectedFileNameMask;
+    private readonly string collectedCombinedPdfFileNameMask;
     private readonly string collectedCombinedDwgFileNameMask;
     private readonly bool hasSavedPrintSettings;
     private readonly PrintFileNameContext fileNameContext;
@@ -81,7 +82,14 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly ComboBox pdfModeInput = CreatePdfSettingInput("Режим создания PDF: отдельные файлы, один общий файл или оба варианта.");
     private readonly TextBox combinedPdfNameInput = new()
     {
-        ToolTip = "Имя файла для объединенного PDF."
+        Text = PrintFileNameTemplateService.DefaultCombinedTemplate,
+        ToolTip = "Маска общего PDF. Поддерживает те же токены, что маска листов. Токены листа берутся из первого выбранного листа каждого документа; после добавления параметра нажмите «Обновить»."
+    };
+    private readonly TextBlock combinedPdfNamePreviewText = new()
+    {
+        Text = "Выберите листы",
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center
     };
     private readonly TextBox combinedDwgNameMaskInput = new()
     {
@@ -166,6 +174,7 @@ public sealed class PrintWindow : TrueBimWindow
         PrintSettingsService? printSettingsService,
         ITrueBimLogger logger,
         string? collectedFileNameMask = null,
+        string? collectedCombinedPdfFileNameMask = null,
         string? collectedCombinedDwgFileNameMask = null)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
@@ -193,11 +202,15 @@ public sealed class PrintWindow : TrueBimWindow
         this.collectedFileNameMask = string.IsNullOrWhiteSpace(collectedFileNameMask)
             ? initialSettings.FileNameMask
             : collectedFileNameMask!;
+        this.collectedCombinedPdfFileNameMask = string.IsNullOrWhiteSpace(collectedCombinedPdfFileNameMask)
+            ? initialSettings.CombinedPdfFileName
+            : collectedCombinedPdfFileNameMask!;
         this.collectedCombinedDwgFileNameMask = string.IsNullOrWhiteSpace(collectedCombinedDwgFileNameMask)
             ? initialSettings.CombinedDwgFileNameMask
             : collectedCombinedDwgFileNameMask!;
         IReadOnlyCollection<string> collectedSheetParameterNames = fileNameTemplateService.GetSheetParameterNames(
             this.collectedFileNameMask,
+            this.collectedCombinedPdfFileNameMask,
             this.collectedCombinedDwgFileNameMask);
         foreach (string sourceId in loadedSourceIds)
         {
@@ -206,6 +219,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(
             this.collectedFileNameMask,
+            this.collectedCombinedPdfFileNameMask,
             this.collectedCombinedDwgFileNameMask);
         fileNameContext = CreateFileNameContext(document, projectParameterNames);
         fileNameContextsBySourceId = new Dictionary<string, PrintFileNameContext>(StringComparer.Ordinal);
@@ -551,7 +565,7 @@ public sealed class PrintWindow : TrueBimWindow
 
             TextBlock combinedPdfNameLabel = new()
             {
-                Text = "Имя общего файла",
+                Text = "Маска общего PDF",
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(16, 0, 8, 0)
             };
@@ -575,6 +589,25 @@ public sealed class PrintWindow : TrueBimWindow
             Grid.SetRow(pdfRow, rowIndex++);
             root.Children.Add(pdfRow);
             RegisterDetailedSettingsRow(pdfRow);
+
+            Grid combinedPdfPreviewRow = new()
+            {
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            combinedPdfPreviewRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ExportLabelWidth) });
+            combinedPdfPreviewRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            combinedPdfPreviewRow.Children.Add(new TextBlock
+            {
+                Text = "Итог общего PDF",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            });
+            Grid.SetColumn(combinedPdfNamePreviewText, 1);
+            combinedPdfPreviewRow.Children.Add(combinedPdfNamePreviewText);
+
+            Grid.SetRow(combinedPdfPreviewRow, rowIndex++);
+            root.Children.Add(combinedPdfPreviewRow);
+            RegisterDetailedSettingsRow(combinedPdfPreviewRow);
 
             Grid pdfSettingsRow = new()
             {
@@ -1165,9 +1198,11 @@ public sealed class PrintWindow : TrueBimWindow
         PrintSheetCollectorService collector = new();
         IReadOnlyCollection<string> sheetParameterNames = fileNameTemplateService.GetSheetParameterNames(
             fileNameMaskInput.Text,
+            combinedPdfNameInput.Text,
             combinedDwgNameMaskInput.Text);
         IReadOnlyCollection<string> projectParameterNames = fileNameTemplateService.GetProjectParameterNames(
             fileNameMaskInput.Text,
+            combinedPdfNameInput.Text,
             combinedDwgNameMaskInput.Text);
         foreach (PrintSheetSource source in sourcesToLoad)
         {
@@ -1297,12 +1332,14 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyList<PrintSheetRow> selectedRows,
         PrintPdfExportMode pdfMode,
         bool combineDwg,
+        IReadOnlyDictionary<string, string> combinedPdfFileNamesBySourceId,
         IReadOnlyDictionary<string, string> mergedDwgFileNamesBySourceId)
     {
         List<string> existingPaths = GetExistingOutputPaths(
                 selectedRows,
                 pdfMode,
                 combineDwg,
+                combinedPdfFileNamesBySourceId,
                 mergedDwgFileNamesBySourceId)
             .Where(File.Exists)
             .Distinct(StringComparer.CurrentCultureIgnoreCase)
@@ -1331,12 +1368,14 @@ public sealed class PrintWindow : TrueBimWindow
         PrintSheetRow row,
         PrintPdfExportMode pdfMode,
         bool combineDwg,
+        IReadOnlyDictionary<string, string> combinedPdfFileNamesBySourceId,
         IReadOnlyDictionary<string, string> mergedDwgFileNamesBySourceId)
     {
         return GetOutputPathsForRow(
                 row,
                 pdfMode,
                 combineDwg,
+                combinedPdfFileNamesBySourceId,
                 mergedDwgFileNamesBySourceId)
             .Any(File.Exists);
     }
@@ -1345,6 +1384,7 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyList<PrintSheetRow> selectedRows,
         PrintPdfExportMode pdfMode,
         bool combineDwg,
+        IReadOnlyDictionary<string, string> combinedPdfFileNamesBySourceId,
         IReadOnlyDictionary<string, string> mergedDwgFileNamesBySourceId)
     {
         foreach (PrintSheetRow row in selectedRows)
@@ -1353,6 +1393,7 @@ public sealed class PrintWindow : TrueBimWindow
                          row,
                          pdfMode,
                          combineDwg,
+                         combinedPdfFileNamesBySourceId,
                          mergedDwgFileNamesBySourceId))
             {
                 yield return outputPath;
@@ -1364,6 +1405,7 @@ public sealed class PrintWindow : TrueBimWindow
         PrintSheetRow row,
         PrintPdfExportMode pdfMode,
         bool combineDwg,
+        IReadOnlyDictionary<string, string> combinedPdfFileNamesBySourceId,
         IReadOnlyDictionary<string, string> mergedDwgFileNamesBySourceId)
     {
         string exportFolder = exportFolderInput.Text;
@@ -1376,7 +1418,9 @@ public sealed class PrintWindow : TrueBimWindow
         if (pdfInput.IsChecked == true
             && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined)
         {
-            yield return Path.Combine(exportFolder, PrintPdfExportService.BuildCombinedPdfFileName(BuildSourceCombinedPdfName(row.Sheet.SourceId)));
+            yield return Path.Combine(
+                exportFolder,
+                PrintPdfExportService.BuildCombinedPdfFileName(combinedPdfFileNamesBySourceId[row.Sheet.SourceId]));
         }
 
         if (dwgInput.IsChecked == true)
@@ -1398,22 +1442,8 @@ public sealed class PrintWindow : TrueBimWindow
         }
     }
 
-    private string BuildSourceCombinedPdfName(string sourceId)
-    {
-        bool exportCombinedPdfPerSource = sheetRows
-            .Where(row => row.IsSelected && row.CanBePrinted)
-            .Select(row => row.Sheet.SourceId)
-            .Distinct(StringComparer.Ordinal)
-            .Count() > 1;
-        if (!exportCombinedPdfPerSource || !sheetSourcesById.TryGetValue(sourceId, out PrintSheetSource? source))
-        {
-            return combinedPdfNameInput.Text;
-        }
-
-        return $"{source.SourceName}_{combinedPdfNameInput.Text}";
-    }
-
-    private IReadOnlyDictionary<string, PrintFileNamePreview> BuildMergedDwgFileNamePreviews(
+    private IReadOnlyDictionary<string, PrintFileNamePreview> BuildCombinedFileNamePreviews(
+        string template,
         IReadOnlyList<PrintSheetRow> selectedRows)
     {
         Dictionary<string, PrintFileNamePreview> previews = new(StringComparer.Ordinal);
@@ -1425,12 +1455,22 @@ public sealed class PrintWindow : TrueBimWindow
                 ? sourceContext
                 : fileNameContext;
             previews[sourceRows.Key] = fileNameTemplateService.BuildCombined(
-                combinedDwgNameMaskInput.Text,
+                template,
                 sourceRows.Select(row => row.Sheet).ToList(),
                 context);
         }
 
         return previews;
+    }
+
+    private static string? FindDuplicateCombinedPdfFileName(
+        IReadOnlyDictionary<string, PrintFileNamePreview> previews)
+    {
+        return previews.Values
+            .Select(preview => PrintPdfExportService.BuildCombinedPdfFileName(preview.FileName))
+            .GroupBy(fileName => fileName, StringComparer.CurrentCultureIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1)
+            ?.Key;
     }
 
     private static string? FindDuplicateMergedDwgFileName(
@@ -1471,6 +1511,34 @@ public sealed class PrintWindow : TrueBimWindow
             ? fileNames[0]
             : $"{fileNames.Count} файла: {string.Join("; ", fileNames.Take(2))}";
         combinedDwgNamePreviewText.ToolTip = string.Join(Environment.NewLine, fileNames);
+    }
+
+    private void UpdateCombinedPdfNamePreview(
+        IReadOnlyDictionary<string, PrintFileNamePreview> previews)
+    {
+        bool useCombinedPdf = pdfInput.IsChecked == true
+            && GetSelectedPdfMode() is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
+        if (!useCombinedPdf)
+        {
+            combinedPdfNamePreviewText.Text = "Выберите режим с общим PDF";
+            combinedPdfNamePreviewText.ToolTip = null;
+            return;
+        }
+
+        if (previews.Count == 0)
+        {
+            combinedPdfNamePreviewText.Text = "Выберите листы";
+            combinedPdfNamePreviewText.ToolTip = null;
+            return;
+        }
+
+        List<string> fileNames = previews.Values
+            .Select(preview => PrintPdfExportService.BuildCombinedPdfFileName(preview.FileName))
+            .ToList();
+        combinedPdfNamePreviewText.Text = fileNames.Count == 1
+            ? fileNames[0]
+            : $"{fileNames.Count} файла: {string.Join("; ", fileNames.Take(2))}";
+        combinedPdfNamePreviewText.ToolTip = string.Join(Environment.NewLine, fileNames);
     }
 
     private void StartExport()
@@ -1535,6 +1603,8 @@ public sealed class PrintWindow : TrueBimWindow
         bool exportDwf = dwfInput.IsChecked == true;
         bool combineDwg = exportDwg && combineDwgInput.IsChecked == true;
         PrintPdfExportMode pdfMode = GetSelectedPdfMode();
+        bool combinePdf = exportPdf
+            && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
         PrintPdfExportSettings pdfSettings = GetSelectedPdfSettings();
         string pdfModeLogText = exportPdf
             ? PrintPdfExportService.GetModeDisplayName(pdfMode)
@@ -1546,8 +1616,33 @@ public sealed class PrintWindow : TrueBimWindow
         string? dxfSetupName = GetSelectedSetupName(dxfSetupInput);
         DwgExportProfile? dwgProfile = exportDwg ? GetCurrentDwgProfileForExport() : null;
 
+        IReadOnlyDictionary<string, PrintFileNamePreview> combinedPdfPreviews = combinePdf
+            ? BuildCombinedFileNamePreviews(combinedPdfNameInput.Text, selectedRows)
+            : new Dictionary<string, PrintFileNamePreview>(StringComparer.Ordinal);
+        if (combinedPdfPreviews.Values.Any(preview => preview.HasUnknownTokens))
+        {
+            Autodesk.Revit.UI.TaskDialog.Show(
+                WindowTitle,
+                "Маска общего PDF содержит неизвестный токен или незагруженный параметр. Исправьте маску либо нажмите «Обновить».");
+            UpdateExportState();
+            return;
+        }
+
+        string? duplicateCombinedPdfFileName = FindDuplicateCombinedPdfFileName(combinedPdfPreviews);
+        if (duplicateCombinedPdfFileName is not null)
+        {
+            Autodesk.Revit.UI.TaskDialog.Show(
+                WindowTitle,
+                $"Маска общего PDF создает одинаковое имя для нескольких документов: {duplicateCombinedPdfFileName}\n\nДобавьте в маску токен {{Имя документа}} или параметр проекта.");
+            UpdateExportState();
+            return;
+        }
+
+        IReadOnlyDictionary<string, string> combinedPdfFileNamesBySourceId = combinedPdfPreviews
+            .ToDictionary(pair => pair.Key, pair => pair.Value.FileName, StringComparer.Ordinal);
+
         IReadOnlyDictionary<string, PrintFileNamePreview> mergedDwgPreviews = combineDwg
-            ? BuildMergedDwgFileNamePreviews(selectedRows)
+            ? BuildCombinedFileNamePreviews(combinedDwgNameMaskInput.Text, selectedRows)
             : new Dictionary<string, PrintFileNamePreview>(StringComparer.Ordinal);
         if (mergedDwgPreviews.Values.Any(preview => preview.HasUnknownTokens))
         {
@@ -1575,6 +1670,7 @@ public sealed class PrintWindow : TrueBimWindow
             selectedRows,
             pdfMode,
             combineDwg,
+            combinedPdfFileNamesBySourceId,
             mergedDwgFileNamesBySourceId);
         if (existingFileDecision == ExistingFileDecision.Cancel)
         {
@@ -1588,6 +1684,7 @@ public sealed class PrintWindow : TrueBimWindow
                     row,
                     pdfMode,
                     combineDwg,
+                    combinedPdfFileNamesBySourceId,
                     mergedDwgFileNamesBySourceId))
                 .ToList();
             if (selectedRows.Count == 0)
@@ -1612,7 +1709,10 @@ public sealed class PrintWindow : TrueBimWindow
         string mergedDwgLogText = combineDwg
             ? string.Join(", ", mergedDwgFileNamesBySourceId.Select(pair => $"{pair.Key}={pair.Value}"))
             : "not combined";
-        logger.Info($"Print export requested for document '{document.Title}' with {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. DWG profile: {(dwgProfile is null ? "not selected" : DwgExportOptionsFactory.GetProfileSummary(dwgProfile))}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}. Merged DWG names: {mergedDwgLogText}.");
+        string combinedPdfLogText = combinePdf
+            ? string.Join(", ", combinedPdfFileNamesBySourceId.Select(pair => $"{pair.Key}={pair.Value}"))
+            : "not combined";
+        logger.Info($"Print export requested for document '{document.Title}' with {selectedRows.Count} sheets. Formats: {formats}. PDF mode: {pdfModeLogText}. PDF settings: {pdfSettingsLogText}. CAD setups: {GetSelectedCadSetupsText()}. DWG profile: {(dwgProfile is null ? "not selected" : DwgExportOptionsFactory.GetProfileSummary(dwgProfile))}. Folder: {exportFolderInput.Text}. Mask: {fileNameMaskInput.Text}. Combined PDF names: {combinedPdfLogText}. Merged DWG names: {mergedDwgLogText}.");
         Dictionary<PrintSheetRow, List<string>> rowStatuses = selectedRows.ToDictionary(
             row => row,
             _ => new List<string>());
@@ -1629,9 +1729,6 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyList<IGrouping<string, PrintSheetRow>> rowGroups = selectedRows
             .GroupBy(row => row.Sheet.SourceId)
             .ToList();
-        bool exportCombinedPdfPerSource = exportPdf
-            && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined
-            && rowGroups.Count > 1;
 
         foreach (IGrouping<string, PrintSheetRow> rowGroup in rowGroups)
         {
@@ -1643,9 +1740,9 @@ public sealed class PrintWindow : TrueBimWindow
             }
 
             IReadOnlyList<PrintSheetRow> sourceRows = rowGroup.ToList();
-            string sourceCombinedPdfName = exportCombinedPdfPerSource
-                ? BuildSourceCombinedPdfName(source.SourceId)
-                : combinedPdfNameInput.Text;
+            string? sourceCombinedPdfName = combinePdf
+                ? combinedPdfFileNamesBySourceId[source.SourceId]
+                : null;
 
             if (exportPdf)
             {
@@ -1790,9 +1887,19 @@ public sealed class PrintWindow : TrueBimWindow
             || dxfInput.IsChecked == true
             || dwfInput.IsChecked == true;
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
+        List<PrintSheetRow> selectedRows = sheetRows
+            .Where(row => row.IsSelected && row.CanBePrinted)
+            .ToList();
+        bool useCombinedPdf = pdfInput.IsChecked == true
+            && GetSelectedPdfMode() is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined;
+        IReadOnlyDictionary<string, PrintFileNamePreview> combinedPdfPreviews = useCombinedPdf
+            ? BuildCombinedFileNamePreviews(combinedPdfNameInput.Text, selectedRows)
+            : new Dictionary<string, PrintFileNamePreview>(StringComparer.Ordinal);
+        bool combinedPdfMaskHasUnknownTokens = combinedPdfPreviews.Values.Any(preview => preview.HasUnknownTokens);
+        string? duplicateCombinedPdfFileName = FindDuplicateCombinedPdfFileName(combinedPdfPreviews);
         bool useCombinedDwg = dwgInput.IsChecked == true && combineDwgInput.IsChecked == true;
         IReadOnlyDictionary<string, PrintFileNamePreview> mergedDwgPreviews = useCombinedDwg
-            ? BuildMergedDwgFileNamePreviews(sheetRows.Where(row => row.IsSelected && row.CanBePrinted).ToList())
+            ? BuildCombinedFileNamePreviews(combinedDwgNameMaskInput.Text, selectedRows)
             : new Dictionary<string, PrintFileNamePreview>(StringComparer.Ordinal);
         bool mergedDwgMaskHasUnknownTokens = mergedDwgPreviews.Values.Any(preview => preview.HasUnknownTokens);
         string? duplicateMergedDwgFileName = FindDuplicateMergedDwgFileName(mergedDwgPreviews);
@@ -1805,6 +1912,7 @@ public sealed class PrintWindow : TrueBimWindow
         combinedDwgNameMaskInput.IsEnabled = useCombinedDwg;
         dwgSetupInput.IsEnabled = dwgInput.IsChecked == true && cadExportSetupOptions.Count > 1;
         dxfSetupInput.IsEnabled = dxfInput.IsChecked == true && cadExportSetupOptions.Count > 1;
+        UpdateCombinedPdfNamePreview(combinedPdfPreviews);
         UpdateCombinedDwgNamePreview(mergedDwgPreviews);
         foreach (PrintSheetRow row in sheetRows)
         {
@@ -1814,15 +1922,21 @@ public sealed class PrintWindow : TrueBimWindow
         exportButton.IsEnabled = selectedCount > 0
             && hasFormat
             && hasFolder
+            && !combinedPdfMaskHasUnknownTokens
+            && duplicateCombinedPdfFileName is null
             && !mergedDwgMaskHasUnknownTokens
             && duplicateMergedDwgFileName is null;
-        exportButton.ToolTip = mergedDwgMaskHasUnknownTokens
-            ? "Исправьте неизвестные токены маски общего DWG или нажмите «Обновить»."
-            : duplicateMergedDwgFileName is not null
-                ? "Добавьте в маску общего DWG токен, различающий документы."
-                : exportButton.IsEnabled
-                    ? "Напечатать выбранные листы в отмеченные форматы."
-                    : "Выберите листы, хотя бы один формат и папку назначения.";
+        exportButton.ToolTip = combinedPdfMaskHasUnknownTokens
+            ? "Исправьте неизвестные токены маски общего PDF или нажмите «Обновить»."
+            : duplicateCombinedPdfFileName is not null
+                ? "Добавьте в маску общего PDF токен, различающий документы."
+                : mergedDwgMaskHasUnknownTokens
+                    ? "Исправьте неизвестные токены маски общего DWG или нажмите «Обновить»."
+                    : duplicateMergedDwgFileName is not null
+                        ? "Добавьте в маску общего DWG токен, различающий документы."
+                        : exportButton.IsEnabled
+                            ? "Напечатать выбранные листы в отмеченные форматы."
+                            : "Выберите листы, хотя бы один формат и папку назначения.";
 
         string hiddenText = hiddenPlaceholderCount > 0
             ? $" Скрыто листов-заглушек: {hiddenPlaceholderCount}."
@@ -1836,6 +1950,11 @@ public sealed class PrintWindow : TrueBimWindow
         string unknownTokenText = unknownTokenCount > 0
             ? $" Неизвестные токены или параметры в маске: {unknownTokenCount}."
             : string.Empty;
+        string combinedPdfMaskText = combinedPdfMaskHasUnknownTokens
+            ? " Маска общего PDF содержит неизвестный токен."
+            : duplicateCombinedPdfFileName is not null
+                ? $" Имя общего PDF повторяется для нескольких документов: {duplicateCombinedPdfFileName}."
+                : string.Empty;
         string mergedDwgMaskText = mergedDwgMaskHasUnknownTokens
             ? " Маска общего DWG содержит неизвестный токен."
             : duplicateMergedDwgFileName is not null
@@ -1848,7 +1967,7 @@ public sealed class PrintWindow : TrueBimWindow
             ? string.Empty
             : $" Всего выбрано: {selectedTotalCount}.";
         string formatText = $" Форматы: {GetSelectedFormatsText()}.";
-        statusText.Text = $"Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{mergedDwgMaskText}";
+        statusText.Text = $"Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{combinedPdfMaskText}{mergedDwgMaskText}";
     }
 
     private string GetSelectedFormatsText()
@@ -2011,7 +2130,7 @@ public sealed class PrintWindow : TrueBimWindow
                 FileNameMask = !string.IsNullOrWhiteSpace(dwgProfileState.LastNameMask)
                     ? dwgProfileState.LastNameMask!
                     : settings.FileNameMask,
-                CombinedPdfFileName = PrintPdfExportService.BuildCombinedPdfFileName(fileNameContext.DocumentName)
+                CombinedPdfFileName = PrintFileNameTemplateService.DefaultCombinedTemplate
             };
         }
 
@@ -2102,6 +2221,10 @@ public sealed class PrintWindow : TrueBimWindow
         reloadInitialSourcesForPreset = !string.Equals(
                 selectedSettings.FileNameMask,
                 collectedFileNameMask,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                selectedSettings.CombinedPdfFileName,
+                collectedCombinedPdfFileNameMask,
                 StringComparison.Ordinal)
             || !string.Equals(
                 selectedSettings.CombinedDwgFileNameMask,

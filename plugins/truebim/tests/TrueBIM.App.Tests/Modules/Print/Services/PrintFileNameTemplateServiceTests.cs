@@ -58,6 +58,19 @@ public sealed class PrintFileNameTemplateServiceTests
     }
 
     [Fact]
+    public void BuildCombined_ProducesSinglePdfExtensionFromResolvedMask()
+    {
+        PrintFileNamePreview preview = service.BuildCombined(
+            "{Имя документа}.pdf",
+            [Sheet("A-101", "План")],
+            Context("РД", "P-42", "Model"));
+
+        string finalFileName = PrintPdfExportService.BuildCombinedPdfFileName(preview.FileName);
+
+        Assert.Equal("Model.pdf", finalFileName);
+    }
+
+    [Fact]
     public void Build_ReplacesDateAndCounterTokens()
     {
         PrintFileNamePreview preview = service.Build(

@@ -16,7 +16,7 @@ public sealed class PrintSettingsService
         IncludePlaceholders: false,
         ExportPdf: true,
         CombinePdf: false,
-        CombinedPdfFileName: PrintPdfExportService.BuildCombinedPdfFileName(null),
+        CombinedPdfFileName: PrintFileNameTemplateService.DefaultCombinedTemplate,
         PdfColorMode: PrintPdfExportService.DefaultSettings.ColorMode,
         PdfRasterQuality: PrintPdfExportService.DefaultSettings.RasterQuality,
         AlwaysUseRasterPdf: PrintPdfExportService.DefaultSettings.AlwaysUseRaster,
@@ -106,7 +106,9 @@ public sealed class PrintSettingsService
             IncludePlaceholders: settings.IncludePlaceholders,
             ExportPdf: settings.ExportPdf,
             CombinePdf: settings.CombinePdf,
-            CombinedPdfFileName: PrintPdfExportService.BuildCombinedPdfFileName(settings.CombinedPdfFileName),
+            CombinedPdfFileName: string.IsNullOrWhiteSpace(settings.CombinedPdfFileName)
+                ? DefaultSettings.CombinedPdfFileName
+                : settings.CombinedPdfFileName.Trim(),
             PdfColorMode: Enum.IsDefined(typeof(PrintPdfColorMode), settings.PdfColorMode)
                 ? settings.PdfColorMode
                 : DefaultSettings.PdfColorMode,
