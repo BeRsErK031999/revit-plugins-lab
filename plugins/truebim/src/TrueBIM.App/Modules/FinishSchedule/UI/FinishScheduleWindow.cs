@@ -1,5 +1,6 @@
 using System.IO;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using TrueBIM.App.Modules.FinishSchedule.Models;
@@ -24,6 +25,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly FinishScheduleSettingsValidator validator;
     private readonly FinishSchedulePreviewValidator previewValidator;
     private readonly FinishScheduleParameterOptionService optionService;
+    private readonly FinishScheduleReportBuilder reportBuilder = new();
 
     private readonly CategoryControls walls = new(
         "Стены",
@@ -91,10 +93,16 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly Button saveButton;
     private readonly Button previewButton;
     private readonly Button generateButton;
+    private readonly Button copyReportButton;
+    private readonly Button openScheduleButton;
     private readonly Border validationBanner;
     private readonly Border previewBanner;
 
     private bool isUpdating;
+    private string currentReportText = string.Empty;
+    private long? lastScheduleId;
+
+    public long? RequestedScheduleId { get; private set; }
 
     public FinishScheduleWindow(
         FinishScheduleModuleStatus status,
@@ -144,6 +152,24 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             isEnabled: false,
             minWidth: 140);
         ToolTipService.SetShowOnDisabled(generateButton, true);
+
+        copyReportButton = TrueBimUi.CreateSecondaryButton(
+            "Копировать отчёт",
+            TrueBimIcon.CopyParameters,
+            (_, _) => CopyCurrentReport(),
+            isEnabled: false,
+            minWidth: 145);
+        copyReportButton.ToolTip = "Скопировать полный отчёт со всеми предупреждениями и таймингами стадий.";
+        ToolTipService.SetShowOnDisabled(copyReportButton, true);
+
+        openScheduleButton = TrueBimUi.CreateSecondaryButton(
+            "Открыть спецификацию",
+            TrueBimIcon.Open,
+            (_, _) => RequestScheduleOpen(),
+            isEnabled: false,
+            minWidth: 165);
+        openScheduleButton.ToolTip = "Закрыть окно и открыть созданную или обновлённую спецификацию в Revit.";
+        ToolTipService.SetShowOnDisabled(openScheduleButton, true);
 
         previewBanner = CreateStatusBanner(previewIcon, previewText);
         ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Info);
@@ -356,6 +382,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             footerStatus,
             saveButton,
             previewButton,
+            copyReportButton,
+            openScheduleButton,
             generateButton,
             closeButton);
     }
@@ -642,6 +670,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     {
         previewText.Text = "Настройки изменены. Обновите предпросмотр, чтобы увидеть актуальный состав области.";
         ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Info);
+        SetCurrentReport(string.Empty);
+        SetLastSchedule(null);
     }
 
     private void RunPreview()
@@ -661,6 +691,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         {
             FinishSchedulePreviewResult result = previewFactory(settings);
             previewText.Text = FormatPreview(result, settings);
+            SetCurrentReport(reportBuilder.BuildPreview(result, settings));
             ApplyBannerSeverity(
                 previewBanner,
                 previewIcon,
@@ -697,6 +728,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             SaveProfile(showFeedback: false);
             FinishScheduleWritePreview writePreview = writePreviewFactory(settings);
             previewText.Text = FormatWritePreview(writePreview);
+            SetCurrentReport(reportBuilder.BuildWritePreview(writePreview));
+            SetLastSchedule(null);
             ApplyBannerSeverity(
                 previewBanner,
                 previewIcon,
@@ -727,6 +760,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
             FinishScheduleWriteResult result = writeApplyFactory(writePreview);
             previewText.Text = FormatWriteResult(writePreview, result);
+            SetCurrentReport(reportBuilder.BuildResult(writePreview, result));
+            SetLastSchedule(result.Succeeded ? result.Schedule?.ScheduleId : null);
             ApplyBannerSeverity(
                 previewBanner,
                 previewIcon,
@@ -751,6 +786,54 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             footerStatus.Text = "Модель не оставлена в частично обновлённом состоянии.";
             footerStatus.Foreground = TrueBimBrushes.Danger;
         }
+    }
+
+    private void CopyCurrentReport()
+    {
+        if (string.IsNullOrWhiteSpace(currentReportText))
+        {
+            footerStatus.Text = "Сначала выполните предпросмотр или формирование ведомости.";
+            footerStatus.Foreground = TrueBimBrushes.Warning;
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(currentReportText);
+            footerStatus.Text = "Полный отчёт скопирован в буфер обмена.";
+            footerStatus.Foreground = TrueBimBrushes.Success;
+        }
+        catch (ExternalException exception)
+        {
+            logger.Error("Failed to copy Finish Schedule report to clipboard.", exception);
+            footerStatus.Text = "Буфер обмена занят другим приложением. Повторите копирование.";
+            footerStatus.Foreground = TrueBimBrushes.Warning;
+        }
+    }
+
+    private void RequestScheduleOpen()
+    {
+        if (!lastScheduleId.HasValue)
+        {
+            footerStatus.Text = "Сначала сформируйте ведомость отделки.";
+            footerStatus.Foreground = TrueBimBrushes.Warning;
+            return;
+        }
+
+        RequestedScheduleId = lastScheduleId.Value;
+        Close();
+    }
+
+    private void SetCurrentReport(string report)
+    {
+        currentReportText = report ?? string.Empty;
+        copyReportButton.IsEnabled = !string.IsNullOrWhiteSpace(currentReportText);
+    }
+
+    private void SetLastSchedule(long? scheduleId)
+    {
+        lastScheduleId = scheduleId;
+        openScheduleButton.IsEnabled = scheduleId.HasValue;
     }
 
     private static string FormatWritePreview(FinishScheduleWritePreview preview)
@@ -824,6 +907,13 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                     + FormatAppliedScheduleAction(result.Schedule.Action) + ".");
         }
 
+        FinishScheduleStageTiming? totalApply = result.Performance?.Stages
+            .FirstOrDefault(timing => timing.Stage == FinishScheduleStageNames.TotalApply);
+        if (totalApply is not null)
+        {
+            lines.Add($"Время применения: {totalApply.ElapsedMilliseconds} мс.");
+        }
+
         lines.AddRange(result.Warnings.Take(4).Select(warning => $"• {warning}"));
         if (result.Warnings.Count > 4)
         {
@@ -887,6 +977,15 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 4,
                 $"Группировка: {result.Aggregation.GroupCount}; "
                     + $"помещений с подготовленным output — {result.Aggregation.RoomCount}.");
+        }
+
+        FinishScheduleStageTiming? totalCalculation = result.Performance?.Stages
+            .FirstOrDefault(timing => timing.Stage == FinishScheduleStageNames.TotalCalculation);
+        if (totalCalculation is not null)
+        {
+            lines.Add(
+                $"Время расчёта: {totalCalculation.ElapsedMilliseconds} мс; "
+                    + $"element geometry cache hits — {result.Performance!.Cache.Geometry.ElementHits}.");
         }
 
         lines.AddRange(result.Warnings.Take(3).Select(warning => $"• {warning}"));

@@ -93,10 +93,22 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 warningKeys);
         }
 
-        FinishQuantityResult result = new(accumulator.Build(), warnings);
+        FinishQuantityResult result = new(
+            accumulator.Build(),
+            warnings,
+            new FinishGeometryCacheMetrics(
+                roomGeometryCache.RequestCount,
+                roomGeometryCache.EntryCount,
+                roomGeometryCache.HitCount,
+                elementGeometryCache.RequestCount,
+                elementGeometryCache.EntryCount,
+                elementGeometryCache.HitCount));
         logger.Info(
             $"Finish Schedule physical quantities calculated. Rooms={request.Rooms.Count}; "
-            + $"Occurrences={result.Occurrences.Count}; Warnings={result.Warnings.Count}.");
+            + $"Occurrences={result.Occurrences.Count}; Warnings={result.Warnings.Count}; "
+            + $"RoomCache={roomGeometryCache.EntryCount}/{roomGeometryCache.RequestCount}; "
+            + $"ElementCache={elementGeometryCache.EntryCount}/{elementGeometryCache.RequestCount}; "
+            + $"ElementCacheHits={elementGeometryCache.HitCount}.");
         return result;
     }
 

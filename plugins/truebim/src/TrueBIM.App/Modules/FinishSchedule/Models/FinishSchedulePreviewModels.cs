@@ -287,7 +287,8 @@ public sealed class FinishSchedulePreviewResult
         FinishPreviewIndexCounts index,
         IEnumerable<string> warnings,
         FinishQuantityPreviewSummary? quantities = null,
-        FinishAggregationPreviewSummary? aggregation = null)
+        FinishAggregationPreviewSummary? aggregation = null,
+        FinishSchedulePerformanceSummary? performance = null)
     {
         CollectedRooms = collectedRooms;
         RoomScope = roomScope ?? throw new ArgumentNullException(nameof(roomScope));
@@ -298,6 +299,7 @@ public sealed class FinishSchedulePreviewResult
         Warnings = (warnings ?? throw new ArgumentNullException(nameof(warnings))).ToArray();
         Quantities = quantities;
         Aggregation = aggregation;
+        Performance = performance;
     }
 
     public int CollectedRooms { get; }
@@ -317,6 +319,8 @@ public sealed class FinishSchedulePreviewResult
     public FinishQuantityPreviewSummary? Quantities { get; }
 
     public FinishAggregationPreviewSummary? Aggregation { get; }
+
+    public FinishSchedulePerformanceSummary? Performance { get; }
 
     public FinishSchedulePreviewResult WithQuantities(FinishQuantityResult result)
     {
@@ -339,7 +343,8 @@ public sealed class FinishSchedulePreviewResult
             Index,
             mergedWarnings,
             result.Summary,
-            Aggregation);
+            Aggregation,
+            Performance);
     }
 
     public FinishSchedulePreviewResult WithAggregation(FinishAggregationResult result)
@@ -363,7 +368,23 @@ public sealed class FinishSchedulePreviewResult
             Index,
             mergedWarnings,
             Quantities,
-            result.Summary);
+            result.Summary,
+            Performance);
+    }
+
+    public FinishSchedulePreviewResult WithPerformance(FinishSchedulePerformanceSummary performance)
+    {
+        return new FinishSchedulePreviewResult(
+            CollectedRooms,
+            RoomScope,
+            Walls,
+            Floors,
+            Ceilings,
+            Index,
+            Warnings,
+            Quantities,
+            Aggregation,
+            performance ?? throw new ArgumentNullException(nameof(performance)));
     }
 }
 

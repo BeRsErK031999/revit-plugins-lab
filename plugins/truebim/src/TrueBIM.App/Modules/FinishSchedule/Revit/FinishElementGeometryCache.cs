@@ -16,6 +16,12 @@ internal sealed class FinishElementGeometryCache
     };
     private readonly Dictionary<long, FinishElementGeometryLookup> cache = [];
 
+    public int RequestCount { get; private set; }
+
+    public int HitCount { get; private set; }
+
+    public int EntryCount => cache.Count;
+
     public FinishElementGeometryCache(Document document)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
@@ -23,8 +29,10 @@ internal sealed class FinishElementGeometryCache
 
     public FinishElementGeometryLookup Get(long elementId)
     {
+        RequestCount++;
         if (cache.TryGetValue(elementId, out FinishElementGeometryLookup? cached))
         {
+            HitCount++;
             return cached;
         }
 

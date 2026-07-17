@@ -41,8 +41,14 @@ public sealed class FinishScheduleModuleStatusTests
             status.ReadyCapabilities,
             item => item.Contains("ownership", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(
+            status.ReadyCapabilities,
+            item => item.Contains("marker TrueBIM", StringComparison.Ordinal));
+        Assert.Contains(
+            status.ReadyCapabilities,
+            item => item.Contains("копируемый отчёт", StringComparison.CurrentCultureIgnoreCase));
+        Assert.Contains(
             status.PendingCapabilities,
-            item => item.Contains("спецификац", StringComparison.CurrentCultureIgnoreCase));
+            item => item.Contains("Runtime smoke", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -78,6 +78,36 @@ public sealed class FinishSchedulePreviewTests
         Assert.Contains(result.Issues, issue => issue.Code == "scope.section_value.empty");
     }
 
+    [Fact]
+    public void Build_LargeCandidateSet_ReportsOnlySpatialIndexPairs()
+    {
+        FinishElementCandidateSnapshot[] walls = Enumerable.Range(0, 1000)
+            .Select(index => Element(
+                1000 + index,
+                500,
+                FinishPhysicalCategory.Wall,
+                index == 0
+                    ? new AxisAlignedBox3D(1, 1, 0, 2, 2, 3)
+                    : new AxisAlignedBox3D(100 + index * 10, 0, 0, 101 + index * 10, 1, 3)))
+            .ToArray();
+        FinishElementCollection collection = new(
+            [Room(1, new AxisAlignedBox3D(0, 0, 0, 10, 10, 3))],
+            walls,
+            [],
+            [new FinishTypeSnapshot(500, "Внутренняя отделка", true)]);
+        FinishSchedulePreviewBuilder builder = new(
+            new RoomScopeService(),
+            new FinishClassificationService());
+
+        FinishSchedulePreviewResult result = builder.Build(
+            collection,
+            FinishScheduleSettings.CreateDefault());
+
+        Assert.Equal(1000, result.Walls.Classified);
+        Assert.Equal(1, result.Walls.InScope);
+        Assert.Equal(1, result.Index.PotentialRoomElementPairs);
+    }
+
     private static FinishRoomCandidateSnapshot Room(long id, AxisAlignedBox3D bounds)
     {
         return new FinishRoomCandidateSnapshot(id, 10, 20, true, bounds);

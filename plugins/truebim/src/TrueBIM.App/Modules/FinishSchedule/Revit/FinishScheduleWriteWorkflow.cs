@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Services;
@@ -93,7 +94,8 @@ public sealed class FinishScheduleWriteWorkflow
             roomPlan,
             ownershipPlan,
             calculation.Preview.Warnings,
-            schedulePreflight);
+            schedulePreflight,
+            calculation.Preview);
         logger.Info(
             $"Finish Schedule write plan prepared. Rooms={preview.RoomCount}; Groups={preview.GroupCount}; "
             + $"RoomChanges={roomPlan.Changes.Count}; OwnershipChanges={ownershipPlan.Changes.Count}; "
@@ -107,6 +109,7 @@ public sealed class FinishScheduleWriteWorkflow
         Document document,
         FinishScheduleWritePreview preview)
     {
+        Stopwatch totalTimer = Stopwatch.StartNew();
         if (document is null)
         {
             throw new ArgumentNullException(nameof(document));
@@ -137,7 +140,8 @@ public sealed class FinishScheduleWriteWorkflow
                 0,
                 preflightSkippedOwnership,
                 preflightWarnings,
-                $"Запись не начата: {documentIssue.Message}");
+                $"Запись не начата: {documentIssue.Message}",
+                Performance: CompleteApplyPerformance([], totalTimer));
         }
 
         if (!preview.CanApply)
@@ -148,7 +152,8 @@ public sealed class FinishScheduleWriteWorkflow
                 0,
                 preflightSkippedOwnership,
                 preflightWarnings,
-                "Запись не начата: обязательный preflight обнаружил критические ошибки.");
+                "Запись не начата: обязательный preflight обнаружил критические ошибки.",
+                Performance: CompleteApplyPerformance([], totalTimer));
         }
 
         if (!preview.RequiresTransaction)
@@ -165,24 +170,36 @@ public sealed class FinishScheduleWriteWorkflow
                         preview.Schedule.ScheduleId.Value,
                         preview.Schedule.Plan.ScheduleName,
                         FinishRoomScheduleAction.NoChanges)
-                    : null);
+                    : null,
+                CompleteApplyPerformance([], totalTimer));
         }
 
         using TransactionGroup group = new(document, "TrueBIM: сформировать ведомость отделки");
         bool groupStarted = false;
+        List<FinishScheduleStageTiming> timings = [];
+        Stopwatch stageTimer = new();
         try
         {
             FinishTransactionStatus.EnsureStarted(group);
             groupStarted = true;
+            stageTimer.Restart();
             FinishOwnershipApplyResult ownershipResult = ownershipWriter.Apply(
                 document,
                 preview.OwnershipPlan);
+            timings.Add(StopStage(FinishScheduleStageNames.OwnershipWrite, stageTimer));
+
+            stageTimer.Restart();
             int appliedRoomValues = roomWriter.Apply(document, preview.RoomPlan);
+            timings.Add(StopStage(FinishScheduleStageNames.RoomWrite, stageTimer));
+
+            stageTimer.Restart();
             FinishRoomScheduleApplyResult scheduleResult = scheduleBuilder.Apply(
                 document,
                 preview.Schedule);
+            timings.Add(StopStage(FinishScheduleStageNames.ScheduleWrite, stageTimer));
             FinishTransactionStatus.EnsureAssimilated(group);
             groupStarted = false;
+            FinishSchedulePerformanceSummary performance = CompleteApplyPerformance(timings, totalTimer);
 
             string[] warnings = preflightWarnings
                 .Concat(ownershipResult.Warnings)
@@ -193,7 +210,7 @@ public sealed class FinishScheduleWriteWorkflow
                 + $"OwnershipValues={ownershipResult.AppliedCount}; "
                 + $"OwnershipSkipped={preflightSkippedOwnership + ownershipResult.SkippedCount}; "
                 + $"ScheduleAction={scheduleResult.Action}; ScheduleId={scheduleResult.ScheduleId}; "
-                + $"Warnings={warnings.Length}.");
+                + $"Warnings={warnings.Length}; ElapsedMs={totalTimer.ElapsedMilliseconds}.");
             return new FinishScheduleWriteResult(
                 FinishScheduleWriteStatus.Applied,
                 appliedRoomValues,
@@ -203,7 +220,8 @@ public sealed class FinishScheduleWriteWorkflow
                 scheduleResult.Action == FinishRoomScheduleAction.Create
                     ? "Параметры обновлены, ведомость отделки создана атомарно."
                     : "Параметры и ведомость отделки обновлены атомарно.",
-                scheduleResult);
+                scheduleResult,
+                performance);
         }
         catch (Exception exception)
         {
@@ -226,8 +244,29 @@ public sealed class FinishScheduleWriteWorkflow
                 0,
                 preflightSkippedOwnership,
                 preflightWarnings,
-                "Формирование отменено целиком; параметры и спецификация не оставлены в частично обновлённом состоянии.");
+                "Формирование отменено целиком; параметры и спецификация не оставлены в частично обновлённом состоянии.",
+                Performance: CompleteApplyPerformance(timings, totalTimer));
         }
+    }
+
+    private static FinishScheduleStageTiming StopStage(string stage, Stopwatch timer)
+    {
+        timer.Stop();
+        return new FinishScheduleStageTiming(stage, timer.ElapsedMilliseconds);
+    }
+
+    private static FinishSchedulePerformanceSummary CompleteApplyPerformance(
+        IEnumerable<FinishScheduleStageTiming> stages,
+        Stopwatch totalTimer)
+    {
+        totalTimer.Stop();
+        return new FinishSchedulePerformanceSummary(
+            stages.Concat(
+            [
+                new FinishScheduleStageTiming(
+                    FinishScheduleStageNames.TotalApply,
+                    totalTimer.ElapsedMilliseconds)
+            ]));
     }
 
     private static FinishWriteIssue? ValidateDocument(Document document)

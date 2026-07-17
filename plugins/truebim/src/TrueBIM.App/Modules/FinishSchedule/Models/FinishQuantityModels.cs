@@ -100,7 +100,8 @@ public sealed class FinishQuantityResult
 {
     public FinishQuantityResult(
         IEnumerable<FinishOccurrence> occurrences,
-        IEnumerable<FinishGeometryWarning> warnings)
+        IEnumerable<FinishGeometryWarning> warnings,
+        FinishGeometryCacheMetrics? cacheMetrics = null)
     {
         Occurrences = (occurrences ?? throw new ArgumentNullException(nameof(occurrences)))
             .OrderBy(occurrence => occurrence.RoomId)
@@ -113,6 +114,7 @@ public sealed class FinishQuantityResult
             .ThenBy(warning => warning.Code)
             .ToArray();
         Summary = FinishQuantityPreviewSummary.Create(Occurrences);
+        CacheMetrics = cacheMetrics ?? FinishGeometryCacheMetrics.Empty;
     }
 
     public IReadOnlyList<FinishOccurrence> Occurrences { get; }
@@ -120,6 +122,8 @@ public sealed class FinishQuantityResult
     public IReadOnlyList<FinishGeometryWarning> Warnings { get; }
 
     public FinishQuantityPreviewSummary Summary { get; }
+
+    public FinishGeometryCacheMetrics CacheMetrics { get; }
 }
 
 public sealed record FinishQuantityCategorySummary(

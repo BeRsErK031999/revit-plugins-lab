@@ -7,6 +7,7 @@ using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Revit;
 using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Modules.FinishSchedule.UI;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Commands;
@@ -71,6 +72,7 @@ public sealed class FinishScheduleCommand : IExternalCommand
             logger.Info(
                 $"Finish Schedule settings opened. Document='{status.DocumentName}'; HasActiveDocument={status.HasActiveDocument}.");
             window.ShowDialog();
+            OpenRequestedSchedule(uiDocument, window.RequestedScheduleId, logger);
             return Result.Succeeded;
         }
         catch (Exception exception)
@@ -80,6 +82,41 @@ public sealed class FinishScheduleCommand : IExternalCommand
                 "Ведомость отделки",
                 "Не удалось открыть окно ведомости отделки. Используйте логи для диагностики.");
             return Result.Failed;
+        }
+    }
+
+    private static void OpenRequestedSchedule(
+        UIDocument? uiDocument,
+        long? scheduleId,
+        ITrueBimLogger logger)
+    {
+        if (uiDocument is null || !scheduleId.HasValue)
+        {
+            return;
+        }
+
+        ViewSchedule? schedule = uiDocument.Document.GetElement(
+            RevitElementIds.Create(scheduleId.Value)) as ViewSchedule;
+        if (schedule is null || schedule.IsTemplate)
+        {
+            logger.Warning($"Finish Schedule view {scheduleId.Value} was not found after closing settings.");
+            TaskDialog.Show(
+                "Ведомость отделки",
+                "Спецификация больше не существует или недоступна для открытия.");
+            return;
+        }
+
+        try
+        {
+            uiDocument.ActiveView = schedule;
+            logger.Info($"Finish Schedule opened managed schedule {scheduleId.Value} ('{schedule.Name}').");
+        }
+        catch (Exception exception)
+        {
+            logger.Error($"Failed to activate Finish Schedule view {scheduleId.Value}.", exception);
+            TaskDialog.Show(
+                "Ведомость отделки",
+                "Спецификация сформирована, но Revit не смог сделать её активным видом.");
         }
     }
 }

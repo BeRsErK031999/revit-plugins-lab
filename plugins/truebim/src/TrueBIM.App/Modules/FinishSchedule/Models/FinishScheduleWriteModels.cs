@@ -194,7 +194,8 @@ public sealed class FinishScheduleWritePreview
         FinishWritePlan roomPlan,
         FinishWritePlan ownershipPlan,
         IEnumerable<string> calculationWarnings,
-        FinishRoomSchedulePreflight? schedule = null)
+        FinishRoomSchedulePreflight? schedule = null,
+        FinishSchedulePreviewResult? calculation = null)
     {
         if (groupCount < 0 || roomCount < 0)
         {
@@ -210,6 +211,7 @@ public sealed class FinishScheduleWritePreview
             FinishRoomScheduleAction.NoChanges,
             null,
             []);
+        Calculation = calculation;
         CalculationWarnings = (calculationWarnings ?? throw new ArgumentNullException(nameof(calculationWarnings)))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -226,6 +228,8 @@ public sealed class FinishScheduleWritePreview
     public FinishWritePlan OwnershipPlan { get; }
 
     public FinishRoomSchedulePreflight Schedule { get; }
+
+    public FinishSchedulePreviewResult? Calculation { get; }
 
     public IReadOnlyList<string> CalculationWarnings { get; }
 
@@ -268,7 +272,8 @@ public sealed record FinishScheduleWriteResult(
     int SkippedOwnershipValues,
     IReadOnlyList<string> Warnings,
     string Message,
-    FinishRoomScheduleApplyResult? Schedule = null)
+    FinishRoomScheduleApplyResult? Schedule = null,
+    FinishSchedulePerformanceSummary? Performance = null)
 {
     public bool Succeeded => Status is FinishScheduleWriteStatus.Applied or FinishScheduleWriteStatus.NoChanges;
 }

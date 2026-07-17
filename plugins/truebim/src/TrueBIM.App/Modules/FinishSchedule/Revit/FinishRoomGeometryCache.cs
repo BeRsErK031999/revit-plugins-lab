@@ -11,6 +11,12 @@ internal sealed class FinishRoomGeometryCache : IDisposable
     private readonly SpatialElementGeometryCalculator calculator;
     private readonly Dictionary<long, FinishRoomGeometryData> cache = [];
 
+    public int RequestCount { get; private set; }
+
+    public int HitCount { get; private set; }
+
+    public int EntryCount => cache.Count;
+
     public FinishRoomGeometryCache(Document document)
     {
         this.document = document ?? throw new ArgumentNullException(nameof(document));
@@ -26,8 +32,10 @@ internal sealed class FinishRoomGeometryCache : IDisposable
         out FinishRoomGeometryData? geometry,
         out FinishGeometryWarning? warning)
     {
+        RequestCount++;
         if (cache.TryGetValue(roomId, out geometry))
         {
+            HitCount++;
             warning = null;
             return true;
         }
