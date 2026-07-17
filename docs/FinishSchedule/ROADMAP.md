@@ -21,16 +21,18 @@
 | `FS-000` Аудит архитектуры | Выполнен | Определены точки интеграции, настройки, тесты и мультиверсионная сборка |
 | `FS-001` Каркас инструмента | Выполнен в коде | Добавлены `АР`, кнопка, команда, иконка и безопасное окно без транзакций |
 | Runtime smoke `FS-001` | Ожидает ручной проверки | Нужно открыть установленную сборку в доступных версиях Revit и проверить кнопку/окно |
-| `FS-002` и далее | Не начаты | Настройки, геометрия, агрегация, запись и спецификация ещё не реализованы |
+| `FS-002` Настройки и каталог параметров | Выполнен в коде | Добавлены immutable settings, стабильная identity, read-only каталог и чистая валидация совместимости |
+| Runtime smoke `FS-002` | Ожидает ручной проверки | Нужно проверить каталог на реальном проекте с built-in, project, shared и read-only параметрами |
+| `FS-003` и далее | Не начаты | Полное окно, геометрия, агрегация, запись и спецификация ещё не реализованы |
 
 Статусы `compile verified`, `automated tests verified` и `runtime smoke tested` в отчётах всегда фиксируются отдельно.
 
-Проверка текущего среза 16.07.2026:
+Проверка текущего среза 17.07.2026:
 
 - `dotnet format TrueBIM.sln --verify-no-changes` — пройдено;
 - compile Revit 2019–2024 (`net48`) и Revit 2025 (`net8.0-windows`) — пройдено;
 - Revit 2026 compile не запускался: локальный `RevitAPI.dll` этой версии отсутствует;
-- `dotnet test TrueBIM.sln --configuration Release --no-build` — 538 тестов пройдено;
+- `dotnet test TrueBIM.sln --configuration Release --no-build` — 549 тестов пройдено;
 - runtime smoke не выполнялся.
 
 ## Результаты архитектурного аудита `FS-000`
@@ -156,6 +158,8 @@ FinishScheduleCommand
 
 ### `FS-002` — модель настроек и каталог параметров
 
+Состояние: выполнен в коде, runtime smoke каталога ожидает Revit.
+
 - Добавить `FinishScheduleSettings`, `FinishCategorySettings`, `RoomIdentifierSettings`, `ReportScopeSettings`, `ParameterReference`.
 - Реализовать `ParameterCatalogService` с различением instance/type, категории, `StorageType`, writable/read-only, системного/project/shared parameter, GUID и definition `ElementId`.
 - Ввести стабильную identity параметра без зависимости только от локализованного имени.
@@ -163,6 +167,15 @@ FinishScheduleCommand
 - Покрыть defaults, identity и validation unit-тестами.
 
 Критерий готовности: сервис возвращает только совместимые варианты и объясняет каждую причину блокировки.
+
+Реализовано:
+
+- immutable-модели содержат безопасные defaults из ТЗ и не зависят от Revit API;
+- built-in identity опирается на `BuiltInParameter`, shared identity — на GUID, project identity — на definition `ElementId`; локализованное имя используется только для отображения;
+- read-only `ParameterCatalogService` собирает экземпляры и уникальные типы помещений, стен и перекрытий без транзакций;
+- каталог фиксирует binding, `StorageType`, применимые категории и фактическую доступность записи на проверенных элементах;
+- чистый matcher возвращает все причины несовместимости, а validator защищает обязательные поля, отключённые категории, scope, дубли и source/output conflicts;
+- defaults, identity, фильтрация совместимых вариантов и validation покрыты unit-тестами.
 
 ### `FS-003` — полное окно и сохранение профиля
 
@@ -300,4 +313,4 @@ FinishScheduleCommand
 
 ## Следующая задача
 
-Перейти к `FS-002`: спроектировать неизменяемые модели настроек и реализовать read-only `ParameterCatalogService`, который различает identity, binding, category, `StorageType` и доступность записи параметров до построения полного UI.
+Перейти к `FS-003`: подключить каталог и validator к полному окну настроек, добавить сохранение профиля через адаптер `JsonSettingsStorage` с ключом `finish-schedule` и оставлять `Сформировать` отключённой до валидной конфигурации.

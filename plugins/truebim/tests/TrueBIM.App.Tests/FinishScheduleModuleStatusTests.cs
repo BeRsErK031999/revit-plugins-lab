@@ -17,8 +17,11 @@ public sealed class FinishScheduleModuleStatusTests
             status.ReadyCapabilities,
             item => item.Contains("не изменяет модель", StringComparison.CurrentCultureIgnoreCase));
         Assert.Contains(
+            status.ReadyCapabilities,
+            item => item.Contains("GUID", StringComparison.Ordinal));
+        Assert.Contains(
             status.PendingCapabilities,
-            item => item.Contains("параметров", StringComparison.CurrentCultureIgnoreCase));
+            item => item.Contains("окно", StringComparison.CurrentCultureIgnoreCase));
         Assert.Contains(
             status.PendingCapabilities,
             item => item.Contains("геометр", StringComparison.CurrentCultureIgnoreCase));
