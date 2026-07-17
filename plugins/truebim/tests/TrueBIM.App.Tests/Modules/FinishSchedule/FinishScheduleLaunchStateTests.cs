@@ -19,7 +19,8 @@ public sealed class FinishScheduleLaunchStateTests
 
         Assert.False(state.IsConfigurationValid);
         Assert.False(state.CanGenerate);
-        Assert.Contains("ошиб", state.StatusText, StringComparison.CurrentCultureIgnoreCase);
+        Assert.Contains("не завершена", state.StatusText, StringComparison.CurrentCultureIgnoreCase);
+        Assert.DoesNotContain("ошиб", state.StatusText, StringComparison.CurrentCultureIgnoreCase);
     }
 
     [Fact]

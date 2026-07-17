@@ -43,9 +43,30 @@ public sealed class FinishScheduleSettingsValidator
         List<FinishScheduleValidationIssue> issues = [];
         CategoryContext[] categoryContexts =
         [
-            new("walls", "Стены", settings.Walls, categories.Walls),
-            new("floors", "Полы", settings.Floors, categories.Floors),
-            new("ceilings", "Потолки", settings.Ceilings, categories.Floors)
+            new(
+                "walls",
+                "Стены",
+                settings.Walls,
+                categories.Walls,
+                FinishSchedulePreferredParameterNames.WallsOwnership,
+                FinishSchedulePreferredParameterNames.WallsDescription,
+                FinishSchedulePreferredParameterNames.WallsArea),
+            new(
+                "floors",
+                "Полы",
+                settings.Floors,
+                categories.Floors,
+                FinishSchedulePreferredParameterNames.FloorsOwnership,
+                FinishSchedulePreferredParameterNames.FloorsDescription,
+                FinishSchedulePreferredParameterNames.FloorsArea),
+            new(
+                "ceilings",
+                "Потолки",
+                settings.Ceilings,
+                categories.Floors,
+                FinishSchedulePreferredParameterNames.CeilingsOwnership,
+                FinishSchedulePreferredParameterNames.CeilingsDescription,
+                FinishSchedulePreferredParameterNames.CeilingsArea)
         ];
         CategoryContext[] enabledCategories = categoryContexts
             .Where(context => context.Settings.IsEnabled)
@@ -78,6 +99,7 @@ public sealed class FinishScheduleSettingsValidator
             settings.RoomListOutputParameter,
             catalog,
             categories,
+            FinishSchedulePreferredParameterNames.RoomListOutput,
             issues);
 
         foreach (CategoryContext context in enabledCategories)
@@ -88,6 +110,7 @@ public sealed class FinishScheduleSettingsValidator
                 context.Settings.OutputDescriptionParameter,
                 catalog,
                 categories,
+                context.PreferredDescriptionName,
                 issues);
             ValidateOutputParameter(
                 $"{context.Code}.output_area",
@@ -95,6 +118,7 @@ public sealed class FinishScheduleSettingsValidator
                 context.Settings.OutputAreaParameter,
                 catalog,
                 categories,
+                context.PreferredAreaName,
                 issues);
 
             if (settings.WriteOwnership)
@@ -110,6 +134,7 @@ public sealed class FinishScheduleSettingsValidator
                         TextStorage,
                         [context.PhysicalCategory],
                         requireWritable: true),
+                    context.PreferredOwnershipName,
                     issues);
             }
         }
@@ -166,6 +191,7 @@ public sealed class FinishScheduleSettingsValidator
                 TextStorage,
                 requiredCategories,
                 requireWritable: false),
+            FinishSchedulePreferredParameterNames.Description,
             issues);
     }
 
@@ -188,6 +214,7 @@ public sealed class FinishScheduleSettingsValidator
                     TextStorage,
                     [categories.Rooms],
                     requireWritable: false),
+                null,
                 issues);
         }
         else if (settings.CustomParameter is not null)
@@ -205,6 +232,7 @@ public sealed class FinishScheduleSettingsValidator
         ParameterReference? reference,
         ParameterCatalog catalog,
         FinishScheduleParameterCategories categories,
+        string preferredName,
         List<FinishScheduleValidationIssue> issues)
     {
         ValidateRequiredReference(
@@ -218,6 +246,7 @@ public sealed class FinishScheduleSettingsValidator
                 TextStorage,
                 [categories.Rooms],
                 requireWritable: true),
+            preferredName,
             issues);
     }
 
@@ -251,6 +280,7 @@ public sealed class FinishScheduleSettingsValidator
                         FilterStorage,
                         [categories.Rooms],
                         requireWritable: false),
+                    null,
                     issues);
                 if (string.IsNullOrWhiteSpace(scope.SectionValue))
                 {
@@ -278,6 +308,7 @@ public sealed class FinishScheduleSettingsValidator
         ParameterReference? reference,
         ParameterCatalog catalog,
         ParameterCatalogRequirement requirement,
+        string? preferredName,
         List<FinishScheduleValidationIssue> issues)
     {
         if (reference is null)
@@ -285,7 +316,9 @@ public sealed class FinishScheduleSettingsValidator
             issues.Add(new FinishScheduleValidationIssue(
                 $"{field}.missing",
                 field,
-                $"{roleName}: выберите параметр."));
+                string.IsNullOrWhiteSpace(preferredName)
+                    ? $"{roleName}: выберите параметр."
+                    : $"{roleName}: выберите параметр. Рекомендуемое имя — «{preferredName}»."));
             return;
         }
 
@@ -390,7 +423,10 @@ public sealed class FinishScheduleSettingsValidator
         string Code,
         string DisplayName,
         FinishCategorySettings Settings,
-        ParameterCategoryReference PhysicalCategory);
+        ParameterCategoryReference PhysicalCategory,
+        string PreferredOwnershipName,
+        string PreferredDescriptionName,
+        string PreferredAreaName);
 
     private sealed record NamedParameterReference(
         string RoleName,

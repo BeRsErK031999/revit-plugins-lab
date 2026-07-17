@@ -36,6 +36,12 @@ public sealed class FinishScheduleSettingsValidatorTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Issues, issue => issue.Code == "description_parameter.missing");
         Assert.Contains(result.Issues, issue => issue.Code == "room_list_output.missing");
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Code == "room_list_output.missing"
+                && issue.Message.Contains(
+                    FinishSchedulePreferredParameterNames.RoomListOutput,
+                    StringComparison.CurrentCulture));
         Assert.Contains(result.Issues, issue => issue.Code == "walls.output_description.missing");
         Assert.Contains(result.Issues, issue => issue.Code == "floors.output_area.missing");
         Assert.Contains(result.Issues, issue => issue.Code == "ceilings.output_area.missing");

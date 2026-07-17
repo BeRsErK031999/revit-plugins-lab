@@ -29,8 +29,8 @@ public sealed record FinishScheduleLaunchState(
             return new FinishScheduleLaunchState(
                 IsConfigurationValid: false,
                 CanGenerate: false,
-                StatusText: $"Исправьте настройки: найдено ошибок — {validation.Issues.Count}.",
-                GenerateToolTip: "Сначала исправьте все ошибки совместимости параметров и обязательных полей.");
+                StatusText: $"Настройка не завершена: обязательных или несовместимых полей — {validation.Issues.Count}.",
+                GenerateToolTip: "Сначала заполните обязательные поля и выберите совместимые параметры.");
         }
 
         if (!workflowAvailable)

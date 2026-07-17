@@ -25,20 +25,30 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly FinishScheduleSettingsValidator validator;
     private readonly FinishSchedulePreviewValidator previewValidator;
     private readonly FinishScheduleParameterOptionService optionService;
+    private readonly FinishSchedulePreferredParameterResolver preferredParameterResolver;
     private readonly FinishScheduleReportBuilder reportBuilder = new();
 
     private readonly CategoryControls walls = new(
         "Стены",
         "Внутренняя отделка",
-        "Значение «Группа модели» для типов отделочных стен.");
+        "Значение «Группа модели» для типов отделочных стен.",
+        FinishSchedulePreferredParameterNames.WallsOwnership,
+        FinishSchedulePreferredParameterNames.WallsDescription,
+        FinishSchedulePreferredParameterNames.WallsArea);
     private readonly CategoryControls floors = new(
         "Полы",
         "Пол",
-        "Значение «Группа модели» для типов отделочных перекрытий пола.");
+        "Значение «Группа модели» для типов отделочных перекрытий пола.",
+        FinishSchedulePreferredParameterNames.FloorsOwnership,
+        FinishSchedulePreferredParameterNames.FloorsDescription,
+        FinishSchedulePreferredParameterNames.FloorsArea);
     private readonly CategoryControls ceilings = new(
         "Потолки",
         "Потолки",
-        "Значение «Группа модели» для перекрытий, используемых как потолок.");
+        "Значение «Группа модели» для перекрытий, используемых как потолок.",
+        FinishSchedulePreferredParameterNames.CeilingsOwnership,
+        FinishSchedulePreferredParameterNames.CeilingsDescription,
+        FinishSchedulePreferredParameterNames.CeilingsArea);
 
     private readonly ComboBox descriptionInput = CreateParameterInput(
         "Текстовый параметр типа, доступный у всех включённых физических категорий.");
@@ -49,7 +59,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         "Записывать фактическую принадлежность в элементы отделки",
         "В выбранные параметры физических элементов будут записаны реальные идентификаторы связанных помещений.");
     private readonly ComboBox roomListOutputInput = CreateParameterInput(
-        "Записываемый текстовый параметр экземпляра помещения для списка помещений группы.");
+        $"Записываемый текстовый параметр экземпляра помещения. Рекомендуемое имя: «{FinishSchedulePreferredParameterNames.RoomListOutput}».");
     private readonly ComboBox scopeModeInput = CreateChoiceInput();
     private readonly ComboBox levelInput = CreateChoiceInput();
     private readonly ComboBox sectionParameterInput = CreateParameterInput(
@@ -129,6 +139,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         validator = new FinishScheduleSettingsValidator(matcher);
         previewValidator = new FinishSchedulePreviewValidator();
         optionService = new FinishScheduleParameterOptionService(matcher);
+        preferredParameterResolver = new FinishSchedulePreferredParameterResolver(optionService);
 
         saveButton = TrueBimUi.CreateSecondaryButton(
             "Сохранить профиль",
@@ -199,7 +210,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             footer: CreateFooter());
 
         AttachEvents();
-        ApplySettings(profileStorage.Load());
+        FinishScheduleSettings loadedSettings = profileStorage.Load();
+        ApplySettings(preferredParameterResolver.Resolve(loadedSettings, catalog, categories));
         logger.Info(
             $"Finish Schedule settings window opened. Document='{status.DocumentName}'; Parameters={catalog.Items.Count}; Levels={this.levels.Count}.");
     }
@@ -645,13 +657,20 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         }
 
         IEnumerable<string> visibleIssues = validation.Issues
-            .Take(5)
             .Select(issue => $"• {issue.Message}");
-        string remaining = validation.Issues.Count > 5
-            ? $"\n• Ещё ошибок: {validation.Issues.Count - 5}."
+        string outputGuidance = validation.Issues.Any(IsMissingOutputParameter)
+            ? "Выходные параметры не создаются автоматически: добавьте рекомендуемые общие параметры в проект или выберите совместимые существующие.\n"
             : string.Empty;
-        validationText.Text = $"Конфигурация пока не готова:\n{string.Join("\n", visibleIssues)}{remaining}";
+        validationText.Text = $"Настройка пока не завершена:\n{outputGuidance}{string.Join("\n", visibleIssues)}";
         ApplyBannerSeverity(validationBanner, validationIcon, TrueBimUiSeverity.Warning);
+    }
+
+    private static bool IsMissingOutputParameter(FinishScheduleValidationIssue issue)
+    {
+        return issue.Code.EndsWith(".missing", StringComparison.Ordinal)
+            && (issue.Field == "room_list_output"
+                || issue.Field.EndsWith(".output_description", StringComparison.Ordinal)
+                || issue.Field.EndsWith(".output_area", StringComparison.Ordinal));
     }
 
     private string CreatePreviewToolTip(FinishScheduleValidationResult validation)
@@ -1017,15 +1036,24 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         {
             FinishScheduleSettings settings = ReadSettings();
             profileStorage.Save(settings);
+            FinishScheduleValidationResult validation = validator.Validate(
+                settings,
+                catalog,
+                categories);
+            if (!validation.IsValid)
+            {
+                logger.Warning(
+                    $"Finish Schedule profile saved incomplete. Issues={validation.Issues.Count}; "
+                        + string.Join(
+                            " | ",
+                            validation.Issues.Select(issue => $"{issue.Code}: {issue.Message}")));
+            }
+
             if (showFeedback)
             {
-                FinishScheduleValidationResult validation = validator.Validate(
-                    settings,
-                    catalog,
-                    categories);
                 footerStatus.Text = validation.IsValid
                     ? "Профиль сохранён. Настройки совместимы."
-                    : $"Профиль сохранён как незавершённый: ошибок — {validation.Issues.Count}.";
+                    : $"Профиль сохранён как незавершённый: обязательных или несовместимых настроек — {validation.Issues.Count}.";
             }
 
             logger.Info($"Finish Schedule profile saved to '{profileStorage.SettingsPath}'.");
@@ -1286,7 +1314,13 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
     private sealed class CategoryControls
     {
-        public CategoryControls(string displayName, string defaultClassification, string classificationToolTip)
+        public CategoryControls(
+            string displayName,
+            string defaultClassification,
+            string classificationToolTip,
+            string preferredOwnershipName,
+            string preferredDescriptionName,
+            string preferredAreaName)
         {
             EnabledInput = CreateCheckBox(
                 displayName,
@@ -1294,11 +1328,11 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             EnabledInput.IsChecked = true;
             ClassificationInput = CreateClassificationInput(defaultClassification, classificationToolTip);
             OwnershipInput = CreateParameterInput(
-                $"Записываемый текстовый параметр элементов категории «{displayName}».");
+                $"Записываемый текстовый параметр элементов категории «{displayName}». Рекомендуемое имя: «{preferredOwnershipName}».");
             OutputDescriptionInput = CreateParameterInput(
-                $"Параметр помещения для агрегированного описания категории «{displayName}».");
+                $"Параметр помещения для агрегированного описания категории «{displayName}». Рекомендуемое имя: «{preferredDescriptionName}».");
             OutputAreaInput = CreateParameterInput(
-                $"Параметр помещения для агрегированной площади категории «{displayName}».");
+                $"Параметр помещения для агрегированной площади категории «{displayName}». Рекомендуемое имя: «{preferredAreaName}».");
         }
 
         public CheckBox EnabledInput { get; }
