@@ -58,6 +58,33 @@ public sealed class FinishGeometryAreaRulesTests
     }
 
     [Fact]
+    public void SumDownwardFacingArea_AddsSlopedUndersideFacesWithoutHorizontalRequirement()
+    {
+        double? result = FinishGeometryAreaRules.SumDownwardFacingArea(
+        [
+            new FinishFaceMeasure(4.368, 0, 0.6, -0.8),
+            new FinishFaceMeasure(1.25, 0.2, 0.4, -0.89),
+            new FinishFaceMeasure(5.618, 0, -0.6, 0.8),
+            new FinishFaceMeasure(2, 1, 0, 0)
+        ]);
+
+        Assert.NotNull(result);
+        Assert.Equal(5.618, result.Value, precision: 3);
+    }
+
+    [Fact]
+    public void SumDownwardFacingArea_ReturnsNullForVerticalAndUpwardFaces()
+    {
+        double? result = FinishGeometryAreaRules.SumDownwardFacingArea(
+        [
+            new FinishFaceMeasure(10, 0, 0, 1),
+            new FinishFaceMeasure(5, 1, 0, 0)
+        ]);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void SelectParallelFaceArea_UsesOnlyFacesParallelToRoomBoundary()
     {
         double? result = FinishGeometryAreaRules.SelectParallelFaceArea(

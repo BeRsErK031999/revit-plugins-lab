@@ -25,7 +25,8 @@ public sealed class FinishScheduleReportBuilder
         StringBuilder report = Header("ПРЕДПРОСМОТР");
         AppendCalculation(report, preview, settings);
         AppendGuidance(report, FinishScheduleDiagnosticGuidanceBuilder.Build(preview));
-        AppendWarnings(report, preview.Warnings);
+        AppendWarnings(report, ExcludeDiagnosticMessages(preview.Warnings, preview.GeometryWarnings));
+        AppendGeometryDiagnostics(report, preview.GeometryWarnings);
         return report.ToString().TrimEnd();
     }
 
@@ -48,7 +49,10 @@ public sealed class FinishScheduleReportBuilder
         AppendWritePlan(report, preview);
         AppendWarnings(
             report,
-            preview.CalculationWarnings.Concat(preview.Issues.Select(issue => issue.Message)));
+            ExcludeDiagnosticMessages(
+                preview.CalculationWarnings.Concat(preview.Issues.Select(issue => issue.Message)),
+                preview.Calculation?.GeometryWarnings ?? []));
+        AppendGeometryDiagnostics(report, preview.Calculation?.GeometryWarnings ?? []);
         return report.ToString().TrimEnd();
     }
 
@@ -94,7 +98,10 @@ public sealed class FinishScheduleReportBuilder
         AppendPerformance(report, result.Performance, "ПРИМЕНЕНИЕ");
         AppendWarnings(
             report,
-            result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)));
+            ExcludeDiagnosticMessages(
+                result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
+                preview.Calculation?.GeometryWarnings ?? []));
+        AppendGeometryDiagnostics(report, preview.Calculation?.GeometryWarnings ?? []);
         return report.ToString().TrimEnd();
     }
 
@@ -222,6 +229,54 @@ public sealed class FinishScheduleReportBuilder
         }
     }
 
+    private static IEnumerable<string> ExcludeDiagnosticMessages(
+        IEnumerable<string> warnings,
+        IEnumerable<FinishGeometryWarning> geometryWarnings)
+    {
+        HashSet<string> diagnosticMessages = new(
+            geometryWarnings
+                .Where(warning => !FinishGeometryWarningClassifier.AffectsScheduleValue(warning))
+                .Select(warning => warning.Message),
+            StringComparer.Ordinal);
+        return warnings.Where(warning => !diagnosticMessages.Contains(warning));
+    }
+
+    private static void AppendGeometryDiagnostics(
+        StringBuilder report,
+        IEnumerable<FinishGeometryWarning> geometryWarnings)
+    {
+        FinishGeometryWarning[] diagnostics = geometryWarnings
+            .Where(warning => !FinishGeometryWarningClassifier.AffectsScheduleValue(warning))
+            .GroupBy(warning => new
+            {
+                warning.Code,
+                warning.RoomId,
+                warning.ElementId,
+                warning.Category
+            })
+            .Select(group => group.First())
+            .ToArray();
+        if (diagnostics.Length == 0)
+        {
+            return;
+        }
+
+        report.AppendLine();
+        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({diagnostics.Length})");
+        report.AppendLine(
+            "Расчёт завершён без признаков неполных значений. События ниже оставлены для "
+                + "технической диагностики; полный текст Revit сохранён в truebim.log.");
+        for (int index = 0; index < diagnostics.Length; index++)
+        {
+            FinishGeometryWarning warning = diagnostics[index];
+            report.AppendLine(
+                $"{index + 1}. {FormatCategory(warning.Category)}: "
+                    + $"помещение {FormatElementId(warning.RoomId)}; "
+                    + $"элемент {FormatElementId(warning.ElementId)}; "
+                    + $"{FormatDiagnosticCode(warning.Code)}.");
+        }
+    }
+
     private static void AppendGuidance(StringBuilder report, IReadOnlyList<string> guidance)
     {
         if (guidance.Count == 0)
@@ -271,6 +326,35 @@ public sealed class FinishScheduleReportBuilder
             FinishScheduleStageNames.ScheduleWrite => "Создание или обновление спецификации",
             FinishScheduleStageNames.TotalApply => "Итого применение",
             _ => stage
+        };
+    }
+
+    private static string FormatCategory(FinishPreviewCategory? category)
+    {
+        return category switch
+        {
+            FinishPreviewCategory.Walls => "Стены",
+            FinishPreviewCategory.Floors => "Полы",
+            FinishPreviewCategory.Ceilings => "Потолки",
+            _ => "Категория не определена"
+        };
+    }
+
+    private static string FormatElementId(long? elementId)
+    {
+        return elementId?.ToString(CultureInfo.InvariantCulture) ?? "не определено";
+    }
+
+    private static string FormatDiagnosticCode(FinishGeometryWarningCode code)
+    {
+        return code switch
+        {
+            FinishGeometryWarningCode.BooleanIntersectionFailed =>
+                "проверочное пересечение геометрии не выполнено",
+            FinishGeometryWarningCode.ElementNotFound => "элемент не найден при проверке",
+            FinishGeometryWarningCode.ElementGeometryUnavailable =>
+                "геометрия элемента недоступна для проверки",
+            _ => $"диагностический код {code}"
         };
     }
 }

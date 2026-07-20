@@ -42,6 +42,23 @@ public static class FinishGeometryAreaRules
         return false;
     }
 
+    public static double? SumDownwardFacingArea(
+        IEnumerable<FinishFaceMeasure> faces,
+        double minimumVerticalComponent = 0.01)
+    {
+        if (faces is null)
+        {
+            throw new ArgumentNullException(nameof(faces));
+        }
+
+        ValidateTolerance(minimumVerticalComponent);
+        double area = faces
+            .Where(face => IsFinitePositive(face.Area)
+                && NormalizedDot(face, 0, 0, 1) <= -minimumVerticalComponent)
+            .Sum(face => face.Area);
+        return area > MinimumArea ? area : null;
+    }
+
     public static double? SelectParallelFaceArea(
         IEnumerable<FinishFaceMeasure> faces,
         double referenceX,

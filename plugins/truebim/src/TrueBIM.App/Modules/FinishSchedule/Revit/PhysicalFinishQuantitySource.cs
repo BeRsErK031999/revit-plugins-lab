@@ -11,6 +11,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     private const double ProbeThickness = 0.05;
     private const double HorizontalNormalTolerance = 0.999;
     private const double VerticalNormalTolerance = 0.01;
+    private const double MinimumCeilingVerticalNormalComponent = 0.01;
     private const double MinimumIntersectionVolume = 1e-10;
     private const double MinimumAreaSquareMeters = 1e-8;
 
@@ -362,6 +363,20 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         List<FinishGeometryWarning> warnings,
         HashSet<string> warningKeys)
     {
+        if (category == FinishPreviewCategory.Ceilings)
+        {
+            CalculateCeilings(
+                roomId,
+                roomGeometry,
+                candidates,
+                directSlabIds,
+                geometryCache,
+                accumulator,
+                warnings,
+                warningKeys);
+            return;
+        }
+
         IReadOnlyList<Solid> probes = CreateHorizontalProbes(
             roomId,
             roomGeometry.Solid,
@@ -402,15 +417,12 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 .ToArray();
             if (supportedSolids.Count == 0)
             {
-                string elementKind = category == FinishPreviewCategory.Ceilings
-                    ? "Потолок"
-                    : "Перекрытие пола";
                 AddWarning(
                     warnings,
                     warningKeys,
                     new FinishGeometryWarning(
                         FinishGeometryWarningCode.SlabGeometryUnsupported,
-                        $"{elementKind} {elementId} не имеет пары противоположных горизонтальных граней и пропущен.",
+                        $"Перекрытие пола {elementId} не имеет пары противоположных горизонтальных граней и пропущено.",
                         RoomId: roomId,
                         ElementId: elementId,
                         Category: category));
@@ -454,9 +466,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     elementId,
                     category,
                     areaSquareMeters,
-                    category == FinishPreviewCategory.Floors
-                        ? FinishQuantityMethod.FloorProbeIntersection
-                        : FinishQuantityMethod.CeilingProbeIntersection);
+                    FinishQuantityMethod.FloorProbeIntersection);
             }
             else if (hadIntersection)
             {
@@ -469,6 +479,111 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                         RoomId: roomId,
                         ElementId: elementId,
                         Category: category));
+            }
+        }
+    }
+
+    private static void CalculateCeilings(
+        long roomId,
+        FinishRoomGeometryData roomGeometry,
+        IEnumerable<FinishClassifiedElement> candidates,
+        ISet<long> directCeilingIds,
+        FinishElementGeometryCache geometryCache,
+        FinishOccurrenceAccumulator accumulator,
+        List<FinishGeometryWarning> warnings,
+        HashSet<string> warningKeys)
+    {
+        foreach (FinishClassifiedElement candidate in candidates
+                     .Where(element => element.Category == FinishPreviewCategory.Ceilings))
+        {
+            long elementId = candidate.Element.ElementId;
+            if (directCeilingIds.Contains(elementId))
+            {
+                continue;
+            }
+
+            FinishElementGeometryLookup lookup = geometryCache.Get(elementId);
+            FinishElementGeometryData? geometry = lookup.Geometry;
+            if (lookup.Status != FinishElementGeometryLookupStatus.Success || geometry is null)
+            {
+                AddMissingGeometryWarning(
+                    roomId,
+                    elementId,
+                    FinishPreviewCategory.Ceilings,
+                    lookup,
+                    warnings,
+                    warningKeys);
+                continue;
+            }
+
+            AxisAlignedBox3D? elementBounds = candidate.Element.Bounds;
+            if (elementBounds is null)
+            {
+                continue;
+            }
+
+            IReadOnlyList<Solid> roomColumns = CreateVerticalRoomColumns(
+                roomId,
+                roomGeometry.Solid,
+                elementBounds.MaxZ + ProbeThickness,
+                warnings,
+                warningKeys);
+            if (roomColumns.Count == 0)
+            {
+                continue;
+            }
+
+            double areaInternal = 0;
+            bool hadIntersection = false;
+            foreach (Solid roomColumn in roomColumns)
+            {
+                foreach (Solid elementSolid in geometry.Solids)
+                {
+                    Solid? intersection = TryIntersect(
+                        roomId,
+                        elementId,
+                        FinishPreviewCategory.Ceilings,
+                        roomColumn,
+                        elementSolid,
+                        warnings,
+                        warningKeys);
+                    if (intersection is null || intersection.Volume <= MinimumIntersectionVolume)
+                    {
+                        continue;
+                    }
+
+                    hadIntersection = true;
+                    double? contactArea = FinishGeometryAreaRules.SumDownwardFacingArea(
+                        GetFaceMeasures(intersection),
+                        MinimumCeilingVerticalNormalComponent);
+                    if (contactArea.HasValue)
+                    {
+                        areaInternal += contactArea.Value;
+                    }
+                }
+            }
+
+            double areaSquareMeters = RevitAreaUnits.ToSquareMeters(areaInternal);
+            if (areaSquareMeters > MinimumAreaSquareMeters)
+            {
+                accumulator.Add(
+                    roomId,
+                    elementId,
+                    FinishPreviewCategory.Ceilings,
+                    areaSquareMeters,
+                    FinishQuantityMethod.CeilingProbeIntersection);
+            }
+            else if (hadIntersection)
+            {
+                AddWarning(
+                    warnings,
+                    warningKeys,
+                    new FinishGeometryWarning(
+                        FinishGeometryWarningCode.ProjectedAreaUnavailable,
+                        $"Потолок {elementId} пересекает вертикальный контур помещения {roomId}, но площадь нижней поверхности не определена.",
+                        RoomId: roomId,
+                        ElementId: elementId,
+                        Category: FinishPreviewCategory.Ceilings));
             }
         }
     }
@@ -544,6 +659,46 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return probes;
     }
 
+    private static IReadOnlyList<Solid> CreateVerticalRoomColumns(
+        long roomId,
+        Solid roomSolid,
+        double topZ,
+        List<FinishGeometryWarning> warnings,
+        HashSet<string> warningKeys)
+    {
+        List<Solid> columns = [];
+        IEnumerable<PlanarFace> bottomFaces = roomSolid.Faces
+            .OfType<PlanarFace>()
+            .Where(face => face.FaceNormal.Z <= -HorizontalNormalTolerance);
+        foreach (PlanarFace face in bottomFaces)
+        {
+            double height = topZ - face.Origin.Z;
+            if (height <= ProbeThickness)
+            {
+                continue;
+            }
+
+            try
+            {
+                columns.Add(GeometryCreationUtilities.CreateExtrusionGeometry(
+                    face.GetEdgesAsCurveLoops(),
+                    XYZ.BasisZ,
+                    height));
+            }
+            catch (Exception exception)
+            {
+                AddProbeWarning(
+                    roomId,
+                    FinishPreviewCategory.Ceilings,
+                    exception,
+                    warnings,
+                    warningKeys);
+            }
+        }
+
+        return columns;
+    }
+
     private static Solid? TryIntersect(
         long roomId,
         long elementId,
@@ -577,14 +732,38 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
     private static IReadOnlyList<FinishFaceMeasure> GetFaceMeasures(Solid solid)
     {
-        return solid.Faces
-            .OfType<PlanarFace>()
-            .Select(face => new FinishFaceMeasure(
-                face.Area,
-                face.FaceNormal.X,
-                face.FaceNormal.Y,
-                face.FaceNormal.Z))
-            .ToArray();
+        List<FinishFaceMeasure> measures = [];
+        foreach (Face face in solid.Faces)
+        {
+            try
+            {
+                XYZ normal;
+                if (face is PlanarFace planarFace)
+                {
+                    normal = planarFace.FaceNormal;
+                }
+                else
+                {
+                    BoundingBoxUV bounds = face.GetBoundingBox();
+                    UV midpoint = new(
+                        (bounds.Min.U + bounds.Max.U) / 2,
+                        (bounds.Min.V + bounds.Max.V) / 2);
+                    normal = face.ComputeNormal(midpoint);
+                }
+
+                measures.Add(new FinishFaceMeasure(
+                    face.Area,
+                    normal.X,
+                    normal.Y,
+                    normal.Z));
+            }
+            catch
+            {
+                // A single unreadable face must not discard other measurable faces of the intersection.
+            }
+        }
+
+        return measures;
     }
 
     private static void AddMissingGeometryWarning(

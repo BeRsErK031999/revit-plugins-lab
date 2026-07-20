@@ -100,6 +100,54 @@ public sealed class FinishScheduleReportBuilderTests
     }
 
     [Fact]
+    public void BuildResult_SeparatesNonBlockingGeometryDiagnosticsFromWarnings()
+    {
+        const string rawMessage = "Failed to perform the Boolean operation for the two solids.";
+        FinishGeometryWarning diagnostic = new(
+            FinishGeometryWarningCode.BooleanIntersectionFailed,
+            rawMessage,
+            RoomId: 2304268,
+            ElementId: 1957984,
+            Category: FinishPreviewCategory.Floors);
+        FinishSchedulePreviewResult calculation = new(
+            1,
+            new FinishRoomScopeResult([Room(1)], [], 0, 0),
+            new FinishPreviewCategoryCounts(0, 0, 0),
+            new FinishPreviewCategoryCounts(1, 1, 1),
+            new FinishPreviewCategoryCounts(0, 0, 0),
+            new FinishPreviewIndexCounts(1, 0, 1),
+            [rawMessage],
+            new FinishQuantityPreviewSummary(
+                new FinishQuantityCategorySummary(0, 0, 0, 0),
+                new FinishQuantityCategorySummary(1, 1, 1, 4.5),
+                new FinishQuantityCategorySummary(0, 0, 0, 0)),
+            geometryWarnings: [diagnostic]);
+        FinishScheduleWritePreview preview = new(
+            1,
+            1,
+            FinishWritePlan.Empty(),
+            FinishWritePlan.Empty(),
+            calculation.Warnings,
+            calculation: calculation);
+        FinishScheduleWriteResult result = new(
+            FinishScheduleWriteStatus.Applied,
+            1,
+            0,
+            0,
+            [rawMessage],
+            "Готово.");
+
+        string report = new FinishScheduleReportBuilder().BuildResult(preview, result);
+
+        Assert.Contains("Статус: ВЫПОЛНЕНО", report);
+        Assert.Contains("ПРЕДУПРЕЖДЕНИЯ (0)", report);
+        Assert.Contains("ДИАГНОСТИКА ГЕОМЕТРИИ (1)", report);
+        Assert.Contains("Полы: помещение 2304268; элемент 1957984", report);
+        Assert.Contains("без признаков неполных значений", report);
+        Assert.DoesNotContain(rawMessage, report);
+    }
+
+    [Fact]
     public void StageTiming_RejectsNegativeDuration()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
