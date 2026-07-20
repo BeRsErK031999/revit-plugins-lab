@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Revit;
 using TrueBIM.App.Modules.FinishSchedule.Services;
@@ -48,7 +49,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly CategoryControls ceilings = new(
         "Потолки",
         "Потолки",
-        "Значение «Группа модели» для перекрытий, используемых как потолок.",
+        "Значение «Группа модели» для типов потолков.",
         FinishSchedulePreferredParameterNames.CeilingsOwnership,
         FinishSchedulePreferredParameterNames.CeilingsDescription,
         FinishSchedulePreferredParameterNames.CeilingsArea);
@@ -306,7 +307,76 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
     private UIElement CreateCommandBar()
     {
-        return TrueBimUi.CreateCommandBar(configurationButton, defaultParametersButton);
+        Grid commandBar = new()
+        {
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        };
+        commandBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        commandBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        StackPanel projectActions = TrueBimUi.CreateCommandBar(configurationButton, defaultParametersButton);
+        projectActions.Margin = new Thickness(0);
+        commandBar.Children.Add(projectActions);
+
+        Button guideButton = CreateGuideButton();
+        Grid.SetColumn(guideButton, 1);
+        commandBar.Children.Add(guideButton);
+        return commandBar;
+    }
+
+    private Button CreateGuideButton()
+    {
+        Button guideButton = new()
+        {
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(TrueBimIcon.Help, TrueBimTheme.IconSizeSmall),
+                Width = TrueBimTheme.IconSizeSmall,
+                Height = TrueBimTheme.IconSizeSmall,
+                Stretch = Stretch.Uniform
+            },
+            Width = 34,
+            Height = TrueBimTheme.ControlHeight32,
+            Padding = new Thickness(TrueBimTheme.Spacing4),
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Ghost),
+            ToolTip = CreateGuideToolTip(),
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        guideButton.Click += (_, _) => ShowGuide();
+        return guideButton;
+    }
+
+    private static ToolTip CreateGuideToolTip()
+    {
+        StackPanel content = new()
+        {
+            Width = 340,
+            Margin = new Thickness(2)
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Методичка по ведомости отделки",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "Пошаговая настройка проекта и расчёта: обязательные параметры, предпросмотр, формирование, диагностика и правила подсчёта площадей.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = TrueBimBrushes.TextSecondary
+        });
+
+        return new ToolTip { Content = content };
+    }
+
+    private void ShowGuide()
+    {
+        logger.Info("Finish Schedule guide requested from the settings window.");
+        FinishScheduleGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
     }
 
     private UIElement CreateCategorySelectionContent()
