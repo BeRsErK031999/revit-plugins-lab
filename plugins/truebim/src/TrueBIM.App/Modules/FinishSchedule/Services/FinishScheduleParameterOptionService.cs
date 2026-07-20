@@ -33,9 +33,14 @@ public sealed class FinishScheduleParameterOptionService
             requiredCategories.Add(categories.Walls);
         }
 
-        if (includeFloors || includeCeilings)
+        if (includeFloors)
         {
             requiredCategories.Add(categories.Floors);
+        }
+
+        if (includeCeilings)
+        {
+            requiredCategories.Add(categories.Ceilings);
         }
 
         if (requiredCategories.Count == 0)

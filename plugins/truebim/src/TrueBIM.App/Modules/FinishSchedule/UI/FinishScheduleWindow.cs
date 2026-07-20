@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using TrueBIM.App.Modules.FinishSchedule.Models;
+using TrueBIM.App.Modules.FinishSchedule.Revit;
 using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
@@ -14,18 +15,20 @@ namespace TrueBIM.App.Modules.FinishSchedule.UI;
 public sealed class FinishScheduleWindow : TrueBimWindow
 {
     private readonly FinishScheduleModuleStatus status;
-    private readonly ParameterCatalog catalog;
+    private ParameterCatalog catalog;
     private readonly FinishScheduleParameterCategories categories;
     private readonly IReadOnlyList<FinishScheduleLevelOption> levels;
     private readonly FinishScheduleProfileStorage profileStorage;
     private readonly Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory;
     private readonly Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory;
     private readonly Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory;
+    private readonly Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory;
     private readonly ITrueBimLogger logger;
     private readonly FinishScheduleSettingsValidator validator;
     private readonly FinishSchedulePreviewValidator previewValidator;
     private readonly FinishScheduleParameterOptionService optionService;
     private readonly FinishSchedulePreferredParameterResolver preferredParameterResolver;
+    private readonly FinishScheduleConfigurationStorage configurationStorage = new();
     private readonly FinishScheduleReportBuilder reportBuilder = new();
 
     private readonly CategoryControls walls = new(
@@ -101,6 +104,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         VerticalAlignment = VerticalAlignment.Center
     };
     private readonly Button saveButton;
+    private readonly Button configurationButton;
+    private readonly Button defaultParametersButton;
     private readonly Button previewButton;
     private readonly Button generateButton;
     private readonly Button copyReportButton;
@@ -123,6 +128,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory,
         Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory,
         Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory,
+        Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory,
         ITrueBimLogger logger)
     {
         this.status = status ?? throw new ArgumentNullException(nameof(status));
@@ -133,6 +139,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         this.previewFactory = previewFactory;
         this.writePreviewFactory = writePreviewFactory;
         this.writeApplyFactory = writeApplyFactory;
+        this.defaultParameterFactory = defaultParameterFactory;
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         ParameterCatalogMatcher matcher = new();
@@ -142,11 +149,29 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         preferredParameterResolver = new FinishSchedulePreferredParameterResolver(optionService);
 
         saveButton = TrueBimUi.CreateSecondaryButton(
-            "Сохранить профиль",
+            "Сохранить настройки",
             TrueBimIcon.Settings,
             (_, _) => SaveProfile(showFeedback: true),
-            minWidth: 150);
+            minWidth: 165);
         saveButton.ToolTip = "Сохранить текущие настройки локально, даже если конфигурация ещё не завершена.";
+
+        configurationButton = TrueBimUi.CreateSecondaryButton(
+            "Конфигурация проекта",
+            TrueBimIcon.Settings,
+            (_, _) => OpenConfiguration(),
+            minWidth: 175);
+        configurationButton.ToolTip = "Открыть проектные настройки классификации, источников и выходных параметров.";
+
+        defaultParametersButton = TrueBimUi.CreateSecondaryButton(
+            "Добавить параметры по умолчанию",
+            TrueBimIcon.Parameter,
+            (_, _) => AddDefaultParameters(),
+            isEnabled: defaultParameterFactory is not null,
+            minWidth: 235);
+        defaultParametersButton.ToolTip = defaultParameterFactory is null
+            ? "Откройте документ Revit, чтобы добавить общие параметры."
+            : "Создать недостающие общие параметры TrueBIM и привязать их к помещениям, стенам, перекрытиям и потолкам.";
+        ToolTipService.SetShowOnDisabled(defaultParametersButton, true);
 
         previewButton = TrueBimUi.CreateSecondaryButton(
             "Предпросмотр",
@@ -202,9 +227,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader(
                 "Ведомость отделки",
-                "Настройка источников, выходных параметров и области ведомости помещений",
+                "Настройки текущего расчёта и формирование ведомости помещений",
                 TrueBimIcon.FinishSchedule),
-            commandBar: null,
+            commandBar: CreateCommandBar(),
             body: CreateBody(),
             status: footerStatus,
             footer: CreateFooter());
@@ -256,7 +281,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         Border contextBanner = TrueBimUi.CreateInfoBanner(
             status.HasActiveDocument
-                ? $"Документ: {status.DocumentName}. Каталог содержит вариантов параметров: {catalog.Items.Count}. Настройки сохраняются локально; модель Revit на этом этапе не изменяется."
+                ? $"Документ: {status.DocumentName}. Каталог содержит вариантов параметров: {catalog.Items.Count}. Расчёт и предпросмотр не меняют модель; запись выполняют только подтверждённые действия."
                 : "Документ Revit не открыт. Профиль можно просмотреть, но выбор параметров и формирование недоступны.",
             status.HasActiveDocument ? TrueBimUiSeverity.Info : TrueBimUiSeverity.Warning);
         contextBanner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
@@ -266,11 +291,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         content.Children.Add(previewBanner);
 
         AddCard(content, "1. Категории отделки", CreateCategorySelectionContent());
-        AddCard(content, "2. Классификация элементов", CreateClassificationContent());
-        AddCard(content, "3. Описание отделки", CreateDescriptionContent());
-        AddCard(content, "4. Идентификатор помещения", CreateRoomIdentifierContent());
         AddCard(content, "5. Принадлежность элементов помещениям", CreateOwnershipContent());
-        AddCard(content, "6. Выходные параметры помещений", CreateOutputContent());
         AddCard(content, "7. Область расчёта", CreateScopeContent());
         AddCard(content, "8. Спецификация", CreateScheduleContent(), isLast: true);
         content.Children.Add(validationBanner);
@@ -281,6 +302,11 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = content
         };
+    }
+
+    private UIElement CreateCommandBar()
+    {
+        return TrueBimUi.CreateCommandBar(configurationButton, defaultParametersButton);
     }
 
     private UIElement CreateCategorySelectionContent()
@@ -584,7 +610,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 optionService.GetOwnershipOptions(catalog, categories.Floors));
             SetOptions(
                 ceilings.OwnershipInput,
-                optionService.GetOwnershipOptions(catalog, categories.Floors));
+                optionService.GetOwnershipOptions(catalog, categories.Ceilings));
             SetOptions(
                 sectionParameterInput,
                 optionService.GetSectionOptions(catalog, categories));
@@ -659,7 +685,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         IEnumerable<string> visibleIssues = validation.Issues
             .Select(issue => $"• {issue.Message}");
         string outputGuidance = validation.Issues.Any(IsMissingOutputParameter)
-            ? "Выходные параметры не создаются автоматически: добавьте рекомендуемые общие параметры в проект или выберите совместимые существующие.\n"
+            ? "Добавьте рекомендуемые общие параметры кнопкой «Добавить параметры по умолчанию» или выберите совместимые существующие.\n"
             : string.Empty;
         validationText.Text = $"Настройка пока не завершена:\n{outputGuidance}{string.Join("\n", visibleIssues)}";
         ApplyBannerSeverity(validationBanner, validationIcon, TrueBimUiSeverity.Warning);
@@ -841,6 +867,75 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         RequestedScheduleId = lastScheduleId.Value;
         Close();
+    }
+
+    private void OpenConfiguration()
+    {
+        FinishScheduleConfigurationWindow window = new(
+            ReadSettings(),
+            catalog,
+            categories,
+            configurationStorage,
+            logger)
+        {
+            Owner = this
+        };
+        if (window.ShowDialog() != true || window.UpdatedSettings is null)
+        {
+            return;
+        }
+
+        ApplySettings(preferredParameterResolver.Resolve(
+            window.UpdatedSettings,
+            catalog,
+            categories));
+        InvalidatePreview();
+        footerStatus.Text = "Конфигурация проекта применена к текущему расчёту.";
+        footerStatus.Foreground = TrueBimBrushes.Success;
+    }
+
+    private void AddDefaultParameters()
+    {
+        if (defaultParameterFactory is null)
+        {
+            footerStatus.Text = "Документ Revit недоступен для создания параметров.";
+            footerStatus.Foreground = TrueBimBrushes.Warning;
+            return;
+        }
+
+        MessageBoxResult confirmation = MessageBox.Show(
+            this,
+            "TrueBIM создаст только недостающие общие параметры ведомости отделки и добавит требуемые привязки категорий. Существующие совместимые параметры и их значения сохранятся.\n\nПродолжить?",
+            "Ведомость отделки — параметры по умолчанию",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            FinishScheduleSettings current = ReadSettings();
+            FinishScheduleDefaultParameterResult result = defaultParameterFactory();
+            catalog = result.Catalog;
+            ApplySettings(preferredParameterResolver.Resolve(current, catalog, categories));
+            InvalidatePreview();
+            string warningSuffix = result.Warnings.Count == 0
+                ? string.Empty
+                : $" Предупреждений: {result.Warnings.Count}; подробности в логе.";
+            footerStatus.Text = $"Параметры обработаны: создано — {result.CreatedCount}, обновлено — {result.UpdatedCount}, уже настроено — {result.ExistingCount}.{warningSuffix}";
+            footerStatus.Foreground = result.Warnings.Count == 0
+                ? TrueBimBrushes.Success
+                : TrueBimBrushes.Warning;
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to add default Finish Schedule parameters.", exception);
+            footerStatus.Text = "Не удалось добавить параметры по умолчанию. Изменения транзакции отменены; подробности в логе TrueBIM.";
+            footerStatus.Foreground = TrueBimBrushes.Danger;
+        }
     }
 
     private void SetCurrentReport(string report)

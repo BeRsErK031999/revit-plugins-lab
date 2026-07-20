@@ -3,7 +3,8 @@ namespace TrueBIM.App.Modules.FinishSchedule.Models;
 public enum FinishPhysicalCategory
 {
     Wall,
-    Floor
+    Floor,
+    Ceiling
 }
 
 public enum FinishPreviewCategory
@@ -170,6 +171,16 @@ public sealed class FinishElementCollection
         IEnumerable<FinishElementCandidateSnapshot> walls,
         IEnumerable<FinishElementCandidateSnapshot> floors,
         IEnumerable<FinishTypeSnapshot> types)
+        : this(rooms, walls, floors, [], types)
+    {
+    }
+
+    public FinishElementCollection(
+        IEnumerable<FinishRoomCandidateSnapshot> rooms,
+        IEnumerable<FinishElementCandidateSnapshot> walls,
+        IEnumerable<FinishElementCandidateSnapshot> floors,
+        IEnumerable<FinishElementCandidateSnapshot> ceilings,
+        IEnumerable<FinishTypeSnapshot> types)
     {
         Rooms = (rooms ?? throw new ArgumentNullException(nameof(rooms)))
             .OrderBy(room => room.ElementId)
@@ -178,6 +189,9 @@ public sealed class FinishElementCollection
             .OrderBy(element => element.ElementId)
             .ToArray();
         Floors = (floors ?? throw new ArgumentNullException(nameof(floors)))
+            .OrderBy(element => element.ElementId)
+            .ToArray();
+        Ceilings = (ceilings ?? throw new ArgumentNullException(nameof(ceilings)))
             .OrderBy(element => element.ElementId)
             .ToArray();
         Types = (types ?? throw new ArgumentNullException(nameof(types)))
@@ -190,6 +204,8 @@ public sealed class FinishElementCollection
     public IReadOnlyList<FinishElementCandidateSnapshot> Walls { get; }
 
     public IReadOnlyList<FinishElementCandidateSnapshot> Floors { get; }
+
+    public IReadOnlyList<FinishElementCandidateSnapshot> Ceilings { get; }
 
     public IReadOnlyDictionary<long, FinishTypeSnapshot> Types { get; }
 }

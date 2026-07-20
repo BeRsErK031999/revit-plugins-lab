@@ -68,7 +68,7 @@ public sealed class FinishSchedulePreviewBuilder
             classification,
             inScopeIds);
         FinishPreviewCategoryCounts ceilings = CreateCounts(
-            collection.Floors.Count,
+            collection.Floors.Count + collection.Ceilings.Count,
             FinishPreviewCategory.Ceilings,
             classification,
             inScopeIds);

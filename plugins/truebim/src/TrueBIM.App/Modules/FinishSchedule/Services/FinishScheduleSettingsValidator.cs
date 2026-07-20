@@ -63,7 +63,7 @@ public sealed class FinishScheduleSettingsValidator
                 "ceilings",
                 "Потолки",
                 settings.Ceilings,
-                categories.Floors,
+                categories.Ceilings,
                 FinishSchedulePreferredParameterNames.CeilingsOwnership,
                 FinishSchedulePreferredParameterNames.CeilingsDescription,
                 FinishSchedulePreferredParameterNames.CeilingsArea)
@@ -175,9 +175,14 @@ public sealed class FinishScheduleSettingsValidator
             requiredCategories.Add(categories.Walls);
         }
 
-        if (settings.Floors.IsEnabled || settings.Ceilings.IsEnabled)
+        if (settings.Floors.IsEnabled)
         {
             requiredCategories.Add(categories.Floors);
+        }
+
+        if (settings.Ceilings.IsEnabled)
+        {
+            requiredCategories.Add(categories.Ceilings);
         }
 
         ValidateRequiredReference(

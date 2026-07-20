@@ -96,9 +96,32 @@ public sealed class FinishAggregationServiceTests
             [Occurrence(1, 11, 10), Occurrence(1, 12, 2)]);
 
         FinishFormattedCategoryOutput output = Assert.Single(result.Groups).Output.Walls!;
-        Assert.Equal(["Coat 2", "Coat 10"], Lines(output.DescriptionText));
-        Assert.Equal(["2,00", "10,00"], Lines(output.AreaText));
+        Assert.Equal(["Coat 2", string.Empty, "Coat 10"], Lines(output.DescriptionText));
+        Assert.Equal(["2,00", string.Empty, "10,00"], Lines(output.AreaText));
         Assert.Equal(Lines(output.DescriptionText).Length, Lines(output.AreaText).Length);
+    }
+
+    [Fact]
+    public void DiagnosticCandidateWarning_DoesNotAppendUnknownMarker()
+    {
+        FinishAggregationResult result = Build(
+            Settings(),
+            [Room(1, "101")],
+            [Element(11, 1011)],
+            [Type(1011, "Paint")],
+            [Occurrence(1, 11, 2.5)],
+            [
+                new FinishGeometryWarning(
+                    FinishGeometryWarningCode.BooleanIntersectionFailed,
+                    "Speculative fallback candidate could not be intersected.",
+                    RoomId: 1,
+                    ElementId: 99,
+                    Category: FinishPreviewCategory.Walls)
+            ]);
+
+        FinishFormattedCategoryOutput output = Assert.Single(result.Groups).Output.Walls!;
+        Assert.Equal("Paint", output.DescriptionText);
+        Assert.Equal("2,50", output.AreaText);
     }
 
     [Fact]

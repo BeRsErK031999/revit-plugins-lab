@@ -20,7 +20,9 @@ public sealed class FinishClassificationService
 
         List<FinishClassifiedElement> classified = [];
         List<FinishClassificationSkip> skipped = [];
-        foreach (FinishElementCandidateSnapshot element in collection.Walls.Concat(collection.Floors))
+        foreach (FinishElementCandidateSnapshot element in collection.Walls
+                     .Concat(collection.Floors)
+                     .Concat(collection.Ceilings))
         {
             if (!collection.Types.TryGetValue(element.TypeId, out FinishTypeSnapshot? type))
             {
@@ -48,9 +50,13 @@ public sealed class FinishClassificationService
             }
 
             bool ambiguous = false;
-            FinishPreviewCategory? category = element.PhysicalCategory == FinishPhysicalCategory.Wall
-                ? ClassifyWall(classificationValue!, settings)
-                : ClassifyFloor(classificationValue!, settings, out ambiguous);
+            FinishPreviewCategory? category = element.PhysicalCategory switch
+            {
+                FinishPhysicalCategory.Wall => ClassifyWall(classificationValue!, settings),
+                FinishPhysicalCategory.Floor => ClassifyFloor(classificationValue!, settings, out ambiguous),
+                FinishPhysicalCategory.Ceiling => ClassifyCeiling(classificationValue!, settings),
+                _ => null
+            };
             if (element.PhysicalCategory == FinishPhysicalCategory.Floor && ambiguous)
             {
                 skipped.Add(new FinishClassificationSkip(
@@ -102,6 +108,15 @@ public sealed class FinishClassificationService
         }
 
         return isCeiling ? FinishPreviewCategory.Ceilings : null;
+    }
+
+    private static FinishPreviewCategory? ClassifyCeiling(
+        string value,
+        FinishScheduleSettings settings)
+    {
+        return settings.Ceilings.IsEnabled && Matches(value, settings.Ceilings.ClassificationValue)
+            ? FinishPreviewCategory.Ceilings
+            : null;
     }
 
     private static bool Matches(string actual, string expected)

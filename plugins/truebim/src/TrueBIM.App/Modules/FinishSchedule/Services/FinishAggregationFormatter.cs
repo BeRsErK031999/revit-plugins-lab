@@ -9,6 +9,7 @@ public sealed class FinishAggregationFormatter
     public const string UnknownDisplay = "[Не удалось определить]";
 
     private static readonly CultureInfo OutputCulture = CultureInfo.GetCultureInfo("ru-RU");
+    private static readonly string ItemSeparator = Environment.NewLine + Environment.NewLine;
 
     public FinishRoomGroupOutput Format(
         IEnumerable<string> roomIdentifiers,
@@ -66,7 +67,7 @@ public sealed class FinishAggregationFormatter
         }
 
         return new FinishFormattedCategoryOutput(
-            string.Join(Environment.NewLine, descriptions),
-            string.Join(Environment.NewLine, areas));
+            string.Join(ItemSeparator, descriptions),
+            string.Join(ItemSeparator, areas));
     }
 }

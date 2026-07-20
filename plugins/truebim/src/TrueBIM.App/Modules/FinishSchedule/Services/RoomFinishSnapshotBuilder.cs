@@ -51,7 +51,8 @@ public sealed class RoomFinishSnapshotBuilder
             .ToArray();
         bool hasUnknownQuantity = request.Quantities.Warnings.Any(warning =>
             warning.RoomId == roomId
-            && (!warning.Category.HasValue || warning.Category == category));
+            && (!warning.Category.HasValue || warning.Category == category)
+            && FinishGeometryWarningClassifier.AffectsScheduleValue(warning));
         Dictionary<string, List<DescribedOccurrence>> described = new(StringComparer.Ordinal);
         foreach (FinishOccurrence occurrence in occurrences)
         {

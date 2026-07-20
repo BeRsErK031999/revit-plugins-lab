@@ -15,10 +15,36 @@ public sealed record ParameterCategoryReference
     public string Name { get; }
 }
 
-public sealed record FinishScheduleParameterCategories(
-    ParameterCategoryReference Rooms,
-    ParameterCategoryReference Walls,
-    ParameterCategoryReference Floors);
+public sealed record FinishScheduleParameterCategories
+{
+    public FinishScheduleParameterCategories(
+        ParameterCategoryReference rooms,
+        ParameterCategoryReference walls,
+        ParameterCategoryReference floors)
+        : this(rooms, walls, floors, floors)
+    {
+    }
+
+    public FinishScheduleParameterCategories(
+        ParameterCategoryReference rooms,
+        ParameterCategoryReference walls,
+        ParameterCategoryReference floors,
+        ParameterCategoryReference ceilings)
+    {
+        Rooms = rooms ?? throw new ArgumentNullException(nameof(rooms));
+        Walls = walls ?? throw new ArgumentNullException(nameof(walls));
+        Floors = floors ?? throw new ArgumentNullException(nameof(floors));
+        Ceilings = ceilings ?? throw new ArgumentNullException(nameof(ceilings));
+    }
+
+    public ParameterCategoryReference Rooms { get; }
+
+    public ParameterCategoryReference Walls { get; }
+
+    public ParameterCategoryReference Floors { get; }
+
+    public ParameterCategoryReference Ceilings { get; }
+}
 
 public sealed class ParameterCatalogItem
 {

@@ -7,6 +7,9 @@ namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 
 public sealed class FinishRoomScheduleBuilder
 {
+    private const double TitleRowHeightMillimeters = 10;
+    private const double ColumnHeaderRowHeightMillimeters = 8;
+
     private readonly FinishScheduleMetadataService metadataService;
 
     public FinishRoomScheduleBuilder(FinishScheduleMetadataService metadataService)
@@ -163,12 +166,15 @@ public sealed class FinishRoomScheduleBuilder
         definition.IsItemized = false;
 
         IList<SchedulableField> availableFields = definition.GetSchedulableFields();
+        ElementId thinLineStyleId = GetLineStyleId(document, BuiltInCategory.OST_CurvesThinLines);
+        ElementId mediumLineStyleId = GetLineStyleId(document, BuiltInCategory.OST_CurvesMediumLines);
         ScheduleField? sortField = null;
         foreach (FinishRoomScheduleColumn column in plan.Columns)
         {
             ScheduleField field = AddField(definition, availableFields, column.Parameter);
             field.ColumnHeading = column.Heading;
             field.SheetColumnWidth = FinishScheduleUnitAdapter.MillimetersToInternal(column.WidthMillimeters);
+            ConfigureBodyField(field, column.Kind, thinLineStyleId);
             sortField ??= field;
         }
 
@@ -179,6 +185,81 @@ public sealed class FinishRoomScheduleBuilder
 
         definition.AddSortGroupField(new ScheduleSortGroupField(sortField.FieldId));
         AddScopeFilter(definition, availableFields, plan.ScopeFilter);
+        ConfigureHeader(schedule, mediumLineStyleId);
+    }
+
+    private static void ConfigureBodyField(
+        ScheduleField field,
+        FinishRoomScheduleColumnKind kind,
+        ElementId lineStyleId)
+    {
+        field.HorizontalAlignment = kind == FinishRoomScheduleColumnKind.Area
+            ? ScheduleHorizontalAlignment.Center
+            : ScheduleHorizontalAlignment.Left;
+        using TableCellStyle style = field.GetStyle();
+        using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
+        style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
+        overrides.VerticalAlignment = true;
+        ApplyBorders(style, overrides, lineStyleId);
+        style.SetCellStyleOverrideOptions(overrides);
+        field.SetStyle(style);
+    }
+
+    private static void ConfigureHeader(ViewSchedule schedule, ElementId lineStyleId)
+    {
+        using TableData table = schedule.GetTableData();
+        using TableSectionData header = table.GetSectionData(SectionType.Header);
+        for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
+        {
+            double height = row == header.FirstRowNumber
+                ? TitleRowHeightMillimeters
+                : ColumnHeaderRowHeightMillimeters;
+            header.SetRowHeight(row, FinishScheduleUnitAdapter.MillimetersToInternal(height));
+            for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
+            {
+                if (!header.AllowOverrideCellStyle(row, column))
+                {
+                    continue;
+                }
+
+                using TableCellStyle style = header.GetTableCellStyle(row, column);
+                using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
+                style.FontHorizontalAlignment = HorizontalAlignmentStyle.Center;
+                style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
+                overrides.HorizontalAlignment = true;
+                overrides.VerticalAlignment = true;
+                ApplyBorders(style, overrides, lineStyleId);
+                style.SetCellStyleOverrideOptions(overrides);
+                header.SetCellStyle(row, column, style);
+            }
+        }
+    }
+
+    private static void ApplyBorders(
+        TableCellStyle style,
+        TableCellStyleOverrideOptions overrides,
+        ElementId lineStyleId)
+    {
+        if (lineStyleId == ElementId.InvalidElementId)
+        {
+            return;
+        }
+
+        style.BorderTopLineStyle = lineStyleId;
+        style.BorderBottomLineStyle = lineStyleId;
+        style.BorderLeftLineStyle = lineStyleId;
+        style.BorderRightLineStyle = lineStyleId;
+        overrides.BorderTopLineStyle = true;
+        overrides.BorderBottomLineStyle = true;
+        overrides.BorderLeftLineStyle = true;
+        overrides.BorderRightLineStyle = true;
+    }
+
+    private static ElementId GetLineStyleId(Document document, BuiltInCategory builtInCategory)
+    {
+        Category? category = Category.GetCategory(document, builtInCategory);
+        GraphicsStyle? style = category?.GetGraphicsStyle(GraphicsStyleType.Projection);
+        return style?.Id ?? ElementId.InvalidElementId;
     }
 
     private static void ClearDefinition(ScheduleDefinition definition)

@@ -88,6 +88,17 @@ public sealed class FinishSchedulePreviewService
             + $"AggregationWarnings={aggregation?.Warnings.Count ?? 0}; "
             + $"ElapsedMs={totalTimer.ElapsedMilliseconds}; TypeCache={collection.Types.Count}; "
             + $"ElementGeometryCacheHits={quantities.CacheMetrics.ElementHits}.");
+        foreach (FinishGeometryWarning warning in quantities.Warnings)
+        {
+            string impact = FinishGeometryWarningClassifier.AffectsScheduleValue(warning)
+                ? "critical"
+                : "diagnostic";
+            logger.Warning(
+                $"Finish Schedule geometry warning [{impact}] {warning.Code}; "
+                    + $"Room={warning.RoomId?.ToString() ?? "-"}; Element={warning.ElementId?.ToString() ?? "-"}; "
+                    + $"Category={warning.Category?.ToString() ?? "-"}; {warning.Message}");
+        }
+
         return new FinishScheduleCalculationResult(
             result,
             collection,

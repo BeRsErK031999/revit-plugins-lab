@@ -8,10 +8,18 @@ public enum FinishRoomScheduleAction
     Blocked
 }
 
+public enum FinishRoomScheduleColumnKind
+{
+    RoomList,
+    Description,
+    Area
+}
+
 public sealed record FinishRoomScheduleColumn(
     ParameterReference Parameter,
     string Heading,
-    double WidthMillimeters);
+    double WidthMillimeters,
+    FinishRoomScheduleColumnKind Kind);
 
 public sealed record FinishRoomScheduleScopeFilter(
     ReportScopeKind Kind,

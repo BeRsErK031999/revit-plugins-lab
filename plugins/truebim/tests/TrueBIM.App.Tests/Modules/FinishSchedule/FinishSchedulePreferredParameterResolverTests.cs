@@ -9,7 +9,8 @@ public sealed class FinishSchedulePreferredParameterResolverTests
     private static readonly FinishScheduleParameterCategories Categories = new(
         new ParameterCategoryReference(1, "Помещения"),
         new ParameterCategoryReference(2, "Стены"),
-        new ParameterCategoryReference(3, "Перекрытия"));
+        new ParameterCategoryReference(3, "Перекрытия"),
+        new ParameterCategoryReference(4, "Потолки"));
 
     [Fact]
     public void Resolve_SelectsUniqueCompatiblePreferredParameters()
@@ -20,7 +21,7 @@ public sealed class FinishSchedulePreferredParameterResolverTests
                 100,
                 FinishSchedulePreferredParameterNames.Description,
                 ParameterBindingKind.Type,
-                [Categories.Walls.Id, Categories.Floors.Id]),
+                [Categories.Walls.Id, Categories.Floors.Id, Categories.Ceilings.Id]),
             CreateRoomOutput(101, FinishSchedulePreferredParameterNames.RoomListOutput),
             CreateRoomOutput(102, FinishSchedulePreferredParameterNames.WallsDescription),
             CreateRoomOutput(103, FinishSchedulePreferredParameterNames.WallsArea),
@@ -42,7 +43,7 @@ public sealed class FinishSchedulePreferredParameterResolverTests
                 110,
                 FinishSchedulePreferredParameterNames.CeilingsOwnership,
                 ParameterBindingKind.Instance,
-                [Categories.Floors.Id])
+                [Categories.Ceilings.Id])
         ]);
         FinishScheduleSettings defaults = FinishScheduleSettings.CreateDefault();
 
@@ -98,6 +99,27 @@ public sealed class FinishSchedulePreferredParameterResolverTests
         FinishScheduleSettings resolved = CreateResolver().Resolve(settings, catalog, Categories);
 
         Assert.Equal(selected.Reference.StableKey, resolved.RoomListOutputParameter!.StableKey);
+    }
+
+    [Fact]
+    public void Resolve_RebindsPortableProjectSelectionByUniqueName()
+    {
+        ParameterCatalogItem currentModel = CreateRoomOutput(401, "Мой список помещений");
+        FinishScheduleSettings imported = FinishScheduleSettings.CreateDefault() with
+        {
+            RoomListOutputParameter = ParameterReference.Project(
+                "Мой список помещений",
+                999,
+                ParameterBindingKind.Instance,
+                ParameterStorageKind.String)
+        };
+
+        FinishScheduleSettings resolved = CreateResolver().Resolve(
+            imported,
+            new ParameterCatalog([currentModel]),
+            Categories);
+
+        Assert.Equal(currentModel.Reference.StableKey, resolved.RoomListOutputParameter!.StableKey);
     }
 
     private static FinishSchedulePreferredParameterResolver CreateResolver()

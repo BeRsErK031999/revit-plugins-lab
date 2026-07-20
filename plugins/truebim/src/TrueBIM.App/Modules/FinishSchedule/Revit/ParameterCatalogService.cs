@@ -17,7 +17,8 @@ public sealed class ParameterCatalogService
     public static FinishScheduleParameterCategories TargetCategories { get; } = new(
         new ParameterCategoryReference((long)BuiltInCategory.OST_Rooms, "Помещения"),
         new ParameterCategoryReference((long)BuiltInCategory.OST_Walls, "Стены"),
-        new ParameterCategoryReference((long)BuiltInCategory.OST_Floors, "Перекрытия"));
+        new ParameterCategoryReference((long)BuiltInCategory.OST_Floors, "Перекрытия"),
+        new ParameterCategoryReference((long)BuiltInCategory.OST_Ceilings, "Потолки"));
 
     public ParameterCatalog Collect(Document document)
     {
@@ -30,6 +31,7 @@ public sealed class ParameterCatalogService
         CollectCategory(document, BuiltInCategory.OST_Rooms, TargetCategories.Rooms, buckets);
         CollectCategory(document, BuiltInCategory.OST_Walls, TargetCategories.Walls, buckets);
         CollectCategory(document, BuiltInCategory.OST_Floors, TargetCategories.Floors, buckets);
+        CollectCategory(document, BuiltInCategory.OST_Ceilings, TargetCategories.Ceilings, buckets);
 
         ParameterCatalog catalog = new(buckets.Values.Select(bucket => bucket.ToCatalogItem()));
         logger.Info(

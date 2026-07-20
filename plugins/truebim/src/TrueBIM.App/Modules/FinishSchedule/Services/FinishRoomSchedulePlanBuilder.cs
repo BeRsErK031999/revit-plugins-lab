@@ -27,7 +27,12 @@ public sealed class FinishRoomSchedulePlanBuilder
 
         List<FinishRoomScheduleColumn> columns =
         [
-            Column(settings.RoomListOutputParameter, "Перечень помещений", RoomListWidth, "перечень помещений")
+            Column(
+                settings.RoomListOutputParameter,
+                "Перечень помещений",
+                RoomListWidth,
+                "перечень помещений",
+                FinishRoomScheduleColumnKind.RoomList)
         ];
         AddCategory(columns, settings.Walls, "Стены или перегородки");
         AddCategory(columns, settings.Ceilings, "Потолок");
@@ -57,20 +62,32 @@ public sealed class FinishRoomSchedulePlanBuilder
             return;
         }
 
-        columns.Add(Column(settings.OutputDescriptionParameter, heading, DescriptionWidth, $"{heading}: описание"));
-        columns.Add(Column(settings.OutputAreaParameter, "Площадь, м²", AreaWidth, $"{heading}: площадь"));
+        columns.Add(Column(
+            settings.OutputDescriptionParameter,
+            heading,
+            DescriptionWidth,
+            $"{heading}: описание",
+            FinishRoomScheduleColumnKind.Description));
+        columns.Add(Column(
+            settings.OutputAreaParameter,
+            "Площадь, м²",
+            AreaWidth,
+            $"{heading}: площадь",
+            FinishRoomScheduleColumnKind.Area));
     }
 
     private static FinishRoomScheduleColumn Column(
         ParameterReference? parameter,
         string heading,
         double width,
-        string role)
+        string role,
+        FinishRoomScheduleColumnKind kind)
     {
         return new FinishRoomScheduleColumn(
             parameter ?? throw new InvalidOperationException($"Не выбран параметр «{role}»."),
             heading,
-            width);
+            width,
+            kind);
     }
 
     private static FinishRoomScheduleScopeFilter BuildScopeFilter(
@@ -122,7 +139,7 @@ public sealed class FinishRoomSchedulePlanBuilder
         FinishRoomScheduleScopeFilter scopeFilter)
     {
         StringBuilder canonical = new();
-        canonical.Append("v1|").Append(scheduleName.Trim()).Append('|');
+        canonical.Append("v2|").Append(scheduleName.Trim()).Append('|');
         foreach (FinishRoomScheduleColumn column in columns)
         {
             canonical.Append(column.Parameter.StableKey)
@@ -130,6 +147,8 @@ public sealed class FinishRoomSchedulePlanBuilder
                 .Append(column.Heading)
                 .Append('|')
                 .Append(column.WidthMillimeters.ToString("R", CultureInfo.InvariantCulture))
+                .Append('|')
+                .Append(column.Kind)
                 .Append('|');
         }
 

@@ -70,7 +70,7 @@ public sealed class FinishSchedulePreferredParameterResolver
             Ceilings = ResolveCategory(
                 settings.Ceilings,
                 roomOutputOptions,
-                optionService.GetOwnershipOptions(catalog, categories.Floors),
+                optionService.GetOwnershipOptions(catalog, categories.Ceilings),
                 FinishSchedulePreferredParameterNames.CeilingsOwnership,
                 FinishSchedulePreferredParameterNames.CeilingsDescription,
                 FinishSchedulePreferredParameterNames.CeilingsArea,
@@ -113,12 +113,27 @@ public sealed class FinishSchedulePreferredParameterResolver
         IEnumerable<FinishScheduleParameterOption> options,
         string preferredName)
     {
+        FinishScheduleParameterOption[] available = options.ToArray();
         if (current is not null)
         {
-            return current;
+            FinishScheduleParameterOption? exact = available.FirstOrDefault(
+                option => option.Reference.StableKey == current.StableKey);
+            if (exact is not null)
+            {
+                return exact.Reference;
+            }
+
+            FinishScheduleParameterOption[] portableMatches = available
+                .Where(option => IsPortableMatch(current, option.Reference))
+                .Take(2)
+                .ToArray();
+            if (portableMatches.Length == 1)
+            {
+                return portableMatches[0].Reference;
+            }
         }
 
-        FinishScheduleParameterOption[] matches = options
+        FinishScheduleParameterOption[] matches = available
             .Where(option => string.Equals(
                 option.Reference.Name,
                 preferredName,
@@ -126,5 +141,26 @@ public sealed class FinishSchedulePreferredParameterResolver
             .Take(2)
             .ToArray();
         return matches.Length == 1 ? matches[0].Reference : null;
+    }
+
+    private static bool IsPortableMatch(ParameterReference source, ParameterReference candidate)
+    {
+        if (source.IdentityKind == ParameterIdentityKind.Shared
+            && candidate.IdentityKind == ParameterIdentityKind.Shared
+            && source.SharedParameterGuid == candidate.SharedParameterGuid)
+        {
+            return true;
+        }
+
+        if (source.IdentityKind == ParameterIdentityKind.BuiltIn
+            && candidate.IdentityKind == ParameterIdentityKind.BuiltIn
+            && source.BuiltInParameterId == candidate.BuiltInParameterId)
+        {
+            return true;
+        }
+
+        return string.Equals(source.Name, candidate.Name, StringComparison.OrdinalIgnoreCase)
+            && source.BindingKind == candidate.BindingKind
+            && source.StorageKind == candidate.StorageKind;
     }
 }

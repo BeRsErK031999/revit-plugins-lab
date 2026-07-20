@@ -39,14 +39,18 @@ public sealed class FinishElementCollector
             document,
             BuiltInCategory.OST_Floors,
             FinishPhysicalCategory.Floor);
+        List<FinishElementCandidateSnapshot> ceilings = CollectPhysicalElements(
+            document,
+            BuiltInCategory.OST_Ceilings,
+            FinishPhysicalCategory.Ceiling);
         Dictionary<long, FinishTypeSnapshot> types = CollectTypes(
             document,
-            walls.Concat(floors),
+            walls.Concat(floors).Concat(ceilings),
             settings.DescriptionParameter);
 
         logger.Info(
-            $"Finish Schedule candidates collected. Rooms={rooms.Count}; Walls={walls.Count}; Floors={floors.Count}; Types={types.Count}.");
-        return new FinishElementCollection(rooms, walls, floors, types.Values);
+            $"Finish Schedule candidates collected. Rooms={rooms.Count}; Walls={walls.Count}; Floors={floors.Count}; Ceilings={ceilings.Count}; Types={types.Count}.");
+        return new FinishElementCollection(rooms, walls, floors, ceilings, types.Values);
     }
 
     private List<FinishRoomCandidateSnapshot> CollectRooms(

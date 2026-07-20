@@ -122,6 +122,7 @@ public sealed class FinishOwnershipValueBuilder
     {
         return warnings.Any(warning =>
             (!warning.Category.HasValue || warning.Category == category)
+            && FinishGeometryWarningClassifier.AffectsScheduleValue(warning)
             && (warning.ElementId == elementId
                 || (!warning.ElementId.HasValue && warning.RoomId.HasValue)));
     }

@@ -9,7 +9,8 @@ public sealed class FinishScheduleParameterOptionServiceTests
     private static readonly FinishScheduleParameterCategories Categories = new(
         new ParameterCategoryReference(1, "Помещения"),
         new ParameterCategoryReference(2, "Стены"),
-        new ParameterCategoryReference(3, "Перекрытия"));
+        new ParameterCategoryReference(3, "Перекрытия"),
+        new ParameterCategoryReference(4, "Потолки"));
 
     [Fact]
     public void GetDescriptionOptions_RequiresEveryEnabledPhysicalCategory()
@@ -20,14 +21,14 @@ public sealed class FinishScheduleParameterOptionServiceTests
             ParameterBindingKind.Type,
             ParameterStorageKind.String,
             [Categories.Walls.Id]);
-        ParameterCatalogItem wallsAndFloors = CreateItem(
+        ParameterCatalogItem allCategories = CreateItem(
             102,
             "Общее описание",
             ParameterBindingKind.Type,
             ParameterStorageKind.String,
-            [Categories.Walls.Id, Categories.Floors.Id]);
+            [Categories.Walls.Id, Categories.Floors.Id, Categories.Ceilings.Id]);
         FinishScheduleParameterOptionService service = CreateService();
-        ParameterCatalog catalog = new([wallsOnly, wallsAndFloors]);
+        ParameterCatalog catalog = new([wallsOnly, allCategories]);
 
         IReadOnlyList<FinishScheduleParameterOption> walls = service.GetDescriptionOptions(
             catalog,
@@ -44,7 +45,25 @@ public sealed class FinishScheduleParameterOptionServiceTests
 
         Assert.Equal(2, walls.Count);
         Assert.Single(all);
-        Assert.Equal(wallsAndFloors.Reference.StableKey, all[0].Reference.StableKey);
+        Assert.Equal(allCategories.Reference.StableKey, all[0].Reference.StableKey);
+    }
+
+    [Fact]
+    public void GetOwnershipOptions_AcceptsActualCeilingCategoryParameter()
+    {
+        ParameterCatalogItem ceilingParameter = CreateItem(
+            151,
+            "Потолки • Номер помещения",
+            ParameterBindingKind.Instance,
+            ParameterStorageKind.String,
+            [Categories.Ceilings.Id]);
+
+        FinishScheduleParameterOption option = Assert.Single(
+            CreateService().GetOwnershipOptions(
+                new ParameterCatalog([ceilingParameter]),
+                Categories.Ceilings));
+
+        Assert.Equal(ceilingParameter.Reference.StableKey, option.Reference.StableKey);
     }
 
     [Fact]

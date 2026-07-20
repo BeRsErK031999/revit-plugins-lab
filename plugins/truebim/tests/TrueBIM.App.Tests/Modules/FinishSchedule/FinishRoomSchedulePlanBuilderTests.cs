@@ -27,6 +27,17 @@ public sealed class FinishRoomSchedulePlanBuilderTests
         Assert.Equal(
             [40d, 80d, 25d, 80d, 25d, 80d, 25d],
             plan.Columns.Select(column => column.WidthMillimeters));
+        Assert.Equal(
+            [
+                FinishRoomScheduleColumnKind.RoomList,
+                FinishRoomScheduleColumnKind.Description,
+                FinishRoomScheduleColumnKind.Area,
+                FinishRoomScheduleColumnKind.Description,
+                FinishRoomScheduleColumnKind.Area,
+                FinishRoomScheduleColumnKind.Description,
+                FinishRoomScheduleColumnKind.Area
+            ],
+            plan.Columns.Select(column => column.Kind));
     }
 
     [Fact]

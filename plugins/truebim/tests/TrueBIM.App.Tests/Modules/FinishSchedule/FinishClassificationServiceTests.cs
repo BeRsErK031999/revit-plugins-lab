@@ -13,7 +13,7 @@ public sealed class FinishClassificationServiceTests
         [
             Element(1, 101, FinishPhysicalCategory.Wall),
             Element(2, 102, FinishPhysicalCategory.Floor),
-            Element(3, 103, FinishPhysicalCategory.Floor)
+            Element(3, 103, FinishPhysicalCategory.Ceiling)
         ],
         [
             new FinishTypeSnapshot(101, "внутренняя отделка", true),
@@ -93,6 +93,7 @@ public sealed class FinishClassificationServiceTests
             [],
             all.Where(element => element.PhysicalCategory == FinishPhysicalCategory.Wall),
             all.Where(element => element.PhysicalCategory == FinishPhysicalCategory.Floor),
+            all.Where(element => element.PhysicalCategory == FinishPhysicalCategory.Ceiling),
             types);
     }
 
