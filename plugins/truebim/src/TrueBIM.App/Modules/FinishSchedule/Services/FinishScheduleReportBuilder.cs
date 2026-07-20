@@ -66,7 +66,9 @@ public sealed class FinishScheduleReportBuilder
             throw new ArgumentNullException(nameof(result));
         }
 
-        StringBuilder report = Header(FormatStatus(result.Status));
+        bool incompleteCalculation = preview.Calculation is not null
+            && FinishGeometryWarningClassifier.HasIncompleteScheduleValues(preview.Calculation);
+        StringBuilder report = Header(FormatStatus(result.Status, incompleteCalculation));
         if (preview.Calculation is not null)
         {
             AppendCalculation(report, preview.Calculation, settings: null);
@@ -235,8 +237,16 @@ public sealed class FinishScheduleReportBuilder
         }
     }
 
-    private static string FormatStatus(FinishScheduleWriteStatus status)
+    private static string FormatStatus(
+        FinishScheduleWriteStatus status,
+        bool incompleteCalculation = false)
     {
+        if (incompleteCalculation
+            && status is FinishScheduleWriteStatus.Applied or FinishScheduleWriteStatus.NoChanges)
+        {
+            return "ВЫПОЛНЕНО ЧАСТИЧНО";
+        }
+
         return status switch
         {
             FinishScheduleWriteStatus.Applied => "ВЫПОЛНЕНО",

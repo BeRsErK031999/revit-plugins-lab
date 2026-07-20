@@ -4,6 +4,16 @@ namespace TrueBIM.App.Modules.FinishSchedule.Services;
 
 public static class FinishGeometryWarningClassifier
 {
+    public static bool HasIncompleteScheduleValues(FinishSchedulePreviewResult preview)
+    {
+        if (preview is null)
+        {
+            throw new ArgumentNullException(nameof(preview));
+        }
+
+        return preview.GeometryWarnings.Any(AffectsScheduleValue);
+    }
+
     public static bool AffectsScheduleValue(FinishGeometryWarning warning)
     {
         if (warning is null)

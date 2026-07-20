@@ -38,6 +38,14 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             .Where(element => element.Category == FinishPreviewCategory.Walls)
             .GroupBy(element => element.Element.ElementId)
             .ToDictionary(group => group.Key, group => group.First());
+        IReadOnlyDictionary<long, FinishClassifiedElement> classifiedFloors = request.Elements
+            .Where(element => element.Category == FinishPreviewCategory.Floors)
+            .GroupBy(element => element.Element.ElementId)
+            .ToDictionary(group => group.Key, group => group.First());
+        IReadOnlyDictionary<long, FinishClassifiedElement> classifiedCeilings = request.Elements
+            .Where(element => element.Category == FinishPreviewCategory.Ceilings)
+            .GroupBy(element => element.Element.ElementId)
+            .ToDictionary(group => group.Key, group => group.First());
         FinishElementGeometryCache elementGeometryCache = new(document);
 
         using FinishRoomGeometryCache roomGeometryCache = new(document);
@@ -54,10 +62,12 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 continue;
             }
 
-            HashSet<long> directWallIds = CalculateBoundaryWalls(
+            FinishBoundaryElementIds directBoundaryIds = CalculateBoundaryQuantities(
                 room.ElementId,
                 roomGeometry,
                 classifiedWalls,
+                classifiedFloors,
+                classifiedCeilings,
                 accumulator,
                 warnings,
                 warningKeys);
@@ -68,7 +78,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 room.ElementId,
                 roomGeometry,
                 candidates,
-                directWallIds,
+                directBoundaryIds.Walls,
                 elementGeometryCache,
                 accumulator,
                 warnings,
@@ -78,6 +88,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 roomGeometry,
                 candidates,
                 FinishPreviewCategory.Floors,
+                directBoundaryIds.Floors,
                 elementGeometryCache,
                 accumulator,
                 warnings,
@@ -87,6 +98,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 roomGeometry,
                 candidates,
                 FinishPreviewCategory.Ceilings,
+                directBoundaryIds.Ceilings,
                 elementGeometryCache,
                 accumulator,
                 warnings,
@@ -112,15 +124,17 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return result;
     }
 
-    private static HashSet<long> CalculateBoundaryWalls(
+    private static FinishBoundaryElementIds CalculateBoundaryQuantities(
         long roomId,
         FinishRoomGeometryData roomGeometry,
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedWalls,
+        IReadOnlyDictionary<long, FinishClassifiedElement> classifiedFloors,
+        IReadOnlyDictionary<long, FinishClassifiedElement> classifiedCeilings,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
         HashSet<string> warningKeys)
     {
-        HashSet<long> directWallIds = [];
+        FinishBoundaryElementIds directElementIds = new();
         foreach (Face roomFace in roomGeometry.Solid.Faces)
         {
             IList<SpatialElementBoundarySubface> subfaces;
@@ -136,23 +150,38 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     new FinishGeometryWarning(
                         FinishGeometryWarningCode.RoomGeometryUnavailable,
                         $"Не удалось прочитать boundary subfaces помещения {roomId}: {exception.Message}",
-                        RoomId: roomId,
-                        Category: FinishPreviewCategory.Walls));
+                        RoomId: roomId));
                 continue;
             }
 
             foreach (SpatialElementBoundarySubface subface in subfaces)
             {
+                FinishPreviewCategory? category = null;
+                long? hostElementId = null;
                 try
                 {
-                    if (subface.SubfaceType != SubfaceType.Side)
+                    category = subface.SubfaceType switch
+                    {
+                        SubfaceType.Side => FinishPreviewCategory.Walls,
+                        SubfaceType.Bottom => FinishPreviewCategory.Floors,
+                        SubfaceType.Top => FinishPreviewCategory.Ceilings,
+                        _ => null
+                    };
+                    if (!category.HasValue)
                     {
                         continue;
                     }
 
-                    long hostElementId = RevitElementIds.GetValue(
+                    hostElementId = RevitElementIds.GetValue(
                         subface.SpatialBoundaryElement.HostElementId);
-                    if (!classifiedWalls.ContainsKey(hostElementId))
+                    IReadOnlyDictionary<long, FinishClassifiedElement> classified = category.Value switch
+                    {
+                        FinishPreviewCategory.Walls => classifiedWalls,
+                        FinishPreviewCategory.Floors => classifiedFloors,
+                        FinishPreviewCategory.Ceilings => classifiedCeilings,
+                        _ => throw new ArgumentOutOfRangeException(nameof(category))
+                    };
+                    if (!classified.ContainsKey(hostElementId.Value))
                     {
                         continue;
                     }
@@ -165,11 +194,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
                     accumulator.Add(
                         roomId,
-                        hostElementId,
-                        FinishPreviewCategory.Walls,
+                        hostElementId.Value,
+                        category.Value,
                         areaSquareMeters,
                         FinishQuantityMethod.RoomBoundarySubface);
-                    directWallIds.Add(hostElementId);
+                    directElementIds.For(category.Value).Add(hostElementId.Value);
                 }
                 catch (Exception exception)
                 {
@@ -178,14 +207,16 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                         warningKeys,
                         new FinishGeometryWarning(
                             FinishGeometryWarningCode.ProjectedAreaUnavailable,
-                            $"Не удалось прочитать площадь boundary subface помещения {roomId}: {exception.Message}",
+                            $"Не удалось прочитать площадь boundary subface помещения {roomId}"
+                                + $"{(hostElementId.HasValue ? $" и элемента {hostElementId.Value}" : string.Empty)}: {exception.Message}",
                             RoomId: roomId,
-                            Category: FinishPreviewCategory.Walls));
+                            ElementId: hostElementId,
+                            Category: category));
                 }
             }
         }
 
-        return directWallIds;
+        return directElementIds;
     }
 
     private static void CalculateFallbackWalls(
@@ -325,6 +356,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishRoomGeometryData roomGeometry,
         IEnumerable<FinishClassifiedElement> candidates,
         FinishPreviewCategory category,
+        ISet<long> directSlabIds,
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
@@ -344,6 +376,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         foreach (FinishClassifiedElement candidate in candidates.Where(element => element.Category == category))
         {
             long elementId = candidate.Element.ElementId;
+            if (directSlabIds.Contains(elementId))
+            {
+                continue;
+            }
+
             FinishElementGeometryLookup lookup = geometryCache.Get(elementId);
             FinishElementGeometryData? geometry = lookup.Geometry;
             if (lookup.Status != FinishElementGeometryLookupStatus.Success || geometry is null)
@@ -601,4 +638,24 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     }
 
     private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Solids);
+
+    private sealed class FinishBoundaryElementIds
+    {
+        public HashSet<long> Walls { get; } = [];
+
+        public HashSet<long> Floors { get; } = [];
+
+        public HashSet<long> Ceilings { get; } = [];
+
+        public HashSet<long> For(FinishPreviewCategory category)
+        {
+            return category switch
+            {
+                FinishPreviewCategory.Walls => Walls,
+                FinishPreviewCategory.Floors => Floors,
+                FinishPreviewCategory.Ceilings => Ceilings,
+                _ => throw new ArgumentOutOfRangeException(nameof(category))
+            };
+        }
+    }
 }

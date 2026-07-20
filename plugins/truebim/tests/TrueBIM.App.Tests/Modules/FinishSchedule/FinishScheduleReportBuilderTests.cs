@@ -63,27 +63,7 @@ public sealed class FinishScheduleReportBuilderTests
     [Fact]
     public void BuildPreview_IncludesActionableCeilingGuidance()
     {
-        FinishSchedulePreviewResult preview = new(
-            1,
-            new FinishRoomScopeResult([Room(1)], [], 0, 0),
-            new FinishPreviewCategoryCounts(0, 0, 0),
-            new FinishPreviewCategoryCounts(0, 0, 0),
-            new FinishPreviewCategoryCounts(2, 1, 1),
-            new FinishPreviewIndexCounts(1, 0, 1),
-            ["Потолок 20 пропущен."],
-            new FinishQuantityPreviewSummary(
-                new FinishQuantityCategorySummary(0, 0, 0, 0),
-                new FinishQuantityCategorySummary(0, 0, 0, 0),
-                new FinishQuantityCategorySummary(0, 0, 0, 0)),
-            geometryWarnings:
-            [
-                new FinishGeometryWarning(
-                    FinishGeometryWarningCode.SlabGeometryUnsupported,
-                    "Потолок 20 пропущен.",
-                    RoomId: 1,
-                    ElementId: 20,
-                    Category: FinishPreviewCategory.Ceilings)
-            ]);
+        FinishSchedulePreviewResult preview = IncompleteCeilingPreview();
 
         string report = new FinishScheduleReportBuilder().BuildPreview(
             preview,
@@ -92,6 +72,31 @@ public sealed class FinishScheduleReportBuilderTests
         Assert.Contains("КАК ИСПРАВИТЬ", report);
         Assert.Contains("проблемных элементов — 1", report);
         Assert.Contains("верхнюю границу помещений", report);
+    }
+
+    [Fact]
+    public void BuildResult_ReportsPartialCalculationInsteadOfNoChanges()
+    {
+        FinishSchedulePreviewResult calculation = IncompleteCeilingPreview();
+        FinishScheduleWritePreview preview = new(
+            1,
+            1,
+            FinishWritePlan.Empty(),
+            FinishWritePlan.Empty(),
+            calculation.Warnings,
+            calculation: calculation);
+        FinishScheduleWriteResult result = new(
+            FinishScheduleWriteStatus.NoChanges,
+            0,
+            0,
+            0,
+            [],
+            "Без изменений.");
+
+        string report = new FinishScheduleReportBuilder().BuildResult(preview, result);
+
+        Assert.Contains("Статус: ВЫПОЛНЕНО ЧАСТИЧНО", report);
+        Assert.DoesNotContain("Статус: БЕЗ ИЗМЕНЕНИЙ", report);
     }
 
     [Fact]
@@ -129,6 +134,31 @@ public sealed class FinishScheduleReportBuilderTests
             new FinishScheduleCacheSummary(
                 7,
                 new FinishGeometryCacheMetrics(2, 2, 0, 9, 5, 4))));
+    }
+
+    private static FinishSchedulePreviewResult IncompleteCeilingPreview()
+    {
+        return new FinishSchedulePreviewResult(
+            1,
+            new FinishRoomScopeResult([Room(1)], [], 0, 0),
+            new FinishPreviewCategoryCounts(0, 0, 0),
+            new FinishPreviewCategoryCounts(0, 0, 0),
+            new FinishPreviewCategoryCounts(2, 1, 1),
+            new FinishPreviewIndexCounts(1, 0, 1),
+            ["Потолок 20 пропущен."],
+            new FinishQuantityPreviewSummary(
+                new FinishQuantityCategorySummary(0, 0, 0, 0),
+                new FinishQuantityCategorySummary(0, 0, 0, 0),
+                new FinishQuantityCategorySummary(0, 0, 0, 0)),
+            geometryWarnings:
+            [
+                new FinishGeometryWarning(
+                    FinishGeometryWarningCode.SlabGeometryUnsupported,
+                    "Потолок 20 пропущен.",
+                    RoomId: 1,
+                    ElementId: 20,
+                    Category: FinishPreviewCategory.Ceilings)
+            ]);
     }
 
     private static FinishRoomCandidateSnapshot Room(long id)

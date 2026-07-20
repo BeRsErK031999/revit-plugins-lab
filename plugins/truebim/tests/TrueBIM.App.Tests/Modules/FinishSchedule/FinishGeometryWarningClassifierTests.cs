@@ -18,6 +18,7 @@ public sealed class FinishGeometryWarningClassifierTests
     [Theory]
     [InlineData(FinishGeometryWarningCode.RoomGeometryUnavailable)]
     [InlineData(FinishGeometryWarningCode.WallFallbackUnresolved)]
+    [InlineData(FinishGeometryWarningCode.SlabGeometryUnsupported)]
     [InlineData(FinishGeometryWarningCode.ProjectedAreaUnavailable)]
     public void ConfirmedCompletenessWarnings_AreCritical(FinishGeometryWarningCode code)
     {

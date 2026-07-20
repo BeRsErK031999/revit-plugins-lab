@@ -34,6 +34,24 @@ public sealed class FinishOccurrenceAccumulatorTests
     }
 
     [Fact]
+    public void Build_UsesActualSlopedCeilingBoundaryArea()
+    {
+        FinishOccurrenceAccumulator accumulator = new();
+        accumulator.Add(
+            1,
+            200,
+            FinishPreviewCategory.Ceilings,
+            4.368,
+            FinishQuantityMethod.RoomBoundarySubface);
+
+        FinishOccurrence occurrence = Assert.Single(accumulator.Build());
+
+        Assert.Equal(FinishPreviewCategory.Ceilings, occurrence.Category);
+        Assert.Equal(FinishQuantityMethod.RoomBoundarySubface, occurrence.Method);
+        Assert.Equal(4.368, occurrence.AreaSquareMeters, precision: 3);
+    }
+
+    [Fact]
     public void Add_RejectsMixedMethodsForSameRoomElementCategory()
     {
         FinishOccurrenceAccumulator accumulator = new();

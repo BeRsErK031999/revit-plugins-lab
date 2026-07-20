@@ -804,6 +804,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             }
 
             FinishScheduleWriteResult result = writeApplyFactory(writePreview);
+            bool incompleteCalculation = writePreview.Calculation is not null
+                && FinishGeometryWarningClassifier.HasIncompleteScheduleValues(writePreview.Calculation);
             previewText.Text = FormatWriteResult(writePreview, result);
             SetCurrentReport(reportBuilder.BuildResult(writePreview, result));
             SetLastSchedule(result.Succeeded ? result.Schedule?.ScheduleId : null);
@@ -812,15 +814,21 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 previewIcon,
                 result.Status switch
                 {
-                    FinishScheduleWriteStatus.Applied => result.Warnings.Count == 0
+                    FinishScheduleWriteStatus.Applied => result.Warnings.Count == 0 && !incompleteCalculation
                         ? TrueBimUiSeverity.Success
                         : TrueBimUiSeverity.Warning,
-                    FinishScheduleWriteStatus.NoChanges => TrueBimUiSeverity.Info,
+                    FinishScheduleWriteStatus.NoChanges => incompleteCalculation
+                        ? TrueBimUiSeverity.Warning
+                        : TrueBimUiSeverity.Info,
                     _ => TrueBimUiSeverity.Danger
                 });
-            footerStatus.Text = result.Message;
-            footerStatus.Foreground = result.Succeeded
+            footerStatus.Text = incompleteCalculation
+                ? $"{result.Message} Расчёт выполнен частично; проверьте предупреждения геометрии."
+                : result.Message;
+            footerStatus.Foreground = result.Succeeded && !incompleteCalculation
                 ? TrueBimBrushes.Success
+                : result.Succeeded
+                    ? TrueBimBrushes.Warning
                 : TrueBimBrushes.Danger;
         }
         catch (Exception exception)

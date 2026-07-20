@@ -22,7 +22,7 @@ public sealed class FinishScheduleDiagnosticGuidanceBuilderTests
             "проблемных элементов — 2; затронуто помещений — 2",
             StringComparison.Ordinal));
         Assert.Contains(guidance, item => item.Contains("верхнюю границу помещений", StringComparison.Ordinal));
-        Assert.Contains(guidance, item => item.Contains("изменения формы", StringComparison.Ordinal));
+        Assert.Contains(guidance, item => item.Contains("Наклонные потолки с включённой границей", StringComparison.Ordinal));
     }
 
     [Fact]
