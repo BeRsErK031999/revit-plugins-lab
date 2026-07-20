@@ -1,5 +1,17 @@
 namespace TrueBIM.App.Modules.FinishSchedule.Models;
 
+public static class FinishScheduleSectionTitles
+{
+    public const string Categories = "Категории отделки";
+    public const string Ownership = "Принадлежность элементов помещениям";
+    public const string Scope = "Область расчёта";
+    public const string Schedule = "Спецификация";
+    public const string Classification = "Классификация элементов";
+    public const string Description = "Описание отделки";
+    public const string RoomIdentifier = "Идентификатор помещения";
+    public const string RoomOutput = "Выходные параметры помещений";
+}
+
 public sealed record FinishScheduleLevelOption(
     long ElementId,
     string DisplayName,

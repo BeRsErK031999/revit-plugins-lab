@@ -125,9 +125,11 @@ public sealed class FinishSchedulePreviewBuilder
             warnings.Add($"Без значения параметра scope: {roomScope.MissingScopeValueCount}.");
         }
 
-        if (classification.SkippedElements.Count > 0)
+        int configurationSkips = classification.SkippedElements.Count(skip =>
+            skip.Reason != FinishClassificationSkipReason.ValueDoesNotMatch);
+        if (configurationSkips > 0)
         {
-            warnings.Add($"Элементов без подходящей классификации: {classification.SkippedElements.Count}.");
+            warnings.Add($"Элементов с отсутствующей или неоднозначной классификацией: {configurationSkips}.");
         }
 
         if (index.ElementsWithoutBounds > 0)

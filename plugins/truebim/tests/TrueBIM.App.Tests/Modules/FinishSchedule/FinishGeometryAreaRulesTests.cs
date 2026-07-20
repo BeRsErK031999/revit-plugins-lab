@@ -32,6 +32,32 @@ public sealed class FinishGeometryAreaRulesTests
     }
 
     [Fact]
+    public void HasOpposingHorizontalFaces_AcceptsFlatSolidWithVerticalSides()
+    {
+        bool result = FinishGeometryAreaRules.HasOpposingHorizontalFaces(
+        [
+            new FinishFaceMeasure(25, 0, 0, 2),
+            new FinishFaceMeasure(25, 0, 0, -3),
+            new FinishFaceMeasure(4, 1, 0, 0)
+        ]);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void HasOpposingHorizontalFaces_RejectsShapeEditedSolidWithoutFlatTop()
+    {
+        bool result = FinishGeometryAreaRules.HasOpposingHorizontalFaces(
+        [
+            new FinishFaceMeasure(25, 0.2, 0, 0.98),
+            new FinishFaceMeasure(25, 0, 0, -1),
+            new FinishFaceMeasure(4, 1, 0, 0)
+        ]);
+
+        Assert.False(result);
+    }
+
+    [Fact]
     public void SelectParallelFaceArea_UsesOnlyFacesParallelToRoomBoundary()
     {
         double? result = FinishGeometryAreaRules.SelectParallelFaceArea(

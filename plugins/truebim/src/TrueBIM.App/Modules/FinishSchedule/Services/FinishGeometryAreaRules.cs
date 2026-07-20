@@ -16,6 +16,32 @@ public static class FinishGeometryAreaRules
             face => NormalizedAbsoluteDot(face, 0, 0, 1) >= normalTolerance);
     }
 
+    public static bool HasOpposingHorizontalFaces(
+        IEnumerable<FinishFaceMeasure> faces,
+        double normalTolerance = 0.999)
+    {
+        if (faces is null)
+        {
+            throw new ArgumentNullException(nameof(faces));
+        }
+
+        ValidateTolerance(normalTolerance);
+        bool hasUpwardFace = false;
+        bool hasDownwardFace = false;
+        foreach (FinishFaceMeasure face in faces)
+        {
+            double dot = NormalizedDot(face, 0, 0, 1);
+            hasUpwardFace |= dot >= normalTolerance;
+            hasDownwardFace |= dot <= -normalTolerance;
+            if (hasUpwardFace && hasDownwardFace)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static double? SelectParallelFaceArea(
         IEnumerable<FinishFaceMeasure> faces,
         double referenceX,
@@ -63,6 +89,15 @@ public static class FinishGeometryAreaRules
         double referenceY,
         double referenceZ)
     {
+        return Math.Abs(NormalizedDot(face, referenceX, referenceY, referenceZ));
+    }
+
+    private static double NormalizedDot(
+        FinishFaceMeasure face,
+        double referenceX,
+        double referenceY,
+        double referenceZ)
+    {
         double length = Math.Sqrt(
             (face.NormalX * face.NormalX)
             + (face.NormalY * face.NormalY)
@@ -75,7 +110,7 @@ public static class FinishGeometryAreaRules
         double dot = ((face.NormalX / length) * referenceX)
             + ((face.NormalY / length) * referenceY)
             + ((face.NormalZ / length) * referenceZ);
-        return Math.Abs(dot);
+        return dot;
     }
 
     private static void ValidateTolerance(double tolerance)

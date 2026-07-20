@@ -108,6 +108,26 @@ public sealed class FinishSchedulePreviewTests
         Assert.Equal(1, result.Index.PotentialRoomElementPairs);
     }
 
+    [Fact]
+    public void Build_NormalClassificationMismatches_AreNotWarnings()
+    {
+        FinishElementCollection collection = new(
+            [Room(1, new AxisAlignedBox3D(0, 0, 0, 10, 10, 3))],
+            [Element(101, 201, FinishPhysicalCategory.Wall, new AxisAlignedBox3D(1, 1, 0, 2, 2, 3))],
+            [],
+            [new FinishTypeSnapshot(201, "Не отделка", true)]);
+        FinishSchedulePreviewBuilder builder = new(
+            new RoomScopeService(),
+            new FinishClassificationService());
+
+        FinishSchedulePreviewResult result = builder.Build(
+            collection,
+            FinishScheduleSettings.CreateDefault());
+
+        Assert.Empty(result.Warnings);
+        Assert.Equal(0, result.Walls.Classified);
+    }
+
     private static FinishRoomCandidateSnapshot Room(long id, AxisAlignedBox3D bounds)
     {
         return new FinishRoomCandidateSnapshot(id, 10, 20, true, bounds);

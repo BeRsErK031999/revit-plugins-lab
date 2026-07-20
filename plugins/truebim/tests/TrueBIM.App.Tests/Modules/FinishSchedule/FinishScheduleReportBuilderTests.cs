@@ -61,6 +61,40 @@ public sealed class FinishScheduleReportBuilderTests
     }
 
     [Fact]
+    public void BuildPreview_IncludesActionableCeilingGuidance()
+    {
+        FinishSchedulePreviewResult preview = new(
+            1,
+            new FinishRoomScopeResult([Room(1)], [], 0, 0),
+            new FinishPreviewCategoryCounts(0, 0, 0),
+            new FinishPreviewCategoryCounts(0, 0, 0),
+            new FinishPreviewCategoryCounts(2, 1, 1),
+            new FinishPreviewIndexCounts(1, 0, 1),
+            ["Потолок 20 пропущен."],
+            new FinishQuantityPreviewSummary(
+                new FinishQuantityCategorySummary(0, 0, 0, 0),
+                new FinishQuantityCategorySummary(0, 0, 0, 0),
+                new FinishQuantityCategorySummary(0, 0, 0, 0)),
+            geometryWarnings:
+            [
+                new FinishGeometryWarning(
+                    FinishGeometryWarningCode.SlabGeometryUnsupported,
+                    "Потолок 20 пропущен.",
+                    RoomId: 1,
+                    ElementId: 20,
+                    Category: FinishPreviewCategory.Ceilings)
+            ]);
+
+        string report = new FinishScheduleReportBuilder().BuildPreview(
+            preview,
+            FinishScheduleSettings.CreateDefault());
+
+        Assert.Contains("КАК ИСПРАВИТЬ", report);
+        Assert.Contains("проблемных элементов — 1", report);
+        Assert.Contains("верхнюю границу помещений", report);
+    }
+
+    [Fact]
     public void StageTiming_RejectsNegativeDuration()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>

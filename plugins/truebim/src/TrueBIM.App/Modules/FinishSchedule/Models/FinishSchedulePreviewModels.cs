@@ -304,7 +304,8 @@ public sealed class FinishSchedulePreviewResult
         IEnumerable<string> warnings,
         FinishQuantityPreviewSummary? quantities = null,
         FinishAggregationPreviewSummary? aggregation = null,
-        FinishSchedulePerformanceSummary? performance = null)
+        FinishSchedulePerformanceSummary? performance = null,
+        IEnumerable<FinishGeometryWarning>? geometryWarnings = null)
     {
         CollectedRooms = collectedRooms;
         RoomScope = roomScope ?? throw new ArgumentNullException(nameof(roomScope));
@@ -316,6 +317,7 @@ public sealed class FinishSchedulePreviewResult
         Quantities = quantities;
         Aggregation = aggregation;
         Performance = performance;
+        GeometryWarnings = (geometryWarnings ?? []).ToArray();
     }
 
     public int CollectedRooms { get; }
@@ -337,6 +339,8 @@ public sealed class FinishSchedulePreviewResult
     public FinishAggregationPreviewSummary? Aggregation { get; }
 
     public FinishSchedulePerformanceSummary? Performance { get; }
+
+    public IReadOnlyList<FinishGeometryWarning> GeometryWarnings { get; }
 
     public FinishSchedulePreviewResult WithQuantities(FinishQuantityResult result)
     {
@@ -360,7 +364,8 @@ public sealed class FinishSchedulePreviewResult
             mergedWarnings,
             result.Summary,
             Aggregation,
-            Performance);
+            Performance,
+            result.Warnings);
     }
 
     public FinishSchedulePreviewResult WithAggregation(FinishAggregationResult result)
@@ -385,7 +390,8 @@ public sealed class FinishSchedulePreviewResult
             mergedWarnings,
             Quantities,
             result.Summary,
-            Performance);
+            Performance,
+            GeometryWarnings);
     }
 
     public FinishSchedulePreviewResult WithPerformance(FinishSchedulePerformanceSummary performance)
@@ -400,7 +406,8 @@ public sealed class FinishSchedulePreviewResult
             Warnings,
             Quantities,
             Aggregation,
-            performance ?? throw new ArgumentNullException(nameof(performance)));
+            performance ?? throw new ArgumentNullException(nameof(performance)),
+            GeometryWarnings);
     }
 }
 

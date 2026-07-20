@@ -290,10 +290,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         previewBanner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         content.Children.Add(previewBanner);
 
-        AddCard(content, "1. Категории отделки", CreateCategorySelectionContent());
-        AddCard(content, "5. Принадлежность элементов помещениям", CreateOwnershipContent());
-        AddCard(content, "7. Область расчёта", CreateScopeContent());
-        AddCard(content, "8. Спецификация", CreateScheduleContent(), isLast: true);
+        AddCard(content, FinishScheduleSectionTitles.Categories, CreateCategorySelectionContent());
+        AddCard(content, FinishScheduleSectionTitles.Ownership, CreateOwnershipContent());
+        AddCard(content, FinishScheduleSectionTitles.Scope, CreateScopeContent());
+        AddCard(content, FinishScheduleSectionTitles.Schedule, CreateScheduleContent(), isLast: true);
         content.Children.Add(validationBanner);
 
         return new ScrollViewer
@@ -967,6 +967,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             $"Спецификация «{preview.Schedule.Plan?.ScheduleName ?? "—"}»: "
                 + FormatScheduleAction(preview.Schedule.Action) + "."
         ];
+        if (preview.Calculation is not null)
+        {
+            lines.AddRange(FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation)
+                .Select(item => $"• {item}"));
+        }
+
         lines.AddRange(preview.Issues.Take(4).Select(issue => $"• {issue.Message}"));
         lines.AddRange(preview.RoomPlan.Changes
             .Concat(preview.OwnershipPlan.Changes)
@@ -1019,6 +1025,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             lines.Add(
                 $"Спецификация «{result.Schedule.ScheduleName}» (id {result.Schedule.ScheduleId}): "
                     + FormatAppliedScheduleAction(result.Schedule.Action) + ".");
+        }
+
+        if (preview.Calculation is not null)
+        {
+            lines.AddRange(FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation)
+                .Select(item => $"• {item}"));
         }
 
         FinishScheduleStageTiming? totalApply = result.Performance?.Stages
@@ -1103,6 +1115,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         }
 
         lines.AddRange(result.Warnings.Take(3).Select(warning => $"• {warning}"));
+        lines.AddRange(FinishScheduleDiagnosticGuidanceBuilder.Build(result)
+            .Select(item => $"• {item}"));
         return string.Join("\n", lines);
     }
 

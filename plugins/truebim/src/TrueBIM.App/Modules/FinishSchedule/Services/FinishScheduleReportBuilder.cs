@@ -24,6 +24,7 @@ public sealed class FinishScheduleReportBuilder
 
         StringBuilder report = Header("ПРЕДПРОСМОТР");
         AppendCalculation(report, preview, settings);
+        AppendGuidance(report, FinishScheduleDiagnosticGuidanceBuilder.Build(preview));
         AppendWarnings(report, preview.Warnings);
         return report.ToString().TrimEnd();
     }
@@ -39,6 +40,9 @@ public sealed class FinishScheduleReportBuilder
         if (preview.Calculation is not null)
         {
             AppendCalculation(report, preview.Calculation, settings: null);
+            AppendGuidance(
+                report,
+                FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation));
         }
 
         AppendWritePlan(report, preview);
@@ -66,6 +70,9 @@ public sealed class FinishScheduleReportBuilder
         if (preview.Calculation is not null)
         {
             AppendCalculation(report, preview.Calculation, settings: null);
+            AppendGuidance(
+                report,
+                FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation));
         }
 
         AppendWritePlan(report, preview);
@@ -210,6 +217,21 @@ public sealed class FinishScheduleReportBuilder
         for (int index = 0; index < unique.Length; index++)
         {
             report.AppendLine($"{index + 1}. {unique[index]}");
+        }
+    }
+
+    private static void AppendGuidance(StringBuilder report, IReadOnlyList<string> guidance)
+    {
+        if (guidance.Count == 0)
+        {
+            return;
+        }
+
+        report.AppendLine();
+        report.AppendLine("КАК ИСПРАВИТЬ");
+        foreach (string item in guidance)
+        {
+            report.AppendLine($"• {item}");
         }
     }
 

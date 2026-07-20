@@ -358,14 +358,22 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 continue;
             }
 
-            if (!IsSupportedHorizontalSlab(geometry.Element))
+            IReadOnlyList<Solid> supportedSolids = geometry.Solids
+                .Where(solid => FinishGeometryAreaRules.HasOpposingHorizontalFaces(
+                    GetFaceMeasures(solid),
+                    HorizontalNormalTolerance))
+                .ToArray();
+            if (supportedSolids.Count == 0)
             {
+                string elementKind = category == FinishPreviewCategory.Ceilings
+                    ? "Потолок"
+                    : "Перекрытие пола";
                 AddWarning(
                     warnings,
                     warningKeys,
                     new FinishGeometryWarning(
                         FinishGeometryWarningCode.SlabGeometryUnsupported,
-                        $"Перекрытие {elementId} имеет наклонную или неоднозначную геометрию и пропущено.",
+                        $"{elementKind} {elementId} не имеет пары противоположных горизонтальных граней и пропущен.",
                         RoomId: roomId,
                         ElementId: elementId,
                         Category: category));
@@ -376,7 +384,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             bool hadIntersection = false;
             foreach (Solid probe in probes)
             {
-                foreach (Solid elementSolid in geometry.Solids)
+                foreach (Solid elementSolid in supportedSolids)
                 {
                     Solid? intersection = TryIntersect(
                         roomId,
@@ -497,38 +505,6 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         }
 
         return probes;
-    }
-
-    private static bool IsSupportedHorizontalSlab(Element element)
-    {
-        if (element is not HostObject hostObject)
-        {
-            return false;
-        }
-
-        IList<Reference> references;
-        try
-        {
-            references = HostObjectUtils.GetTopFaces(hostObject)
-                .Concat(HostObjectUtils.GetBottomFaces(hostObject))
-                .ToArray();
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-
-        if (references.Count == 0)
-        {
-            return false;
-        }
-
-        return references.All(reference =>
-        {
-            PlanarFace? face = element.GetGeometryObjectFromReference(reference) as PlanarFace;
-            return face is not null
-                && Math.Abs(face.FaceNormal.Normalize().Z) >= HorizontalNormalTolerance;
-        });
     }
 
     private static Solid? TryIntersect(

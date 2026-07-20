@@ -115,14 +115,14 @@ public sealed class FinishScheduleConfigurationWindow : TrueBimWindow
             Margin = new Thickness(0, 0, TrueBimTheme.Spacing4, 0)
         };
         Border info = TrueBimUi.CreateInfoBanner(
-            "Эти настройки сохраняются в локальном профиле. Импорт переносит только пункты 2, 3, 4 и 6; категории, область расчёта и имя спецификации не меняются.",
+            "Эти настройки сохраняются в локальном профиле. Импорт переносит классификацию, источник описания, идентификатор помещения и выходные параметры; категории, область расчёта и имя спецификации не меняются.",
             TrueBimUiSeverity.Info);
         info.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         content.Children.Add(info);
-        AddCard(content, "2. Классификация элементов", CreateClassificationContent());
-        AddCard(content, "3. Описание отделки", CreateDescriptionContent());
-        AddCard(content, "4. Идентификатор помещения", CreateRoomIdentifierContent());
-        AddCard(content, "6. Выходные параметры помещений", CreateOutputContent(), isLast: true);
+        AddCard(content, FinishScheduleSectionTitles.Classification, CreateClassificationContent());
+        AddCard(content, FinishScheduleSectionTitles.Description, CreateDescriptionContent());
+        AddCard(content, FinishScheduleSectionTitles.RoomIdentifier, CreateRoomIdentifierContent());
+        AddCard(content, FinishScheduleSectionTitles.RoomOutput, CreateOutputContent(), isLast: true);
         return new ScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
