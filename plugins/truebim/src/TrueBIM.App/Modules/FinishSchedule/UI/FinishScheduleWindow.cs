@@ -1,5 +1,4 @@
 using System.IO;
-using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -31,6 +30,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly FinishSchedulePreferredParameterResolver preferredParameterResolver;
     private readonly FinishScheduleConfigurationStorage configurationStorage = new();
     private readonly FinishScheduleReportBuilder reportBuilder = new();
+    private readonly FinishScheduleUserNoticeBuilder userNoticeBuilder = new();
 
     private readonly CategoryControls walls = new(
         "Стены",
@@ -91,19 +91,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         HorizontalAlignment = HorizontalAlignment.Stretch,
         VerticalAlignment = VerticalAlignment.Center
     };
-    private readonly TextBlock previewText = new()
-    {
-        Text = "Предпросмотр ещё не выполнялся. Настройте категории и область, затем нажмите «Предпросмотр».",
-        TextWrapping = TextWrapping.Wrap,
-        Foreground = TrueBimBrushes.TextPrimary
-    };
-    private readonly Image previewIcon = new()
-    {
-        Width = TrueBimTheme.IconSizeSmall,
-        Height = TrueBimTheme.IconSizeSmall,
-        Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0),
-        VerticalAlignment = VerticalAlignment.Center
-    };
     private readonly Button saveButton;
     private readonly Button configurationButton;
     private readonly Button defaultParametersButton;
@@ -111,12 +98,16 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly Button generateButton;
     private readonly Button copyReportButton;
     private readonly Button openScheduleButton;
+    private readonly Button warningsButton;
+    private readonly Image warningsButtonIcon;
+    private readonly Border warningsCountBadge;
+    private readonly TextBlock warningsCountText;
     private readonly Border validationBanner;
-    private readonly Border previewBanner;
 
     private bool isUpdating;
     private string currentReportText = string.Empty;
     private long? lastScheduleId;
+    private FinishScheduleUserNotice? currentUserNotice;
 
     public long? RequestedScheduleId { get; private set; }
 
@@ -208,8 +199,33 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         openScheduleButton.ToolTip = "Закрыть окно и открыть созданную или обновлённую спецификацию в Revit.";
         ToolTipService.SetShowOnDisabled(openScheduleButton, true);
 
-        previewBanner = CreateStatusBanner(previewIcon, previewText);
-        ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Info);
+        warningsButtonIcon = new Image
+        {
+            Source = IconFactory.CreateImage(TrueBimIcon.Warning, TrueBimTheme.WarningColor),
+            Width = TrueBimTheme.IconSizeSmall,
+            Height = TrueBimTheme.IconSizeSmall,
+            Stretch = Stretch.Uniform
+        };
+        warningsCountText = new TextBlock
+        {
+            Foreground = TrueBimBrushes.Warning,
+            FontSize = TrueBimTheme.CaptionFontSize,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        warningsCountBadge = new Border
+        {
+            Background = TrueBimBrushes.WarningBackground,
+            BorderBrush = TrueBimBrushes.Warning,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing4, 1),
+            Margin = new Thickness(TrueBimTheme.Spacing4, 0, 0, 0),
+            Visibility = Visibility.Collapsed,
+            Child = warningsCountText
+        };
+        warningsButton = CreateWarningsButton();
+
         validationBanner = CreateStatusBanner(validationIcon, validationText);
         validationBanner.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         ApplyBannerSeverity(validationBanner, validationIcon, TrueBimUiSeverity.Warning);
@@ -288,9 +304,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         contextBanner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         content.Children.Add(contextBanner);
 
-        previewBanner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
-        content.Children.Add(previewBanner);
-
         AddCard(content, FinishScheduleSectionTitles.Categories, CreateCategorySelectionContent());
         AddCard(content, FinishScheduleSectionTitles.Ownership, CreateOwnershipContent());
         AddCard(content, FinishScheduleSectionTitles.Scope, CreateScopeContent());
@@ -318,10 +331,43 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         projectActions.Margin = new Thickness(0);
         commandBar.Children.Add(projectActions);
 
-        Button guideButton = CreateGuideButton();
-        Grid.SetColumn(guideButton, 1);
-        commandBar.Children.Add(guideButton);
+        StackPanel helpActions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        warningsButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing4, 0);
+        helpActions.Children.Add(warningsButton);
+        helpActions.Children.Add(CreateGuideButton());
+        Grid.SetColumn(helpActions, 1);
+        commandBar.Children.Add(helpActions);
         return commandBar;
+    }
+
+    private Button CreateWarningsButton()
+    {
+        StackPanel content = new()
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        content.Children.Add(warningsButtonIcon);
+        content.Children.Add(warningsCountBadge);
+
+        Button button = new()
+        {
+            Content = content,
+            MinWidth = 34,
+            Height = TrueBimTheme.ControlHeight32,
+            Padding = new Thickness(TrueBimTheme.Spacing4),
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Ghost),
+            ToolTip = "После предпросмотра здесь появится короткая сводка расчёта.",
+            IsEnabled = false,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        button.Click += (_, _) => ShowWarnings();
+        ToolTipService.SetShowOnDisabled(button, true);
+        return button;
     }
 
     private Button CreateGuideButton()
@@ -377,6 +423,22 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             Owner = this
         };
         guideWindow.ShowDialog();
+    }
+
+    private void ShowWarnings()
+    {
+        if (currentUserNotice is null)
+        {
+            return;
+        }
+
+        logger.Info(
+            $"Finish Schedule user notice opened. Issues={currentUserNotice.IssueCount}; Severity={currentUserNotice.Severity}.");
+        FinishScheduleWarningsWindow warningsWindow = new(currentUserNotice)
+        {
+            Owner = this
+        };
+        warningsWindow.ShowDialog();
     }
 
     private UIElement CreateCategorySelectionContent()
@@ -783,8 +845,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
     private void InvalidatePreview()
     {
-        previewText.Text = "Настройки изменены. Обновите предпросмотр, чтобы увидеть актуальный состав области.";
-        ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Info);
+        SetUserNotice(null);
         SetCurrentReport(string.Empty);
         SetLastSchedule(null);
     }
@@ -795,30 +856,42 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         FinishScheduleValidationResult validation = previewValidator.Validate(settings);
         if (!validation.IsValid || previewFactory is null)
         {
-            previewText.Text = validation.IsValid
+            string message = validation.IsValid
                 ? "Документ Revit недоступен для предпросмотра."
-                : string.Join("\n", validation.Issues.Select(issue => $"• {issue.Message}"));
-            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Warning);
+                : "Сначала завершите настройку расчёта.";
+            IEnumerable<string> issues = validation.IsValid
+                ? [message]
+                : validation.Issues.Select(issue => issue.Message);
+            SetUserNotice(userNoticeBuilder.CreateActionNotice(
+                "Предпросмотр пока недоступен",
+                message,
+                [],
+                issues,
+                FinishScheduleUserNoticeSeverity.Warning));
+            footerStatus.Text = message;
+            footerStatus.Foreground = TrueBimBrushes.Warning;
             return;
         }
 
         try
         {
             FinishSchedulePreviewResult result = previewFactory(settings);
-            previewText.Text = FormatPreview(result, settings);
+            SetUserNotice(userNoticeBuilder.BuildPreview(result, settings));
             SetCurrentReport(reportBuilder.BuildPreview(result, settings));
-            ApplyBannerSeverity(
-                previewBanner,
-                previewIcon,
-                result.Warnings.Count == 0 ? TrueBimUiSeverity.Success : TrueBimUiSeverity.Warning);
             footerStatus.Text = "Предпросмотр обновлён. Модель Revit не изменялась.";
             footerStatus.Foreground = TrueBimBrushes.Success;
         }
         catch (Exception exception)
         {
             logger.Error("Failed to build Finish Schedule preview.", exception);
-            previewText.Text = "Не удалось собрать предпросмотр. Подробности записаны в лог TrueBIM.";
-            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Danger);
+            SetUserNotice(userNoticeBuilder.CreateActionNotice(
+                "Не удалось выполнить предпросмотр",
+                "Модель не изменялась. Повторите расчёт; если ошибка сохранится, передайте BIM-координатору полный отчёт TrueBIM.",
+                [],
+                ["Во время чтения модели Revit произошла техническая ошибка."],
+                FinishScheduleUserNoticeSeverity.Danger));
+            footerStatus.Text = "Не удалось собрать предпросмотр. Подробности записаны в лог TrueBIM.";
+            footerStatus.Foreground = TrueBimBrushes.Danger;
         }
     }
 
@@ -831,10 +904,20 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             categories);
         if (!validation.IsValid || writePreviewFactory is null || writeApplyFactory is null)
         {
-            previewText.Text = validation.IsValid
-                ? "Workflow записи недоступен для текущего документа."
-                : string.Join("\n", validation.Issues.Select(issue => $"• {issue.Message}"));
-            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Warning);
+            string message = validation.IsValid
+                ? "Формирование недоступно для текущего документа."
+                : "Сначала завершите настройку ведомости.";
+            IEnumerable<string> issues = validation.IsValid
+                ? [message]
+                : validation.Issues.Select(issue => issue.Message);
+            SetUserNotice(userNoticeBuilder.CreateActionNotice(
+                "Ведомость пока нельзя сформировать",
+                message,
+                [],
+                issues,
+                FinishScheduleUserNoticeSeverity.Warning));
+            footerStatus.Text = message;
+            footerStatus.Foreground = TrueBimBrushes.Warning;
             return;
         }
 
@@ -842,16 +925,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         {
             SaveProfile(showFeedback: false);
             FinishScheduleWritePreview writePreview = writePreviewFactory(settings);
-            previewText.Text = FormatWritePreview(writePreview);
+            SetUserNotice(userNoticeBuilder.BuildWritePreview(writePreview, settings));
             SetCurrentReport(reportBuilder.BuildWritePreview(writePreview));
             SetLastSchedule(null);
-            ApplyBannerSeverity(
-                previewBanner,
-                previewIcon,
-                writePreview.CanApply ? TrueBimUiSeverity.Info : TrueBimUiSeverity.Danger);
             if (!writePreview.CanApply)
             {
-                footerStatus.Text = "Запись не начата: исправьте критические ошибки preflight.";
+                footerStatus.Text = "Запись не начата: откройте предупреждения и исправьте указанные пункты.";
                 footerStatus.Foreground = TrueBimBrushes.Danger;
                 return;
             }
@@ -876,22 +955,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             FinishScheduleWriteResult result = writeApplyFactory(writePreview);
             bool incompleteCalculation = writePreview.Calculation is not null
                 && FinishGeometryWarningClassifier.HasIncompleteScheduleValues(writePreview.Calculation);
-            previewText.Text = FormatWriteResult(writePreview, result);
+            SetUserNotice(userNoticeBuilder.BuildResult(writePreview, result, settings));
             SetCurrentReport(reportBuilder.BuildResult(writePreview, result));
             SetLastSchedule(result.Succeeded ? result.Schedule?.ScheduleId : null);
-            ApplyBannerSeverity(
-                previewBanner,
-                previewIcon,
-                result.Status switch
-                {
-                    FinishScheduleWriteStatus.Applied => result.Warnings.Count == 0 && !incompleteCalculation
-                        ? TrueBimUiSeverity.Success
-                        : TrueBimUiSeverity.Warning,
-                    FinishScheduleWriteStatus.NoChanges => incompleteCalculation
-                        ? TrueBimUiSeverity.Warning
-                        : TrueBimUiSeverity.Info,
-                    _ => TrueBimUiSeverity.Danger
-                });
             footerStatus.Text = incompleteCalculation
                 ? $"{result.Message} Расчёт выполнен частично; проверьте предупреждения геометрии."
                 : result.Message;
@@ -904,8 +970,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         catch (Exception exception)
         {
             logger.Error("Failed to prepare or apply Finish Schedule write plan.", exception);
-            previewText.Text = "Не удалось подготовить или применить план записи. Подробности записаны в лог TrueBIM.";
-            ApplyBannerSeverity(previewBanner, previewIcon, TrueBimUiSeverity.Danger);
+            SetUserNotice(userNoticeBuilder.CreateActionNotice(
+                "Не удалось сформировать ведомость",
+                "Изменения не остались применёнными частично. Повторите операцию; если ошибка сохранится, передайте BIM-координатору полный отчёт TrueBIM.",
+                [],
+                ["Во время подготовки или записи ведомости произошла техническая ошибка."],
+                FinishScheduleUserNoticeSeverity.Danger));
             footerStatus.Text = "Модель не оставлена в частично обновлённом состоянии.";
             footerStatus.Foreground = TrueBimBrushes.Danger;
         }
@@ -1022,47 +1092,28 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         copyReportButton.IsEnabled = !string.IsNullOrWhiteSpace(currentReportText);
     }
 
+    private void SetUserNotice(FinishScheduleUserNotice? notice)
+    {
+        currentUserNotice = notice;
+        warningsButton.IsEnabled = notice is not null;
+        warningsCountBadge.Visibility = notice?.IssueCount > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        warningsCountText.Text = notice?.IssueCount > 99
+            ? "99+"
+            : notice?.IssueCount.ToString() ?? string.Empty;
+        warningsButton.ToolTip = notice switch
+        {
+            null => "После предпросмотра здесь появится короткая сводка расчёта.",
+            { IssueCount: > 0 } => $"Есть замечания: {notice.IssueCount}. Открыть понятную сводку.",
+            _ => "Расчёт завершён без замечаний. Открыть краткий результат."
+        };
+    }
+
     private void SetLastSchedule(long? scheduleId)
     {
         lastScheduleId = scheduleId;
         openScheduleButton.IsEnabled = scheduleId.HasValue;
-    }
-
-    private static string FormatWritePreview(FinishScheduleWritePreview preview)
-    {
-        int skippedOwnership = Math.Max(
-            0,
-            preview.OwnershipPlan.TargetElementCount
-                - preview.OwnershipPlan.Changes.Count
-                - preview.OwnershipPlan.UnchangedCount);
-        List<string> lines =
-        [
-            $"План записи: помещений — {preview.RoomCount}; групп — {preview.GroupCount}.",
-            $"Параметры помещений: изменений — {preview.RoomPlan.Changes.Count}; "
-                + $"без изменений — {preview.RoomPlan.UnchangedCount}; заблокировано — {preview.RoomPlan.BlockedCount}.",
-            $"Ownership: элементов — {preview.OwnershipPlan.TargetElementCount}; "
-                + $"изменений — {preview.OwnershipPlan.Changes.Count}; пропущено preflight — {skippedOwnership}.",
-            $"Спецификация «{preview.Schedule.Plan?.ScheduleName ?? "—"}»: "
-                + FormatScheduleAction(preview.Schedule.Action) + "."
-        ];
-        if (preview.Calculation is not null)
-        {
-            lines.AddRange(FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation)
-                .Select(item => $"• {item}"));
-        }
-
-        lines.AddRange(preview.Issues.Take(4).Select(issue => $"• {issue.Message}"));
-        lines.AddRange(preview.RoomPlan.Changes
-            .Concat(preview.OwnershipPlan.Changes)
-            .Take(5)
-            .Select(change =>
-                $"• {change.Role}, id {change.ElementId}: «{CompactValue(change.PreviousValue)}» → «{CompactValue(change.NewValue)}»"));
-        if (preview.TotalChangeCount > 5)
-        {
-            lines.Add($"• Ещё изменений: {preview.TotalChangeCount - 5}.");
-        }
-
-        return string.Join("\n", lines);
     }
 
     private static string CreateWriteConfirmation(FinishScheduleWritePreview preview)
@@ -1087,46 +1138,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             + "Продолжить?";
     }
 
-    private static string FormatWriteResult(
-        FinishScheduleWritePreview preview,
-        FinishScheduleWriteResult result)
-    {
-        List<string> lines =
-        [
-            result.Message,
-            $"Помещений: {preview.RoomCount}; групп: {preview.GroupCount}; "
-                + $"записано Room-значений: {result.AppliedRoomValues}.",
-            $"Ownership: записано — {result.AppliedOwnershipValues}; пропущено — {result.SkippedOwnershipValues}."
-        ];
-        if (result.Schedule is not null)
-        {
-            lines.Add(
-                $"Спецификация «{result.Schedule.ScheduleName}» (id {result.Schedule.ScheduleId}): "
-                    + FormatAppliedScheduleAction(result.Schedule.Action) + ".");
-        }
-
-        if (preview.Calculation is not null)
-        {
-            lines.AddRange(FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation)
-                .Select(item => $"• {item}"));
-        }
-
-        FinishScheduleStageTiming? totalApply = result.Performance?.Stages
-            .FirstOrDefault(timing => timing.Stage == FinishScheduleStageNames.TotalApply);
-        if (totalApply is not null)
-        {
-            lines.Add($"Время применения: {totalApply.ElapsedMilliseconds} мс.");
-        }
-
-        lines.AddRange(result.Warnings.Take(4).Select(warning => $"• {warning}"));
-        if (result.Warnings.Count > 4)
-        {
-            lines.Add($"• Ещё предупреждений: {result.Warnings.Count - 4}.");
-        }
-
-        return string.Join("\n", lines);
-    }
-
     private static string FormatScheduleAction(FinishRoomScheduleAction action)
     {
         return action switch
@@ -1134,18 +1145,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             FinishRoomScheduleAction.Create => "будет создана",
             FinishRoomScheduleAction.Update => "будет обновлена",
             FinishRoomScheduleAction.NoChanges => "уже актуальна",
-            FinishRoomScheduleAction.Blocked => "заблокирована",
-            _ => action.ToString()
-        };
-    }
-
-    private static string FormatAppliedScheduleAction(FinishRoomScheduleAction action)
-    {
-        return action switch
-        {
-            FinishRoomScheduleAction.Create => "создана",
-            FinishRoomScheduleAction.Update => "обновлена",
-            FinishRoomScheduleAction.NoChanges => "оставлена без изменений",
             FinishRoomScheduleAction.Blocked => "заблокирована",
             _ => action.ToString()
         };
@@ -1159,62 +1158,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         return compact.Length <= 80
             ? compact
             : $"{compact.Substring(0, 77)}…";
-    }
-
-    private static string FormatPreview(
-        FinishSchedulePreviewResult result,
-        FinishScheduleSettings settings)
-    {
-        List<string> lines =
-        [
-            $"Помещения в области: {result.RoomScope.SelectedRooms.Count} из {result.CollectedRooms}; "
-                + $"невалидных — {result.RoomScope.InvalidRooms.Count}, вне области — {result.RoomScope.OutsideScopeCount}.",
-            FormatCategory("Стены", settings.Walls.IsEnabled, result.Walls, result.Quantities?.Walls),
-            FormatCategory("Полы", settings.Floors.IsEnabled, result.Floors, result.Quantities?.Floors),
-            FormatCategory("Потолки", settings.Ceilings.IsEnabled, result.Ceilings, result.Quantities?.Ceilings),
-            $"Spatial index: {result.Index.IndexedElements} элементов; "
-                + $"потенциальных пар помещение–элемент — {result.Index.PotentialRoomElementPairs}."
-        ];
-        if (result.Aggregation is not null)
-        {
-            lines.Insert(
-                4,
-                $"Группировка: {result.Aggregation.GroupCount}; "
-                    + $"помещений с подготовленным output — {result.Aggregation.RoomCount}.");
-        }
-
-        FinishScheduleStageTiming? totalCalculation = result.Performance?.Stages
-            .FirstOrDefault(timing => timing.Stage == FinishScheduleStageNames.TotalCalculation);
-        if (totalCalculation is not null)
-        {
-            lines.Add(
-                $"Время расчёта: {totalCalculation.ElapsedMilliseconds} мс; "
-                    + $"element geometry cache hits — {result.Performance!.Cache.Geometry.ElementHits}.");
-        }
-
-        lines.AddRange(result.Warnings.Take(3).Select(warning => $"• {warning}"));
-        lines.AddRange(FinishScheduleDiagnosticGuidanceBuilder.Build(result)
-            .Select(item => $"• {item}"));
-        return string.Join("\n", lines);
-    }
-
-    private static string FormatCategory(
-        string name,
-        bool enabled,
-        FinishPreviewCategoryCounts counts,
-        FinishQuantityCategorySummary? quantities)
-    {
-        if (!enabled)
-        {
-            return $"{name}: категория отключена.";
-        }
-
-        string geometry = quantities is null
-            ? string.Empty
-            : $"; геометрия — {quantities.OccurrenceCount} связей / "
-                + $"{quantities.AreaSquareMeters.ToString("N2", CultureInfo.GetCultureInfo("ru-RU"))} м²";
-        return $"{name}: в области — {counts.InScope}; классифицировано — {counts.Classified}; "
-            + $"собрано источников — {counts.SourceCollected}{geometry}.";
     }
 
     private void SaveProfile(bool showFeedback)
