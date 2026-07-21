@@ -1,15 +1,13 @@
 using System.Globalization;
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.FinishSchedule.Models;
+using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 
 public sealed class FinishRoomScheduleBuilder
 {
-    private const double TitleRowHeightMillimeters = 10;
-    private const double ColumnHeaderRowHeightMillimeters = 8;
-
     private readonly FinishScheduleMetadataService metadataService;
 
     public FinishRoomScheduleBuilder(FinishScheduleMetadataService metadataService)
@@ -166,15 +164,25 @@ public sealed class FinishRoomScheduleBuilder
         definition.IsItemized = false;
 
         IList<SchedulableField> availableFields = definition.GetSchedulableFields();
-        ElementId thinLineStyleId = GetLineStyleId(document, BuiltInCategory.OST_CurvesThinLines);
-        ElementId mediumLineStyleId = GetLineStyleId(document, BuiltInCategory.OST_CurvesMediumLines);
+        ElementId normalLineStyleId = GetLineStyleId(
+            document,
+            "Обычные линии",
+            BuiltInCategory.OST_CurvesMediumLines);
+        ElementId thinLineStyleId = GetLineStyleId(
+            document,
+            "Тонкие линии",
+            BuiltInCategory.OST_CurvesThinLines);
         ScheduleField? sortField = null;
         foreach (FinishRoomScheduleColumn column in plan.Columns)
         {
             ScheduleField field = AddField(definition, availableFields, column.Parameter);
             field.ColumnHeading = column.Heading;
             field.SheetColumnWidth = FinishScheduleUnitAdapter.MillimetersToInternal(column.WidthMillimeters);
-            ConfigureBodyField(field, column.Kind, thinLineStyleId);
+            ConfigureBodyField(
+                field,
+                column.Kind,
+                normalLineStyleId,
+                thinLineStyleId);
             sortField ??= field;
         }
 
@@ -185,13 +193,16 @@ public sealed class FinishRoomScheduleBuilder
 
         definition.AddSortGroupField(new ScheduleSortGroupField(sortField.FieldId));
         AddScopeFilter(definition, availableFields, plan.ScopeFilter);
-        ConfigureHeader(schedule, mediumLineStyleId);
+        document.Regenerate();
+        ConfigureHeader(schedule, normalLineStyleId, thinLineStyleId);
+        ConfigureBody(schedule, normalLineStyleId, thinLineStyleId);
     }
 
     private static void ConfigureBodyField(
         ScheduleField field,
         FinishRoomScheduleColumnKind kind,
-        ElementId lineStyleId)
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
     {
         field.HorizontalAlignment = kind == FinishRoomScheduleColumnKind.Area
             ? ScheduleHorizontalAlignment.Center
@@ -200,20 +211,29 @@ public sealed class FinishRoomScheduleBuilder
         using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
         style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
         overrides.VerticalAlignment = true;
-        ApplyBorders(style, overrides, lineStyleId);
+        ApplyBorders(
+            style,
+            overrides,
+            FinishRoomScheduleStyleRules.BodyBorders(isFirstRow: false, isLastRow: false),
+            normalLineStyleId,
+            thinLineStyleId);
         style.SetCellStyleOverrideOptions(overrides);
         field.SetStyle(style);
     }
 
-    private static void ConfigureHeader(ViewSchedule schedule, ElementId lineStyleId)
+    private static void ConfigureHeader(
+        ViewSchedule schedule,
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
     {
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
         for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
         {
-            double height = row == header.FirstRowNumber
-                ? TitleRowHeightMillimeters
-                : ColumnHeaderRowHeightMillimeters;
+            bool isTitleRow = row == header.FirstRowNumber;
+            double height = isTitleRow
+                ? FinishRoomScheduleStyleRules.TitleRowHeightMillimeters
+                : FinishRoomScheduleStyleRules.ColumnHeaderRowHeightMillimeters;
             header.SetRowHeight(row, FinishScheduleUnitAdapter.MillimetersToInternal(height));
             for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
             {
@@ -228,9 +248,54 @@ public sealed class FinishRoomScheduleBuilder
                 style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
                 overrides.HorizontalAlignment = true;
                 overrides.VerticalAlignment = true;
-                ApplyBorders(style, overrides, lineStyleId);
+                style.TextSize = FinishScheduleUnitAdapter.MillimetersToInternal(
+                    isTitleRow
+                        ? FinishRoomScheduleStyleRules.TitleTextSizeMillimeters
+                        : FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters);
+                style.IsFontBold = isTitleRow;
+                overrides.FontSize = true;
+                overrides.Bold = true;
+                ApplyBorders(
+                    style,
+                    overrides,
+                    FinishRoomScheduleStyleRules.HeaderBorders,
+                    normalLineStyleId,
+                    thinLineStyleId);
                 style.SetCellStyleOverrideOptions(overrides);
                 header.SetCellStyle(row, column, style);
+            }
+        }
+    }
+
+    private static void ConfigureBody(
+        ViewSchedule schedule,
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
+    {
+        using TableData table = schedule.GetTableData();
+        using TableSectionData body = table.GetSectionData(SectionType.Body);
+        for (int row = body.FirstRowNumber; row <= body.LastRowNumber; row++)
+        {
+            FinishScheduleCellBorderRules borderRules = FinishRoomScheduleStyleRules.BodyBorders(
+                row == body.FirstRowNumber,
+                row == body.LastRowNumber);
+            for (int column = body.FirstColumnNumber; column <= body.LastColumnNumber; column++)
+            {
+                if (!body.AllowOverrideCellStyle(row, column))
+                {
+                    continue;
+                }
+
+                using TableCellStyle style = body.GetTableCellStyle(row, column);
+                using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
+                ApplyBorders(
+                    style,
+                    overrides,
+                    borderRules,
+                    normalLineStyleId,
+                    thinLineStyleId);
+                style.SetCellStyleOverrideOptions(overrides);
+                body.SetCellStyle(row, column, style);
             }
         }
     }
@@ -238,26 +303,69 @@ public sealed class FinishRoomScheduleBuilder
     private static void ApplyBorders(
         TableCellStyle style,
         TableCellStyleOverrideOptions overrides,
-        ElementId lineStyleId)
+        FinishScheduleCellBorderRules rules,
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
     {
-        if (lineStyleId == ElementId.InvalidElementId)
+        ElementId top = ResolveLineStyle(rules.Top, normalLineStyleId, thinLineStyleId);
+        ElementId bottom = ResolveLineStyle(rules.Bottom, normalLineStyleId, thinLineStyleId);
+        ElementId left = ResolveLineStyle(rules.Left, normalLineStyleId, thinLineStyleId);
+        ElementId right = ResolveLineStyle(rules.Right, normalLineStyleId, thinLineStyleId);
+        if (top == ElementId.InvalidElementId
+            || bottom == ElementId.InvalidElementId
+            || left == ElementId.InvalidElementId
+            || right == ElementId.InvalidElementId)
         {
             return;
         }
 
-        style.BorderTopLineStyle = lineStyleId;
-        style.BorderBottomLineStyle = lineStyleId;
-        style.BorderLeftLineStyle = lineStyleId;
-        style.BorderRightLineStyle = lineStyleId;
+        style.BorderTopLineStyle = top;
+        style.BorderBottomLineStyle = bottom;
+        style.BorderLeftLineStyle = left;
+        style.BorderRightLineStyle = right;
         overrides.BorderTopLineStyle = true;
         overrides.BorderBottomLineStyle = true;
         overrides.BorderLeftLineStyle = true;
         overrides.BorderRightLineStyle = true;
     }
 
-    private static ElementId GetLineStyleId(Document document, BuiltInCategory builtInCategory)
+    private static ElementId ResolveLineStyle(
+        FinishScheduleLineWeight weight,
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
     {
-        Category? category = Category.GetCategory(document, builtInCategory);
+        return weight == FinishScheduleLineWeight.Normal
+            ? normalLineStyleId
+            : thinLineStyleId;
+    }
+
+    private static ElementId GetLineStyleId(
+        Document document,
+        string preferredName,
+        BuiltInCategory fallbackCategory)
+    {
+        Category? lines = Category.GetCategory(document, BuiltInCategory.OST_Lines);
+        if (lines is not null)
+        {
+            foreach (Category subcategory in lines.SubCategories)
+            {
+                if (!string.Equals(
+                        subcategory.Name,
+                        preferredName,
+                        StringComparison.CurrentCultureIgnoreCase))
+                {
+                    continue;
+                }
+
+                GraphicsStyle? preferred = subcategory.GetGraphicsStyle(GraphicsStyleType.Projection);
+                if (preferred is not null)
+                {
+                    return preferred.Id;
+                }
+            }
+        }
+
+        Category? category = Category.GetCategory(document, fallbackCategory);
         GraphicsStyle? style = category?.GetGraphicsStyle(GraphicsStyleType.Projection);
         return style?.Id ?? ElementId.InvalidElementId;
     }

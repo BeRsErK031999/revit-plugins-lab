@@ -60,6 +60,33 @@ public sealed class FinishSchedulePreviewTests
     }
 
     [Fact]
+    public void Build_IncludesNearbyFloorAndCeilingOutsideStrictRoomHeight()
+    {
+        FinishElementCollection collection = new(
+            [Room(1, new AxisAlignedBox3D(0, 0, 0, 10, 10, 10))],
+            [],
+            [Element(201, 301, FinishPhysicalCategory.Floor, new AxisAlignedBox3D(1, 1, -0.04, 9, 9, -0.01))],
+            [
+                Element(202, 302, FinishPhysicalCategory.Ceiling, new AxisAlignedBox3D(1, 1, 12, 9, 9, 13)),
+                Element(203, 302, FinishPhysicalCategory.Ceiling, new AxisAlignedBox3D(1, 1, 20, 9, 9, 21))
+            ],
+            [
+                new FinishTypeSnapshot(301, "Пол", true),
+                new FinishTypeSnapshot(302, "Потолки", true)
+            ]);
+        FinishSchedulePreviewBuild build = new FinishSchedulePreviewBuilder(
+            new RoomScopeService(),
+            new FinishClassificationService()).BuildDetailed(
+                collection,
+                FinishScheduleSettings.CreateDefault());
+
+        Assert.Equal(new FinishPreviewCategoryCounts(1, 1, 1), build.Preview.Floors);
+        Assert.Equal(new FinishPreviewCategoryCounts(3, 2, 1), build.Preview.Ceilings);
+        Assert.Equal(2, build.Preview.Index.PotentialRoomElementPairs);
+        Assert.Equal([201L, 202L], build.InScopeElements.Select(element => element.Element.ElementId));
+    }
+
+    [Fact]
     public void PreviewValidator_RequiresEnabledCategoryClassificationAndScopeValue()
     {
         FinishScheduleSettings defaults = FinishScheduleSettings.CreateDefault();

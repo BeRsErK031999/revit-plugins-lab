@@ -74,7 +74,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 warningKeys);
             IReadOnlyList<FinishClassifiedElement> candidates = room.Bounds is null
                 ? []
-                : index.Query(room.Bounds, ProbeThickness);
+                : QueryCandidates(index, room.Bounds);
             CalculateFallbackWalls(
                 room.ElementId,
                 roomGeometry,
@@ -123,6 +123,27 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             + $"ElementCache={elementGeometryCache.EntryCount}/{elementGeometryCache.RequestCount}; "
             + $"ElementCacheHits={elementGeometryCache.HitCount}.");
         return result;
+    }
+
+    private static IReadOnlyList<FinishClassifiedElement> QueryCandidates(
+        FinishBoundingBoxIndex index,
+        AxisAlignedBox3D roomBounds)
+    {
+        FinishPreviewCategory[] categories =
+        [
+            FinishPreviewCategory.Walls,
+            FinishPreviewCategory.Floors,
+            FinishPreviewCategory.Ceilings
+        ];
+        return categories
+            .SelectMany(category => index.Query(
+                    FinishCandidateSearchRules.CreateSearchBounds(roomBounds, category))
+                .Where(element => element.Category == category))
+            .GroupBy(element => new { element.Element.ElementId, element.Category })
+            .Select(group => group.First())
+            .OrderBy(element => element.Element.ElementId)
+            .ThenBy(element => element.Category)
+            .ToArray();
     }
 
     private static FinishBoundaryElementIds CalculateBoundaryQuantities(
@@ -377,7 +398,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             return;
         }
 
-        IReadOnlyList<Solid> probes = CreateHorizontalProbes(
+        IReadOnlyList<FinishSolidProbe> probes = CreateHorizontalProbes(
             roomId,
             roomGeometry.Solid,
             category,
@@ -431,29 +452,40 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
             double areaInternal = 0;
             bool hadIntersection = false;
-            foreach (Solid probe in probes)
+            foreach (FinishSolidProbe probe in probes)
             {
                 foreach (Solid elementSolid in supportedSolids)
                 {
-                    Solid? intersection = TryIntersect(
-                        roomId,
-                        elementId,
-                        category,
+                    FinishProbeIntersectionResult intersectionResult = IntersectProbe(
                         probe,
-                        elementSolid,
-                        warnings,
-                        warningKeys);
-                    if (intersection is null || intersection.Volume <= MinimumIntersectionVolume)
+                        elementSolid);
+                    bool measuredIntersection = false;
+                    foreach (Solid intersection in intersectionResult.Intersections)
                     {
-                        continue;
+                        if (intersection.Volume <= MinimumIntersectionVolume)
+                        {
+                            continue;
+                        }
+
+                        hadIntersection = true;
+                        measuredIntersection = true;
+                        double? projectedArea = FinishGeometryAreaRules.SelectHorizontalProjectedArea(
+                            GetFaceMeasures(intersection));
+                        if (projectedArea.HasValue)
+                        {
+                            areaInternal += projectedArea.Value;
+                        }
                     }
 
-                    hadIntersection = true;
-                    double? projectedArea = FinishGeometryAreaRules.SelectHorizontalProjectedArea(
-                        GetFaceMeasures(intersection));
-                    if (projectedArea.HasValue)
+                    if (!measuredIntersection && intersectionResult.Failure is not null)
                     {
-                        areaInternal += projectedArea.Value;
+                        AddBooleanIntersectionWarning(
+                            roomId,
+                            elementId,
+                            category,
+                            intersectionResult.Failure,
+                            warnings,
+                            warningKeys);
                     }
                 }
             }
@@ -522,7 +554,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 continue;
             }
 
-            IReadOnlyList<Solid> roomColumns = CreateVerticalRoomColumns(
+            IReadOnlyList<FinishSolidProbe> roomColumns = CreateVerticalRoomColumns(
                 roomId,
                 roomGeometry.Solid,
                 elementBounds.MaxZ + ProbeThickness,
@@ -535,30 +567,41 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
             double areaInternal = 0;
             bool hadIntersection = false;
-            foreach (Solid roomColumn in roomColumns)
+            foreach (FinishSolidProbe roomColumn in roomColumns)
             {
                 foreach (Solid elementSolid in geometry.Solids)
                 {
-                    Solid? intersection = TryIntersect(
-                        roomId,
-                        elementId,
-                        FinishPreviewCategory.Ceilings,
+                    FinishProbeIntersectionResult intersectionResult = IntersectProbe(
                         roomColumn,
-                        elementSolid,
-                        warnings,
-                        warningKeys);
-                    if (intersection is null || intersection.Volume <= MinimumIntersectionVolume)
+                        elementSolid);
+                    bool measuredIntersection = false;
+                    foreach (Solid intersection in intersectionResult.Intersections)
                     {
-                        continue;
+                        if (intersection.Volume <= MinimumIntersectionVolume)
+                        {
+                            continue;
+                        }
+
+                        hadIntersection = true;
+                        measuredIntersection = true;
+                        double? contactArea = FinishGeometryAreaRules.SumDownwardFacingArea(
+                            GetFaceMeasures(intersection),
+                            MinimumCeilingVerticalNormalComponent);
+                        if (contactArea.HasValue)
+                        {
+                            areaInternal += contactArea.Value;
+                        }
                     }
 
-                    hadIntersection = true;
-                    double? contactArea = FinishGeometryAreaRules.SumDownwardFacingArea(
-                        GetFaceMeasures(intersection),
-                        MinimumCeilingVerticalNormalComponent);
-                    if (contactArea.HasValue)
+                    if (!measuredIntersection && intersectionResult.Failure is not null)
                     {
-                        areaInternal += contactArea.Value;
+                        AddBooleanIntersectionWarning(
+                            roomId,
+                            elementId,
+                            FinishPreviewCategory.Ceilings,
+                            intersectionResult.Failure,
+                            warnings,
+                            warningKeys);
                     }
                 }
             }
@@ -627,7 +670,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return probes;
     }
 
-    private static IReadOnlyList<Solid> CreateHorizontalProbes(
+    private static IReadOnlyList<FinishSolidProbe> CreateHorizontalProbes(
         long roomId,
         Solid roomSolid,
         FinishPreviewCategory category,
@@ -635,7 +678,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         HashSet<string> warningKeys)
     {
         bool floor = category == FinishPreviewCategory.Floors;
-        List<Solid> probes = [];
+        List<FinishSolidProbe> probes = [];
         IEnumerable<PlanarFace> faces = roomSolid.Faces
             .OfType<PlanarFace>()
             .Where(face => floor
@@ -645,10 +688,14 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         {
             try
             {
-                probes.Add(GeometryCreationUtilities.CreateExtrusionGeometry(
+                XYZ direction = face.FaceNormal.Normalize();
+                Solid primary = GeometryCreationUtilities.CreateExtrusionGeometry(
                     face.GetEdgesAsCurveLoops(),
-                    face.FaceNormal.Normalize(),
-                    ProbeThickness));
+                    direction,
+                    ProbeThickness);
+                probes.Add(new FinishSolidProbe(
+                    primary,
+                    () => CreateTriangularExtrusions(face, direction, ProbeThickness)));
             }
             catch (Exception exception)
             {
@@ -659,14 +706,14 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return probes;
     }
 
-    private static IReadOnlyList<Solid> CreateVerticalRoomColumns(
+    private static IReadOnlyList<FinishSolidProbe> CreateVerticalRoomColumns(
         long roomId,
         Solid roomSolid,
         double topZ,
         List<FinishGeometryWarning> warnings,
         HashSet<string> warningKeys)
     {
-        List<Solid> columns = [];
+        List<FinishSolidProbe> columns = [];
         IEnumerable<PlanarFace> bottomFaces = roomSolid.Faces
             .OfType<PlanarFace>()
             .Where(face => face.FaceNormal.Z <= -HorizontalNormalTolerance);
@@ -680,10 +727,13 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
             try
             {
-                columns.Add(GeometryCreationUtilities.CreateExtrusionGeometry(
+                Solid primary = GeometryCreationUtilities.CreateExtrusionGeometry(
                     face.GetEdgesAsCurveLoops(),
                     XYZ.BasisZ,
-                    height));
+                    height);
+                columns.Add(new FinishSolidProbe(
+                    primary,
+                    () => CreateTriangularExtrusions(face, XYZ.BasisZ, height)));
             }
             catch (Exception exception)
             {
@@ -699,6 +749,82 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return columns;
     }
 
+    private static IReadOnlyList<Solid> CreateTriangularExtrusions(
+        Face face,
+        XYZ direction,
+        double distance)
+    {
+        List<Solid> fragments = [];
+        Mesh mesh;
+        try
+        {
+            mesh = face.Triangulate();
+        }
+        catch
+        {
+            return fragments;
+        }
+
+        for (int index = 0; index < mesh.NumTriangles; index++)
+        {
+            try
+            {
+                MeshTriangle triangle = mesh.get_Triangle(index);
+                XYZ first = triangle.get_Vertex(0);
+                XYZ second = triangle.get_Vertex(1);
+                XYZ third = triangle.get_Vertex(2);
+                if (second.Subtract(first).CrossProduct(third.Subtract(first)).GetLength() <= 1e-9)
+                {
+                    continue;
+                }
+
+                CurveLoop loop = new();
+                loop.Append(Line.CreateBound(first, second));
+                loop.Append(Line.CreateBound(second, third));
+                loop.Append(Line.CreateBound(third, first));
+                fragments.Add(GeometryCreationUtilities.CreateExtrusionGeometry(
+                    [loop],
+                    direction,
+                    distance));
+            }
+            catch
+            {
+                // The primary probe remains valid when an optional recovery fragment cannot be built.
+            }
+        }
+
+        return fragments;
+    }
+
+    private static FinishProbeIntersectionResult IntersectProbe(
+        FinishSolidProbe probe,
+        Solid elementSolid)
+    {
+        if (TryExecuteIntersection(
+                probe.Primary,
+                elementSolid,
+                out Solid? primary,
+                out Exception? primaryFailure))
+        {
+            return new FinishProbeIntersectionResult([primary!], null);
+        }
+
+        List<Solid> recovered = [];
+        foreach (Solid fragment in probe.GetFragments())
+        {
+            if (TryExecuteIntersection(
+                    fragment,
+                    elementSolid,
+                    out Solid? intersection,
+                    out _))
+            {
+                recovered.Add(intersection!);
+            }
+        }
+
+        return new FinishProbeIntersectionResult(recovered, primaryFailure);
+    }
+
     private static Solid? TryIntersect(
         long roomId,
         long elementId,
@@ -708,26 +834,75 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         List<FinishGeometryWarning> warnings,
         HashSet<string> warningKeys)
     {
+        if (TryExecuteIntersection(first, second, out Solid? intersection, out Exception? failure))
+        {
+            return intersection;
+        }
+
+        AddBooleanIntersectionWarning(
+            roomId,
+            elementId,
+            category,
+            failure!,
+            warnings,
+            warningKeys);
+        return null;
+    }
+
+    private static bool TryExecuteIntersection(
+        Solid first,
+        Solid second,
+        out Solid? intersection,
+        out Exception? failure)
+    {
         try
         {
-            return BooleanOperationsUtils.ExecuteBooleanOperation(
+            intersection = BooleanOperationsUtils.ExecuteBooleanOperation(
                 first,
                 second,
                 BooleanOperationsType.Intersect);
+            failure = null;
+            return true;
         }
-        catch (Exception exception)
+        catch (Exception firstFailure)
         {
-            AddWarning(
-                warnings,
-                warningKeys,
-                new FinishGeometryWarning(
-                    FinishGeometryWarningCode.BooleanIntersectionFailed,
-                    $"Не удалось пересечь геометрию помещения {roomId} и элемента {elementId}: {exception.Message}",
-                    RoomId: roomId,
-                    ElementId: elementId,
-                    Category: category));
-            return null;
+            try
+            {
+                intersection = BooleanOperationsUtils.ExecuteBooleanOperation(
+                    second,
+                    first,
+                    BooleanOperationsType.Intersect);
+                failure = null;
+                return true;
+            }
+            catch (Exception secondFailure)
+            {
+                intersection = null;
+                failure = new InvalidOperationException(
+                    $"Прямой расчёт: {firstFailure.Message} Обратный расчёт: {secondFailure.Message}",
+                    secondFailure);
+                return false;
+            }
         }
+    }
+
+    private static void AddBooleanIntersectionWarning(
+        long roomId,
+        long elementId,
+        FinishPreviewCategory category,
+        Exception exception,
+        List<FinishGeometryWarning> warnings,
+        HashSet<string> warningKeys)
+    {
+        AddWarning(
+            warnings,
+            warningKeys,
+            new FinishGeometryWarning(
+                FinishGeometryWarningCode.BooleanIntersectionFailed,
+                $"Не удалось пересечь геометрию помещения {roomId} и элемента {elementId}: {exception.Message}",
+                RoomId: roomId,
+                ElementId: elementId,
+                Category: category));
     }
 
     private static IReadOnlyList<FinishFaceMeasure> GetFaceMeasures(Solid solid)
@@ -817,6 +992,32 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     }
 
     private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Solids);
+
+    private sealed class FinishSolidProbe
+    {
+        private readonly Func<IReadOnlyList<Solid>> fragmentFactory;
+        private IReadOnlyList<Solid>? fragments;
+
+        public FinishSolidProbe(
+            Solid primary,
+            Func<IReadOnlyList<Solid>> fragmentFactory)
+        {
+            Primary = primary ?? throw new ArgumentNullException(nameof(primary));
+            this.fragmentFactory = fragmentFactory
+                ?? throw new ArgumentNullException(nameof(fragmentFactory));
+        }
+
+        public Solid Primary { get; }
+
+        public IReadOnlyList<Solid> GetFragments()
+        {
+            return fragments ??= fragmentFactory();
+        }
+    }
+
+    private sealed record FinishProbeIntersectionResult(
+        IReadOnlyList<Solid> Intersections,
+        Exception? Failure);
 
     private sealed class FinishBoundaryElementIds
     {

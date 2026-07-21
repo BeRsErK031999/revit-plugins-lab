@@ -139,7 +139,10 @@ public sealed class FinishRoomSchedulePlanBuilder
         FinishRoomScheduleScopeFilter scopeFilter)
     {
         StringBuilder canonical = new();
-        canonical.Append("v2|").Append(scheduleName.Trim()).Append('|');
+        canonical.Append(FinishRoomScheduleStyleRules.LayoutRevision)
+            .Append('|')
+            .Append(scheduleName.Trim())
+            .Append('|');
         foreach (FinishRoomScheduleColumn column in columns)
         {
             canonical.Append(column.Parameter.StableKey)

@@ -48,12 +48,25 @@ public sealed class FinishSchedulePreviewBuilder
             [FinishPreviewCategory.Ceilings] = []
         };
         int potentialPairs = 0;
+        FinishPreviewCategory[] categories =
+        [
+            FinishPreviewCategory.Walls,
+            FinishPreviewCategory.Floors,
+            FinishPreviewCategory.Ceilings
+        ];
         foreach (FinishRoomCandidateSnapshot room in roomScope.SelectedRooms)
         {
-            foreach (FinishClassifiedElement element in index.Query(room.Bounds!))
+            foreach (FinishPreviewCategory category in categories)
             {
-                potentialPairs++;
-                inScopeIds[element.Category].Add(element.Element.ElementId);
+                AxisAlignedBox3D searchBounds = FinishCandidateSearchRules.CreateSearchBounds(
+                    room.Bounds!,
+                    category);
+                foreach (FinishClassifiedElement element in index.Query(searchBounds)
+                             .Where(element => element.Category == category))
+                {
+                    potentialPairs++;
+                    inScopeIds[category].Add(element.Element.ElementId);
+                }
             }
         }
 

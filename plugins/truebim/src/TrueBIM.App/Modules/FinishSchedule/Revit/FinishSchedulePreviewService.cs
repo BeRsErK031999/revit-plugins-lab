@@ -47,7 +47,7 @@ public sealed class FinishSchedulePreviewService
         IFinishQuantitySource quantitySource = new PhysicalFinishQuantitySource(document, logger);
         FinishQuantityResult quantities = quantitySource.Calculate(new FinishQuantityRequest(
             build.RoomScope.SelectedRooms,
-            build.InScopeElements));
+            build.Classification.Elements));
         timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
         FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
         RoomFinishSnapshotBuildResult? roomSnapshots = null;
