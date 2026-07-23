@@ -91,6 +91,36 @@ public sealed class FinishRoomScheduleStyleRulesTests
                 .Select(cell => cell.Text));
     }
 
+    [Fact]
+    public void BuildHeaderCells_UsesHeaderGroupingOnlyForHorizontalFinishCaption()
+    {
+        FinishRoomSchedulePlan plan = new FinishRoomSchedulePlanBuilder().Build(
+            Settings(),
+            [Room()]);
+
+        IReadOnlyList<FinishScheduleHeaderCell> cells =
+            FinishRoomScheduleStyleRules.BuildHeaderCells(plan.Columns);
+
+        Assert.Equal(
+            FinishScheduleHeaderMergeMode.CellMerge,
+            Assert.Single(
+                cells,
+                cell => cell.Text == FinishRoomScheduleStyleRules.RoomHeaderText).MergeMode);
+        Assert.Equal(
+            FinishScheduleHeaderMergeMode.HeaderGroup,
+            Assert.Single(
+                cells,
+                cell => cell.Text == FinishRoomScheduleStyleRules.FinishGroupHeaderText).MergeMode);
+        Assert.Equal(
+            FinishScheduleHeaderMergeMode.CellMerge,
+            Assert.Single(
+                cells,
+                cell => cell.Text == FinishRoomScheduleStyleRules.NoteHeaderText).MergeMode);
+        Assert.All(
+            cells.Where(cell => cell.TopRowOffset == 2),
+            cell => Assert.Equal(FinishScheduleHeaderMergeMode.None, cell.MergeMode));
+    }
+
     [Theory]
     [InlineData("Обычные линии", "Обычные линии")]
     [InlineData("<Обычные линии>", "Обычные линии")]

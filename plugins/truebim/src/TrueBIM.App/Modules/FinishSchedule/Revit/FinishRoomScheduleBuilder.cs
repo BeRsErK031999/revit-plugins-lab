@@ -238,27 +238,73 @@ public sealed class FinishRoomScheduleBuilder
         ElementId normalLineStyleId,
         ElementId thinLineStyleId)
     {
+        IReadOnlyList<FinishScheduleHeaderCell> cells =
+            FinishRoomScheduleStyleRules.BuildHeaderCells(columns);
+        FinishScheduleHeaderCell finishGroup = cells.Single(
+            cell => cell.MergeMode == FinishScheduleHeaderMergeMode.HeaderGroup);
+        int titleRow;
+        int firstColumn;
+        int fieldHeaderRow;
+        using (TableData initialTable = schedule.GetTableData())
+        using (TableSectionData initialHeader = initialTable.GetSectionData(SectionType.Header))
+        {
+            titleRow = initialHeader.FirstRowNumber;
+            firstColumn = initialHeader.FirstColumnNumber;
+            fieldHeaderRow = initialHeader.LastRowNumber;
+        }
+
+        int finishGroupLeft = firstColumn + finishGroup.LeftColumnIndex;
+        int finishGroupRight = firstColumn + finishGroup.RightColumnIndex;
+        if (!schedule.CanGroupHeaders(
+                fieldHeaderRow,
+                finishGroupLeft,
+                fieldHeaderRow,
+                finishGroupRight))
+        {
+            throw new InvalidOperationException(
+                "Revit не разрешил создать горизонтальную группу заголовков отделки.");
+        }
+
+        schedule.GroupHeaders(
+            fieldHeaderRow,
+            finishGroupLeft,
+            fieldHeaderRow,
+            finishGroupRight,
+            finishGroup.Text);
+
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
-        int titleRow = header.FirstRowNumber;
+        titleRow = header.FirstRowNumber;
         int groupRow = titleRow + 1;
-        header.InsertRow(header.LastRowNumber + 1);
-        header.InsertRow(header.LastRowNumber + 1);
-        int firstColumn = header.FirstColumnNumber;
+        int columnHeaderRow = groupRow + 1;
+        if (header.LastRowNumber != columnHeaderRow)
+        {
+            throw new InvalidOperationException(
+                "Revit создал неожиданную структуру строк шапки ведомости отделки.");
+        }
+
+        header.InsertRow(columnHeaderRow + 1);
+        firstColumn = header.FirstColumnNumber;
         header.SetCellText(titleRow, firstColumn, FinishRoomScheduleStyleRules.ScheduleTitleText);
-        foreach (FinishScheduleHeaderCell cell in FinishRoomScheduleStyleRules.BuildHeaderCells(columns))
+        foreach (FinishScheduleHeaderCell cell in cells)
         {
             int top = groupRow + cell.TopRowOffset;
             int left = firstColumn + cell.LeftColumnIndex;
             int bottom = groupRow + cell.BottomRowOffset;
             int right = firstColumn + cell.RightColumnIndex;
-            if (top != bottom || left != right)
+            switch (cell.MergeMode)
             {
-                schedule.GroupHeaders(top, left, bottom, right, cell.Text);
-            }
-            else
-            {
-                header.SetCellText(top, left, cell.Text);
+                case FinishScheduleHeaderMergeMode.CellMerge:
+                    header.MergeCells(new TableMergedCell(top, left, bottom, right));
+                    header.SetCellText(top, left, cell.Text);
+                    break;
+                case FinishScheduleHeaderMergeMode.HeaderGroup:
+                case FinishScheduleHeaderMergeMode.None:
+                    header.SetCellText(top, left, cell.Text);
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Неизвестный режим объединения ячеек: {cell.MergeMode}.");
             }
         }
 
@@ -335,7 +381,9 @@ public sealed class FinishRoomScheduleBuilder
             }
         }
 
-        foreach (TableMergedCell merged in mergedCells)
+        foreach (TableMergedCell merged in mergedCells
+                     .OrderByDescending(cell => cell.Bottom - cell.Top)
+                     .ThenByDescending(cell => cell.Right - cell.Left))
         {
             if (!schedule.CanUngroupHeaders(
                     merged.Top,
