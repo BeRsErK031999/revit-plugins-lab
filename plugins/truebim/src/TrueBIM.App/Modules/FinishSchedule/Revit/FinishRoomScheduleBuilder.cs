@@ -218,7 +218,10 @@ public sealed class FinishRoomScheduleBuilder
         using TableCellStyle style = field.GetStyle();
         using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
         style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
+        style.TextSize = FinishScheduleUnitAdapter.MillimetersToInternal(
+            FinishRoomScheduleStyleRules.BodyTextSizeMillimeters);
         overrides.VerticalAlignment = true;
+        overrides.FontSize = true;
         ApplyBorders(
             style,
             overrides,

@@ -21,7 +21,7 @@ public sealed record FinishScheduleHeaderCell(
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v4";
+    public const string LayoutRevision = "v5";
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
     public const string RoomHeaderText = "Наименование или номер помещения";
@@ -34,6 +34,7 @@ public static class FinishRoomScheduleStyleRules
     public const double GraphHeaderRowHeightMillimeters = 5;
     public const double TitleTextSizeMillimeters = 3.5;
     public const double ColumnHeaderTextSizeMillimeters = 2.5;
+    public const double BodyTextSizeMillimeters = 2.5;
     public const bool ShowBlankLineBetweenGroups = false;
 
     public static FinishScheduleCellBorderRules HeaderBorders { get; } = new(

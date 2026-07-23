@@ -12,6 +12,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
         Assert.Equal(12, FinishRoomScheduleStyleRules.TitleRowHeightMillimeters);
         Assert.Equal(3.5, FinishRoomScheduleStyleRules.TitleTextSizeMillimeters);
         Assert.Equal(2.5, FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters);
+        Assert.Equal(2.5, FinishRoomScheduleStyleRules.BodyTextSizeMillimeters);
         Assert.False(FinishRoomScheduleStyleRules.ShowBlankLineBetweenGroups);
     }
 

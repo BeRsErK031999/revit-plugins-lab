@@ -97,8 +97,53 @@ public sealed class FinishAggregationServiceTests
 
         FinishFormattedCategoryOutput output = Assert.Single(result.Groups).Output.Walls!;
         Assert.Equal(["Coat 2", string.Empty, "Coat 10"], Lines(output.DescriptionText));
-        Assert.Equal(["2,00", string.Empty, "10,00"], Lines(output.AreaText));
+        string[] areaLines = Lines(output.AreaText);
+        Assert.Equal("2,00", areaLines[0]);
+        Assert.True(string.IsNullOrWhiteSpace(areaLines[1]));
+        Assert.Equal("10,00", areaLines[2]);
         Assert.Equal(Lines(output.DescriptionText).Length, Lines(output.AreaText).Length);
+    }
+
+    [Fact]
+    public void LongDescriptions_CenterEachAreaInsideItsOwnVisualBlock()
+    {
+        FinishScheduleSettings settings = Settings() with
+        {
+            ColumnWidths = new FinishScheduleColumnWidths(40, 30, 25)
+        };
+        FinishAggregationResult result = Build(
+            settings,
+            [Room(1, "101")],
+            [Element(11, 1011), Element(12, 1012), Element(13, 1013)],
+            [
+                Type(1011, "01 Первый многослойный вариант отделки с длинным подробным описанием материалов"),
+                Type(1012, "02 Второй многослойный вариант отделки с другим длинным подробным описанием материалов"),
+                Type(1013, "03 Третий многослойный вариант отделки с отдельным длинным подробным описанием материалов")
+            ],
+            [
+                Occurrence(1, 11, 19.81),
+                Occurrence(1, 12, 99.22),
+                Occurrence(1, 13, 33.33)
+            ]);
+
+        FinishFormattedCategoryOutput output = Assert.Single(result.Groups).Output.Walls!;
+        string[] descriptionLines = Lines(output.DescriptionText);
+        string[] areaLines = Lines(output.AreaText);
+        Assert.Equal(descriptionLines.Length, areaLines.Length);
+
+        (int Start, int End)[] blocks = DescriptionBlocks(descriptionLines);
+        Assert.Equal(3, blocks.Length);
+        int[] areaRows = areaLines
+            .Select((line, index) => (Line: line.Trim(), Index: index))
+            .Where(item => item.Line is "19,81" or "99,22" or "33,33")
+            .Select(item => item.Index)
+            .ToArray();
+        Assert.Equal(
+            blocks.Select(block => block.Start + (block.End - block.Start) / 2),
+            areaRows);
+        Assert.All(
+            blocks,
+            block => Assert.True(block.End - block.Start >= 2));
     }
 
     [Fact]
@@ -278,7 +323,8 @@ public sealed class FinishAggregationServiceTests
             warnings);
         return new FinishAggregationService(
             new FinishGroupKeyBuilder(),
-            new FinishAggregationFormatter()).Aggregate(snapshots);
+            new FinishAggregationFormatter(
+                settings.EffectiveColumnWidths.DescriptionMillimeters)).Aggregate(snapshots);
     }
 
     private static RoomFinishSnapshotBuildResult BuildSnapshots(
@@ -380,5 +426,27 @@ public sealed class FinishAggregationServiceTests
     private static string[] Lines(string value)
     {
         return value.Split([Environment.NewLine], StringSplitOptions.None);
+    }
+
+    private static (int Start, int End)[] DescriptionBlocks(string[] lines)
+    {
+        List<(int Start, int End)> blocks = [];
+        int start = 0;
+        for (int index = 0; index <= lines.Length; index++)
+        {
+            if (index < lines.Length && lines[index].Length > 0)
+            {
+                continue;
+            }
+
+            if (index > start)
+            {
+                blocks.Add((start, index - 1));
+            }
+
+            start = index + 1;
+        }
+
+        return blocks.ToArray();
     }
 }

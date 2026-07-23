@@ -66,7 +66,8 @@ public sealed class FinishSchedulePreviewService
                     quantities));
             aggregation = new FinishAggregationService(
                 new FinishGroupKeyBuilder(),
-                new FinishAggregationFormatter()).Aggregate(roomSnapshots);
+                new FinishAggregationFormatter(
+                    settings.EffectiveColumnWidths.DescriptionMillimeters)).Aggregate(roomSnapshots);
             result = result.WithAggregation(aggregation);
         }
 
