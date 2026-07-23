@@ -22,11 +22,31 @@ public sealed class SharedParameterVersionAdapter : ISharedParameterVersionAdapt
     {
         Guard.NotNull(definition, nameof(definition));
 #if REVIT2022_OR_GREATER
+#if NETFRAMEWORK
+        // Revit returns BuiltInParameterGroup.INVALID for definitions assigned to "Other".
+        // Definition.GetGroupTypeId() passes that value to ParameterUtils and Revit 2022
+        // raises a native API exception which can terminate the host after the callback.
+#pragma warning disable CS0618
+        BuiltInParameterGroup legacyGroup = definition.ParameterGroup;
+        if (!CanResolveLegacyParameterGroup(
+                (int)legacyGroup,
+                Enum.IsDefined(typeof(BuiltInParameterGroup), legacyGroup)))
+        {
+            return "Без группы";
+        }
+#pragma warning restore CS0618
+#endif
+
         ForgeTypeId groupTypeId = definition.GetGroupTypeId();
         return string.IsNullOrWhiteSpace(groupTypeId.TypeId) ? "Без группы" : groupTypeId.TypeId;
 #else
         return definition.ParameterGroup.ToString();
 #endif
+    }
+
+    public static bool CanResolveLegacyParameterGroup(int rawValue, bool isDefined)
+    {
+        return rawValue != -1 && isDefined;
     }
 
     public FamilyParameter? FindFamilyParameter(FamilyManager familyManager, Guid guid)
