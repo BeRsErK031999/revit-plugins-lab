@@ -409,6 +409,14 @@ public static class TrueBimRibbon
             "Импортирует CSV/XML со списком коллизий и открывает выбранную коллизию в 3D.",
             "Инструмент координации: импорт внешнего списка коллизий, статусы и комментарии, локальное JSON-состояние, section box и подсветка найденных элементов."),
         new(
+            BimCoordinationPanelName,
+            "TrueBIM_SharedParameterInspector",
+            "Общие\nпараметры",
+            $"{CommandNamespace}.{nameof(SharedParameterInspectorCommand)}",
+            TrueBimIcon.SharedParameters,
+            "Показывает, где используется выбранный общий параметр в проекте и семействах, а также позволяет безопасно удалить его вместе с найденными зависимостями.",
+            "Анализ использования и безопасное удаление общих параметров: bindings, элементы, спецификации, фильтры видов, глобальные параметры и выбранные семейства."),
+        new(
             BimLibraryPanelName,
             "TrueBIM_FamilyManager",
             "Диспетчер\nсемейств",

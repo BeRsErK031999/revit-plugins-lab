@@ -105,6 +105,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "коллизий"
         },
         {
+            "TrueBIM_SharedParameterInspector",
+            TrueBimRibbon.BimCoordinationPanelName,
+            "Общие\nпараметры",
+            $"TrueBIM.App.Commands.{nameof(SharedParameterInspectorCommand)}",
+            TrueBimIcon.SharedParameters,
+            "общий параметр"
+        },
+        {
             "TrueBIM_FamilyManager",
             TrueBimRibbon.BimLibraryPanelName,
             "Диспетчер\nсемейств",

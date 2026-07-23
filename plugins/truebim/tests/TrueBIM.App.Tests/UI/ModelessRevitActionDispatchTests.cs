@@ -10,6 +10,7 @@ using TrueBIM.App.Modules.IsoFieldRebar.UI;
 using TrueBIM.App.Modules.Lintels.UI;
 using TrueBIM.App.Modules.Print.UI;
 using TrueBIM.App.Modules.SheetNumbering.UI;
+using TrueBIM.App.Modules.SharedParameters.UI;
 using Xunit;
 
 namespace TrueBIM.App.Tests.UI;
@@ -28,7 +29,8 @@ public sealed class ModelessRevitActionDispatchTests
         typeof(OpeningViewsWindow),
         typeof(TitleBlockFillWindow),
         typeof(PrintWindow),
-        typeof(SheetNumberingWindow)
+        typeof(SheetNumberingWindow),
+        typeof(SharedParameterInspectorWindow)
     };
 
     [Theory]

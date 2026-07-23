@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "targetRevitVersion": "2025",
+  "assetStatus": "prepared_definition",
+  "binaryAssetsAvailable": false,
+  "projectFile": "SharedParameterInspector-QA-2025.rvt",
+  "familyFolder": "Families",
+  "sharedParameters": [
+    {
+      "key": "SP_TEXT_INSTANCE",
+      "name": "SP_QA_Текст",
+      "guid": "3e04db00-0fa8-4aed-9fc3-8f47cb91ade1",
+      "dataType": "Text"
+    },
+    {
+      "key": "SP_LENGTH_TYPE",
+      "name": "SP_QA_Длина",
+      "guid": "f44ec74a-4eb5-4281-bdc1-85f50939c25d",
+      "dataType": "Length"
+    },
+    {
+      "key": "SP_DUPLICATE_A",
+      "name": "SP_QA_Дубликат",
+      "guid": "d8050119-2f6a-491c-9588-f80b34d972a0",
+      "dataType": "Text"
+    },
+    {
+      "key": "SP_DUPLICATE_B",
+      "name": "SP_QA_Дубликат",
+      "guid": "7ad1bd14-c982-433f-bd5b-a5da9db55815",
+      "dataType": "Text"
+    },
+    {
+      "key": "SP_UNUSED",
+      "name": "SP_QA_Неиспользуемый",
+      "guid": "54ca4b08-00aa-4397-aab8-8592c01dcf09",
+      "dataType": "Text"
+    }
+  ],
+  "projectScenarios": [
+    { "id": "P01", "title": "Instance binding", "setup": "Bind SP_TEXT_INSTANCE as instance to Walls.", "expected": "Instance binding and Walls category." },
+    { "id": "P02", "title": "Type binding", "setup": "Bind SP_LENGTH_TYPE as type to Doors.", "expected": "Type binding and Doors category." },
+    { "id": "P03", "title": "Unbound SharedParameterElement", "setup": "Keep SP_UNUSED in the project without a BindingMap entry.", "expected": "Unbound row remains searchable by GUID." },
+    { "id": "P04", "title": "Duplicate names", "setup": "Create SP_DUPLICATE_A and SP_DUPLICATE_B with the same visible name.", "expected": "Two rows with different GUID and ElementId." },
+    { "id": "P05", "title": "Empty values", "setup": "Leave at least two bound values empty.", "expected": "Empty count is reported separately." },
+    { "id": "P06", "title": "Filled values", "setup": "Set different text values on at least three wall instances.", "expected": "Filled count and display values are reported." },
+    { "id": "P07", "title": "Read-only values", "setup": "Expose a read-only/reporting context for the target where supported.", "expected": "Read-only is reported without attempted mutation." },
+    { "id": "P08", "title": "Visible schedule field", "setup": "Add target field to a regular schedule.", "expected": "Schedule, field, heading and position are reported." },
+    { "id": "P09", "title": "Hidden schedule field", "setup": "Hide the target schedule field.", "expected": "isHidden=true." },
+    { "id": "P10", "title": "Schedule filter", "setup": "Use target field in a schedule filter.", "expected": "usedInFilter=true." },
+    { "id": "P11", "title": "Schedule sorting", "setup": "Use target field in sorting.", "expected": "usedInSortOrGroup=true." },
+    { "id": "P12", "title": "Schedule grouping", "setup": "Use target field in grouping.", "expected": "usedInSortOrGroup=true." },
+    { "id": "P13", "title": "Calculated or combined schedule dependency", "setup": "Create an opaque calculated/combined dependency near the target field.", "expected": "Manual blocker if API cannot prove independence." },
+    { "id": "P14", "title": "Simple view filter", "setup": "Create a ParameterFilterElement with one target rule.", "expected": "Exact target rule and categories." },
+    { "id": "P15", "title": "AND view filter", "setup": "Create an AND tree with target and another rule.", "expected": "Tree and other rule are preserved in analysis." },
+    { "id": "P16", "title": "OR view filter", "setup": "Create an OR tree containing a target rule.", "expected": "OR structure and confidence are reported." },
+    { "id": "P17", "title": "Mixed parameter rules", "setup": "Create one filter tree containing target and rules of other parameters.", "expected": "Target and other rules are separated." },
+    { "id": "P18", "title": "One filter on multiple views", "setup": "Apply the same filter to at least three ordinary views.", "expected": "Every view, visibility and overrides are reported." },
+    { "id": "P19", "title": "View template application", "setup": "Apply the filter to a view template.", "expected": "Template is listed separately." },
+    { "id": "P20", "title": "Global parameter association", "setup": "Associate a compatible element parameter with a global parameter.", "expected": "Association and global parameter metadata." },
+    { "id": "P21", "title": "Loaded family with parameter", "setup": "Load a family containing the target GUID.", "expected": "Found." },
+    { "id": "P22", "title": "Loaded family without parameter", "setup": "Load a family without the target GUID.", "expected": "NotFound." },
+    { "id": "P23", "title": "Loaded family without instances", "setup": "Load a family containing the GUID but place no instances.", "expected": "Family presence still finds the GUID." },
+    { "id": "P24", "title": "In-place family", "setup": "Create an in-place family in a bound category.", "expected": "Unsupported with an explicit reason." },
+    { "id": "P25", "title": "Tag family", "setup": "Load a tag family containing the target GUID.", "expected": "Annotation limitation and ManualCheckRequired." },
+    { "id": "P26", "title": "Uneditable family", "setup": "Include a family unavailable to EditFamily.", "expected": "Unsupported/CannotOpen blocker." },
+    { "id": "P27", "title": "Workshared project", "setup": "Create a workshared copy and make a dependency owned by another user.", "expected": "Ownership blocker and sync recommendation." },
+    { "id": "P28", "title": "Embedded schedule", "setup": "Use target field in an embedded schedule definition.", "expected": "Embedded definition is distinguished." },
+    { "id": "P29", "title": "RVT link exclusion", "setup": "Link an RVT containing the same GUID.", "expected": "Linked elements do not appear anywhere in the result." },
+    { "id": "P30", "title": "Dry run and post-verification", "setup": "Use a safe target in one copy and an unexpected cascade target in another.", "expected": "Safe plan succeeds; unknown deleted Id blocks execution and rollback preserves source." }
+  ],
+  "familyScenarios": [
+    { "id": "F01", "file": "01_NoDependencies.rfa", "setup": "Target exists without formula, dimension, association or annotation dependency.", "expected": "Supported family removal and reload.", "loadIntoProject": true },
+    { "id": "F02", "file": "02_InstanceParameter.rfa", "setup": "Shared instance parameter.", "expected": "Instance parameter found.", "loadIntoProject": true },
+    { "id": "F03", "file": "03_TypeParameter.rfa", "setup": "Shared type parameter.", "expected": "Type parameter found.", "loadIntoProject": true },
+    { "id": "F04", "file": "04_TypeValues.rfa", "setup": "Three types with distinct and empty values.", "expected": "All values and fill counts.", "loadIntoProject": true },
+    { "id": "F05", "file": "05_TargetFormula.rfa", "setup": "Target parameter has a formula.", "expected": "Exact formula blocker.", "loadIntoProject": true },
+    { "id": "F06", "file": "06_DependentFormula.rfa", "setup": "Another parameter formula references target.", "expected": "Dependency with Exact confidence.", "loadIntoProject": true },
+    { "id": "F07", "file": "07_DimensionLabel.rfa", "setup": "Dimension label is associated with target.", "expected": "Dimension Id, view and reporting state.", "loadIntoProject": true },
+    { "id": "F08", "file": "08_GeometryAssociation.rfa", "setup": "Family parameter is associated with a geometry element parameter.", "expected": "Association direction and element metadata.", "loadIntoProject": true },
+    { "id": "F09", "file": "09_NestedFamily.rfa", "setup": "Nested family instance/type parameter is associated with target.", "expected": "Nested family first-level usage.", "loadIntoProject": true },
+    { "id": "F10", "file": "10_TagFamily.rfa", "setup": "Tag family contains target.", "expected": "ManualCheckRequired for label use.", "loadIntoProject": true },
+    { "id": "F11", "file": "11_AnnotationFamily.rfa", "setup": "Annotation family contains target.", "expected": "ManualCheckRequired; no false safe claim.", "loadIntoProject": true },
+    { "id": "F12", "file": "12_SimilarNames.rfa", "setup": "Formula references a similarly named parameter and same-name/different-GUID parameter.", "expected": "No false Exact match.", "loadIntoProject": false },
+    { "id": "F13", "file": "13_NestedCycleGuard.rfa", "setup": "Prepare a nested-family cycle or equivalent repeated-path guard case.", "expected": "Recursion remains bounded and does not reopen a visited file.", "loadIntoProject": false },
+    { "id": "F14", "file": "14_CorruptOrUnopenable.rfa", "setup": "Use a corrupt or deliberately unopenable RFA.", "expected": "Error is isolated to this file and analysis continues.", "loadIntoProject": false },
+    { "id": "F15", "file": "15_OlderVersion.rfa", "setup": "Save the family in an older supported Revit version.", "expected": "Current Revit upgrades in memory for analysis and never overwrites the source.", "loadIntoProject": true }
+  ]
+}
