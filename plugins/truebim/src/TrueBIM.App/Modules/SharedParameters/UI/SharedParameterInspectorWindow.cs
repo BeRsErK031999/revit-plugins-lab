@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
@@ -135,17 +136,17 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         Icon = IconFactory.CreateImage(TrueBimIcon.SharedParameters, 32);
 
         analyzeButton = TrueBimUi.CreatePrimaryButton(
-            "Быстрый анализ",
+            "Проверить использование",
             TrueBimIcon.Preview,
             (_, _) => AnalyzeSelectedParameter(),
             isEnabled: false,
-            minWidth: 145);
+            minWidth: 190);
         familyPresenceButton = TrueBimUi.CreateSecondaryButton(
-            "Проверить семейства",
+            "Найти в семействах проекта",
             TrueBimIcon.FamilyManager,
             (_, _) => AnalyzeProjectFamilyPresence(),
             isEnabled: false,
-            minWidth: 165);
+            minWidth: 210);
         deleteButton = TrueBimUi.CreateDangerButton(
             "Удалить из проекта",
             TrueBimIcon.Delete,
@@ -163,17 +164,17 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             (_, _) => BrowseFamilyFiles(),
             minWidth: 130);
         scanFamilyParametersButton = TrueBimUi.CreateSecondaryButton(
-            "Сканировать GUID",
+            "Собрать каталог GUID",
             TrueBimIcon.Preview,
             (_, _) => ScanFamilyParameterCatalogs(),
             isEnabled: false,
-            minWidth: 150);
+            minWidth: 180);
         analyzeFamiliesButton = TrueBimUi.CreatePrimaryButton(
-            "Глубокий анализ",
+            "Анализировать семейства",
             TrueBimIcon.Preview,
             (_, _) => AnalyzeSelectedFamilies(),
             isEnabled: false,
-            minWidth: 145);
+            minWidth: 195);
         exportReportButton = TrueBimUi.CreatePrimaryButton(
             "Экспорт HTML / JSON / CSV / TXT",
             TrueBimIcon.Export,
@@ -188,6 +189,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             minWidth: 145);
 
         ConfigureControls();
+        ConfigureActionToolTips();
         projectTab.Content = CreateProjectTab();
         familiesTab.Content = CreateFamiliesTab();
         reportTab.Content = CreateReportTab();
@@ -203,10 +205,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         closeButton.IsCancel = true;
 
         ApplyTrueBimShell(
-            TrueBimUi.CreateHeader(
-                "Общие параметры",
-                "Анализ использования и безопасное удаление общих параметров в проекте и выбранных семействах.",
-                TrueBimIcon.SharedParameters),
+            CreateWindowHeader(),
             null,
             mainTabs,
             CreateProgressStatus(),
@@ -226,6 +225,225 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             }
         };
         application.Application.DocumentChanged += OnDocumentChanged;
+    }
+
+    private UIElement CreateWindowHeader()
+    {
+        Grid header = new();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        UIElement title = TrueBimUi.CreateHeader(
+            "Общие параметры",
+            "Анализ использования и безопасное удаление общих параметров в проекте и выбранных семействах.",
+            TrueBimIcon.SharedParameters);
+        header.Children.Add(title);
+
+        Button guideButton = TrueBimUi.CreateSecondaryButton(
+            "Методичка",
+            TrueBimIcon.Help,
+            (_, _) => ShowGuide(SharedParameterGuideTopic.Overview),
+            minWidth: 130);
+        guideButton.Margin = new Thickness(
+            TrueBimTheme.Spacing16,
+            TrueBimTheme.Spacing4,
+            0,
+            TrueBimTheme.Spacing16);
+        guideButton.VerticalAlignment = VerticalAlignment.Top;
+        guideButton.ToolTip = "Открыть общую методичку по вкладкам, рекомендуемому маршруту и безопасному удалению.";
+        AutomationProperties.SetName(guideButton, "Открыть общую методичку по общим параметрам");
+        AutomationProperties.SetHelpText(guideButton, "Пошаговая справка по анализу проекта, семействам, отчёту и удалению.");
+        Grid.SetColumn(guideButton, 1);
+        header.Children.Add(guideButton);
+        return header;
+    }
+
+    private Grid CreateGuidedActionRow(
+        Button actionButton,
+        SharedParameterGuideTopic topic,
+        string helpText)
+    {
+        Grid row = new();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        actionButton.MinWidth = 0;
+        actionButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        row.Children.Add(actionButton);
+
+        Button helpButton = CreateContextHelpButton(topic, helpText);
+        helpButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        Grid.SetColumn(helpButton, 1);
+        row.Children.Add(helpButton);
+        return row;
+    }
+
+    private Button CreateContextHelpButton(
+        SharedParameterGuideTopic topic,
+        string helpText)
+    {
+        Button button = new()
+        {
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(TrueBimIcon.Help, TrueBimTheme.IconSizeSmall),
+                Width = TrueBimTheme.IconSizeSmall,
+                Height = TrueBimTheme.IconSizeSmall
+            },
+            Width = TrueBimTheme.ControlHeight32,
+            Height = TrueBimTheme.ControlHeight32,
+            Padding = new Thickness(TrueBimTheme.Spacing4),
+            Style = TrueBimStyles.CreateButtonStyle(TrueBimButtonStyleKind.Ghost),
+            ToolTip = helpText
+        };
+        AutomationProperties.SetName(button, helpText);
+        AutomationProperties.SetHelpText(button, "Открыть контекстную справку без запуска действия.");
+        button.Click += (_, _) => ShowGuide(topic);
+        return button;
+    }
+
+    private void ShowGuide(SharedParameterGuideTopic topic)
+    {
+        SharedParameterGuidePage page = SharedParameterGuideCatalog.Get(topic);
+        logger.Info($"Shared Parameter Inspector guide requested. Topic={topic}; Title='{page.Title}'.");
+        SharedParameterInspectorGuideWindow guideWindow = new(topic)
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
+    }
+
+    private static TextBlock CreateActionGroupTitle(
+        string text,
+        Thickness margin)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = TrueBimBrushes.TextSecondary,
+            FontSize = TrueBimTheme.CaptionFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Margin = margin
+        };
+    }
+
+    private static Grid CreateEqualButtonRow(params Button[] buttons)
+    {
+        Grid row = new();
+        for (int index = 0; index < buttons.Length; index++)
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+
+            Button button = buttons[index];
+            button.MinWidth = 0;
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            button.Margin = new Thickness(
+                0,
+                0,
+                index == buttons.Length - 1 ? 0 : TrueBimTheme.Spacing8,
+                0);
+            Grid.SetColumn(button, index);
+            row.Children.Add(button);
+        }
+
+        return row;
+    }
+
+    private void ConfigureActionToolTips()
+    {
+        searchInput.ToolTip = "Фильтр по имени, полному GUID или любой части GUID.";
+        parameterFilterInput.ToolTip = "Ограничить список параметров по привязке или найденному использованию.";
+        familySourceInput.ToolTip = "Выберите, откуда получить семейства для каталога GUID и глубокого анализа.";
+        folderPathInput.ToolTip = "Папка с RFA. Путь заполняется кнопкой «Выбрать папку».";
+        includeSubfoldersInput.ToolTip = "Искать поддерживаемые RFA также во вложенных папках.";
+        familyParameterInput.ToolTip = "Параметр из собранного каталога GUID. Выбор заполняет поле GUID справа.";
+        familyGuidInput.ToolTip = "Полный GUID общего параметра для глубокого анализа семейств.";
+        reportText.ToolTip = "Текст последнего анализа, ограничений и результата удаления.";
+        scanFolderButton.ToolTip = "Выбрать папку и перечислить поддерживаемые RFA без открытия файлов.";
+        selectFilesButton.ToolTip = "Выбрать один или несколько RFA для каталога GUID и глубокого анализа.";
+        exportReportButton.ToolTip = "Экспортировать последний результат в HTML, JSON, CSV и TXT.";
+        cancelButton.ToolTip = "Запросить отмену текущей пакетной операции на ближайшей безопасной точке.";
+
+        foreach (Button button in new[]
+                 {
+                     analyzeButton,
+                     familyPresenceButton,
+                     deleteButton,
+                     scanFolderButton,
+                     selectFilesButton,
+                     scanFamilyParametersButton,
+                     analyzeFamiliesButton,
+                     exportReportButton,
+                     cancelButton
+                 })
+        {
+            ToolTipService.SetShowOnDisabled(button, true);
+        }
+
+        UpdateActionToolTips();
+    }
+
+    private void UpdateActionToolTips()
+    {
+        bool analysisMatchesSelection = SelectedParameter is not null
+            && currentAnalysis?.Parameter.IdentityKey == SelectedParameter.IdentityKey;
+
+        analyzeButton.ToolTip = IsBusy
+            ? "Дождитесь завершения или отмените текущую операцию."
+            : SelectedParameter is null
+                ? "Выберите параметр в таблице слева."
+                : "Проверить элементы, спецификации, фильтры видов и глобальные ассоциации выбранного GUID без изменения модели.";
+
+        familyPresenceButton.ToolTip = IsBusy
+            ? "Дождитесь завершения или отмените текущую операцию."
+            : SelectedParameter is null
+                ? "Выберите параметр в таблице слева."
+                : !analysisMatchesSelection
+                    ? "Сначала выполните «Проверить использование» для выбранного параметра."
+                    : "Проверить наличие выбранного GUID в загружаемых семействах активного проекта.";
+
+        deleteButton.ToolTip = IsBusy
+            ? "Дождитесь завершения или отмените текущую операцию."
+            : activeDocumentIsFamily
+                ? "Удаление доступно только в проектном документе."
+                : SelectedParameter is null
+                    ? "Выберите параметр в таблице слева."
+                    : "Открыть безопасный сценарий: свежий анализ, dry run с откатом, план, подтверждение и контрольная проверка.";
+
+        FamilySourceKind source = ReadChoice(
+            familySourceInput,
+            FamilySourceKind.ActiveProject);
+        scanFolderButton.ToolTip = source == FamilySourceKind.Folder
+            ? "Выбрать папку и перечислить поддерживаемые RFA без открытия файлов."
+            : "Выберите источник «Из папки».";
+        selectFilesButton.ToolTip = source == FamilySourceKind.SelectedFiles
+            ? "Выбрать один или несколько RFA для каталога GUID и глубокого анализа."
+            : "Выберите источник «Выбрать файлы».";
+        scanFamilyParametersButton.ToolTip = IsBusy
+            ? "Дождитесь завершения или отмените текущую операцию."
+            : source is not (FamilySourceKind.Folder or FamilySourceKind.SelectedFiles)
+                ? "Каталог GUID нужен только для внешних RFA из папки или выбранных файлов."
+                : familySourceRows.Count == 0
+                    ? "Сначала добавьте RFA в таблицу источников."
+                    : "Открыть выбранные RFA по одному, собрать общие параметры и объединить их по GUID без сохранения файлов.";
+        analyzeFamiliesButton.ToolTip = IsBusy
+            ? "Дождитесь завершения или отмените текущую операцию."
+            : !Guid.TryParse(familyGuidInput.Text, out _)
+                ? "Выберите параметр из каталога или введите корректный полный GUID."
+                : familySourceRows.Count == 0
+                    ? "Сначала добавьте или выберите семейства для анализа."
+                    : "Проверить значения типов, формулы, размеры, ассоциации и вложенные семейства без сохранения внешних RFA.";
+        exportReportButton.ToolTip = IsBusy
+            ? "Дождитесь завершения или отмените текущую операцию."
+            : currentAnalysis is null && reportAnalysis is null
+                ? "Сначала выполните проектную проверку использования."
+                : "Экспортировать последний результат в HTML, JSON, CSV и TXT.";
+        cancelButton.ToolTip = IsBusy
+            ? "Запросить отмену на ближайшей безопасной точке пакетной операции."
+            : "Сейчас нет операции, которую можно отменить.";
     }
 
     private void ConfigureControls()
@@ -399,7 +617,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         {
             Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
-        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(430) });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(500) });
         layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TrueBimTheme.Spacing12) });
         layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -425,37 +643,66 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
 
         StackPanel parameterCard = new();
         parameterCard.Children.Add(parameterCardText);
-        WrapPanel actions = new()
-        {
-            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
-        };
+
         Button copyNameButton = TrueBimUi.CreateSecondaryButton(
-            "Копировать имя",
+            "Имя",
             TrueBimIcon.Copy,
             (_, _) => CopySelectedParameterValue(parameter => parameter.Name),
-            minWidth: 125);
+            minWidth: 0);
+        copyNameButton.ToolTip = "Скопировать точное имя выбранного параметра.";
         Button copyGuidButton = TrueBimUi.CreateSecondaryButton(
-            "Копировать GUID",
+            "GUID",
             TrueBimIcon.Copy,
             (_, _) => CopySelectedParameterValue(parameter => parameter.Guid.ToString("D")),
-            minWidth: 135);
+            minWidth: 0);
+        copyGuidButton.ToolTip = "Скопировать полный GUID — основной идентификатор общего параметра.";
         Button copyIdButton = TrueBimUi.CreateSecondaryButton(
-            "Копировать ElementId",
+            "ElementId",
             TrueBimIcon.Copy,
             (_, _) => CopySelectedParameterValue(parameter =>
                 parameter.ParameterElementId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            minWidth: 155);
-        copyGuidButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing8);
-        copyIdButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing8);
-        actions.Children.Add(copyNameButton);
-        actions.Children.Add(copyGuidButton);
-        actions.Children.Add(copyIdButton);
-        actions.Children.Add(analyzeButton);
-        familyPresenceButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        actions.Children.Add(familyPresenceButton);
-        deleteButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        actions.Children.Add(deleteButton);
-        parameterCard.Children.Add(actions);
+            minWidth: 0);
+        copyIdButton.ToolTip = "Скопировать ElementId объекта SharedParameterElement.";
+
+        parameterCard.Children.Add(CreateActionGroupTitle(
+            "Скопировать",
+            new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing8)));
+        parameterCard.Children.Add(CreateEqualButtonRow(
+            copyNameButton,
+            copyGuidButton,
+            copyIdButton));
+
+        parameterCard.Children.Add(CreateActionGroupTitle(
+            "Проверка использования",
+            new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing8)));
+        parameterCard.Children.Add(CreateGuidedActionRow(
+            analyzeButton,
+            SharedParameterGuideTopic.ProjectUsageAnalysis,
+            "Что проверяет использование параметра"));
+
+        Grid familyPresenceAction = CreateGuidedActionRow(
+            familyPresenceButton,
+            SharedParameterGuideTopic.ProjectFamilyPresence,
+            "Как выполняется поиск параметра в семействах проекта");
+        familyPresenceAction.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
+        parameterCard.Children.Add(familyPresenceAction);
+
+        parameterCard.Children.Add(CreateActionGroupTitle(
+            "Опасная операция",
+            new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing8)));
+        Border deletionAction = new()
+        {
+            Background = TrueBimBrushes.DangerBackground,
+            BorderBrush = TrueBimBrushes.Danger,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Padding = new Thickness(TrueBimTheme.Spacing8),
+            Child = CreateGuidedActionRow(
+                deleteButton,
+                SharedParameterGuideTopic.SafeDeletion,
+                "Как устроено безопасное удаление")
+        };
+        parameterCard.Children.Add(deletionAction);
 
         Border parameterCardBorder = TrueBimUi.CreateSectionCard("Выбранный параметр", parameterCard);
         parameterCardBorder.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
@@ -504,15 +751,18 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             "Выбрать элементы",
             TrueBimIcon.Preview,
             (_, _) => SelectElements());
+        selectButton.ToolTip = "Выбрать в Revit отмеченные строки. Если строки не отмечены, выбираются все показанные элементы.";
         Button copyButton = TrueBimUi.CreateSecondaryButton(
             "Скопировать ElementId",
             TrueBimIcon.Copy,
             (_, _) => CopySelectedElementIds());
+        copyButton.ToolTip = "Скопировать ElementId отмеченных или всех показанных элементов.";
         copyButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         Button copyUniqueIdButton = TrueBimUi.CreateSecondaryButton(
             "Скопировать UniqueId",
             TrueBimIcon.Copy,
             (_, _) => CopySelectedUniqueIds());
+        copyUniqueIdButton.ToolTip = "Скопировать стабильные UniqueId отмеченных или всех показанных элементов.";
         copyUniqueIdButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         actions.Children.Add(selectButton);
         actions.Children.Add(copyButton);
@@ -537,6 +787,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             TrueBimIcon.Open,
             (_, _) => OpenSelectedSchedule(),
             minWidth: 160);
+        openButton.ToolTip = "Открыть в Revit спецификацию из выбранной строки.";
         openButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         DockPanel.SetDock(openButton, Dock.Top);
         panel.Children.Add(openButton);
@@ -548,10 +799,11 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
     {
         DockPanel panel = new();
         Button openButton = TrueBimUi.CreateSecondaryButton(
-            "Открыть первый вид",
+            "Показать связанный вид",
             TrueBimIcon.Open,
             (_, _) => OpenFirstViewForSelectedFilter(),
-            minWidth: 150);
+            minWidth: 175);
+        openButton.ToolTip = "Открыть первый обычный вид, на котором назначен выбранный фильтр. Шаблоны видов пропускаются.";
         openButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         DockPanel.SetDock(openButton, Dock.Top);
         panel.Children.Add(openButton);
@@ -567,9 +819,14 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             TrueBimIcon.FamilyManager,
             (_, _) => MoveSelectedFamilyToDeepAnalysis(),
             minWidth: 220);
-        deepButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
-        DockPanel.SetDock(deepButton, Dock.Top);
-        panel.Children.Add(deepButton);
+        deepButton.ToolTip = "Перенести выбранное семейство и GUID на вкладку «Семейства» для проверки формул, размеров и ассоциаций.";
+        Grid deepAction = CreateGuidedActionRow(
+            deepButton,
+            SharedParameterGuideTopic.DeepFamilyAnalysis,
+            "Что проверяет глубокий анализ семейства");
+        deepAction.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
+        DockPanel.SetDock(deepAction, Dock.Top);
+        panel.Children.Add(deepAction);
         panel.Children.Add(familyPresenceGrid);
         return panel;
     }
@@ -584,9 +841,18 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(320) });
 
-        Grid controls = new();
+        StackPanel sourceSettings = new();
+        sourceSettings.Children.Add(CreateActionGroupTitle(
+            "1. Источник семейств",
+            new Thickness(0, 0, 0, TrueBimTheme.Spacing8)));
+
+        Grid controls = new()
+        {
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        };
         controls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
         controls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        controls.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         controls.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         familySourceInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
@@ -599,28 +865,49 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         selectFilesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         Grid.SetColumn(selectFilesButton, 3);
         controls.Children.Add(selectFilesButton);
-
-        StackPanel sourceSettings = new();
         sourceSettings.Children.Add(controls);
-        includeSubfoldersInput.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, TrueBimTheme.Spacing8);
+        includeSubfoldersInput.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         sourceSettings.Children.Add(includeSubfoldersInput);
 
-        Grid parameterControls = new();
+        sourceSettings.Children.Add(CreateActionGroupTitle(
+            "2. Параметр",
+            new Thickness(0, 0, 0, TrueBimTheme.Spacing8)));
+        Grid parameterControls = new()
+        {
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        };
+        parameterControls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         parameterControls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
-        parameterControls.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
-        parameterControls.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        parameterControls.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         familyParameterInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
         parameterControls.Children.Add(familyParameterInput);
-        familyGuidInput.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, 0);
         Grid.SetColumn(familyGuidInput, 1);
         parameterControls.Children.Add(familyGuidInput);
-        Grid.SetColumn(scanFamilyParametersButton, 2);
-        parameterControls.Children.Add(scanFamilyParametersButton);
-        analyzeFamiliesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        Grid.SetColumn(analyzeFamiliesButton, 3);
-        parameterControls.Children.Add(analyzeFamiliesButton);
         sourceSettings.Children.Add(parameterControls);
+
+        sourceSettings.Children.Add(CreateActionGroupTitle(
+            "3. Анализ",
+            new Thickness(0, 0, 0, TrueBimTheme.Spacing8)));
+        StackPanel analysisActions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        };
+        Grid scanAction = CreateGuidedActionRow(
+            scanFamilyParametersButton,
+            SharedParameterGuideTopic.FamilyGuidCatalog,
+            "Зачем собирать каталог GUID из RFA");
+        scanAction.Width = 235;
+        analysisActions.Children.Add(scanAction);
+
+        Grid deepAnalysisAction = CreateGuidedActionRow(
+            analyzeFamiliesButton,
+            SharedParameterGuideTopic.DeepFamilyAnalysis,
+            "Что проверяет глубокий анализ семейств");
+        deepAnalysisAction.Width = 250;
+        deepAnalysisAction.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
+        analysisActions.Children.Add(deepAnalysisAction);
+        sourceSettings.Children.Add(analysisActions);
+
         root.Children.Add(sourceSettings);
 
         Grid.SetRow(familySourceGrid, 1);
@@ -644,16 +931,19 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             TrueBimIcon.Open,
             (_, _) => OpenSelectedExternalFamily(),
             minWidth: 120);
+        openFamilyButton.ToolTip = "Открыть выбранный внешний RFA стандартным способом. Команда доступна только для файловой строки.";
         Button openFolderButton = TrueBimUi.CreateSecondaryButton(
             "Открыть папку",
             TrueBimIcon.Open,
             (_, _) => OpenSelectedFamilyFolder(),
             minWidth: 125);
+        openFolderButton.ToolTip = "Открыть папку, содержащую выбранный RFA.";
         Button copyFamilyPathButton = TrueBimUi.CreateSecondaryButton(
             "Копировать путь",
             TrueBimIcon.Copy,
             (_, _) => CopySelectedFamilyPath(),
             minWidth: 135);
+        copyFamilyPathButton.ToolTip = "Скопировать полный путь выбранного RFA.";
         openFolderButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         copyFamilyPathButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         familyNavigation.Children.Add(openFamilyButton);
@@ -717,6 +1007,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
                 }
             },
             minWidth: 150);
+        copyButton.ToolTip = "Скопировать текст последнего сформированного отчёта в буфер обмена.";
         copyButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         actions.Children.Add(copyButton);
         DockPanel.SetDock(actions, Dock.Top);
@@ -859,6 +1150,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         if (parameter is null)
         {
             parameterCardText.Text = "Параметр не выбран.";
+            UpdateActionToolTips();
             return;
         }
 
@@ -881,6 +1173,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             reportAnalysis = analysis;
             analysisIsStale = false;
             RenderCurrentAnalysis();
+            UpdateActionToolTips();
             return;
         }
 
@@ -890,6 +1183,8 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
             analysisIsStale = false;
             RenderCurrentAnalysis();
         }
+
+        UpdateActionToolTips();
     }
 
     private void AnalyzeSelectedParameter()
@@ -1641,7 +1936,8 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         viewFilterGrid.ItemsSource = analysis.ViewFilters;
         globalParameterGrid.ItemsSource = analysis.GlobalParameterAssociations;
         familyPresenceGrid.ItemsSource = analysis.Families;
-        familyPresenceButton.IsEnabled = !IsBusy;
+        familyPresenceButton.IsEnabled = !IsBusy
+            && SelectedParameter?.IdentityKey == analysis.Parameter.IdentityKey;
         RenderReport();
         deleteButton.IsEnabled = !IsBusy && !activeDocumentIsFamily;
     }
@@ -1974,7 +2270,9 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
     private void UpdateActionStatesForBusy(bool isBusy)
     {
         analyzeButton.IsEnabled = !isBusy && SelectedParameter is not null;
-        familyPresenceButton.IsEnabled = !isBusy && currentAnalysis is not null;
+        familyPresenceButton.IsEnabled = !isBusy
+            && SelectedParameter is not null
+            && currentAnalysis?.Parameter.IdentityKey == SelectedParameter.IdentityKey;
         deleteButton.IsEnabled = !isBusy
             && SelectedParameter is not null
             && !activeDocumentIsFamily;
@@ -1999,6 +2297,7 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         analyzeFamiliesButton.IsEnabled = !IsBusy
             && Guid.TryParse(familyGuidInput.Text, out _)
             && familySourceRows.Count > 0;
+        UpdateActionToolTips();
     }
 
     private void PopulateFamilyParameterChoices(
