@@ -126,6 +126,25 @@ public sealed class FinishScheduleSettingsValidatorTests
         Assert.Contains(result.Issues, issue => issue.Code == "scope.section_value.empty");
     }
 
+    [Fact]
+    public void Validate_RejectsColumnWidthsOutsideSupportedRange()
+    {
+        TestProfile profile = CreateProfile();
+        FinishScheduleSettings settings = profile.Settings with
+        {
+            ColumnWidths = new FinishScheduleColumnWidths(9, 201, double.NaN)
+        };
+
+        FinishScheduleValidationResult result = CreateValidator().Validate(
+            settings,
+            profile.Catalog,
+            Categories);
+
+        Assert.Contains(result.Issues, issue => issue.Code == "schedule_width.room_list.invalid");
+        Assert.Contains(result.Issues, issue => issue.Code == "schedule_width.description.invalid");
+        Assert.Contains(result.Issues, issue => issue.Code == "schedule_width.area.invalid");
+    }
+
     private static FinishScheduleSettingsValidator CreateValidator()
     {
         return new FinishScheduleSettingsValidator(new ParameterCatalogMatcher());

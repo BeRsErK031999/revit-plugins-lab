@@ -7,9 +7,8 @@ namespace TrueBIM.App.Modules.FinishSchedule.Services;
 
 public sealed class FinishRoomSchedulePlanBuilder
 {
-    private const double RoomListWidth = 40;
-    private const double DescriptionWidth = 80;
-    private const double AreaWidth = 25;
+    public const long RoomCommentsBuiltInParameterId = -1010106;
+    public const double NoteWidthMillimeters = 30;
 
     public FinishRoomSchedulePlan Build(
         FinishScheduleSettings settings,
@@ -25,18 +24,29 @@ public sealed class FinishRoomSchedulePlanBuilder
             throw new ArgumentNullException(nameof(selectedRooms));
         }
 
+        FinishScheduleColumnWidths widths = settings.EffectiveColumnWidths;
+        ValidateWidths(widths);
         List<FinishRoomScheduleColumn> columns =
         [
             Column(
                 settings.RoomListOutputParameter,
-                "Перечень помещений",
-                RoomListWidth,
+                FinishRoomScheduleStyleRules.RoomHeaderText,
+                widths.RoomListMillimeters,
                 "перечень помещений",
                 FinishRoomScheduleColumnKind.RoomList)
         ];
-        AddCategory(columns, settings.Walls, "Стены или перегородки");
-        AddCategory(columns, settings.Ceilings, "Потолок");
-        AddCategory(columns, settings.Floors, "Пол");
+        AddCategory(columns, settings.Walls, "Стены или перегородки", widths);
+        AddCategory(columns, settings.Ceilings, "Потолок", widths);
+        AddCategory(columns, settings.Floors, "Пол", widths);
+        columns.Add(new FinishRoomScheduleColumn(
+            ParameterReference.BuiltIn(
+                "Комментарии",
+                RoomCommentsBuiltInParameterId,
+                ParameterBindingKind.Instance,
+                ParameterStorageKind.String),
+            FinishRoomScheduleStyleRules.NoteHeaderText,
+            NoteWidthMillimeters,
+            FinishRoomScheduleColumnKind.Note));
 
         FinishRoomScheduleScopeFilter scopeFilter = BuildScopeFilter(settings.Scope, selectedRooms);
         string[] parameterIdentities = columns
@@ -55,7 +65,8 @@ public sealed class FinishRoomSchedulePlanBuilder
     private static void AddCategory(
         List<FinishRoomScheduleColumn> columns,
         FinishCategorySettings settings,
-        string heading)
+        string heading,
+        FinishScheduleColumnWidths widths)
     {
         if (!settings.IsEnabled)
         {
@@ -65,15 +76,36 @@ public sealed class FinishRoomSchedulePlanBuilder
         columns.Add(Column(
             settings.OutputDescriptionParameter,
             heading,
-            DescriptionWidth,
+            widths.DescriptionMillimeters,
             $"{heading}: описание",
             FinishRoomScheduleColumnKind.Description));
         columns.Add(Column(
             settings.OutputAreaParameter,
             "Площадь, м²",
-            AreaWidth,
+            widths.AreaMillimeters,
             $"{heading}: площадь",
             FinishRoomScheduleColumnKind.Area));
+    }
+
+    private static void ValidateWidths(FinishScheduleColumnWidths widths)
+    {
+        ValidateWidth(widths.RoomListMillimeters, "перечня помещений");
+        ValidateWidth(widths.DescriptionMillimeters, "описания отделки");
+        ValidateWidth(widths.AreaMillimeters, "площади");
+    }
+
+    private static void ValidateWidth(double width, string role)
+    {
+        if (double.IsNaN(width)
+            || double.IsInfinity(width)
+            || width < FinishScheduleColumnWidths.MinimumMillimeters
+            || width > FinishScheduleColumnWidths.MaximumMillimeters)
+        {
+            throw new InvalidOperationException(
+                $"Ширина столбца {role} должна быть от "
+                    + $"{FinishScheduleColumnWidths.MinimumMillimeters:0} до "
+                    + $"{FinishScheduleColumnWidths.MaximumMillimeters:0} мм.");
+        }
     }
 
     private static FinishRoomScheduleColumn Column(

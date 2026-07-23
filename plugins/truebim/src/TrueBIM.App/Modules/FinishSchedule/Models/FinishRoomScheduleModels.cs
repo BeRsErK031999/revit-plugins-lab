@@ -12,7 +12,8 @@ public enum FinishRoomScheduleColumnKind
 {
     RoomList,
     Description,
-    Area
+    Area,
+    Note
 }
 
 public sealed record FinishRoomScheduleColumn(

@@ -43,6 +43,23 @@ public sealed record ReportScopeSettings(
     }
 }
 
+public sealed record FinishScheduleColumnWidths(
+    double RoomListMillimeters,
+    double DescriptionMillimeters,
+    double AreaMillimeters)
+{
+    public const double DefaultRoomListMillimeters = 40;
+    public const double DefaultDescriptionMillimeters = 80;
+    public const double DefaultAreaMillimeters = 25;
+    public const double MinimumMillimeters = 10;
+    public const double MaximumMillimeters = 200;
+
+    public static FinishScheduleColumnWidths Default { get; } = new(
+        DefaultRoomListMillimeters,
+        DefaultDescriptionMillimeters,
+        DefaultAreaMillimeters);
+}
+
 public sealed record FinishScheduleSettings(
     ParameterReference? DescriptionParameter,
     RoomIdentifierSettings RoomIdentifier,
@@ -52,10 +69,14 @@ public sealed record FinishScheduleSettings(
     FinishCategorySettings Ceilings,
     ParameterReference? RoomListOutputParameter,
     ReportScopeSettings Scope,
-    string ScheduleName)
+    string ScheduleName,
+    FinishScheduleColumnWidths? ColumnWidths = null)
 {
     public const string ClassificationParameterName = "Группа модели";
     public const string DefaultScheduleName = "Помещения • Ведомость отделки помещений";
+
+    public FinishScheduleColumnWidths EffectiveColumnWidths =>
+        ColumnWidths ?? FinishScheduleColumnWidths.Default;
 
     public static FinishScheduleSettings CreateDefault()
     {
@@ -83,6 +104,7 @@ public sealed record FinishScheduleSettings(
                 OutputAreaParameter: null),
             RoomListOutputParameter: null,
             Scope: ReportScopeSettings.EntireProject(),
-            ScheduleName: DefaultScheduleName);
+            ScheduleName: DefaultScheduleName,
+            ColumnWidths: FinishScheduleColumnWidths.Default);
     }
 }

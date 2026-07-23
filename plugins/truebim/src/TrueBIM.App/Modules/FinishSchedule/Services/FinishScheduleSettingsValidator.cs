@@ -148,6 +148,7 @@ public sealed class FinishScheduleSettingsValidator
                 "Задайте название спецификации."));
         }
 
+        ValidateColumnWidths(settings.EffectiveColumnWidths, issues);
         IReadOnlyList<NamedParameterReference> outputParameters = CollectOutputParameters(
             settings,
             enabledCategories);
@@ -155,6 +156,53 @@ public sealed class FinishScheduleSettingsValidator
         ValidateSourceOutputConflicts(settings, outputParameters, issues);
 
         return new FinishScheduleValidationResult(issues);
+    }
+
+    private static void ValidateColumnWidths(
+        FinishScheduleColumnWidths widths,
+        List<FinishScheduleValidationIssue> issues)
+    {
+        ValidateColumnWidth(
+            widths.RoomListMillimeters,
+            "schedule_width.room_list.invalid",
+            "schedule_width.room_list",
+            "перечня помещений",
+            issues);
+        ValidateColumnWidth(
+            widths.DescriptionMillimeters,
+            "schedule_width.description.invalid",
+            "schedule_width.description",
+            "описания отделки",
+            issues);
+        ValidateColumnWidth(
+            widths.AreaMillimeters,
+            "schedule_width.area.invalid",
+            "schedule_width.area",
+            "площади",
+            issues);
+    }
+
+    private static void ValidateColumnWidth(
+        double width,
+        string code,
+        string field,
+        string role,
+        List<FinishScheduleValidationIssue> issues)
+    {
+        if (!double.IsNaN(width)
+            && !double.IsInfinity(width)
+            && width >= FinishScheduleColumnWidths.MinimumMillimeters
+            && width <= FinishScheduleColumnWidths.MaximumMillimeters)
+        {
+            return;
+        }
+
+        issues.Add(new FinishScheduleValidationIssue(
+            code,
+            field,
+            $"Ширина столбца {role} должна быть от "
+                + $"{FinishScheduleColumnWidths.MinimumMillimeters:0} до "
+                + $"{FinishScheduleColumnWidths.MaximumMillimeters:0} мм."));
     }
 
     private void ValidateDescriptionParameter(

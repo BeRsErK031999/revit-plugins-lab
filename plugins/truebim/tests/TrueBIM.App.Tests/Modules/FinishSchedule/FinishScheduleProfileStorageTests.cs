@@ -72,7 +72,8 @@ public sealed class FinishScheduleProfileStorageTests
                     ParameterBindingKind.Instance,
                     ParameterStorageKind.Integer),
                 "2"),
-            ScheduleName = "АР. Ведомость отделки"
+            ScheduleName = "АР. Ведомость отделки",
+            ColumnWidths = new FinishScheduleColumnWidths(52, 93, 28)
         };
 
         storage.Save(settings);
@@ -88,6 +89,7 @@ public sealed class FinishScheduleProfileStorageTests
         Assert.Equal(settings.Scope.SectionParameter!.StableKey, loaded.Scope.SectionParameter!.StableKey);
         Assert.Equal(settings.Scope.SectionValue, loaded.Scope.SectionValue);
         Assert.Equal(settings.ScheduleName, loaded.ScheduleName);
+        Assert.Equal(settings.EffectiveColumnWidths, loaded.EffectiveColumnWidths);
         Assert.False(loaded.Floors.IsEnabled);
         Assert.True(loaded.WriteOwnership);
     }
@@ -135,6 +137,9 @@ public sealed class FinishScheduleProfileStorageTests
         Assert.Null(settings.DescriptionParameter);
         Assert.Equal("Проверяемая ведомость", settings.ScheduleName);
         Assert.True(settings.Walls.IsEnabled);
+        Assert.Equal(
+            FinishScheduleColumnWidths.Default,
+            settings.EffectiveColumnWidths);
     }
 
     [Fact]

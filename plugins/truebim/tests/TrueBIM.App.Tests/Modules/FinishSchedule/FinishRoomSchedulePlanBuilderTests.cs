@@ -15,17 +15,18 @@ public sealed class FinishRoomSchedulePlanBuilderTests
 
         Assert.Equal(
             [
-                "Перечень помещений",
+                "Наименование или номер помещения",
                 "Стены или перегородки",
                 "Площадь, м²",
                 "Потолок",
                 "Площадь, м²",
                 "Пол",
-                "Площадь, м²"
+                "Площадь, м²",
+                "Примечание"
             ],
             plan.Columns.Select(column => column.Heading));
         Assert.Equal(
-            [40d, 80d, 25d, 80d, 25d, 80d, 25d],
+            [40d, 80d, 25d, 80d, 25d, 80d, 25d, 30d],
             plan.Columns.Select(column => column.WidthMillimeters));
         Assert.Equal(
             [
@@ -35,9 +36,15 @@ public sealed class FinishRoomSchedulePlanBuilderTests
                 FinishRoomScheduleColumnKind.Description,
                 FinishRoomScheduleColumnKind.Area,
                 FinishRoomScheduleColumnKind.Description,
-                FinishRoomScheduleColumnKind.Area
+                FinishRoomScheduleColumnKind.Area,
+                FinishRoomScheduleColumnKind.Note
             ],
             plan.Columns.Select(column => column.Kind));
+        FinishRoomScheduleColumn note = plan.Columns[^1];
+        Assert.Equal(ParameterIdentityKind.BuiltIn, note.Parameter.IdentityKind);
+        Assert.Equal(
+            FinishRoomSchedulePlanBuilder.RoomCommentsBuiltInParameterId,
+            note.Parameter.BuiltInParameterId);
     }
 
     [Fact]
@@ -50,8 +57,34 @@ public sealed class FinishRoomSchedulePlanBuilderTests
 
         FinishRoomSchedulePlan plan = new FinishRoomSchedulePlanBuilder().Build(settings, [Room()]);
 
-        Assert.Equal(5, plan.Columns.Count);
+        Assert.Equal(6, plan.Columns.Count);
         Assert.DoesNotContain(plan.Columns, column => column.Heading == "Потолок");
+    }
+
+    [Fact]
+    public void Build_CustomWidths_ApplyToEveryMatchingColumnAndChangeHash()
+    {
+        FinishScheduleSettings defaults = Settings();
+        FinishScheduleSettings custom = defaults with
+        {
+            ColumnWidths = new FinishScheduleColumnWidths(55, 90, 31)
+        };
+        FinishRoomSchedulePlanBuilder builder = new();
+
+        FinishRoomSchedulePlan defaultPlan = builder.Build(defaults, [Room()]);
+        FinishRoomSchedulePlan customPlan = builder.Build(custom, [Room()]);
+
+        Assert.Equal(55, customPlan.Columns[0].WidthMillimeters);
+        Assert.All(
+            customPlan.Columns.Where(column => column.Kind == FinishRoomScheduleColumnKind.Description),
+            column => Assert.Equal(90, column.WidthMillimeters));
+        Assert.All(
+            customPlan.Columns.Where(column => column.Kind == FinishRoomScheduleColumnKind.Area),
+            column => Assert.Equal(31, column.WidthMillimeters));
+        Assert.Equal(
+            FinishRoomSchedulePlanBuilder.NoteWidthMillimeters,
+            customPlan.Columns[^1].WidthMillimeters);
+        Assert.NotEqual(defaultPlan.SettingsHash, customPlan.SettingsHash);
     }
 
     [Fact]

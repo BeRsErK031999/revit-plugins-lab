@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -72,6 +73,12 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         "Точное значение секции или корпуса. Сбор доступных значений будет добавлен вместе с preview FS-004.");
     private readonly TextBox scheduleNameInput = CreateTextInput(
         "Имя спецификации помещений, которой будет управлять TrueBIM.");
+    private readonly TextBox roomListWidthInput = CreateWidthInput(
+        "Ширина столбца с перечнем помещений, от 10 до 200 мм.");
+    private readonly TextBox descriptionWidthInput = CreateWidthInput(
+        "Единая ширина столбцов с описанием стен, потолка и пола, от 10 до 200 мм.");
+    private readonly TextBox areaWidthInput = CreateWidthInput(
+        "Единая ширина столбцов площади, от 10 до 200 мм.");
     private readonly TextBlock validationText = new()
     {
         TextWrapping = TextWrapping.Wrap,
@@ -534,8 +541,56 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         StackPanel panel = new();
         panel.Children.Add(CreateDescription(
             "TrueBIM будет обновлять только спецификацию со своим служебным маркером. Чужой вид с тем же именем останется без изменений."));
-        panel.Children.Add(CreateFieldRow("Название", scheduleNameInput, isLast: true));
+        panel.Children.Add(CreateFieldRow("Название", scheduleNameInput));
+        panel.Children.Add(CreateColumnWidthSettings());
         return panel;
+    }
+
+    private UIElement CreateColumnWidthSettings()
+    {
+        StackPanel panel = new();
+        TextBlock label = TrueBimUi.CreateFieldLabel("Размеры столбцов, мм");
+        label.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
+        panel.Children.Add(label);
+
+        Grid grid = new();
+        for (int column = 0; column < 3; column++)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+        }
+
+        AddWidthInput(grid, "Перечень помещений", roomListWidthInput, 0);
+        AddWidthInput(grid, "Описание отделки", descriptionWidthInput, 1);
+        AddWidthInput(grid, "Площадь", areaWidthInput, 2);
+        panel.Children.Add(grid);
+        return panel;
+    }
+
+    private static void AddWidthInput(
+        Grid grid,
+        string label,
+        TextBox input,
+        int column)
+    {
+        StackPanel field = new()
+        {
+            Margin = column < 2
+                ? new Thickness(0, 0, TrueBimTheme.Spacing12, 0)
+                : new Thickness(0)
+        };
+        TextBlock fieldLabel = new()
+        {
+            Text = label,
+            Foreground = TrueBimBrushes.TextSecondary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
+        };
+        field.Children.Add(fieldLabel);
+        field.Children.Add(input);
+        Grid.SetColumn(field, column);
+        grid.Children.Add(field);
     }
 
     private UIElement CreateFooter()
@@ -575,6 +630,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         sectionParameterInput.SelectionChanged += (_, _) => OnInputChanged();
         sectionValueInput.TextChanged += (_, _) => OnInputChanged();
         scheduleNameInput.TextChanged += (_, _) => OnInputChanged();
+        roomListWidthInput.TextChanged += (_, _) => OnInputChanged();
+        descriptionWidthInput.TextChanged += (_, _) => OnInputChanged();
+        areaWidthInput.TextChanged += (_, _) => OnInputChanged();
     }
 
     private void AttachCategoryEvents(CategoryControls controls)
@@ -653,6 +711,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             SetSelectedParameter(sectionParameterInput, settings.Scope.SectionParameter);
             sectionValueInput.Text = settings.Scope.SectionValue;
             scheduleNameInput.Text = settings.ScheduleName;
+            FinishScheduleColumnWidths widths = settings.EffectiveColumnWidths;
+            roomListWidthInput.Text = FormatMillimeters(widths.RoomListMillimeters);
+            descriptionWidthInput.Text = FormatMillimeters(widths.DescriptionMillimeters);
+            areaWidthInput.Text = FormatMillimeters(widths.AreaMillimeters);
         }
         finally
         {
@@ -692,7 +754,37 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                     ? GetSelectedParameter(sectionParameterInput)
                     : null,
                 scopeKind == ReportScopeKind.Section ? sectionValueInput.Text.Trim() : string.Empty),
-            scheduleNameInput.Text.Trim());
+            scheduleNameInput.Text.Trim(),
+            new FinishScheduleColumnWidths(
+                ReadMillimeters(roomListWidthInput),
+                ReadMillimeters(descriptionWidthInput),
+                ReadMillimeters(areaWidthInput)));
+    }
+
+    private static string FormatMillimeters(double value)
+    {
+        return value.ToString("0.#", CultureInfo.CurrentCulture);
+    }
+
+    private static double ReadMillimeters(TextBox input)
+    {
+        string text = input.Text.Trim();
+        if (double.TryParse(
+                text,
+                NumberStyles.Float,
+                CultureInfo.CurrentCulture,
+                out double currentCultureValue))
+        {
+            return currentCultureValue;
+        }
+
+        return double.TryParse(
+            text,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out double invariantValue)
+                ? invariantValue
+                : 0;
     }
 
     private static FinishCategorySettings ReadCategory(CategoryControls controls)
@@ -1391,6 +1483,18 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             Style = TrueBimStyles.CreateTextBoxStyle(),
             ToolTip = toolTip,
             VerticalContentAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private static TextBox CreateWidthInput(string toolTip)
+    {
+        return new TextBox
+        {
+            Height = 34,
+            Style = TrueBimStyles.CreateTextBoxStyle(),
+            ToolTip = toolTip,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
     }
 

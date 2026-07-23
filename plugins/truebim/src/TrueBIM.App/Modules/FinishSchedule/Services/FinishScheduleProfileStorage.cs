@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.FinishSchedule.Services;
 public sealed class FinishScheduleProfileStorage
 {
     public const string SettingsKey = "finish-schedule";
-    private const int CurrentVersion = 1;
+    private const int CurrentVersion = 2;
 
     private readonly JsonSettingsStorage storage;
     private readonly string settingsPath;
@@ -83,7 +83,17 @@ public sealed class FinishScheduleProfileStorage
             Ceilings = ToCategorySettings(profile.Ceilings, defaults.Ceilings),
             RoomListOutputParameter = profile.RoomListOutputParameter?.ToReference(),
             Scope = new ReportScopeSettings(scopeKind, levelId, sectionParameter, sectionValue),
-            ScheduleName = NormalizeText(profile.ScheduleName, defaults.ScheduleName)
+            ScheduleName = NormalizeText(profile.ScheduleName, defaults.ScheduleName),
+            ColumnWidths = new FinishScheduleColumnWidths(
+                NormalizeWidth(
+                    profile.RoomListColumnWidthMillimeters,
+                    defaults.EffectiveColumnWidths.RoomListMillimeters),
+                NormalizeWidth(
+                    profile.DescriptionColumnWidthMillimeters,
+                    defaults.EffectiveColumnWidths.DescriptionMillimeters),
+                NormalizeWidth(
+                    profile.AreaColumnWidthMillimeters,
+                    defaults.EffectiveColumnWidths.AreaMillimeters))
         };
     }
 
@@ -104,7 +114,10 @@ public sealed class FinishScheduleProfileStorage
             LevelId = settings.Scope.LevelId,
             SectionParameter = ParameterReferenceData.FromReference(settings.Scope.SectionParameter),
             SectionValue = settings.Scope.SectionValue,
-            ScheduleName = settings.ScheduleName
+            ScheduleName = settings.ScheduleName,
+            RoomListColumnWidthMillimeters = settings.EffectiveColumnWidths.RoomListMillimeters,
+            DescriptionColumnWidthMillimeters = settings.EffectiveColumnWidths.DescriptionMillimeters,
+            AreaColumnWidthMillimeters = settings.EffectiveColumnWidths.AreaMillimeters
         };
     }
 
@@ -128,6 +141,16 @@ public sealed class FinishScheduleProfileStorage
     private static string NormalizeText(string? value, string fallback)
     {
         return value is null ? fallback : value.Trim();
+    }
+
+    private static double NormalizeWidth(double? value, double fallback)
+    {
+        return value is >= FinishScheduleColumnWidths.MinimumMillimeters
+            and <= FinishScheduleColumnWidths.MaximumMillimeters
+            && !double.IsNaN(value.Value)
+            && !double.IsInfinity(value.Value)
+                ? value.Value
+                : fallback;
     }
 
     private static bool IsDefined<TEnum>(TEnum? value)
@@ -167,12 +190,18 @@ internal sealed class FinishScheduleProfileData
 
     public string? ScheduleName { get; set; }
 
+    public double? RoomListColumnWidthMillimeters { get; set; }
+
+    public double? DescriptionColumnWidthMillimeters { get; set; }
+
+    public double? AreaColumnWidthMillimeters { get; set; }
+
     public static FinishScheduleProfileData CreateDefault()
     {
         return new FinishScheduleProfileData { Version = CurrentProfileVersion };
     }
 
-    private const int CurrentProfileVersion = 1;
+    private const int CurrentProfileVersion = 2;
 }
 
 internal sealed class FinishCategoryProfileData

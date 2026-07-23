@@ -155,6 +155,7 @@ public sealed class FinishRoomScheduleBuilder
         FinishRoomSchedulePlan plan)
     {
         ScheduleDefinition definition = schedule.Definition;
+        ResetCustomHeader(schedule);
         ClearDefinition(definition);
         definition.ShowTitle = true;
         definition.ShowHeaders = true;
@@ -166,12 +167,13 @@ public sealed class FinishRoomScheduleBuilder
         IList<SchedulableField> availableFields = definition.GetSchedulableFields();
         ElementId normalLineStyleId = GetLineStyleId(
             document,
-            "Обычные линии",
+            FinishRoomScheduleStyleRules.NormalLineStyleName,
             BuiltInCategory.OST_CurvesMediumLines);
         ElementId thinLineStyleId = GetLineStyleId(
             document,
-            "Тонкие линии",
+            FinishRoomScheduleStyleRules.ThinLineStyleName,
             BuiltInCategory.OST_CurvesThinLines);
+        EnsureLineStyles(normalLineStyleId, thinLineStyleId);
         ScheduleField? sortField = null;
         foreach (FinishRoomScheduleColumn column in plan.Columns)
         {
@@ -191,10 +193,16 @@ public sealed class FinishRoomScheduleBuilder
             throw new InvalidOperationException("Не удалось добавить поле сортировки ведомости отделки.");
         }
 
-        definition.AddSortGroupField(new ScheduleSortGroupField(sortField.FieldId));
+        ScheduleSortGroupField sortGroupField = new(sortField.FieldId)
+        {
+            ShowBlankLine = FinishRoomScheduleStyleRules.ShowBlankLineBetweenGroups,
+            ShowHeader = false,
+            ShowFooter = false
+        };
+        definition.AddSortGroupField(sortGroupField);
         AddScopeFilter(definition, availableFields, plan.ScopeFilter);
         document.Regenerate();
-        ConfigureHeader(schedule, normalLineStyleId, thinLineStyleId);
+        ConfigureHeader(schedule, plan.Columns, normalLineStyleId, thinLineStyleId);
         ConfigureBody(schedule, normalLineStyleId, thinLineStyleId);
     }
 
@@ -223,17 +231,44 @@ public sealed class FinishRoomScheduleBuilder
 
     private static void ConfigureHeader(
         ViewSchedule schedule,
+        IReadOnlyList<FinishRoomScheduleColumn> columns,
         ElementId normalLineStyleId,
         ElementId thinLineStyleId)
     {
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
+        int titleRow = header.FirstRowNumber;
+        int groupRow = titleRow + 1;
+        header.InsertRow(header.LastRowNumber + 1);
+        header.InsertRow(header.LastRowNumber + 1);
+        int firstColumn = header.FirstColumnNumber;
+        header.SetCellText(titleRow, firstColumn, FinishRoomScheduleStyleRules.ScheduleTitleText);
+        foreach (FinishScheduleHeaderCell cell in FinishRoomScheduleStyleRules.BuildHeaderCells(columns))
+        {
+            int top = groupRow + cell.TopRowOffset;
+            int left = firstColumn + cell.LeftColumnIndex;
+            int bottom = groupRow + cell.BottomRowOffset;
+            int right = firstColumn + cell.RightColumnIndex;
+            if (top != bottom || left != right)
+            {
+                schedule.GroupHeaders(top, left, bottom, right, cell.Text);
+            }
+            else
+            {
+                header.SetCellText(top, left, cell.Text);
+            }
+        }
+
         for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
         {
-            bool isTitleRow = row == header.FirstRowNumber;
-            double height = isTitleRow
-                ? FinishRoomScheduleStyleRules.TitleRowHeightMillimeters
-                : FinishRoomScheduleStyleRules.ColumnHeaderRowHeightMillimeters;
+            bool isTitleRow = row == titleRow;
+            double height = row switch
+            {
+                _ when isTitleRow => FinishRoomScheduleStyleRules.TitleRowHeightMillimeters,
+                _ when row == groupRow => FinishRoomScheduleStyleRules.GroupHeaderRowHeightMillimeters,
+                _ when row == groupRow + 1 => FinishRoomScheduleStyleRules.ColumnHeaderRowHeightMillimeters,
+                _ => FinishRoomScheduleStyleRules.GraphHeaderRowHeightMillimeters
+            };
             header.SetRowHeight(row, FinishScheduleUnitAdapter.MillimetersToInternal(height));
             for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
             {
@@ -264,6 +299,68 @@ public sealed class FinishRoomScheduleBuilder
                 style.SetCellStyleOverrideOptions(overrides);
                 header.SetCellStyle(row, column, style);
             }
+        }
+    }
+
+    private static void ResetCustomHeader(ViewSchedule schedule)
+    {
+        using TableData table = schedule.GetTableData();
+        using TableSectionData header = table.GetSectionData(SectionType.Header);
+        if (header.NumberOfRows <= 2)
+        {
+            return;
+        }
+
+        int titleRow = header.FirstRowNumber;
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        List<TableMergedCell> mergedCells = [];
+        for (int row = titleRow + 1; row <= header.LastRowNumber; row++)
+        {
+            for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
+            {
+                TableMergedCell merged = header.GetMergedCell(row, column);
+                if (merged.Top == merged.Bottom && merged.Left == merged.Right)
+                {
+                    continue;
+                }
+
+                string key = $"{merged.Top}:{merged.Left}:{merged.Bottom}:{merged.Right}";
+                if (seen.Add(key))
+                {
+                    mergedCells.Add(merged);
+                }
+            }
+        }
+
+        foreach (TableMergedCell merged in mergedCells)
+        {
+            if (!schedule.CanUngroupHeaders(
+                    merged.Top,
+                    merged.Left,
+                    merged.Bottom,
+                    merged.Right))
+            {
+                throw new InvalidOperationException(
+                    "Не удалось разобрать прежнюю шапку ведомости отделки для обновления.");
+            }
+
+            schedule.UngroupHeaders(
+                merged.Top,
+                merged.Left,
+                merged.Bottom,
+                merged.Right);
+        }
+
+        while (header.NumberOfRows > 2)
+        {
+            int row = header.LastRowNumber;
+            if (!header.CanRemoveRow(row))
+            {
+                throw new InvalidOperationException(
+                    "Не удалось удалить прежнюю строку шапки ведомости отделки.");
+            }
+
+            header.RemoveRow(row);
         }
     }
 
@@ -349,10 +446,9 @@ public sealed class FinishRoomScheduleBuilder
         {
             foreach (Category subcategory in lines.SubCategories)
             {
-                if (!string.Equals(
+                if (!FinishRoomScheduleStyleRules.MatchesLineStyleName(
                         subcategory.Name,
-                        preferredName,
-                        StringComparison.CurrentCultureIgnoreCase))
+                        preferredName))
                 {
                     continue;
                 }
@@ -368,6 +464,30 @@ public sealed class FinishRoomScheduleBuilder
         Category? category = Category.GetCategory(document, fallbackCategory);
         GraphicsStyle? style = category?.GetGraphicsStyle(GraphicsStyleType.Projection);
         return style?.Id ?? ElementId.InvalidElementId;
+    }
+
+    private static void EnsureLineStyles(
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
+    {
+        if (normalLineStyleId == ElementId.InvalidElementId)
+        {
+            throw new InvalidOperationException(
+                $"Не найден стиль линий «{FinishRoomScheduleStyleRules.NormalLineStyleName}».");
+        }
+
+        if (thinLineStyleId == ElementId.InvalidElementId)
+        {
+            throw new InvalidOperationException(
+                $"Не найден стиль линий «{FinishRoomScheduleStyleRules.ThinLineStyleName}».");
+        }
+
+        if (RevitElementIds.GetValue(normalLineStyleId)
+            == RevitElementIds.GetValue(thinLineStyleId))
+        {
+            throw new InvalidOperationException(
+                "Для обычных и тонких границ ведомости Revit вернул один стиль линий.");
+        }
     }
 
     private static void ClearDefinition(ScheduleDefinition definition)

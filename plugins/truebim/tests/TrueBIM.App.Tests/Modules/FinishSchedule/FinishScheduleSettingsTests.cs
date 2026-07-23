@@ -22,5 +22,8 @@ public sealed class FinishScheduleSettingsTests
         Assert.Null(settings.DescriptionParameter);
         Assert.Null(settings.RoomListOutputParameter);
         Assert.Equal(FinishScheduleSettings.DefaultScheduleName, settings.ScheduleName);
+        Assert.Equal(
+            FinishScheduleColumnWidths.Default,
+            settings.EffectiveColumnWidths);
     }
 }
