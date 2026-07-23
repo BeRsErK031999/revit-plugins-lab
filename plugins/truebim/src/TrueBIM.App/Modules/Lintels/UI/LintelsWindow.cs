@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using Autodesk.Revit.UI;
+using Microsoft.Win32;
 using TrueBIM.App.Modules.Lintels.Models;
 using TrueBIM.App.Modules.Lintels.Revit;
 using TrueBIM.App.Modules.Lintels.Services;
@@ -22,6 +24,8 @@ namespace TrueBIM.App.Modules.Lintels.UI;
 public sealed class LintelsWindow : TrueBimWindow
 {
     private const string DialogTitle = "Перемычки";
+    private const string DefaultFrameFamilyFilePath =
+        @"Y:\01 - REVIT\03 - FAMILIES 2017\Аннотации\•• (Аннотация) Рамка аннотации.rfa";
 
     private readonly UIDocument uiDocument;
     private readonly LintelDiagnosticCollectorService collectorService;
@@ -40,11 +44,11 @@ public sealed class LintelsWindow : TrueBimWindow
     private readonly Button preflightButton;
     private readonly Button createButton;
     private readonly Button createViewButton;
+    private readonly Button frameFamilyButton;
+    private readonly TextBlock frameFamilyStatusText = new();
     private LintelDiagnosticResult currentResult;
-    private LintelTypeDiagnostic? approvedCreationType;
-    private LintelAssemblyPreflightItem? approvedCreationPreflight;
-    private string? preparedAssemblyName;
-    private string? preparedViewName;
+    private IReadOnlyList<LintelPreparedViewRequest> preparedViewRequests = [];
+    private string? selectedFrameFamilyPath;
     private bool isBulkSelectionUpdate;
 
     public LintelsWindow(
@@ -72,30 +76,48 @@ public sealed class LintelsWindow : TrueBimWindow
         refreshButton.ToolTip = "Повторно прочитать текущее выделение или активный вид в безопасном Revit-контексте.";
 
         preflightButton = TrueBimUi.CreateSecondaryButton(
-            "Проверить без создания",
+            "Проверить выбранные",
             TrueBimIcon.Search,
             (_, _) => RequestAssemblyPreflight(),
             minWidth: 190);
-        preflightButton.ToolTip = "Необязательная отдельная проверка выбранных составов через Revit API без транзакции и изменений модели.";
+        preflightButton.ToolTip = "Проверить состав всех отмеченных типоразмеров без создания элементов и изменения модели.";
         ToolTipService.SetShowOnDisabled(preflightButton, true);
 
         createButton = TrueBimUi.CreatePrimaryButton(
-            "Создать одну сборку",
+            "Шаг 3: создать сборки",
             TrueBimIcon.Apply,
             (_, _) => RequestAssemblyCreation(),
             isEnabled: false,
-            minWidth: 185);
+            minWidth: 205);
         ToolTipService.SetShowOnDisabled(createButton, true);
         UpdateCreateButtonState();
 
+        frameFamilyButton = TrueBimUi.CreateSecondaryButton(
+            "Шаг 4: выбрать рамку .rfa",
+            TrueBimIcon.FamilyManager,
+            (_, _) => SelectFrameFamily(),
+            minWidth: 210);
+        frameFamilyButton.ToolTip = "Выбрать загружаемое семейство Revit, которым TrueBIM разместит рамку на каждом создаваемом виде.";
+
+        selectedFrameFamilyPath = File.Exists(DefaultFrameFamilyFilePath)
+            ? DefaultFrameFamilyFilePath
+            : null;
         createViewButton = TrueBimUi.CreateSecondaryButton(
-            "Создать и оформить вид 1:10",
+            "Шаг 4: создать виды 1:10",
             TrueBimIcon.OpeningViews,
             (_, _) => RequestAssemblyViewCreation(),
             isEnabled: false,
-            minWidth: 205);
-        createViewButton.ToolTip = "Сначала создайте одну сборку, выберите типоразмер с существующей сборкой или откройте боковой вид Assembly, созданный TrueBIM.";
+            minWidth: 225);
+        createViewButton.ToolTip = "Сначала создайте сборки для отмеченных типоразмеров и выберите файл семейства рамки .rfa.";
         ToolTipService.SetShowOnDisabled(createViewButton, true);
+
+        frameFamilyStatusText.Text = selectedFrameFamilyPath is null
+            ? "Рамка не найдена автоматически. На шаге 4 укажите семейство «Типовая аннотация» (.rfa)."
+            : $"Рамка найдена в библиотеке: {Path.GetFileName(selectedFrameFamilyPath)}. При необходимости выберите другой файл.";
+        frameFamilyStatusText.Foreground = selectedFrameFamilyPath is null
+            ? TrueBimBrushes.TextSecondary
+            : TrueBimBrushes.TextPrimary;
+        frameFamilyStatusText.TextWrapping = TextWrapping.Wrap;
 
         Title = DialogTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Lintels, TrueBimTheme.IconSizeRibbon);
@@ -109,7 +131,7 @@ public sealed class LintelsWindow : TrueBimWindow
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader(
                 DialogTitle,
-                $"Шаг 2 из 4. Источник: {LintelWizardSourceCatalog.GetTitle(sourceMode)}. Выберите один готовый типоразмер; состав будет безопасно проверен перед созданием.",
+                $"Шаги 2–4 из 4. Источник: {LintelWizardSourceCatalog.GetTitle(sourceMode)}. Можно отметить несколько типоразмеров и обработать их одним запуском.",
                 TrueBimIcon.Lintels),
             CreateCommandBar(),
             CreateBody(),
@@ -147,6 +169,7 @@ public sealed class LintelsWindow : TrueBimWindow
             clearSelectionButton,
             refreshButton,
             preflightButton,
+            frameFamilyButton,
             diagnosticsButton);
     }
 
@@ -154,9 +177,16 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         Grid body = new();
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        Border workflowGuide = TrueBimUi.CreateInfoBanner(
+            "Как пройти дальше: 2 — отметьте один или несколько типоразмеров; 3 — нажмите «Создать сборки»; 4 — выберите .rfa рамки и нажмите «Создать виды 1:10». Выбор сохраняется между шагами.");
+        workflowGuide.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        body.Children.Add(workflowGuide);
+
         summaryHost.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        Grid.SetRow(summaryHost, 1);
         body.Children.Add(summaryHost);
 
         Grid columns = new();
@@ -164,7 +194,7 @@ public sealed class LintelsWindow : TrueBimWindow
         columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TrueBimTheme.Spacing16) });
         columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
 
-        UIElement typesPanel = CreateStretchSection("Типоразмеры", CreateTypeGrid());
+        UIElement typesPanel = CreateStretchSection("Шаг 2. Выберите типоразмеры", CreateTypeGrid());
         columns.Children.Add(typesPanel);
 
         ScrollViewer previewScroll = new()
@@ -173,11 +203,18 @@ public sealed class LintelsWindow : TrueBimWindow
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = previewContent
         };
-        UIElement previewPanel = CreateStretchSection("Будущие артефакты", previewScroll);
+        Grid previewPanelContent = new();
+        previewPanelContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        previewPanelContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        frameFamilyStatusText.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        previewPanelContent.Children.Add(frameFamilyStatusText);
+        Grid.SetRow(previewScroll, 1);
+        previewPanelContent.Children.Add(previewScroll);
+        UIElement previewPanel = CreateStretchSection("Что создаст TrueBIM", previewPanelContent);
         Grid.SetColumn(previewPanel, 2);
         columns.Children.Add(previewPanel);
 
-        Grid.SetRow(columns, 1);
+        Grid.SetRow(columns, 2);
         body.Children.Add(columns);
         return body;
     }
@@ -204,7 +241,7 @@ public sealed class LintelsWindow : TrueBimWindow
             nameof(LintelTypeSelectionItem.DiagnosticText),
             new DataGridLength(1, DataGridLengthUnitType.Star)));
         AutomationProperties.SetName(typeGrid, "Типоразмеры перемычек");
-        AutomationProperties.SetHelpText(typeGrid, "Отметьте строки со статусом «Готово», чтобы увидеть будущие имена артефактов.");
+        AutomationProperties.SetHelpText(typeGrid, "Отметьте один или несколько типоразмеров со статусом «Готово» или «Сборка уже есть».");
         return typeGrid;
     }
 
@@ -222,14 +259,17 @@ public sealed class LintelsWindow : TrueBimWindow
         closeButton.IsCancel = true;
         closeButton.ToolTip = "Закрыть окно перемычек.";
 
-        return TrueBimUi.CreateFooter(footerStatusText, createViewButton, createButton, closeButton);
+        return TrueBimUi.CreateFooter(footerStatusText, createButton, createViewButton, closeButton);
     }
 
-    private void ApplyResult(LintelDiagnosticResult result, long? selectedTypeId = null)
+    private void ApplyResult(
+        LintelDiagnosticResult result,
+        IReadOnlyCollection<long>? selectedTypeIds = null)
     {
-        InvalidateAssemblyApproval();
+        UpdateCreateButtonState();
         InvalidateViewCreationRequest();
         currentResult = result;
+        HashSet<long> preservedSelection = selectedTypeIds?.ToHashSet() ?? [];
         isBulkSelectionUpdate = true;
         try
         {
@@ -239,7 +279,7 @@ public sealed class LintelsWindow : TrueBimWindow
                 LintelTypeSelectionItem item = new(type);
                 item.PropertyChanged += OnTypeItemPropertyChanged;
                 typeItems.Add(item);
-                if (selectedTypeId == type.TypeId)
+                if (preservedSelection.Contains(type.TypeId))
                 {
                     item.IsSelected = true;
                 }
@@ -275,7 +315,7 @@ public sealed class LintelsWindow : TrueBimWindow
         {
             previewContent.Children.Add(TrueBimUi.CreateInfoBanner(
                 typeItems.Count == 0
-                    ? "Нет типоразмеров для preview. Измените выделение или активный вид и нажмите «Обновить из Revit»."
+                    ? "Типоразмеры не найдены. Измените источник в Revit и нажмите «Обновить из Revit»."
                     : "Выберите хотя бы один типоразмер со статусом «Готово».",
                 TrueBimUiSeverity.Warning));
             return;
@@ -301,15 +341,17 @@ public sealed class LintelsWindow : TrueBimWindow
             TextWrapping = TextWrapping.Wrap
         });
         UIElement badge = TrueBimUi.CreateStatusBadge(
-            item.Diagnostic.HasExistingAssembly ? "Сборка создана" : "Готово",
+            item.Diagnostic.HasExistingAssembly ? "Сборка уже есть" : "Будет создано",
             TrueBimUiSeverity.Success);
         Grid.SetColumn(badge, 1);
         title.Children.Add(badge);
         content.Children.Add(title);
 
-        content.Children.Add(CreateArtifactLine("Сборка", item.ArtifactPreview.AssemblyName));
-        content.Children.Add(CreateArtifactLine("Вид", item.ArtifactPreview.ViewName));
-        content.Children.Add(CreateArtifactLine("Изображение", item.ArtifactPreview.ImageFileName));
+        content.Children.Add(CreateArtifactLine(
+            item.Diagnostic.HasExistingAssembly ? "Сборка TrueBIM" : "Новая сборка",
+            item.ArtifactPreview.AssemblyName));
+        content.Children.Add(CreateArtifactLine("Боковой вид 1:10", item.ArtifactPreview.ViewName));
+        content.Children.Add(CreateArtifactLine("Будущий PNG", item.ArtifactPreview.ImageFileName));
 
         return new Border
         {
@@ -377,7 +419,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void SetReadySelection(bool isSelected)
     {
-        InvalidateAssemblyApproval();
+        UpdateCreateButtonState();
         InvalidateViewCreationRequest();
         isBulkSelectionUpdate = true;
         foreach (LintelTypeSelectionItem item in typeItems.Where(item => item.CanSelect))
@@ -394,7 +436,7 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         if (!isBulkSelectionUpdate && args.PropertyName == nameof(LintelTypeSelectionItem.IsSelected))
         {
-            InvalidateAssemblyApproval();
+            UpdateCreateButtonState();
             InvalidateViewCreationRequest();
             RefreshPreview();
             UpdateStatus();
@@ -403,7 +445,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void RefreshFromRevit()
     {
-        InvalidateAssemblyApproval();
+        UpdateCreateButtonState();
         InvalidateViewCreationRequest();
         footerStatusText.Text = "Обновление диагностики поставлено в очередь Revit…";
         revitActions.Raise(RefreshInRevitContext);
@@ -438,7 +480,7 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private void RequestAssemblyPreflight()
     {
-        InvalidateAssemblyApproval();
+        UpdateCreateButtonState();
         LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
         if (selectedTypes.Length == 0)
         {
@@ -478,26 +520,9 @@ public sealed class LintelsWindow : TrueBimWindow
             return;
         }
 
-        LintelTypeDiagnostic[] currentSelection = GetSelectedTypes();
-        bool selectionIsCurrent = LintelAssemblyCreationGate.IsCurrentSelection(
-            checkedTypes.Select(type => type.TypeId).ToArray(),
-            currentSelection.Select(type => type.TypeId).ToArray());
-        LintelAssemblyPreflightItem? singleReadyItem = result.Items.Count == 1
-            && result.Items[0].Status == LintelAssemblyPreflightStatus.Ready
-                ? result.Items[0]
-                : null;
-        if (selectionIsCurrent && checkedTypes.Count == 1 && singleReadyItem is not null)
-        {
-            approvedCreationType = checkedTypes.Single();
-            approvedCreationPreflight = singleReadyItem;
-        }
-
         UpdateCreateButtonState();
-        footerStatusText.Text = createButton.IsEnabled
-            ? $"Preflight успешен для «{singleReadyItem!.AssemblyName}». Можно создать одну сборку; вид и оформление пока не создаются."
-            : result.ReadyCount > 0 && checkedTypes.Count > 1
-                ? "Preflight завершён. Для атомарного создания оставьте выбранным один готовый типоразмер и повторите проверку."
-                : $"Preflight завершён: готово {result.ReadyCount}, существует {result.ExistingCount}, заблокировано {result.BlockedCount}. Модель Revit не изменялась.";
+        footerStatusText.Text =
+            $"Проверка завершена: можно создать {result.ReadyCount}, уже существует {result.ExistingCount}, заблокировано {result.BlockedCount}. Модель Revit не изменялась.";
         LintelAssemblyPreflightWindow window = new(result)
         {
             Owner = this
@@ -508,38 +533,29 @@ public sealed class LintelsWindow : TrueBimWindow
     private void RequestAssemblyCreation()
     {
         LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
-        if (!createButton.IsEnabled || selectedTypes.Length != 1)
+        if (!createButton.IsEnabled || selectedTypes.Length == 0)
         {
-            footerStatusText.Text = "Для создания оставьте выбранным ровно один типоразмер со статусом «Готово».";
+            footerStatusText.Text = "Для шага 3 отметьте хотя бы один типоразмер со статусом «Готово» или «Сборка уже есть».";
             return;
         }
 
-        LintelTypeDiagnostic selectedType = selectedTypes.Single();
-        bool hasCurrentApproval = LintelAssemblyCreationGate.CanCreate(
-            approvedCreationType?.TypeId,
-            approvedCreationPreflight?.Status,
-            [selectedType.TypeId]);
-        if (!hasCurrentApproval)
-        {
-            InvalidateAssemblyApproval();
-            footerStatusText.Text = $"Проверяю состав «{selectedType.FamilyName} : {selectedType.TypeName}» через Revit API…";
-            logger.Info($"Lintels creation requested; automatic preflight queued for TypeId {selectedType.TypeId}.");
-            revitActions.Raise(() => RunAssemblyPreflightForCreation(selectedType));
-            return;
-        }
-
-        ConfirmAndQueueAssemblyCreation();
+        UpdateCreateButtonState();
+        footerStatusText.Text = $"Проверяю состав отмеченных типоразмеров: {selectedTypes.Length}…";
+        logger.Info(
+            $"Lintels batch creation requested; automatic preflight queued for {selectedTypes.Length} type(s).");
+        revitActions.Raise(() => RunAssemblyPreflightForCreation(selectedTypes));
     }
 
-    private void RunAssemblyPreflightForCreation(LintelTypeDiagnostic selectedType)
+    private void RunAssemblyPreflightForCreation(
+        IReadOnlyCollection<LintelTypeDiagnostic> selectedTypes)
     {
         try
         {
             LintelAssemblyPreflightResult result = preflightService.Inspect(
                 uiDocument.Document,
-                [selectedType]);
+                selectedTypes);
             Dispatcher.BeginInvoke(new Action(() => ContinueAssemblyCreationAfterPreflight(
-                selectedType,
+                selectedTypes,
                 result)));
         }
         catch (Exception exception)
@@ -553,7 +569,7 @@ public sealed class LintelsWindow : TrueBimWindow
     }
 
     private void ContinueAssemblyCreationAfterPreflight(
-        LintelTypeDiagnostic checkedType,
+        IReadOnlyCollection<LintelTypeDiagnostic> checkedTypes,
         LintelAssemblyPreflightResult result)
     {
         if (!IsVisible)
@@ -562,56 +578,50 @@ public sealed class LintelsWindow : TrueBimWindow
         }
 
         LintelTypeDiagnostic[] currentSelection = GetSelectedTypes();
-        bool selectionIsCurrent = currentSelection.Length == 1
-            && currentSelection[0].TypeId == checkedType.TypeId;
-        LintelAssemblyPreflightItem item = result.Items.Single();
+        bool selectionIsCurrent = LintelAssemblyCreationGate.IsCurrentSelection(
+            checkedTypes.Select(type => type.TypeId).ToArray(),
+            currentSelection.Select(type => type.TypeId).ToArray());
         if (!selectionIsCurrent)
         {
-            footerStatusText.Text = "Выбор изменился во время проверки. Нажмите «Создать одну сборку» ещё раз для актуального типоразмера.";
+            footerStatusText.Text = "Выбор изменился во время проверки. Нажмите «Шаг 3: создать сборки» ещё раз.";
             UpdateCreateButtonState();
             return;
         }
 
-        if (item.Status != LintelAssemblyPreflightStatus.Ready)
+        int executableCount = result.ReadyCount + result.ExistingCount;
+        if (executableCount == 0)
         {
-            if (item.Status == LintelAssemblyPreflightStatus.AlreadyExists)
-            {
-                PrepareAssemblyViewRequest(checkedType, item.AssemblyName);
-            }
-
-            footerStatusText.Text = item.Status == LintelAssemblyPreflightStatus.AlreadyExists
-                ? $"Сборка «{item.AssemblyName}» уже существует; дубликат не создавался. Можно создать или повторно оформить боковой вид 1:10."
-                : $"Состав «{item.AssemblyName}» заблокирован проверкой Revit API. Модель не изменялась.";
+            footerStatusText.Text =
+                $"Все отмеченные типоразмеры заблокированы проверкой ({result.BlockedCount}). Модель Revit не изменялась.";
             LintelAssemblyPreflightWindow window = new(result)
             {
                 Owner = this
             };
             window.ShowDialog();
-            UpdateCreateButtonState();
             return;
         }
 
-        approvedCreationType = checkedType;
-        approvedCreationPreflight = item;
-        UpdateCreateButtonState();
-        footerStatusText.Text = $"Состав «{item.AssemblyName}» проверен. Подтвердите создание одной сборки.";
-        ConfirmAndQueueAssemblyCreation();
+        footerStatusText.Text =
+            $"Проверка завершена: создать {result.ReadyCount}, уже существуют {result.ExistingCount}, пропустить {result.BlockedCount}.";
+        ConfirmAndQueueAssemblyCreation(checkedTypes, result);
     }
 
-    private void ConfirmAndQueueAssemblyCreation()
+    private void ConfirmAndQueueAssemblyCreation(
+        IReadOnlyCollection<LintelTypeDiagnostic> checkedTypes,
+        LintelAssemblyPreflightResult preflight)
     {
-        if (approvedCreationType is null || approvedCreationPreflight is null)
-        {
-            footerStatusText.Text = "Проверка состава устарела. Нажмите «Создать одну сборку» ещё раз.";
-            UpdateCreateButtonState();
-            return;
-        }
-
         TaskDialog confirmation = new(DialogTitle)
         {
-            MainInstruction = "Создать одну сборку перемычки?",
-            MainContent = $"Сборка: {approvedCreationPreflight.AssemblyName}{Environment.NewLine}Компонентов: {approvedCreationPreflight.MemberCount}{Environment.NewLine}{Environment.NewLine}Будет создана только Assembly. Вид, размеры, марки и изображение на этом этапе не создаются.",
-            ExpandedContent = $"ElementId компонентов:{Environment.NewLine}{approvedCreationPreflight.MemberIdsDisplay}",
+            MainInstruction = $"Выполнить шаг 3 для {checkedTypes.Count} типоразмеров?",
+            MainContent =
+                $"Новых сборок: {preflight.ReadyCount}{Environment.NewLine}"
+                + $"Уже существуют: {preflight.ExistingCount}{Environment.NewLine}"
+                + $"Будут пропущены: {preflight.BlockedCount}{Environment.NewLine}{Environment.NewLine}"
+                + "На этом шаге создаются только Assembly. Виды и рамки создаются отдельной кнопкой шага 4.",
+            ExpandedContent = string.Join(
+                Environment.NewLine,
+                preflight.Items.Select(item =>
+                    $"• {item.AssemblyName}: {ResolvePreflightStatus(item.Status)}")),
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };
@@ -620,80 +630,96 @@ public sealed class LintelsWindow : TrueBimWindow
             return;
         }
 
-        LintelTypeDiagnostic selectedType = approvedCreationType;
-        InvalidateAssemblyApproval();
-        footerStatusText.Text = "Создание одной сборки поставлено в очередь Revit…";
-        revitActions.Raise(() => RunAssemblyCreation(selectedType));
+        UpdateCreateButtonState();
+        footerStatusText.Text = $"Создание сборок поставлено в очередь Revit: {checkedTypes.Count}.";
+        revitActions.Raise(() => RunAssemblyCreation(checkedTypes));
     }
 
-    private void RunAssemblyCreation(LintelTypeDiagnostic selectedType)
+    private void RunAssemblyCreation(
+        IReadOnlyCollection<LintelTypeDiagnostic> selectedTypes)
     {
+        List<LintelAssemblyCreationResult> results = [];
         try
         {
-            LintelAssemblyCreationResult result = creationService.CreateOne(
-                uiDocument.Document,
-                selectedType);
-            LintelDiagnosticResult refreshedDiagnostic = collectorService.Collect(uiDocument);
-            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyCreationResult(
-                result,
+            foreach (LintelTypeDiagnostic selectedType in selectedTypes)
+            {
+                try
+                {
+                    results.Add(creationService.CreateOne(
+                        uiDocument.Document,
+                        selectedType));
+                }
+                catch (Exception exception)
+                {
+                    LintelArtifactPreview artifact = LintelArtifactNameBuilder.Build(selectedType);
+                    logger.Error(
+                        $"Failed to create Lintels assembly '{artifact.AssemblyName}' inside batch.",
+                        exception);
+                    results.Add(new LintelAssemblyCreationResult(
+                        LintelAssemblyCreationStatus.Failed,
+                        artifact.AssemblyName,
+                        null,
+                        "Неожиданная ошибка этой строки; остальные отмеченные типоразмеры продолжили обработку."));
+                }
+            }
+
+            LintelDiagnosticResult refreshedDiagnostic = collectorService.Collect(
+                uiDocument,
+                sourceMode);
+            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyCreationResults(
+                results,
                 refreshedDiagnostic,
-                selectedType)));
+                selectedTypes.Select(type => type.TypeId).ToArray())));
         }
         catch (Exception exception)
         {
             logger.Error("Failed to execute Lintels assembly creation.", exception);
             TaskDialog.Show(
                 DialogTitle,
-                "Не удалось выполнить создание сборки. Операция отменена; подробности записаны в лог.");
-            footerStatusText.Text = "Создание сборки не выполнено.";
+                "Не удалось завершить пакетное создание сборок. Результаты уже обработанных типоразмеров сохранены; подробности записаны в лог.");
+            footerStatusText.Text = "Пакетное создание сборок завершилось с ошибкой.";
         }
     }
 
-    private void ShowAssemblyCreationResult(
-        LintelAssemblyCreationResult result,
+    private void ShowAssemblyCreationResults(
+        IReadOnlyCollection<LintelAssemblyCreationResult> results,
         LintelDiagnosticResult refreshedDiagnostic,
-        LintelTypeDiagnostic selectedType)
+        IReadOnlyCollection<long> selectedTypeIds)
     {
         if (IsVisible)
         {
-            ApplyResult(refreshedDiagnostic, selectedType.TypeId);
-            if (result.Status is LintelAssemblyCreationStatus.Created
-                or LintelAssemblyCreationStatus.AlreadyExists)
-            {
-                PrepareAssemblyViewRequest(selectedType, result.AssemblyName);
-            }
-
-            footerStatusText.Text = result.ModelChanged
-                ? $"Создана сборка «{result.AssemblyName}». Теперь можно создать и оформить один боковой вид 1:10."
-                : result.Message;
+            ApplyResult(refreshedDiagnostic, selectedTypeIds);
+            int successfulCount = results.Count(result => result.Status is
+                LintelAssemblyCreationStatus.Created or LintelAssemblyCreationStatus.AlreadyExists);
+            footerStatusText.Text =
+                $"Шаг 3 завершён: готовы сборки {successfulCount}/{results.Count}. Выбор сохранён; выберите .rfa рамки и переходите к шагу 4.";
         }
 
         TaskDialog dialog = new(DialogTitle)
         {
-            MainInstruction = result.Status switch
-            {
-                LintelAssemblyCreationStatus.Created => "Сборка создана",
-                LintelAssemblyCreationStatus.AlreadyExists => "Сборка уже существует",
-                LintelAssemblyCreationStatus.Blocked => "Создание заблокировано",
-                _ => "Создание не выполнено"
-            },
-            MainContent = result.BuildSummary(),
+            MainInstruction = "Шаг 3 завершён",
+            MainContent = BuildAssemblyCreationBatchOverview(results),
+            ExpandedContent = BuildAssemblyCreationBatchDetails(results),
             CommonButtons = TaskDialogCommonButtons.Close
         };
         dialog.Show();
     }
 
-    private void PrepareAssemblyViewRequest(
-        LintelTypeDiagnostic selectedType,
-        string assemblyName)
+    private void PrepareAssemblyViewRequests(
+        IReadOnlyCollection<LintelTypeDiagnostic> selectedTypes)
     {
-        LintelArtifactPreview artifact = LintelArtifactNameBuilder.Build(selectedType);
-        preparedAssemblyName = assemblyName;
-        preparedViewName = artifact.ViewName;
-        createViewButton.IsEnabled = true;
-        string explanation = $"Создать или повторно оформить для Assembly «{assemblyName}» вид «{artifact.ViewName}» слева в масштабе 1:10.";
-        createViewButton.ToolTip = explanation;
-        AutomationProperties.SetHelpText(createViewButton, explanation);
+        preparedViewRequests = selectedTypes
+            .Where(type => type.HasExistingAssembly)
+            .Select(type =>
+            {
+                LintelArtifactPreview artifact = LintelArtifactNameBuilder.Build(type);
+                return new LintelPreparedViewRequest(
+                    type.TypeId,
+                    type.ExistingAssemblyName!,
+                    artifact.ViewName);
+            })
+            .ToArray();
+        UpdatePreparedViewButtonState();
     }
 
     private bool TryPrepareActiveAssemblyViewRequest()
@@ -707,21 +733,22 @@ public sealed class LintelsWindow : TrueBimWindow
             return false;
         }
 
-        preparedAssemblyName = assembly.AssemblyTypeName;
-        preparedViewName = activeView.Name;
-        createViewButton.IsEnabled = true;
-        string explanation = $"Повторно оформить текущий боковой вид «{activeView.Name}» Assembly «{assembly.AssemblyTypeName}» без создания дубликата.";
-        createViewButton.ToolTip = explanation;
-        AutomationProperties.SetHelpText(createViewButton, explanation);
+        preparedViewRequests =
+        [
+            new LintelPreparedViewRequest(
+                null,
+                assembly.AssemblyTypeName,
+                activeView.Name)
+        ];
+        UpdatePreparedViewButtonState();
         return true;
     }
 
     private void InvalidateViewCreationRequest()
     {
-        preparedAssemblyName = null;
-        preparedViewName = null;
+        preparedViewRequests = [];
         createViewButton.IsEnabled = false;
-        string explanation = "Сначала создайте одну сборку, выберите типоразмер с существующей сборкой или откройте боковой вид Assembly, созданный TrueBIM.";
+        string explanation = "Сначала создайте сборки для отмеченных типоразмеров или откройте боковой вид Assembly, созданный TrueBIM.";
         createViewButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createViewButton, explanation);
     }
@@ -729,10 +756,9 @@ public sealed class LintelsWindow : TrueBimWindow
     private void UpdateViewCreationButtonState()
     {
         LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
-        if (LintelAssemblyCreationGate.CanCreateOrFormatView(selectedTypes))
+        if (LintelAssemblyCreationGate.CanCreateOrFormatViews(selectedTypes))
         {
-            LintelTypeDiagnostic selectedType = selectedTypes.Single();
-            PrepareAssemblyViewRequest(selectedType, selectedType.ExistingAssemblyName!);
+            PrepareAssemblyViewRequests(selectedTypes);
             return;
         }
 
@@ -741,33 +767,76 @@ public sealed class LintelsWindow : TrueBimWindow
             return;
         }
 
-        preparedAssemblyName = null;
-        preparedViewName = null;
+        preparedViewRequests = [];
         createViewButton.IsEnabled = false;
         string explanation = selectedTypes.Length switch
         {
-            0 => "Выберите один типоразмер с уже созданной сборкой. После создания новой сборки выбранная строка сохранится.",
-            > 1 => $"Выбрано типоразмеров: {selectedTypes.Length}. Оформление доступно только для одной сборки за раз — снимите лишние отметки.",
-            _ => "Для выбранного типоразмера сборка ещё не создана. Сначала нажмите «Создать одну сборку»."
+            0 => "Отметьте типоразмеры с уже созданными сборками. После шага 3 отмеченные строки сохранятся.",
+            _ => "Не для всех отмеченных типоразмеров создана сборка. Сначала выполните шаг 3."
         };
         createViewButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createViewButton, explanation);
     }
 
+    private void UpdatePreparedViewButtonState()
+    {
+        bool hasRequests = preparedViewRequests.Count > 0;
+        bool hasFrameFamily = !string.IsNullOrWhiteSpace(selectedFrameFamilyPath);
+        createViewButton.IsEnabled = hasRequests && hasFrameFamily;
+        string explanation = !hasRequests
+            ? "Сначала создайте сборки для отмеченных типоразмеров."
+            : !hasFrameFamily
+                ? $"Сборки готовы: {preparedViewRequests.Count}. Теперь нажмите «Шаг 4: выбрать рамку .rfa»."
+                : $"Создать или повторно оформить боковые виды 1:10: {preparedViewRequests.Count}. Рамка: {Path.GetFileName(selectedFrameFamilyPath)}.";
+        createViewButton.ToolTip = explanation;
+        AutomationProperties.SetHelpText(createViewButton, explanation);
+    }
+
+    private void SelectFrameFamily()
+    {
+        OpenFileDialog dialog = new()
+        {
+            Title = "Выбрать семейство рамки для видов перемычек",
+            Filter = "Семейства Revit (*.rfa)|*.rfa",
+            CheckFileExists = true,
+            Multiselect = false,
+            FileName = selectedFrameFamilyPath
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        selectedFrameFamilyPath = dialog.FileName;
+        frameFamilyStatusText.Text =
+            $"Рамка: {Path.GetFileName(selectedFrameFamilyPath)}. TrueBIM загрузит это семейство в проект и разместит один экземпляр по центру каждого вида.";
+        frameFamilyStatusText.Foreground = TrueBimBrushes.TextPrimary;
+        UpdatePreparedViewButtonState();
+        footerStatusText.Text =
+            $"Семейство рамки выбрано: {selectedFrameFamilyPath}. Если сборки готовы, можно выполнить шаг 4.";
+    }
+
     private void RequestAssemblyViewCreation()
     {
         if (!createViewButton.IsEnabled
-            || string.IsNullOrWhiteSpace(preparedAssemblyName)
-            || string.IsNullOrWhiteSpace(preparedViewName))
+            || preparedViewRequests.Count == 0
+            || string.IsNullOrWhiteSpace(selectedFrameFamilyPath))
         {
-            footerStatusText.Text = "Сначала создайте одну сборку перемычки или повторно запустите создание для уже существующей сборки.";
+            footerStatusText.Text = "Для шага 4 нужны готовые сборки и выбранный файл семейства рамки .rfa.";
             return;
         }
 
         TaskDialog confirmation = new(DialogTitle)
         {
-            MainInstruction = "Создать и оформить один боковой вид сборки 1:10?",
-            MainContent = $"Сборка: {preparedAssemblyName}{Environment.NewLine}Вид: {preparedViewName}{Environment.NewLine}{Environment.NewLine}TrueBIM создаст или переиспользует вид слева 1:10, нанесёт один габаритный размер и высотную отметку, построит ограничивающую рамку невидимыми линиями и нормализует crop. Экспорт изображения и марки компонентов пока не выполняются.",
+            MainInstruction = $"Выполнить шаг 4 для {preparedViewRequests.Count} сборок?",
+            MainContent =
+                $"Семейство рамки: {Path.GetFileName(selectedFrameFamilyPath)}{Environment.NewLine}"
+                + $"Видов: {preparedViewRequests.Count}{Environment.NewLine}{Environment.NewLine}"
+                + "TrueBIM создаст или переиспользует боковые виды 1:10, нанесёт габаритный размер и высотную отметку, загрузит выбранное семейство рамки и разместит его по центру каждого вида. Линиями рамка больше не строится.",
+            ExpandedContent = string.Join(
+                Environment.NewLine,
+                preparedViewRequests.Select(request =>
+                    $"• {request.AssemblyName} → {request.ViewName}")),
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };
@@ -776,52 +845,83 @@ public sealed class LintelsWindow : TrueBimWindow
             return;
         }
 
-        string assemblyName = preparedAssemblyName!;
-        string viewName = preparedViewName!;
-        footerStatusText.Text = $"Создание или оформление бокового вида «{viewName}» поставлено в очередь Revit…";
-        revitActions.Raise(() => RunAssemblyViewCreation(assemblyName, viewName));
+        LintelPreparedViewRequest[] requests = preparedViewRequests.ToArray();
+        string frameFamilyPath = selectedFrameFamilyPath!;
+        footerStatusText.Text = $"Создание или оформление видов поставлено в очередь Revit: {requests.Length}.";
+        revitActions.Raise(() => RunAssemblyViewCreation(requests, frameFamilyPath));
     }
 
-    private void RunAssemblyViewCreation(string assemblyName, string viewName)
+    private void RunAssemblyViewCreation(
+        IReadOnlyCollection<LintelPreparedViewRequest> requests,
+        string frameFamilyPath)
     {
+        List<LintelAssemblyViewCreationResult> results = [];
         try
         {
-            LintelAssemblyViewCreationResult result = viewCreationService.CreateOne(
-                uiDocument.Document,
-                assemblyName,
-                viewName);
-            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyViewCreationResult(result)));
+            foreach (LintelPreparedViewRequest request in requests)
+            {
+                try
+                {
+                    results.Add(viewCreationService.CreateOne(
+                        uiDocument.Document,
+                        request.AssemblyName,
+                        request.ViewName,
+                        frameFamilyPath));
+                }
+                catch (Exception exception)
+                {
+                    logger.Error(
+                        $"Failed to create Lintels view '{request.ViewName}' inside batch.",
+                        exception);
+                    results.Add(new LintelAssemblyViewCreationResult(
+                        LintelAssemblyViewCreationStatus.Failed,
+                        request.AssemblyName,
+                        request.ViewName,
+                        null,
+                        "Неожиданная ошибка этой строки; остальные отмеченные сборки продолжили обработку."));
+                }
+            }
+
+            LintelDiagnosticResult refreshedDiagnostic = collectorService.Collect(
+                uiDocument,
+                sourceMode);
+            Dispatcher.BeginInvoke(new Action(() => ShowAssemblyViewCreationResults(
+                results,
+                refreshedDiagnostic,
+                requests
+                    .Where(request => request.TypeId is not null)
+                    .Select(request => request.TypeId!.Value)
+                    .ToArray())));
         }
         catch (Exception exception)
         {
             logger.Error("Failed to execute Lintels side assembly view creation or formatting.", exception);
             TaskDialog.Show(
                 DialogTitle,
-                "Не удалось создать или оформить боковой вид сборки. Операция отменена; подробности записаны в лог.");
-            footerStatusText.Text = "Создание или оформление бокового вида не выполнено.";
+                "Не удалось завершить пакетное создание видов. Уже обработанные виды сохранены; подробности записаны в лог.");
+            footerStatusText.Text = "Пакетное создание или оформление видов завершилось с ошибкой.";
         }
     }
 
-    private void ShowAssemblyViewCreationResult(LintelAssemblyViewCreationResult result)
+    private void ShowAssemblyViewCreationResults(
+        IReadOnlyCollection<LintelAssemblyViewCreationResult> results,
+        LintelDiagnosticResult refreshedDiagnostic,
+        IReadOnlyCollection<long> selectedTypeIds)
     {
         if (IsVisible)
         {
-            footerStatusText.Text = result.ModelChanged
-                ? $"Боковой вид «{result.ViewName}» создан или повторно оформлен."
-                : result.Message;
+            ApplyResult(refreshedDiagnostic, selectedTypeIds);
+            int successfulCount = results.Count(result => result.Status is
+                LintelAssemblyViewCreationStatus.Created or LintelAssemblyViewCreationStatus.AlreadyExists);
+            footerStatusText.Text =
+                $"Шаг 4 завершён: обработано видов {successfulCount}/{results.Count}. Рамка размещалась выбранным семейством .rfa.";
         }
 
         TaskDialog dialog = new(DialogTitle)
         {
-            MainInstruction = result.Status switch
-            {
-                LintelAssemblyViewCreationStatus.Created => "Боковой вид создан",
-                LintelAssemblyViewCreationStatus.AlreadyExists when result.Formatting?.ModelChanged == true => "Существующий боковой вид оформлен",
-                LintelAssemblyViewCreationStatus.AlreadyExists => "Боковой вид уже существует",
-                LintelAssemblyViewCreationStatus.Blocked => "Создание вида заблокировано",
-                _ => "Создание вида не выполнено"
-            },
-            MainContent = result.BuildSummary(),
+            MainInstruction = "Шаг 4 завершён",
+            MainContent = BuildViewCreationBatchOverview(results),
+            ExpandedContent = BuildViewCreationBatchDetails(results),
             CommonButtons = TaskDialogCommonButtons.Close
         };
         dialog.Show();
@@ -835,34 +935,18 @@ public sealed class LintelsWindow : TrueBimWindow
             .ToArray();
     }
 
-    private void InvalidateAssemblyApproval()
-    {
-        approvedCreationType = null;
-        approvedCreationPreflight = null;
-        UpdateCreateButtonState();
-    }
-
     private void UpdateCreateButtonState()
     {
         LintelTypeDiagnostic[] selectedTypes = GetSelectedTypes();
         long[] selectedTypeIds = selectedTypes
             .Select(type => type.TypeId)
             .ToArray();
-        bool hasCurrentApproval = LintelAssemblyCreationGate.CanCreate(
-            approvedCreationType?.TypeId,
-            approvedCreationPreflight?.Status,
-            selectedTypeIds);
         bool canStart = LintelAssemblyCreationGate.CanStart(selectedTypeIds);
         createButton.IsEnabled = canStart;
-        string explanation = hasCurrentApproval
-            ? $"Создать одну Assembly «{approvedCreationPreflight!.AssemblyName}» из уже проверенного состава."
-            : selectedTypes.Length == 0
-                ? "Выберите один типоразмер со статусом «Готово» или «Сборка создана»."
-                : selectedTypes.Length > 1
-                    ? $"Выбрано типоразмеров: {selectedTypes.Length}. Создание доступно только для одной сборки за раз — снимите лишние отметки."
-                    : selectedTypes[0].HasExistingAssembly
-                        ? $"Сборка «{selectedTypes[0].ExistingAssemblyName}» уже существует. Повторный запуск не создаст дубликат."
-                        : "Сначала автоматически проверить выбранный состав через Revit API, затем показать подтверждение создания одной Assembly.";
+        int existingCount = selectedTypes.Count(type => type.HasExistingAssembly);
+        string explanation = selectedTypes.Length == 0
+            ? "Отметьте один или несколько типоразмеров со статусом «Готово» или «Сборка уже есть»."
+            : $"Проверить и обработать отмеченные типоразмеры: {selectedTypes.Length}. Уже имеют сборку: {existingCount}; для остальных TrueBIM создаст Assembly.";
         createButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createButton, explanation);
     }
@@ -871,9 +955,7 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         int readyCount = typeItems.Count(item => item.CanSelect);
         int selectedCount = typeItems.Count(item => item.IsSelected && item.CanSelect);
-        LintelTypeDiagnostic? selectedType = selectedCount == 1
-            ? GetSelectedTypes().Single()
-            : null;
+        int selectedExistingCount = GetSelectedTypes().Count(type => type.HasExistingAssembly);
         preflightButton.IsEnabled = selectedCount > 0;
         UpdateCreateButtonState();
         UpdateViewCreationButtonState();
@@ -882,14 +964,92 @@ public sealed class LintelsWindow : TrueBimWindow
             : "Сначала выберите хотя бы один готовый типоразмер.";
         preflightButton.ToolTip = preflightExplanation;
         AutomationProperties.SetHelpText(preflightButton, preflightExplanation);
-        string source = currentResult.Source == LintelDiagnosticSource.Selection
-            ? "выделение"
-            : "активный вид";
-        footerStatusText.Text = selectedType?.HasExistingAssembly == true
-            ? $"Источник: {source}. Выбран один типоразмер. Сборка «{selectedType.ExistingAssemblyName}» уже создана — можно повторить создание без дубликата или оформить вид 1:10."
-            : selectedCount == 1
-                ? $"Источник: {source}. Готово: {readyCount}. Выбран один типоразмер. Кнопка создания сначала выполнит проверку Revit API."
-                : $"Источник: {source}. Типоразмеров: {typeItems.Count}. Готово: {readyCount}. Выбрано: {selectedCount}. Для создания оставьте один готовый типоразмер.";
+        string source = currentResult.Source switch
+        {
+            LintelDiagnosticSource.Selection => "выделение",
+            LintelDiagnosticSource.ActiveView => "активный вид",
+            LintelDiagnosticSource.ExistingItems => "результаты TrueBIM",
+            _ => "неизвестный источник"
+        };
+        footerStatusText.Text = selectedCount == 0
+            ? $"Источник: {source}. Типоразмеров: {typeItems.Count}. Готово к обработке: {readyCount}. Выполните шаг 2 — отметьте нужные строки."
+            : selectedExistingCount == selectedCount
+                ? selectedFrameFamilyPath is null
+                    ? $"Источник: {source}. Отмечено: {selectedCount}; у всех уже есть сборки TrueBIM. Выберите рамку .rfa и переходите к шагу 4."
+                    : $"Источник: {source}. Отмечено: {selectedCount}; у всех уже есть сборки TrueBIM. Рамка выбрана — кнопка шага 4 доступна."
+                : $"Источник: {source}. Отмечено: {selectedCount}; со сборкой TrueBIM: {selectedExistingCount}. Следующее действие — шаг 3 «Создать сборки».";
+    }
+
+    private static string ResolvePreflightStatus(LintelAssemblyPreflightStatus status)
+    {
+        return status switch
+        {
+            LintelAssemblyPreflightStatus.Ready => "будет создана",
+            LintelAssemblyPreflightStatus.AlreadyExists => "уже существует",
+            LintelAssemblyPreflightStatus.Blocked => "будет пропущена",
+            _ => status.ToString()
+        };
+    }
+
+    private static string BuildAssemblyCreationBatchOverview(
+        IReadOnlyCollection<LintelAssemblyCreationResult> results)
+    {
+        int created = results.Count(result => result.Status == LintelAssemblyCreationStatus.Created);
+        int existing = results.Count(result => result.Status == LintelAssemblyCreationStatus.AlreadyExists);
+        int skipped = results.Count - created - existing;
+        return $"Создано сборок: {created}; уже существовали: {existing}; не создано: {skipped}. Откройте подробности, чтобы увидеть результат каждой строки.";
+    }
+
+    private static string BuildAssemblyCreationBatchDetails(
+        IReadOnlyCollection<LintelAssemblyCreationResult> results)
+    {
+        return string.Join(Environment.NewLine, results.Select(result =>
+            $"• {result.AssemblyName}: {ResolveAssemblyCreationStatus(result.Status)}"));
+    }
+
+    private static string ResolveAssemblyCreationStatus(LintelAssemblyCreationStatus status)
+    {
+        return status switch
+        {
+            LintelAssemblyCreationStatus.Created => "создана",
+            LintelAssemblyCreationStatus.AlreadyExists => "уже существует",
+            LintelAssemblyCreationStatus.Blocked => "заблокирована",
+            _ => "ошибка"
+        };
+    }
+
+    private static string BuildViewCreationBatchOverview(
+        IReadOnlyCollection<LintelAssemblyViewCreationResult> results)
+    {
+        int created = results.Count(result => result.Status == LintelAssemblyViewCreationStatus.Created);
+        int updated = results.Count(result =>
+            result.Status == LintelAssemblyViewCreationStatus.AlreadyExists
+            && result.Formatting?.ModelChanged == true);
+        int unchanged = results.Count(result =>
+            result.Status == LintelAssemblyViewCreationStatus.AlreadyExists
+            && result.Formatting?.ModelChanged != true);
+        int failed = results.Count - created - updated - unchanged;
+        return $"Создано видов: {created}; повторно оформлено: {updated}; без изменений: {unchanged}; не обработано: {failed}. Откройте подробности, чтобы увидеть результат каждого вида.";
+    }
+
+    private static string BuildViewCreationBatchDetails(
+        IReadOnlyCollection<LintelAssemblyViewCreationResult> results)
+    {
+        return string.Join(Environment.NewLine, results.Select(result =>
+            $"• {result.ViewName}: {ResolveViewCreationStatus(result)}"));
+    }
+
+    private static string ResolveViewCreationStatus(LintelAssemblyViewCreationResult result)
+    {
+        return result.Status switch
+        {
+            LintelAssemblyViewCreationStatus.Created => "создан и оформлен",
+            LintelAssemblyViewCreationStatus.AlreadyExists when result.Formatting?.ModelChanged == true =>
+                "повторно оформлен",
+            LintelAssemblyViewCreationStatus.AlreadyExists => "уже существует, без изменений",
+            LintelAssemblyViewCreationStatus.Blocked => "заблокирован",
+            _ => "ошибка"
+        };
     }
 
     private static DataGridTextColumn CreateTextColumn(
@@ -941,4 +1101,9 @@ public sealed class LintelsWindow : TrueBimWindow
             Width = 58
         };
     }
+
+    private sealed record LintelPreparedViewRequest(
+        long? TypeId,
+        string AssemblyName,
+        string ViewName);
 }

@@ -32,13 +32,13 @@ public sealed class LintelTypeSelectionItem : INotifyPropertyChanged
     public bool CanSelect => Diagnostic.IsAssemblyReady;
 
     public string ReadyStatus => Diagnostic.HasExistingAssembly
-        ? "Сборка создана"
+        ? "Сборка уже есть"
         : CanSelect
             ? "Готово"
             : "Заблокировано";
 
     public string DiagnosticText => Diagnostic.HasExistingAssembly
-        ? $"Сборка «{Diagnostic.ExistingAssemblyName}» уже существует. Можно создать или повторно оформить боковой вид."
+        ? $"TrueBIM уже создал Assembly «{Diagnostic.ExistingAssemblyName}» для этого типоразмера. Повторный запуск не создаст дубликат; на шаге 4 можно создать или повторно оформить боковой вид."
         : Diagnostic.Diagnostics.Count == 0
             ? "Вложенные компоненты с геометрией найдены."
             : string.Join("; ", Diagnostic.Diagnostics);

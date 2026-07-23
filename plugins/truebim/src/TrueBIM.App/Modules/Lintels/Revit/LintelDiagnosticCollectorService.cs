@@ -38,19 +38,29 @@ public sealed class LintelDiagnosticCollectorService
             throw new ArgumentNullException(nameof(uiDocument));
         }
 
-        if (sourceMode is not (LintelWizardSourceMode.CurrentSelection or LintelWizardSourceMode.ActiveView))
+        if (sourceMode is not (LintelWizardSourceMode.CurrentSelection
+            or LintelWizardSourceMode.ActiveView
+            or LintelWizardSourceMode.ExistingItems))
         {
             throw new NotSupportedException($"Источник «{LintelWizardSourceCatalog.GetTitle(sourceMode)}» пока недоступен.");
         }
 
         Document document = uiDocument.Document;
         ICollection<ElementId> selectedIds = uiDocument.Selection.GetElementIds();
-        LintelDiagnosticSource source = sourceMode == LintelWizardSourceMode.CurrentSelection
-            ? LintelDiagnosticSource.Selection
-            : LintelDiagnosticSource.ActiveView;
-        IReadOnlyList<Element> sourceElements = source == LintelDiagnosticSource.Selection
-            ? ResolveSelectedElements(document, selectedIds)
-            : ResolveVisibleFamilyInstances(document, uiDocument.ActiveView);
+        LintelDiagnosticSource source = sourceMode switch
+        {
+            LintelWizardSourceMode.CurrentSelection => LintelDiagnosticSource.Selection,
+            LintelWizardSourceMode.ActiveView => LintelDiagnosticSource.ActiveView,
+            LintelWizardSourceMode.ExistingItems => LintelDiagnosticSource.ExistingItems,
+            _ => throw new NotSupportedException($"Источник «{LintelWizardSourceCatalog.GetTitle(sourceMode)}» пока недоступен.")
+        };
+        IReadOnlyList<Element> sourceElements = source switch
+        {
+            LintelDiagnosticSource.Selection => ResolveSelectedElements(document, selectedIds),
+            LintelDiagnosticSource.ActiveView => ResolveVisibleFamilyInstances(document, uiDocument.ActiveView),
+            LintelDiagnosticSource.ExistingItems => ResolveProjectFamilyInstances(document),
+            _ => []
+        };
 
         List<LintelInstanceSnapshot> instances = [];
         List<LintelExcludedElement> excluded = [];
@@ -59,6 +69,11 @@ public sealed class LintelDiagnosticCollectorService
         if (source == LintelDiagnosticSource.ActiveView)
         {
             diagnostics.Add("Автопоиск использует временное правило: имя семейства, типоразмера или экземпляра содержит «перемыч» либо «lintel».");
+        }
+        else if (source == LintelDiagnosticSource.ExistingItems)
+        {
+            diagnostics.Add(
+                "Источник показывает только типоразмеры, для которых в текущем проекте найдена Assembly с детерминированным именем TrueBIM.");
         }
 
         foreach (Element element in sourceElements)
@@ -74,13 +89,17 @@ public sealed class LintelDiagnosticCollectorService
 
             string familyName = GetFamilyName(familyInstance);
             string typeName = GetTypeName(familyInstance);
-            if (source == LintelDiagnosticSource.ActiveView
+            if (source is LintelDiagnosticSource.ActiveView or LintelDiagnosticSource.ExistingItems
                 && !LintelCandidateMatcher.IsMatch(familyName, typeName, familyInstance.Name))
             {
-                excluded.Add(new LintelExcludedElement(
-                    RevitElementIds.GetValue(familyInstance.Id),
-                    $"{familyName} : {typeName}",
-                    "имя не соответствует временному правилу автопоиска"));
+                if (source == LintelDiagnosticSource.ActiveView)
+                {
+                    excluded.Add(new LintelExcludedElement(
+                        RevitElementIds.GetValue(familyInstance.Id),
+                        $"{familyName} : {typeName}",
+                        "имя не соответствует временному правилу автопоиска"));
+                }
+
                 continue;
             }
 
@@ -101,16 +120,53 @@ public sealed class LintelDiagnosticCollectorService
 
         if (instances.Count == 0)
         {
-            diagnostics.Add(source == LintelDiagnosticSource.Selection
-                ? "В выделении нет подходящих экземпляров семейств. Выберите родительские перемычки и повторите запуск."
-                : "На активном виде перемычки не найдены. Выберите нужные экземпляры явно либо уточните правило именования по рабочему RVT-файлу.");
+            diagnostics.Add(source switch
+            {
+                LintelDiagnosticSource.Selection =>
+                    "В выделении нет подходящих экземпляров семейств. Выберите родительские перемычки и повторите запуск.",
+                LintelDiagnosticSource.ActiveView =>
+                    "На активном виде перемычки не найдены. Выберите нужные экземпляры явно либо уточните правило именования по рабочему RVT-файлу.",
+                LintelDiagnosticSource.ExistingItems =>
+                    "В проекте не найдены исходные семейства перемычек, связанные с результатами TrueBIM.",
+                _ => "Перемычки не найдены."
+            });
         }
 
         LintelDiagnosticResult result = LintelExistingAssemblyMatcher.Apply(
             reportBuilder.Build(source, instances, excluded, diagnostics),
             CollectExistingAssemblyNames(document));
+        if (source == LintelDiagnosticSource.ExistingItems)
+        {
+            result = result with
+            {
+                Types = result.Types
+                    .Where(type => type.HasExistingAssembly)
+                    .ToArray()
+            };
+            if (result.Types.Count == 0)
+            {
+                result = result with
+                {
+                    Diagnostics = result.Diagnostics
+                        .Append("Сборки с именами TrueBIM найдены не были либо их исходные типоразмеры больше не существуют в проекте.")
+                        .ToArray()
+                };
+            }
+        }
+
         logger.Info($"Lintels diagnostic completed. Source={source}; Instances={result.InstanceCount}; Types={result.Types.Count}; ReadyTypes={result.ReadyTypeCount}; Excluded={result.ExcludedElements.Count}.");
         return result;
+    }
+
+    public bool HasExistingItems(Document document)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        return CollectExistingAssemblyNames(document)
+            .Any(LintelArtifactNameBuilder.IsTrueBimLintelArtifactName);
     }
 
     private static IReadOnlyList<Element> ResolveSelectedElements(
@@ -132,6 +188,15 @@ public sealed class LintelDiagnosticCollectorService
         }
 
         return new FilteredElementCollector(document, activeView.Id)
+            .OfClass(typeof(FamilyInstance))
+            .WhereElementIsNotElementType()
+            .ToElements()
+            .ToArray();
+    }
+
+    private static IReadOnlyList<Element> ResolveProjectFamilyInstances(Document document)
+    {
+        return new FilteredElementCollector(document)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .ToElements()

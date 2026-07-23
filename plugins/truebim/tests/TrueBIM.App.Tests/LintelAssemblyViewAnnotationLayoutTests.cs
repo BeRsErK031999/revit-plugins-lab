@@ -41,7 +41,7 @@ public sealed class LintelAssemblyViewAnnotationLayoutTests
     }
 
     [Fact]
-    public void CreateFrameSegments_ReturnsClosedRectangleAtFrameBounds()
+    public void Create_ExposesFamilyPlacementPointAtFrameCenter()
     {
         LintelViewProjectedBounds bounds = new(
             -510 * FeetPerMillimeter,
@@ -50,14 +50,13 @@ public sealed class LintelAssemblyViewAnnotationLayoutTests
             90 * FeetPerMillimeter);
         LintelAssemblyViewAnnotationLayout layout = LintelAssemblyViewAnnotationLayout.Create(bounds, 10);
 
-        IReadOnlyList<LintelViewSegment> segments = layout.CreateFrameSegments();
-
-        Assert.Equal(4, segments.Count);
-        Assert.Equal(new LintelViewPoint(layout.FrameMinHorizontal, layout.FrameMinVertical), segments[0].Start);
-        Assert.Equal(new LintelViewPoint(layout.FrameMaxHorizontal, layout.FrameMinVertical), segments[0].End);
-        for (int index = 0; index < segments.Count; index++)
-        {
-            Assert.Equal(segments[index].End, segments[(index + 1) % segments.Count].Start);
-        }
+        Assert.Equal(
+            (layout.FrameMinHorizontal + layout.FrameMaxHorizontal) * 0.5,
+            layout.FrameCenterHorizontal,
+            8);
+        Assert.Equal(
+            (layout.FrameMinVertical + layout.FrameMaxVertical) * 0.5,
+            layout.FrameCenterVertical,
+            8);
     }
 }

@@ -23,7 +23,7 @@ public sealed class LintelTypeSelectionItemTests
         string assemblyName = LintelArtifactNameBuilder.Build(type).AssemblyName;
         LintelTypeSelectionItem item = new(type with { ExistingAssemblyName = assemblyName });
 
-        Assert.Equal("Сборка создана", item.ReadyStatus);
+        Assert.Equal("Сборка уже есть", item.ReadyStatus);
         Assert.Contains(assemblyName, item.DiagnosticText, StringComparison.Ordinal);
         Assert.Contains("оформить", item.DiagnosticText, StringComparison.CurrentCultureIgnoreCase);
     }

@@ -7,47 +7,11 @@ namespace TrueBIM.App.Tests;
 public sealed class LintelAssemblyCreationGateTests
 {
     [Fact]
-    public void CanStart_AllowsExactlyOneSelectedType()
+    public void CanStart_AllowsOneOrMoreSelectedTypes()
     {
         Assert.True(LintelAssemblyCreationGate.CanStart([100]));
+        Assert.True(LintelAssemblyCreationGate.CanStart([100, 200]));
         Assert.False(LintelAssemblyCreationGate.CanStart([]));
-        Assert.False(LintelAssemblyCreationGate.CanStart([100, 200]));
-    }
-
-    [Fact]
-    public void CanCreate_AllowsOneCurrentReadyType()
-    {
-        Assert.True(LintelAssemblyCreationGate.CanCreate(
-            100,
-            LintelAssemblyPreflightStatus.Ready,
-            [100]));
-    }
-
-    [Theory]
-    [InlineData(null, LintelAssemblyPreflightStatus.Ready)]
-    [InlineData(100L, LintelAssemblyPreflightStatus.Blocked)]
-    [InlineData(100L, LintelAssemblyPreflightStatus.AlreadyExists)]
-    public void CanCreate_BlocksMissingOrUnreadyApproval(
-        long? approvedTypeId,
-        LintelAssemblyPreflightStatus status)
-    {
-        Assert.False(LintelAssemblyCreationGate.CanCreate(
-            approvedTypeId,
-            status,
-            [100]));
-    }
-
-    [Fact]
-    public void CanCreate_BlocksChangedOrMultipleSelection()
-    {
-        Assert.False(LintelAssemblyCreationGate.CanCreate(
-            100,
-            LintelAssemblyPreflightStatus.Ready,
-            [101]));
-        Assert.False(LintelAssemblyCreationGate.CanCreate(
-            100,
-            LintelAssemblyPreflightStatus.Ready,
-            [100, 101]));
     }
 
     [Fact]
@@ -58,7 +22,7 @@ public sealed class LintelAssemblyCreationGateTests
     }
 
     [Fact]
-    public void CanCreateOrFormatView_AllowsOnlyOneTypeWithExistingAssembly()
+    public void CanCreateOrFormatViews_AllowsBatchWhenEveryTypeHasExistingAssembly()
     {
         LintelTypeDiagnostic existing = CreateType(100) with
         {
@@ -66,10 +30,16 @@ public sealed class LintelAssemblyCreationGateTests
         };
         LintelTypeDiagnostic newType = CreateType(200);
 
-        Assert.True(LintelAssemblyCreationGate.CanCreateOrFormatView([existing]));
-        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatView([]));
-        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatView([newType]));
-        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatView([existing, newType]));
+        LintelTypeDiagnostic secondExisting = CreateType(300) with
+        {
+            ExistingAssemblyName = "TB_Перемычка_ПР-2_300"
+        };
+
+        Assert.True(LintelAssemblyCreationGate.CanCreateOrFormatViews([existing]));
+        Assert.True(LintelAssemblyCreationGate.CanCreateOrFormatViews([existing, secondExisting]));
+        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatViews([]));
+        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatViews([newType]));
+        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatViews([existing, newType]));
     }
 
     private static LintelTypeDiagnostic CreateType(long typeId)

@@ -21,7 +21,8 @@ public sealed class LintelAssemblyViewCreationService
     public LintelAssemblyViewCreationResult CreateOne(
         Document document,
         string assemblyName,
-        string viewName)
+        string viewName,
+        string frameFamilyFilePath)
     {
         if (document is null)
         {
@@ -36,6 +37,11 @@ public sealed class LintelAssemblyViewCreationService
         if (string.IsNullOrWhiteSpace(viewName))
         {
             throw new ArgumentException("View name is required.", nameof(viewName));
+        }
+
+        if (string.IsNullOrWhiteSpace(frameFamilyFilePath))
+        {
+            throw new ArgumentException("Frame family file path is required.", nameof(frameFamilyFilePath));
         }
 
         AssemblyInstance? assembly = FindAssembly(document, assemblyName);
@@ -58,7 +64,8 @@ public sealed class LintelAssemblyViewCreationService
                 LintelAssemblyViewFormattingResult formatting = TryApplyFormatting(
                     document,
                     existingView,
-                    assembly);
+                    assembly,
+                    frameFamilyFilePath);
                 return CreateResult(
                     LintelAssemblyViewCreationStatus.AlreadyExists,
                     assemblyName,
@@ -126,7 +133,11 @@ public sealed class LintelAssemblyViewCreationService
                 "Revit откатил транзакцию создания бокового вида.");
 
             long viewId = RevitElementIds.GetValue(view.Id);
-            LintelAssemblyViewFormattingResult formatting = TryApplyFormatting(document, view, assembly);
+            LintelAssemblyViewFormattingResult formatting = TryApplyFormatting(
+                document,
+                view,
+                assembly,
+                frameFamilyFilePath);
             logger.Info(
                 $"Lintels side assembly view created. Assembly='{assemblyName}'; View='{viewName}'; ElementId={viewId}; Orientation={ViewOrientation}; Scale=1:{ViewScale}.");
             return CreateResult(
@@ -211,11 +222,16 @@ public sealed class LintelAssemblyViewCreationService
     private LintelAssemblyViewFormattingResult TryApplyFormatting(
         Document document,
         ViewSection view,
-        AssemblyInstance assembly)
+        AssemblyInstance assembly,
+        string frameFamilyFilePath)
     {
         try
         {
-            return annotationService.Apply(document, view, assembly);
+            return annotationService.Apply(
+                document,
+                view,
+                assembly,
+                frameFamilyFilePath);
         }
         catch (Exception exception)
         {

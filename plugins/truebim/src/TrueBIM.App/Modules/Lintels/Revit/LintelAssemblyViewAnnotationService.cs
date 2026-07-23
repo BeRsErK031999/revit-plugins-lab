@@ -1,3 +1,4 @@
+using System.IO;
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.Lintels.Models;
 using TrueBIM.App.Services.Logging;
@@ -8,6 +9,7 @@ public sealed class LintelAssemblyViewAnnotationService
 {
     private const double ReferencePositionTolerance = 1.0 / 304800.0;
     private readonly ITrueBimLogger logger;
+    private readonly LintelFrameFamilyPlacementService frameFamilyPlacementService = new();
 
     public LintelAssemblyViewAnnotationService(ITrueBimLogger logger)
     {
@@ -17,7 +19,8 @@ public sealed class LintelAssemblyViewAnnotationService
     public LintelAssemblyViewFormattingResult Apply(
         Document document,
         ViewSection view,
-        AssemblyInstance assembly)
+        AssemblyInstance assembly,
+        string frameFamilyFilePath)
     {
         if (document is null)
         {
@@ -101,10 +104,14 @@ public sealed class LintelAssemblyViewAnnotationService
                     messages);
             }
 
-            frameCreated = TryCreateAnnotations(
+            frameCreated = TryCreateAnnotation(
                 document,
-                () => CreateFrame(document, view, layout),
-                "Ограничивающая рамка создана четырьмя линиями по нормализованной области.",
+                () => CreateFrameFamilyInstance(
+                    document,
+                    view,
+                    layout,
+                    frameFamilyFilePath),
+                $"Рамка размещена семейством «{Path.GetFileName(frameFamilyFilePath)}».",
                 "Не удалось создать ограничивающую рамку",
                 createdAnnotations,
                 messages);
@@ -381,29 +388,21 @@ public sealed class LintelAssemblyViewAnnotationService
             true);
     }
 
-    private static IReadOnlyList<Element> CreateFrame(
+    private FamilyInstance CreateFrameFamilyInstance(
         Document document,
         ViewSection view,
-        LintelAssemblyViewAnnotationLayout layout)
+        LintelAssemblyViewAnnotationLayout layout,
+        string frameFamilyFilePath)
     {
-        GraphicsStyle? invisibleLineStyle = Category
-            .GetCategory(document, BuiltInCategory.OST_InvisibleLines)?
-            .GetGraphicsStyle(GraphicsStyleType.Projection);
-        List<Element> frame = [];
-        foreach (LintelViewSegment segment in layout.CreateFrameSegments())
-        {
-            XYZ start = ToWorldPoint(view, segment.Start.Horizontal, segment.Start.Vertical);
-            XYZ end = ToWorldPoint(view, segment.End.Horizontal, segment.End.Vertical);
-            DetailCurve line = document.Create.NewDetailCurve(view, Line.CreateBound(start, end));
-            if (invisibleLineStyle is not null)
-            {
-                line.LineStyle = invisibleLineStyle;
-            }
-
-            frame.Add(line);
-        }
-
-        return frame;
+        XYZ insertionPoint = ToWorldPoint(
+            view,
+            layout.FrameCenterHorizontal,
+            layout.FrameCenterVertical);
+        return frameFamilyPlacementService.Place(
+            document,
+            view,
+            frameFamilyFilePath,
+            insertionPoint);
     }
 
     private bool TryCreateAnnotation(
@@ -427,53 +426,6 @@ public sealed class LintelAssemblyViewAnnotationService
                 TransactionStatus.Committed,
                 "Revit откатил вложенную транзакцию аннотации.");
             created.Add(annotation);
-            messages.Add(successMessage);
-            return true;
-        }
-        catch (Exception exception)
-        {
-            if (subTransaction.GetStatus() == TransactionStatus.Started)
-            {
-                subTransaction.RollBack();
-            }
-
-            string message = $"{failureMessage}: {exception.Message}";
-            messages.Add(message);
-            logger.Warning(message);
-            return false;
-        }
-    }
-
-    private bool TryCreateAnnotations(
-        Document document,
-        Func<IReadOnlyList<Element>> factory,
-        string successMessage,
-        string failureMessage,
-        ICollection<Element> created,
-        ICollection<string> messages)
-    {
-        using SubTransaction subTransaction = new(document);
-        try
-        {
-            EnsureStatus(
-                subTransaction.Start(),
-                TransactionStatus.Started,
-                "Revit не начал вложенную транзакцию аннотаций.");
-            IReadOnlyList<Element> annotations = factory();
-            if (annotations.Count == 0)
-            {
-                throw new InvalidOperationException("Фабрика аннотаций не создала ни одного элемента.");
-            }
-
-            EnsureStatus(
-                subTransaction.Commit(),
-                TransactionStatus.Committed,
-                "Revit откатил вложенную транзакцию аннотаций.");
-            foreach (Element annotation in annotations)
-            {
-                created.Add(annotation);
-            }
-
             messages.Add(successMessage);
             return true;
         }

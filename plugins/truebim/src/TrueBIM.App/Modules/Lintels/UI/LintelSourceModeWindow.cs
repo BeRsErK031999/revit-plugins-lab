@@ -13,11 +13,11 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
     private readonly Button continueButton;
     private readonly TextBlock statusText = new();
 
-    public LintelSourceModeWindow(bool hasCurrentSelection)
+    public LintelSourceModeWindow(bool hasCurrentSelection, bool hasExistingItems)
     {
-        selection = new LintelWizardSourceSelection(hasCurrentSelection);
+        selection = new LintelWizardSourceSelection(hasCurrentSelection, hasExistingItems);
         continueButton = TrueBimUi.CreatePrimaryButton(
-            "Далее: выбрать перемычку",
+            "Далее: выбрать типоразмеры",
             TrueBimIcon.Apply,
             (_, _) => ConfirmSelection(),
             minWidth: 210);
@@ -34,7 +34,7 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader(
                 "Откуда взять перемычки",
-                "Шаг 1 из 4. Выберите один источник. Недоступные варианты уже показаны, чтобы было понятно, как будет развиваться мастер.",
+                "Шаг 1 из 4. Выберите, где искать исходные перемычки. Следующие действия показаны ниже.",
                 TrueBimIcon.Lintels),
             commandBar: null,
             body: CreateBody(),
@@ -53,6 +53,11 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
             "На этом шаге модель Revit не изменяется. После выбора источника откроется список найденных перемычек.");
         banner.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         content.Children.Add(banner);
+
+        Border nextSteps = TrueBimUi.CreateInfoBanner(
+            "Дальше: шаг 2 — отметьте один или несколько типоразмеров; шаг 3 — создайте для них сборки; шаг 4 — выберите файл семейства рамки .rfa и создайте оформленные виды 1:10.");
+        nextSteps.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing16);
+        content.Children.Add(nextSteps);
 
         StackPanel options = new();
         foreach (LintelWizardSourceOption option in selection.Options)

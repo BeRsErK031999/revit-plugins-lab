@@ -35,8 +35,10 @@ public sealed class LintelsCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
+            LintelDiagnosticCollectorService collectorService = new(logger);
             bool hasCurrentSelection = uiDocument.Selection.GetElementIds().Count > 0;
-            LintelSourceModeWindow sourceWindow = new(hasCurrentSelection);
+            bool hasExistingItems = collectorService.HasExistingItems(uiDocument.Document);
+            LintelSourceModeWindow sourceWindow = new(hasCurrentSelection, hasExistingItems);
             new WindowInteropHelper(sourceWindow)
             {
                 Owner = commandData.Application.MainWindowHandle
@@ -49,7 +51,6 @@ public sealed class LintelsCommand : IExternalCommand
 
             LintelWizardSourceMode sourceMode = sourceWindow.SelectedMode;
             logger.Info($"Starting read-only Lintels selection preview. Document='{uiDocument.Document.Title}'; SourceMode={sourceMode}.");
-            LintelDiagnosticCollectorService collectorService = new(logger);
             LintelDiagnosticResult result = collectorService.Collect(uiDocument, sourceMode);
             LintelsWindow window = new(uiDocument, collectorService, sourceMode, result, logger);
             ModelessWindowService.Show(

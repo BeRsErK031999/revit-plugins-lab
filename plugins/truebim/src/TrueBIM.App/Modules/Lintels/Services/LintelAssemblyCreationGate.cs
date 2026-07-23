@@ -11,7 +11,7 @@ public static class LintelAssemblyCreationGate
             throw new ArgumentNullException(nameof(currentTypeIds));
         }
 
-        return currentTypeIds.Count == 1;
+        return currentTypeIds.Count > 0;
     }
 
     public static bool IsCurrentSelection(
@@ -33,23 +33,7 @@ public static class LintelAssemblyCreationGate
                 .SequenceEqual(currentTypeIds.OrderBy(typeId => typeId));
     }
 
-    public static bool CanCreate(
-        long? approvedTypeId,
-        LintelAssemblyPreflightStatus? approvedStatus,
-        IReadOnlyCollection<long> currentTypeIds)
-    {
-        if (currentTypeIds is null)
-        {
-            throw new ArgumentNullException(nameof(currentTypeIds));
-        }
-
-        return approvedTypeId is not null
-            && approvedStatus == LintelAssemblyPreflightStatus.Ready
-            && currentTypeIds.Count == 1
-            && currentTypeIds.Single() == approvedTypeId.Value;
-    }
-
-    public static bool CanCreateOrFormatView(
+    public static bool CanCreateOrFormatViews(
         IReadOnlyCollection<LintelTypeDiagnostic> selectedTypes)
     {
         if (selectedTypes is null)
@@ -57,7 +41,7 @@ public static class LintelAssemblyCreationGate
             throw new ArgumentNullException(nameof(selectedTypes));
         }
 
-        return selectedTypes.Count == 1
-            && selectedTypes.Single().HasExistingAssembly;
+        return selectedTypes.Count > 0
+            && selectedTypes.All(type => type.HasExistingAssembly);
     }
 }

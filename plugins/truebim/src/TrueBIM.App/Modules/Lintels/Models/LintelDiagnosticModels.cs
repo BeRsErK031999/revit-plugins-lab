@@ -3,7 +3,8 @@ namespace TrueBIM.App.Modules.Lintels.Models;
 public enum LintelDiagnosticSource
 {
     Selection,
-    ActiveView
+    ActiveView,
+    ExistingItems
 }
 
 public sealed record LintelNestedComponentSnapshot(
@@ -72,9 +73,13 @@ public sealed record LintelDiagnosticResult(
 
     public string BuildSummary()
     {
-        string sourceName = Source == LintelDiagnosticSource.Selection
-            ? "текущее выделение"
-            : "активный вид";
+        string sourceName = Source switch
+        {
+            LintelDiagnosticSource.Selection => "текущее выделение",
+            LintelDiagnosticSource.ActiveView => "активный вид",
+            LintelDiagnosticSource.ExistingItems => "результаты, созданные TrueBIM",
+            _ => "неизвестный источник"
+        };
 
         if (!HasCandidates)
         {

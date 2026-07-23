@@ -27,10 +27,6 @@ public sealed class LintelViewProjectedBounds
     public double CenterVertical => (MinVertical + MaxVertical) * 0.5;
 }
 
-public readonly record struct LintelViewPoint(double Horizontal, double Vertical);
-
-public readonly record struct LintelViewSegment(LintelViewPoint Start, LintelViewPoint End);
-
 public sealed class LintelAssemblyViewAnnotationLayout
 {
     private const double FeetPerMillimeter = 1.0 / 304.8;
@@ -78,21 +74,6 @@ public sealed class LintelAssemblyViewAnnotationLayout
     public double FrameWidth => FrameMaxHorizontal - FrameMinHorizontal;
 
     public double FrameHeight => FrameMaxVertical - FrameMinVertical;
-
-    public IReadOnlyList<LintelViewSegment> CreateFrameSegments()
-    {
-        LintelViewPoint bottomLeft = new(FrameMinHorizontal, FrameMinVertical);
-        LintelViewPoint bottomRight = new(FrameMaxHorizontal, FrameMinVertical);
-        LintelViewPoint topRight = new(FrameMaxHorizontal, FrameMaxVertical);
-        LintelViewPoint topLeft = new(FrameMinHorizontal, FrameMaxVertical);
-        return
-        [
-            new LintelViewSegment(bottomLeft, bottomRight),
-            new LintelViewSegment(bottomRight, topRight),
-            new LintelViewSegment(topRight, topLeft),
-            new LintelViewSegment(topLeft, bottomLeft)
-        ];
-    }
 
     public static LintelAssemblyViewAnnotationLayout Create(
         LintelViewProjectedBounds bounds,

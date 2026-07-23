@@ -13,18 +13,19 @@ public sealed record LintelWizardSourceOption(
     string Title,
     string Description,
     bool IsAvailable,
-    string? UnavailableReason)
+    string? UnavailableReason,
+    string UnavailableStatusText = "Недоступно")
 {
-    public string StatusText => IsAvailable ? "Можно выбрать" : "Следующий этап";
+    public string StatusText => IsAvailable ? "Можно выбрать" : UnavailableStatusText;
 }
 
 public sealed class LintelWizardSourceSelection
 {
     private readonly IReadOnlyDictionary<LintelWizardSourceMode, LintelWizardSourceOption> options;
 
-    public LintelWizardSourceSelection(bool hasCurrentSelection)
+    public LintelWizardSourceSelection(bool hasCurrentSelection, bool hasExistingItems)
     {
-        Options = LintelWizardSourceCatalog.Create(hasCurrentSelection);
+        Options = LintelWizardSourceCatalog.Create(hasCurrentSelection, hasExistingItems);
         options = Options.ToDictionary(option => option.Mode);
         SelectedMode = LintelWizardSourceCatalog.ResolveDefault(Options).Mode;
     }
@@ -51,7 +52,9 @@ public sealed class LintelWizardSourceSelection
 
 public static class LintelWizardSourceCatalog
 {
-    public static IReadOnlyList<LintelWizardSourceOption> Create(bool hasCurrentSelection)
+    public static IReadOnlyList<LintelWizardSourceOption> Create(
+        bool hasCurrentSelection,
+        bool hasExistingItems)
     {
         return
         [
@@ -72,13 +75,17 @@ public static class LintelWizardSourceCatalog
                 "Весь проект",
                 "Найти семейства перемычек во всём открытом проекте.",
                 false,
-                "Поиск по всему проекту будет подключён на следующем этапе."),
+                "Поиск по всему проекту пока не подключён.",
+                "Пока недоступно"),
             new LintelWizardSourceOption(
                 LintelWizardSourceMode.ExistingItems,
-                "Уже созданные",
-                "Показать сборки, виды и изображения, ранее созданные TrueBIM.",
-                false,
-                "Список уже созданных элементов будет подключён отдельным этапом.")
+                "Результаты, созданные TrueBIM",
+                "Показать исходные перемычки, для которых этот плагин уже создал Assembly. Здесь не показываются все существующие перемычки проекта.",
+                hasExistingItems,
+                hasExistingItems
+                    ? null
+                    : "В текущем проекте пока нет ни одной сборки перемычки с именем TrueBIM. После создания первой сборки этот источник станет доступен.",
+                "Пока пусто")
         ];
     }
 
@@ -95,7 +102,7 @@ public static class LintelWizardSourceCatalog
 
     public static string GetTitle(LintelWizardSourceMode mode)
     {
-        return Create(hasCurrentSelection: true)
+        return Create(hasCurrentSelection: true, hasExistingItems: true)
             .First(option => option.Mode == mode)
             .Title;
     }
