@@ -240,51 +240,19 @@ public sealed class FinishRoomScheduleBuilder
     {
         IReadOnlyList<FinishScheduleHeaderCell> cells =
             FinishRoomScheduleStyleRules.BuildHeaderCells(columns);
-        FinishScheduleHeaderCell finishGroup = cells.Single(
-            cell => cell.MergeMode == FinishScheduleHeaderMergeMode.HeaderGroup);
-        int titleRow;
-        int firstColumn;
-        int fieldHeaderRow;
-        using (TableData initialTable = schedule.GetTableData())
-        using (TableSectionData initialHeader = initialTable.GetSectionData(SectionType.Header))
-        {
-            titleRow = initialHeader.FirstRowNumber;
-            firstColumn = initialHeader.FirstColumnNumber;
-            fieldHeaderRow = initialHeader.LastRowNumber;
-        }
-
-        int finishGroupLeft = firstColumn + finishGroup.LeftColumnIndex;
-        int finishGroupRight = firstColumn + finishGroup.RightColumnIndex;
-        if (!schedule.CanGroupHeaders(
-                fieldHeaderRow,
-                finishGroupLeft,
-                fieldHeaderRow,
-                finishGroupRight))
-        {
-            throw new InvalidOperationException(
-                "Revit не разрешил создать горизонтальную группу заголовков отделки.");
-        }
-
-        schedule.GroupHeaders(
-            fieldHeaderRow,
-            finishGroupLeft,
-            fieldHeaderRow,
-            finishGroupRight,
-            finishGroup.Text);
-
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
-        titleRow = header.FirstRowNumber;
-        int groupRow = titleRow + 1;
-        int columnHeaderRow = groupRow + 1;
-        if (header.LastRowNumber != columnHeaderRow)
+        if (header.NumberOfRows != 2)
         {
             throw new InvalidOperationException(
-                "Revit создал неожиданную структуру строк шапки ведомости отделки.");
+                $"Перед созданием шапки Revit оставил {header.NumberOfRows} строк вместо 2.");
         }
 
-        header.InsertRow(columnHeaderRow + 1);
-        firstColumn = header.FirstColumnNumber;
+        int titleRow = header.FirstRowNumber;
+        int groupRow = titleRow + 1;
+        header.InsertRow(header.LastRowNumber + 1);
+        header.InsertRow(header.LastRowNumber + 1);
+        int firstColumn = header.FirstColumnNumber;
         header.SetCellText(titleRow, firstColumn, FinishRoomScheduleStyleRules.ScheduleTitleText);
         foreach (FinishScheduleHeaderCell cell in cells)
         {
@@ -298,7 +266,6 @@ public sealed class FinishRoomScheduleBuilder
                     header.MergeCells(new TableMergedCell(top, left, bottom, right));
                     header.SetCellText(top, left, cell.Text);
                     break;
-                case FinishScheduleHeaderMergeMode.HeaderGroup:
                 case FinishScheduleHeaderMergeMode.None:
                     header.SetCellText(top, left, cell.Text);
                     break;

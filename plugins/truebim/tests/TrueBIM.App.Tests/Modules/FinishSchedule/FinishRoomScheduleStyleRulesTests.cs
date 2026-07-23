@@ -92,7 +92,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
     }
 
     [Fact]
-    public void BuildHeaderCells_UsesHeaderGroupingOnlyForHorizontalFinishCaption()
+    public void BuildHeaderCells_UsesCellMergesForEveryMultiCellCaption()
     {
         FinishRoomSchedulePlan plan = new FinishRoomSchedulePlanBuilder().Build(
             Settings(),
@@ -107,7 +107,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
                 cells,
                 cell => cell.Text == FinishRoomScheduleStyleRules.RoomHeaderText).MergeMode);
         Assert.Equal(
-            FinishScheduleHeaderMergeMode.HeaderGroup,
+            FinishScheduleHeaderMergeMode.CellMerge,
             Assert.Single(
                 cells,
                 cell => cell.Text == FinishRoomScheduleStyleRules.FinishGroupHeaderText).MergeMode);

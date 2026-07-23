@@ -9,7 +9,6 @@ public enum FinishScheduleLineWeight
 public enum FinishScheduleHeaderMergeMode
 {
     None,
-    HeaderGroup,
     CellMerge
 }
 
@@ -29,14 +28,12 @@ public sealed record FinishScheduleHeaderCell(
     public FinishScheduleHeaderMergeMode MergeMode =>
         TopRowOffset == BottomRowOffset && LeftColumnIndex == RightColumnIndex
             ? FinishScheduleHeaderMergeMode.None
-            : TopRowOffset == BottomRowOffset
-                ? FinishScheduleHeaderMergeMode.HeaderGroup
-                : FinishScheduleHeaderMergeMode.CellMerge;
+            : FinishScheduleHeaderMergeMode.CellMerge;
 }
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v6";
+    public const string LayoutRevision = "v7";
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
     public const string RoomHeaderText = "Наименование или номер помещения";
