@@ -216,7 +216,14 @@ public sealed class SharedParameterInspectorWindow : TrueBimWindow
         Closed += (_, _) =>
         {
             cancellationSource?.Cancel();
-            application.Application.DocumentChanged -= OnDocumentChanged;
+            if (!revitActions.Raise(() =>
+                {
+                    application.Application.DocumentChanged -= OnDocumentChanged;
+                }))
+            {
+                logger.Warning(
+                    "Revit rejected Shared Parameter Inspector DocumentChanged event cleanup.");
+            }
         };
         application.Application.DocumentChanged += OnDocumentChanged;
     }
