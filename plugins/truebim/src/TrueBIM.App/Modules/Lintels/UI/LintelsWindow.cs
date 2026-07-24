@@ -351,7 +351,9 @@ public sealed class LintelsWindow : TrueBimWindow
             item.Diagnostic.HasExistingAssembly ? "Сборка TrueBIM" : "Новая сборка",
             item.ArtifactPreview.AssemblyName));
         content.Children.Add(CreateArtifactLine("Боковой вид 1:10", item.ArtifactPreview.ViewName));
-        content.Children.Add(CreateArtifactLine("Будущий PNG", item.ArtifactPreview.ImageFileName));
+        content.Children.Add(CreateArtifactLine(
+            "PNG → «Изображение типоразмера»",
+            item.ArtifactPreview.ImageFileName));
 
         return new Border
         {
@@ -832,7 +834,7 @@ public sealed class LintelsWindow : TrueBimWindow
             MainContent =
                 $"Семейство рамки: {Path.GetFileName(selectedFrameFamilyPath)}{Environment.NewLine}"
                 + $"Видов: {preparedViewRequests.Count}{Environment.NewLine}{Environment.NewLine}"
-                + "TrueBIM создаст или переиспользует боковые виды 1:10, нанесёт габаритный размер и высотную отметку, загрузит выбранное семейство рамки и разместит его по центру каждого вида. Линиями рамка больше не строится.",
+                + "TrueBIM создаст или переиспользует боковые виды 1:10, нанесёт габаритный размер и отметку «отм.» без выноски по нижней грани, разместит семейство рамки, экспортирует оформленный вид в PNG и назначит PNG параметру типа «Изображение типоразмера».",
             ExpandedContent = string.Join(
                 Environment.NewLine,
                 preparedViewRequests.Select(request =>
@@ -866,7 +868,8 @@ public sealed class LintelsWindow : TrueBimWindow
                         uiDocument.Document,
                         request.AssemblyName,
                         request.ViewName,
-                        frameFamilyPath));
+                        frameFamilyPath,
+                        request.TypeId));
                 }
                 catch (Exception exception)
                 {
@@ -914,7 +917,7 @@ public sealed class LintelsWindow : TrueBimWindow
             int successfulCount = results.Count(result => result.Status is
                 LintelAssemblyViewCreationStatus.Created or LintelAssemblyViewCreationStatus.AlreadyExists);
             footerStatusText.Text =
-                $"Шаг 4 завершён: обработано видов {successfulCount}/{results.Count}. Рамка размещалась выбранным семейством .rfa.";
+                $"Шаг 4 завершён: обработано видов {successfulCount}/{results.Count}. Для каждого вида выполнена попытка экспорта PNG и назначения «Изображения типоразмера».";
         }
 
         TaskDialog dialog = new(DialogTitle)
@@ -1024,10 +1027,10 @@ public sealed class LintelsWindow : TrueBimWindow
         int created = results.Count(result => result.Status == LintelAssemblyViewCreationStatus.Created);
         int updated = results.Count(result =>
             result.Status == LintelAssemblyViewCreationStatus.AlreadyExists
-            && result.Formatting?.ModelChanged == true);
+            && result.ModelChanged);
         int unchanged = results.Count(result =>
             result.Status == LintelAssemblyViewCreationStatus.AlreadyExists
-            && result.Formatting?.ModelChanged != true);
+            && !result.ModelChanged);
         int failed = results.Count - created - updated - unchanged;
         return $"Создано видов: {created}; повторно оформлено: {updated}; без изменений: {unchanged}; не обработано: {failed}. Откройте подробности, чтобы увидеть результат каждого вида.";
     }
@@ -1043,9 +1046,14 @@ public sealed class LintelsWindow : TrueBimWindow
     {
         return result.Status switch
         {
-            LintelAssemblyViewCreationStatus.Created => "создан и оформлен",
-            LintelAssemblyViewCreationStatus.AlreadyExists when result.Formatting?.ModelChanged == true =>
-                "повторно оформлен",
+            LintelAssemblyViewCreationStatus.Created when result.TypeImage?.TypeImageAssigned == true =>
+                "создан, оформлен, PNG назначен типоразмеру",
+            LintelAssemblyViewCreationStatus.Created => "создан и оформлен; PNG не назначен",
+            LintelAssemblyViewCreationStatus.AlreadyExists when result.ModelChanged
+                && result.TypeImage?.TypeImageAssigned == true =>
+                "повторно оформлен, PNG назначен типоразмеру",
+            LintelAssemblyViewCreationStatus.AlreadyExists when result.ModelChanged =>
+                "повторно оформлен; PNG не назначен",
             LintelAssemblyViewCreationStatus.AlreadyExists => "уже существует, без изменений",
             LintelAssemblyViewCreationStatus.Blocked => "заблокирован",
             _ => "ошибка"

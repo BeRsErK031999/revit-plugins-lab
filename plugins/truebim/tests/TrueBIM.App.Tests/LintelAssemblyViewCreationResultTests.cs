@@ -60,4 +60,28 @@ public sealed class LintelAssemblyViewCreationResultTests
         Assert.True(result.ModelChanged);
         Assert.Contains("Оформление:", result.BuildSummary());
     }
+
+    [Fact]
+    public void ExistingViewWithTypeImage_ReportsAssignmentSummary()
+    {
+        LintelTypeImageResult typeImage = new(
+            true,
+            true,
+            @"C:\Images\lintel.png",
+            1600,
+            587,
+            []);
+        LintelAssemblyViewCreationResult result = new(
+            LintelAssemblyViewCreationStatus.AlreadyExists,
+            "Assembly",
+            "Side view",
+            321,
+            "Existing view image updated.",
+            null,
+            typeImage);
+
+        Assert.True(result.ModelChanged);
+        Assert.Contains("Изображение типоразмера", result.BuildSummary());
+        Assert.Contains(@"C:\Images\lintel.png", result.BuildSummary());
+    }
 }

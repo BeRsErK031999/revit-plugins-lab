@@ -59,9 +59,9 @@ public sealed class LintelAssemblyViewAnnotationService
             messages.Add("Не найдены две крайние вертикальные грани геометрии; линейный размер пропущен.");
         }
 
-        if (references.Top is null)
+        if (references.Bottom is null)
         {
-            messages.Add("Не найдена верхняя горизонтальная грань геометрии; высотная отметка пропущена.");
+            messages.Add("Не найдена нижняя горизонтальная грань геометрии; отметка «отм.» пропущена.");
         }
 
         List<Element> createdAnnotations = [];
@@ -93,13 +93,13 @@ public sealed class LintelAssemblyViewAnnotationService
                     messages);
             }
 
-            if (references.Top is not null)
+            if (references.Bottom is not null)
             {
                 elevationCreated = TryCreateAnnotation(
                     document,
-                    () => CreateElevationMark(document, view, references.Top, view.Scale),
-                    "Высотная отметка создана по верхней грани.",
-                    "Не удалось создать высотную отметку",
+                    () => CreateElevationMark(document, view, references.Bottom),
+                    "Отметка «отм.» создана без выноски по нижней грани перемычек.",
+                    "Не удалось создать отметку «отм.»",
                     createdAnnotations,
                     messages);
             }
@@ -261,7 +261,7 @@ public sealed class LintelAssemblyViewAnnotationService
         return new AnnotationReferences(
             left?.Reference,
             rightReference?.Reference,
-            SelectExtreme(vertical, minimum: false));
+            SelectExtreme(vertical, minimum: true));
     }
 
     private static void CollectReferenceCandidates(
@@ -368,24 +368,22 @@ public sealed class LintelAssemblyViewAnnotationService
     private static SpotDimension CreateElevationMark(
         Document document,
         ViewSection view,
-        ReferenceCandidate top,
-        int viewScale)
+        ReferenceCandidate bottom)
     {
-        double leaderRise = 4 * Math.Max(1, viewScale) / 304.8;
-        double leaderRun = 3 * Math.Max(1, viewScale) / 304.8;
-        XYZ origin = top.WorldPoint;
-        XYZ bend = origin
-            + view.UpDirection.Normalize().Multiply(leaderRise)
-            - view.RightDirection.Normalize().Multiply(leaderRun);
-        XYZ end = bend - view.RightDirection.Normalize().Multiply(leaderRun);
-        return document.Create.NewSpotElevation(
+        XYZ origin = bottom.WorldPoint;
+        SpotDimension elevation = document.Create.NewSpotElevation(
             view,
-            top.Reference,
+            bottom.Reference,
             origin,
-            bend,
-            end,
-            top.WorldPoint,
-            true);
+            origin,
+            origin,
+            bottom.WorldPoint,
+            false);
+#if REVIT2021_OR_GREATER
+        elevation.HasLeader = false;
+#endif
+        elevation.Prefix = "отм. ";
+        return elevation;
     }
 
     private FamilyInstance CreateFrameFamilyInstance(
@@ -567,7 +565,7 @@ public sealed class LintelAssemblyViewAnnotationService
     private sealed record AnnotationReferences(
         Reference? Left,
         Reference? Right,
-        ReferenceCandidate? Top)
+        ReferenceCandidate? Bottom)
     {
         public bool HasWidthPair => Left is not null && Right is not null;
     }

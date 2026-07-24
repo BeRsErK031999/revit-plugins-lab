@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.Lintels.Models;
+using TrueBIM.App.Modules.Lintels.Services;
 using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
@@ -11,18 +12,21 @@ public sealed class LintelAssemblyViewCreationService
     private const AssemblyDetailViewOrientation ViewOrientation = AssemblyDetailViewOrientation.ElevationLeft;
     private readonly ITrueBimLogger logger;
     private readonly LintelAssemblyViewAnnotationService annotationService;
+    private readonly LintelTypeImageService typeImageService;
 
     public LintelAssemblyViewCreationService(ITrueBimLogger logger)
     {
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         annotationService = new LintelAssemblyViewAnnotationService(this.logger);
+        typeImageService = new LintelTypeImageService(this.logger);
     }
 
     public LintelAssemblyViewCreationResult CreateOne(
         Document document,
         string assemblyName,
         string viewName,
-        string frameFamilyFilePath)
+        string frameFamilyFilePath,
+        long? lintelTypeId = null)
     {
         if (document is null)
         {
@@ -56,6 +60,7 @@ public sealed class LintelAssemblyViewCreationService
         }
 
         View? sameNameView = FindViewByName(document, viewName);
+        long? resolvedTypeId = ResolveLintelTypeId(lintelTypeId, assemblyName);
         if (sameNameView is not null)
         {
             bool belongsToAssembly = sameNameView.AssociatedAssemblyInstanceId == assembly.Id;
@@ -66,15 +71,21 @@ public sealed class LintelAssemblyViewCreationService
                     existingView,
                     assembly,
                     frameFamilyFilePath);
+                LintelTypeImageResult typeImage = TryExportAndAssignTypeImage(
+                    document,
+                    existingView,
+                    resolvedTypeId,
+                    assemblyName);
                 return CreateResult(
                     LintelAssemblyViewCreationStatus.AlreadyExists,
                     assemblyName,
                     viewName,
                     RevitElementIds.GetValue(sameNameView.Id),
-                    formatting.ModelChanged
-                        ? "Боковой вид уже существовал; базовое оформление TrueBIM применено повторно без создания дубликата вида."
-                        : "Боковой вид уже существовал; новое оформление не создано — проверьте предупреждения ниже.",
-                    formatting);
+                    formatting.ModelChanged || typeImage.ModelChanged
+                        ? "Боковой вид уже существовал; оформление и изображение типоразмера обновлены без создания дубликата вида."
+                        : "Боковой вид уже существовал; оформление или изображение не обновлены — проверьте предупреждения ниже.",
+                    formatting,
+                    typeImage);
             }
 
             return CreateResult(
@@ -138,6 +149,11 @@ public sealed class LintelAssemblyViewCreationService
                 view,
                 assembly,
                 frameFamilyFilePath);
+            LintelTypeImageResult typeImage = TryExportAndAssignTypeImage(
+                document,
+                view,
+                resolvedTypeId,
+                assemblyName);
             logger.Info(
                 $"Lintels side assembly view created. Assembly='{assemblyName}'; View='{viewName}'; ElementId={viewId}; Orientation={ViewOrientation}; Scale=1:{ViewScale}.");
             return CreateResult(
@@ -146,7 +162,8 @@ public sealed class LintelAssemblyViewCreationService
                 viewName,
                 viewId,
                 $"Ориентация: слева ({ViewOrientation}); масштаб 1:{ViewScale}; уровень детализации — высокий; стиль — скрытая линия.",
-                formatting);
+                formatting,
+                typeImage);
         }
         catch (Exception exception)
         {
@@ -202,7 +219,8 @@ public sealed class LintelAssemblyViewCreationService
         string viewName,
         long? viewElementId,
         string message,
-        LintelAssemblyViewFormattingResult? formatting = null)
+        LintelAssemblyViewFormattingResult? formatting = null,
+        LintelTypeImageResult? typeImage = null)
     {
         if (status is LintelAssemblyViewCreationStatus.Blocked or LintelAssemblyViewCreationStatus.Failed)
         {
@@ -216,7 +234,8 @@ public sealed class LintelAssemblyViewCreationService
             viewName,
             viewElementId,
             message,
-            formatting);
+            formatting,
+            typeImage);
     }
 
     private LintelAssemblyViewFormattingResult TryApplyFormatting(
@@ -241,6 +260,42 @@ public sealed class LintelAssemblyViewCreationService
             return LintelAssemblyViewFormattingResult.Failed(
                 "Оформление вида отменено целиком; геометрия Assembly и сам вид сохранены, подробности записаны в лог.");
         }
+    }
+
+    private LintelTypeImageResult TryExportAndAssignTypeImage(
+        Document document,
+        ViewSection view,
+        long? lintelTypeId,
+        string assemblyName)
+    {
+        try
+        {
+            return typeImageService.ExportAndAssign(
+                document,
+                view,
+                lintelTypeId,
+                $"{assemblyName}.png");
+        }
+        catch (Exception exception)
+        {
+            logger.Error(
+                $"Failed to export or assign Lintels type image for view '{view.Name}'.",
+                exception);
+            return LintelTypeImageResult.Failed(
+                "Экспорт PNG и назначение параметра «Изображение типоразмера» завершились с ошибкой; подробности записаны в лог.");
+        }
+    }
+
+    private static long? ResolveLintelTypeId(long? lintelTypeId, string assemblyName)
+    {
+        if (lintelTypeId is > 0)
+        {
+            return lintelTypeId;
+        }
+
+        return LintelArtifactNameBuilder.TryExtractTypeId(assemblyName, out long parsedTypeId)
+            ? parsedTypeId
+            : null;
     }
 
     private static void EnsureStatus(

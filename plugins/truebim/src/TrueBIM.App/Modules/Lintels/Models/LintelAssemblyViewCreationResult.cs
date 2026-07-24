@@ -14,10 +14,12 @@ public sealed record LintelAssemblyViewCreationResult(
     string ViewName,
     long? ViewElementId,
     string Message,
-    LintelAssemblyViewFormattingResult? Formatting = null)
+    LintelAssemblyViewFormattingResult? Formatting = null,
+    LintelTypeImageResult? TypeImage = null)
 {
     public bool ModelChanged => Status == LintelAssemblyViewCreationStatus.Created
-        || Formatting?.ModelChanged == true;
+        || Formatting?.ModelChanged == true
+        || TypeImage?.ModelChanged == true;
 
     public string StatusDisplay => Status switch
     {
@@ -33,8 +35,17 @@ public sealed record LintelAssemblyViewCreationResult(
             ? $" ElementId: {ViewElementId}."
             : string.Empty;
         string summary = $"{StatusDisplay}: {ViewName}.{elementId}{Environment.NewLine}{Message}";
-        return Formatting is null
-            ? summary
-            : $"{summary}{Environment.NewLine}{Environment.NewLine}{Formatting.BuildSummary()}";
+        List<string> sections = [summary];
+        if (Formatting is not null)
+        {
+            sections.Add(Formatting.BuildSummary());
+        }
+
+        if (TypeImage is not null)
+        {
+            sections.Add(TypeImage.BuildSummary());
+        }
+
+        return string.Join(Environment.NewLine + Environment.NewLine, sections);
     }
 }

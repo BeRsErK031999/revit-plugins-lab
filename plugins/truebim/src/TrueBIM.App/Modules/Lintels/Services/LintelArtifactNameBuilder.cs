@@ -38,6 +38,25 @@ public static class LintelArtifactNameBuilder
             && value!.StartsWith(Prefix, StringComparison.CurrentCultureIgnoreCase);
     }
 
+    public static bool TryExtractTypeId(string? artifactName, out long typeId)
+    {
+        typeId = 0;
+        if (!IsTrueBimLintelArtifactName(artifactName))
+        {
+            return false;
+        }
+
+        int separatorIndex = artifactName!.LastIndexOf('_');
+        return separatorIndex >= Prefix.Length
+            && separatorIndex < artifactName.Length - 1
+            && long.TryParse(
+                artifactName.Substring(separatorIndex + 1),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out typeId)
+            && typeId > 0;
+    }
+
     private static string NormalizeToken(string value)
     {
         StringBuilder builder = new();

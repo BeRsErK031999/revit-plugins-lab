@@ -24,6 +24,10 @@
     <RevitApiRoot>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiRoot>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(RevitVersion)' == '2020' or '$(RevitVersion)' == '2021' or '$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
+    <DefineConstants>$(DefineConstants);REVIT2020_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
     <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER</DefineConstants>
   </PropertyGroup>

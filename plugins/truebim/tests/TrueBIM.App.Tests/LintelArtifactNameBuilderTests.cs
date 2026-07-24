@@ -56,6 +56,26 @@ public sealed class LintelArtifactNameBuilderTests
         Assert.Equal(expected, LintelArtifactNameBuilder.IsTrueBimLintelArtifactName(value));
     }
 
+    [Theory]
+    [InlineData("TB_Перемычка_Сварная_2305484", 2305484)]
+    [InlineData("tb_перемычка_Наборная_17", 17)]
+    public void TryExtractTypeId_ReadsDeterministicSuffix(string artifactName, long expectedTypeId)
+    {
+        Assert.True(LintelArtifactNameBuilder.TryExtractTypeId(artifactName, out long typeId));
+        Assert.Equal(expectedTypeId, typeId);
+    }
+
+    [Theory]
+    [InlineData("Сторонняя_2305484")]
+    [InlineData("TB_Перемычка_Сварная")]
+    [InlineData("TB_Перемычка_Сварная_-17")]
+    [InlineData(null)]
+    public void TryExtractTypeId_RejectsUnownedOrInvalidNames(string? artifactName)
+    {
+        Assert.False(LintelArtifactNameBuilder.TryExtractTypeId(artifactName, out long typeId));
+        Assert.Equal(0, typeId);
+    }
+
     private static LintelTypeDiagnostic CreateType(
         long typeId,
         string familyName = "Перемычки",
