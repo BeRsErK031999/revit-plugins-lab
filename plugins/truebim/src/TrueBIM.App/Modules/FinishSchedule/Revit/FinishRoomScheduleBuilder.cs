@@ -242,16 +242,36 @@ public sealed class FinishRoomScheduleBuilder
             FinishRoomScheduleStyleRules.BuildHeaderCells(columns);
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
-        if (header.NumberOfRows != 2)
+        int initialRowCount = header.NumberOfRows;
+        int rowsToInsert;
+        try
+        {
+            rowsToInsert = FinishRoomScheduleStyleRules.GetHeaderRowsToInsert(initialRowCount);
+        }
+        catch (ArgumentOutOfRangeException exception)
         {
             throw new InvalidOperationException(
-                $"Перед созданием шапки Revit оставил {header.NumberOfRows} строк вместо 2.");
+                $"Перед созданием шапки Revit оставил недопустимое число строк: "
+                    + $"{initialRowCount}. Ожидалось от 1 до "
+                    + $"{FinishRoomScheduleStyleRules.HeaderRowCount}.",
+                exception);
         }
 
         int titleRow = header.FirstRowNumber;
         int groupRow = titleRow + 1;
-        header.InsertRow(header.LastRowNumber + 1);
-        header.InsertRow(header.LastRowNumber + 1);
+        for (int index = 0; index < rowsToInsert; index++)
+        {
+            header.InsertRow(header.LastRowNumber + 1);
+        }
+
+        if (header.NumberOfRows != FinishRoomScheduleStyleRules.HeaderRowCount)
+        {
+            throw new InvalidOperationException(
+                $"Не удалось нормализовать шапку: было {initialRowCount} строк, "
+                    + $"после вставки стало {header.NumberOfRows}, ожидалось "
+                    + $"{FinishRoomScheduleStyleRules.HeaderRowCount}.");
+        }
+
         int firstColumn = header.FirstColumnNumber;
         header.SetCellText(titleRow, firstColumn, FinishRoomScheduleStyleRules.ScheduleTitleText);
         foreach (FinishScheduleHeaderCell cell in cells)

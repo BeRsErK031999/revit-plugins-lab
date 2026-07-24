@@ -9,11 +9,35 @@ public sealed class FinishRoomScheduleStyleRulesTests
     [Fact]
     public void HeaderDimensions_MatchFinishScheduleRequirement()
     {
+        Assert.Equal(4, FinishRoomScheduleStyleRules.HeaderRowCount);
         Assert.Equal(12, FinishRoomScheduleStyleRules.TitleRowHeightMillimeters);
         Assert.Equal(3.5, FinishRoomScheduleStyleRules.TitleTextSizeMillimeters);
         Assert.Equal(2.5, FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters);
         Assert.Equal(2.5, FinishRoomScheduleStyleRules.BodyTextSizeMillimeters);
         Assert.False(FinishRoomScheduleStyleRules.ShowBlankLineBetweenGroups);
+    }
+
+    [Theory]
+    [InlineData(1, 3)]
+    [InlineData(2, 2)]
+    [InlineData(3, 1)]
+    [InlineData(4, 0)]
+    public void GetHeaderRowsToInsert_NormalizesSupportedRevitHeaderShapes(
+        int existingRowCount,
+        int expectedRowsToInsert)
+    {
+        Assert.Equal(
+            expectedRowsToInsert,
+            FinishRoomScheduleStyleRules.GetHeaderRowsToInsert(existingRowCount));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    public void GetHeaderRowsToInsert_RejectsUnexpectedHeaderShapes(int existingRowCount)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => FinishRoomScheduleStyleRules.GetHeaderRowsToInsert(existingRowCount));
     }
 
     [Fact]

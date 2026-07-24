@@ -33,7 +33,8 @@ public sealed record FinishScheduleHeaderCell(
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v7";
+    public const string LayoutRevision = "v8";
+    public const int HeaderRowCount = 4;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
     public const string RoomHeaderText = "Наименование или номер помещения";
@@ -62,6 +63,19 @@ public static class FinishRoomScheduleStyleRules
             isLastRow ? FinishScheduleLineWeight.Normal : FinishScheduleLineWeight.Thin,
             FinishScheduleLineWeight.Normal,
             FinishScheduleLineWeight.Normal);
+    }
+
+    public static int GetHeaderRowsToInsert(int existingRowCount)
+    {
+        if (existingRowCount < 1 || existingRowCount > HeaderRowCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(existingRowCount),
+                existingRowCount,
+                $"Header must contain from 1 to {HeaderRowCount} rows before normalization.");
+        }
+
+        return HeaderRowCount - existingRowCount;
     }
 
     public static IReadOnlyList<FinishScheduleHeaderCell> BuildHeaderCells(
