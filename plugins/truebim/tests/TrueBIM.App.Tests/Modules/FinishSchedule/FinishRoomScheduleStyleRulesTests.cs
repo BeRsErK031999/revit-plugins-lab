@@ -40,6 +40,37 @@ public sealed class FinishRoomScheduleStyleRulesTests
             () => FinishRoomScheduleStyleRules.GetHeaderRowsToInsert(existingRowCount));
     }
 
+    [Theory]
+    [InlineData(1, 8, 8, 3)]
+    [InlineData(2, 8, 8, 2)]
+    [InlineData(4, 8, 8, 0)]
+    public void BuildHeaderNormalizationPlan_AcceptsMaterializedScheduleColumns(
+        int existingRowCount,
+        int existingColumnCount,
+        int expectedColumnCount,
+        int expectedRowsToInsert)
+    {
+        FinishScheduleHeaderNormalizationPlan plan =
+            FinishRoomScheduleStyleRules.BuildHeaderNormalizationPlan(
+                existingRowCount,
+                existingColumnCount,
+                expectedColumnCount);
+
+        Assert.Equal(expectedRowsToInsert, plan.RowsToInsert);
+    }
+
+    [Fact]
+    public void BuildHeaderNormalizationPlan_RejectsStaleScheduleColumns()
+    {
+        ArgumentException exception = Assert.Throws<ArgumentException>(
+            () => FinishRoomScheduleStyleRules.BuildHeaderNormalizationPlan(
+                existingRowCount: 1,
+                existingColumnCount: 1,
+                expectedColumnCount: 8));
+
+        Assert.Contains("1 columns instead of 8", exception.Message);
+    }
+
     [Fact]
     public void BodyBorders_UseNormalFrameAndVerticalsWithThinIntermediateHorizontals()
     {

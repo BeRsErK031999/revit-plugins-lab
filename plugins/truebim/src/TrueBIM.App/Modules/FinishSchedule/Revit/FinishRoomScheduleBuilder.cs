@@ -3,16 +3,21 @@ using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Services;
+using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 
 public sealed class FinishRoomScheduleBuilder
 {
     private readonly FinishScheduleMetadataService metadataService;
+    private readonly ITrueBimLogger logger;
 
-    public FinishRoomScheduleBuilder(FinishScheduleMetadataService metadataService)
+    public FinishRoomScheduleBuilder(
+        FinishScheduleMetadataService metadataService,
+        ITrueBimLogger logger)
     {
         this.metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public FinishRoomSchedulePreflight Preflight(Document document, FinishRoomSchedulePlan plan)
@@ -103,7 +108,45 @@ public sealed class FinishRoomScheduleBuilder
                 "Состав спецификаций изменился после preflight. Повторите формирование ведомости отделки.");
         }
 
-        using Transaction transaction = new(document, "TrueBIM: создать ведомость отделки");
+        using TransactionGroup group = new(document, "TrueBIM: настроить ведомость отделки");
+        bool groupStarted = false;
+        try
+        {
+            FinishTransactionStatus.EnsureStarted(group);
+            groupStarted = true;
+            ViewSchedule schedule = ConfigureDefinitionTransaction(
+                document,
+                preflight,
+                plan);
+            long scheduleId = RevitElementIds.GetValue(schedule.Id);
+            logger.Info(
+                $"Finish Schedule definition committed. ScheduleId={scheduleId}; "
+                    + $"Action={preflight.Action}; Fields={plan.Columns.Count}.");
+            ConfigureTableTransaction(document, scheduleId, plan);
+            FinishTransactionStatus.EnsureAssimilated(group);
+            groupStarted = false;
+            return new FinishRoomScheduleApplyResult(
+                scheduleId,
+                plan.ScheduleName,
+                preflight.Action);
+        }
+        catch
+        {
+            if (groupStarted)
+            {
+                FinishTransactionStatus.RollBackIfStarted(group);
+            }
+
+            throw;
+        }
+    }
+
+    private ViewSchedule ConfigureDefinitionTransaction(
+        Document document,
+        FinishRoomSchedulePreflight preflight,
+        FinishRoomSchedulePlan plan)
+    {
+        using Transaction transaction = new(document, "TrueBIM: подготовить ведомость отделки");
         FinishTransactionStatus.EnsureStarted(transaction);
         try
         {
@@ -111,13 +154,32 @@ public sealed class FinishRoomScheduleBuilder
                 ? CreateSchedule(document)
                 : GetManagedSchedule(document, preflight.ScheduleId!.Value);
             schedule.Name = plan.ScheduleName;
-            ConfigureSchedule(document, schedule, plan);
+            ConfigureDefinition(document, schedule, plan);
+            FinishTransactionStatus.EnsureCommitted(transaction);
+            return schedule;
+        }
+        catch
+        {
+            FinishTransactionStatus.RollBackIfStarted(transaction);
+            throw;
+        }
+    }
+
+    private void ConfigureTableTransaction(
+        Document document,
+        long scheduleId,
+        FinishRoomSchedulePlan plan)
+    {
+        using Transaction transaction = new(document, "TrueBIM: оформить ведомость отделки");
+        FinishTransactionStatus.EnsureStarted(transaction);
+        try
+        {
+            ViewSchedule schedule = document.GetElement(RevitElementIds.Create(scheduleId)) as ViewSchedule
+                ?? throw new InvalidOperationException(
+                    "Созданная ведомость отделки недоступна для оформления.");
+            ConfigureTable(document, schedule, plan);
             metadataService.Write(schedule, plan);
             FinishTransactionStatus.EnsureCommitted(transaction);
-            return new FinishRoomScheduleApplyResult(
-                RevitElementIds.GetValue(schedule.Id),
-                schedule.Name,
-                preflight.Action);
         }
         catch
         {
@@ -149,7 +211,7 @@ public sealed class FinishRoomScheduleBuilder
         return schedule;
     }
 
-    private static void ConfigureSchedule(
+    private static void ConfigureDefinition(
         Document document,
         ViewSchedule schedule,
         FinishRoomSchedulePlan plan)
@@ -201,7 +263,29 @@ public sealed class FinishRoomScheduleBuilder
         };
         definition.AddSortGroupField(sortGroupField);
         AddScopeFilter(definition, availableFields, plan.ScopeFilter);
-        document.Regenerate();
+    }
+
+    private void ConfigureTable(
+        Document document,
+        ViewSchedule schedule,
+        FinishRoomSchedulePlan plan)
+    {
+        bool scheduleRefreshed = schedule.RefreshData();
+        if (!scheduleRefreshed)
+        {
+            throw new InvalidOperationException(
+                "Revit не обновил табличные данные ведомости после фиксации полей.");
+        }
+
+        ElementId normalLineStyleId = GetLineStyleId(
+            document,
+            FinishRoomScheduleStyleRules.NormalLineStyleName,
+            BuiltInCategory.OST_CurvesMediumLines);
+        ElementId thinLineStyleId = GetLineStyleId(
+            document,
+            FinishRoomScheduleStyleRules.ThinLineStyleName,
+            BuiltInCategory.OST_CurvesThinLines);
+        EnsureLineStyles(normalLineStyleId, thinLineStyleId);
         ConfigureHeader(schedule, plan.Columns, normalLineStyleId, thinLineStyleId);
         ConfigureBody(schedule, normalLineStyleId, thinLineStyleId);
     }
@@ -232,7 +316,7 @@ public sealed class FinishRoomScheduleBuilder
         field.SetStyle(style);
     }
 
-    private static void ConfigureHeader(
+    private void ConfigureHeader(
         ViewSchedule schedule,
         IReadOnlyList<FinishRoomScheduleColumn> columns,
         ElementId normalLineStyleId,
@@ -242,24 +326,42 @@ public sealed class FinishRoomScheduleBuilder
             FinishRoomScheduleStyleRules.BuildHeaderCells(columns);
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
+        bool headerRefreshed = header.RefreshData();
         int initialRowCount = header.NumberOfRows;
-        int rowsToInsert;
-        try
-        {
-            rowsToInsert = FinishRoomScheduleStyleRules.GetHeaderRowsToInsert(initialRowCount);
-        }
-        catch (ArgumentOutOfRangeException exception)
+        int initialColumnCount = header.NumberOfColumns;
+        logger.Info(
+            $"Finish Schedule header materialized. ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+                + $"Refreshed={headerRefreshed}; Rows={initialRowCount}; "
+                + $"Columns={initialColumnCount}; ExpectedColumns={columns.Count}; "
+                + $"RowRange={header.FirstRowNumber}..{header.LastRowNumber}; "
+                + $"ColumnRange={header.FirstColumnNumber}..{header.LastColumnNumber}.");
+        if (!headerRefreshed)
         {
             throw new InvalidOperationException(
-                $"Перед созданием шапки Revit оставил недопустимое число строк: "
-                    + $"{initialRowCount}. Ожидалось от 1 до "
-                    + $"{FinishRoomScheduleStyleRules.HeaderRowCount}.",
+                "Revit не обновил секцию шапки ведомости после фиксации полей.");
+        }
+
+        FinishScheduleHeaderNormalizationPlan normalization;
+        try
+        {
+            normalization = FinishRoomScheduleStyleRules.BuildHeaderNormalizationPlan(
+                initialRowCount,
+                initialColumnCount,
+                columns.Count);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidOperationException(
+                $"Revit подготовил недопустимую область шапки: "
+                    + $"строк {initialRowCount}, столбцов {initialColumnCount}; "
+                    + $"ожидалось от 1 до {FinishRoomScheduleStyleRules.HeaderRowCount} строк "
+                    + $"и {columns.Count} столбцов.",
                 exception);
         }
 
         int titleRow = header.FirstRowNumber;
         int groupRow = titleRow + 1;
-        for (int index = 0; index < rowsToInsert; index++)
+        for (int index = 0; index < normalization.RowsToInsert; index++)
         {
             header.InsertRow(header.LastRowNumber + 1);
         }
@@ -283,7 +385,21 @@ public sealed class FinishRoomScheduleBuilder
             switch (cell.MergeMode)
             {
                 case FinishScheduleHeaderMergeMode.CellMerge:
-                    header.MergeCells(new TableMergedCell(top, left, bottom, right));
+                    TableMergedCell mergedCell = new(top, left, bottom, right);
+                    try
+                    {
+                        header.MergeCells(mergedCell);
+                    }
+                    catch (Autodesk.Revit.Exceptions.ArgumentException exception)
+                    {
+                        throw new InvalidOperationException(
+                            $"Не удалось объединить ячейки шапки "
+                                + $"[{top},{left}]..[{bottom},{right}] внутри диапазона "
+                                + $"строк {header.FirstRowNumber}..{header.LastRowNumber} и "
+                                + $"столбцов {header.FirstColumnNumber}..{header.LastColumnNumber}.",
+                            exception);
+                    }
+
                     header.SetCellText(top, left, cell.Text);
                     break;
                 case FinishScheduleHeaderMergeMode.None:

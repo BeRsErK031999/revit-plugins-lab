@@ -46,7 +46,7 @@ public sealed class FinishScheduleCommand : IExternalCommand
                 new RoomFinishParameterWriter(changePlanner),
                 new FinishOwnershipWriter(changePlanner),
                 new FinishRoomSchedulePlanBuilder(),
-                new FinishRoomScheduleBuilder(new FinishScheduleMetadataService()),
+                new FinishRoomScheduleBuilder(new FinishScheduleMetadataService(), logger),
                 logger);
             FinishScheduleWindow window = new(
                 status,
