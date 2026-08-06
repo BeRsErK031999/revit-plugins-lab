@@ -22,7 +22,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly FinishScheduleProfileStorage profileStorage;
     private readonly Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory;
     private readonly Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory;
-    private readonly Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory;
+    private readonly Func<
+        FinishScheduleWritePreview,
+        FinishScheduleHeaderMode,
+        FinishScheduleWriteResult>? writeApplyFactory;
     private readonly Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory;
     private readonly ITrueBimLogger logger;
     private readonly FinishScheduleSettingsValidator validator;
@@ -126,7 +129,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         FinishScheduleProfileStorage profileStorage,
         Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory,
         Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory,
-        Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory,
+        Func<
+            FinishScheduleWritePreview,
+            FinishScheduleHeaderMode,
+            FinishScheduleWriteResult>? writeApplyFactory,
         Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory,
         ITrueBimLogger logger)
     {
@@ -1044,7 +1050,25 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 }
             }
 
-            FinishScheduleWriteResult result = writeApplyFactory(writePreview);
+            FinishScheduleWriteResult result = writeApplyFactory(
+                writePreview,
+                FinishScheduleHeaderMode.Custom);
+            if (result.CanRetryWithSimplifiedHeader)
+            {
+                FinishScheduleHeaderMode? recoveryMode = ShowHeaderRecoveryDialog();
+                if (recoveryMode.HasValue)
+                {
+                    logger.Warning(
+                        $"Finish Schedule custom header failed; user selected retry with "
+                            + $"HeaderMode={recoveryMode.Value}.");
+                    result = writeApplyFactory(writePreview, recoveryMode.Value);
+                }
+                else
+                {
+                    logger.Info("Finish Schedule header recovery cancelled by user.");
+                }
+            }
+
             bool incompleteCalculation = writePreview.Calculation is not null
                 && FinishGeometryWarningClassifier.HasIncompleteScheduleValues(writePreview.Calculation);
             SetUserNotice(userNoticeBuilder.BuildResult(writePreview, result, settings));
@@ -1071,6 +1095,34 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             footerStatus.Text = "Модель не оставлена в частично обновлённом состоянии.";
             footerStatus.Foreground = TrueBimBrushes.Danger;
         }
+    }
+
+    private static FinishScheduleHeaderMode? ShowHeaderRecoveryDialog()
+    {
+        Autodesk.Revit.UI.TaskDialog dialog = new("Ведомость отделки — оформление шапки")
+        {
+            TitleAutoPrefix = false,
+            MainInstruction = "Revit не смог создать составную шапку спецификации.",
+            MainContent = "Расчёт выполнен, но изменения безопасно отменены. Выберите вариант повторного формирования:",
+            CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Cancel,
+            DefaultButton = Autodesk.Revit.UI.TaskDialogResult.CommandLink1,
+            FooterText = "Технические подробности сохранены в журнале TrueBIM."
+        };
+        dialog.AddCommandLink(
+            Autodesk.Revit.UI.TaskDialogCommandLinkId.CommandLink1,
+            "Сформировать с простой шапкой (рекомендуется)",
+            "Сохранить название спецификации и стандартные заголовки столбцов Revit без объединённых ячеек.");
+        dialog.AddCommandLink(
+            Autodesk.Revit.UI.TaskDialogCommandLinkId.CommandLink2,
+            "Сформировать без шапки",
+            "Создать спецификацию только с данными: без названия и заголовков столбцов.");
+
+        return dialog.Show() switch
+        {
+            Autodesk.Revit.UI.TaskDialogResult.CommandLink1 => FinishScheduleHeaderMode.Standard,
+            Autodesk.Revit.UI.TaskDialogResult.CommandLink2 => FinishScheduleHeaderMode.None,
+            _ => null
+        };
     }
 
     private void CopyCurrentReport()

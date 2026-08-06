@@ -62,7 +62,10 @@ public sealed class FinishScheduleCommand : IExternalCommand
                     : settings => writeWorkflow.Prepare(uiDocument.Document, settings),
                 uiDocument is null
                     ? null
-                    : preview => writeWorkflow.Apply(uiDocument.Document, preview),
+                    : (preview, headerMode) => writeWorkflow.Apply(
+                        uiDocument.Document,
+                        preview,
+                        headerMode),
                 uiDocument is null
                     ? null
                     : () => new FinishScheduleDefaultParameterService(logger).CreateOrUpdate(

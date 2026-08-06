@@ -74,7 +74,8 @@ public sealed class FinishRoomScheduleBuilder
 
     public FinishRoomScheduleApplyResult Apply(
         Document document,
-        FinishRoomSchedulePreflight preflight)
+        FinishRoomSchedulePreflight preflight,
+        FinishScheduleHeaderMode headerMode = FinishScheduleHeaderMode.Custom)
     {
         if (document is null)
         {
@@ -84,6 +85,11 @@ public sealed class FinishRoomScheduleBuilder
         if (preflight is null)
         {
             throw new ArgumentNullException(nameof(preflight));
+        }
+
+        if (!Enum.IsDefined(typeof(FinishScheduleHeaderMode), headerMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(headerMode), headerMode, null);
         }
 
         FinishRoomSchedulePlan plan = preflight.Plan
@@ -117,12 +123,13 @@ public sealed class FinishRoomScheduleBuilder
             ViewSchedule schedule = ConfigureDefinitionTransaction(
                 document,
                 preflight,
-                plan);
+                plan,
+                headerMode);
             long scheduleId = RevitElementIds.GetValue(schedule.Id);
             logger.Info(
                 $"Finish Schedule definition committed. ScheduleId={scheduleId}; "
-                    + $"Action={preflight.Action}; Fields={plan.Columns.Count}.");
-            ConfigureTableTransaction(document, scheduleId, plan);
+                    + $"Action={preflight.Action}; Fields={plan.Columns.Count}; HeaderMode={headerMode}.");
+            ConfigureTableTransaction(document, scheduleId, plan, headerMode);
             FinishTransactionStatus.EnsureAssimilated(group);
             groupStarted = false;
             return new FinishRoomScheduleApplyResult(
@@ -144,7 +151,8 @@ public sealed class FinishRoomScheduleBuilder
     private ViewSchedule ConfigureDefinitionTransaction(
         Document document,
         FinishRoomSchedulePreflight preflight,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         using Transaction transaction = new(document, "TrueBIM: подготовить ведомость отделки");
         FinishTransactionStatus.EnsureStarted(transaction);
@@ -154,7 +162,8 @@ public sealed class FinishRoomScheduleBuilder
                 ? CreateSchedule(document)
                 : GetManagedSchedule(document, preflight.ScheduleId!.Value);
             schedule.Name = plan.ScheduleName;
-            ConfigureDefinition(document, schedule, plan);
+            ConfigureDefinition(document, schedule, plan, headerMode);
+            document.Regenerate();
             FinishTransactionStatus.EnsureCommitted(transaction);
             return schedule;
         }
@@ -168,7 +177,8 @@ public sealed class FinishRoomScheduleBuilder
     private void ConfigureTableTransaction(
         Document document,
         long scheduleId,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         using Transaction transaction = new(document, "TrueBIM: оформить ведомость отделки");
         FinishTransactionStatus.EnsureStarted(transaction);
@@ -177,7 +187,7 @@ public sealed class FinishRoomScheduleBuilder
             ViewSchedule schedule = document.GetElement(RevitElementIds.Create(scheduleId)) as ViewSchedule
                 ?? throw new InvalidOperationException(
                     "Созданная ведомость отделки недоступна для оформления.");
-            ConfigureTable(document, schedule, plan);
+            ConfigureTable(document, schedule, plan, headerMode);
             metadataService.Write(schedule, plan);
             FinishTransactionStatus.EnsureCommitted(transaction);
         }
@@ -214,13 +224,15 @@ public sealed class FinishRoomScheduleBuilder
     private static void ConfigureDefinition(
         Document document,
         ViewSchedule schedule,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         ScheduleDefinition definition = schedule.Definition;
         ResetCustomHeader(schedule);
         ClearDefinition(definition);
-        definition.ShowTitle = true;
-        definition.ShowHeaders = true;
+        bool showStandardHeader = headerMode != FinishScheduleHeaderMode.None;
+        definition.ShowTitle = showStandardHeader;
+        definition.ShowHeaders = showStandardHeader;
 #if REVIT2022_OR_GREATER
         definition.ShowGridLines = true;
 #endif
@@ -268,7 +280,8 @@ public sealed class FinishRoomScheduleBuilder
     private void ConfigureTable(
         Document document,
         ViewSchedule schedule,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         bool scheduleRefreshed = schedule.RefreshData();
         if (!scheduleRefreshed)
@@ -286,7 +299,26 @@ public sealed class FinishRoomScheduleBuilder
             FinishRoomScheduleStyleRules.ThinLineStyleName,
             BuiltInCategory.OST_CurvesThinLines);
         EnsureLineStyles(normalLineStyleId, thinLineStyleId);
-        ConfigureHeader(schedule, plan.Columns, normalLineStyleId, thinLineStyleId);
+        if (headerMode == FinishScheduleHeaderMode.Custom)
+        {
+            try
+            {
+                ConfigureHeader(schedule, plan.Columns, normalLineStyleId, thinLineStyleId);
+            }
+            catch (Exception exception)
+            {
+                throw new FinishScheduleHeaderFormattingException(
+                    "Revit не смог создать составную шапку ведомости отделки.",
+                    exception);
+            }
+        }
+        else
+        {
+            logger.Info(
+                $"Finish Schedule custom header skipped. "
+                    + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; HeaderMode={headerMode}.");
+        }
+
         ConfigureBody(schedule, normalLineStyleId, thinLineStyleId);
     }
 

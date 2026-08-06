@@ -265,6 +265,12 @@ public enum FinishScheduleWriteStatus
     Failed
 }
 
+public enum FinishScheduleWriteFailureKind
+{
+    None,
+    HeaderFormatting
+}
+
 public sealed record FinishScheduleWriteResult(
     FinishScheduleWriteStatus Status,
     int AppliedRoomValues,
@@ -273,9 +279,14 @@ public sealed record FinishScheduleWriteResult(
     IReadOnlyList<string> Warnings,
     string Message,
     FinishRoomScheduleApplyResult? Schedule = null,
-    FinishSchedulePerformanceSummary? Performance = null)
+    FinishSchedulePerformanceSummary? Performance = null,
+    FinishScheduleWriteFailureKind FailureKind = FinishScheduleWriteFailureKind.None)
 {
     public bool Succeeded => Status is FinishScheduleWriteStatus.Applied or FinishScheduleWriteStatus.NoChanges;
+
+    public bool CanRetryWithSimplifiedHeader =>
+        Status == FinishScheduleWriteStatus.Failed
+        && FailureKind == FinishScheduleWriteFailureKind.HeaderFormatting;
 }
 
 public sealed record FinishOwnershipApplyResult(

@@ -35,7 +35,7 @@ public sealed record FinishScheduleHeaderNormalizationPlan(int RowsToInsert);
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v9";
+    public const string LayoutRevision = "v10";
     public const int HeaderRowCount = 4;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
