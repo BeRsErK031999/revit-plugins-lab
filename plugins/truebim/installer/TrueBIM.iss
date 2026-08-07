@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.2.0"
+#define AppVersion "0.2.1"
 #define Publisher "TrueBIM"
 
 #ifndef ExcludeRevit2019

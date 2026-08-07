@@ -4,6 +4,7 @@ public enum LintelDiagnosticSource
 {
     Selection,
     ActiveView,
+    EntireProject,
     ExistingItems
 }
 
@@ -77,6 +78,7 @@ public sealed record LintelDiagnosticResult(
         {
             LintelDiagnosticSource.Selection => "текущее выделение",
             LintelDiagnosticSource.ActiveView => "активный вид",
+            LintelDiagnosticSource.EntireProject => "весь проект",
             LintelDiagnosticSource.ExistingItems => "результаты, созданные TrueBIM",
             _ => "неизвестный источник"
         };

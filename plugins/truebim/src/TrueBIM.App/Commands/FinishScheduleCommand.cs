@@ -1,7 +1,6 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using System.Windows.Interop;
 using TrueBIM.App.Modules.FinishSchedule;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Revit;
@@ -9,6 +8,7 @@ using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Modules.FinishSchedule.UI;
 using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -72,14 +72,11 @@ public sealed class FinishScheduleCommand : IExternalCommand
                         commandData.Application.Application,
                         uiDocument.Document),
                 logger);
-            new WindowInteropHelper(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-
             logger.Info(
                 $"Finish Schedule settings opened. Document='{status.DocumentName}'; HasActiveDocument={status.HasActiveDocument}.");
-            window.ShowDialog();
+            RevitModalWindowService.ShowDialog(
+                window,
+                commandData.Application.MainWindowHandle);
             OpenRequestedSchedule(uiDocument, window.RequestedScheduleId, logger);
             return Result.Succeeded;
         }

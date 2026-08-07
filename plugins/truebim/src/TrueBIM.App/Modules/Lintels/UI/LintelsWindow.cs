@@ -187,14 +187,34 @@ public sealed class LintelsWindow : TrueBimWindow
             TrueBimIcon.Info,
             (_, _) => ShowDiagnostics(),
             minWidth: 130);
-        diagnosticsButton.ToolTip = "Показать причины исключения элементов и подробности временного правила поиска.";
+        diagnosticsButton.ToolTip = "Показать причины исключения элементов и подробности правила поиска.";
+
+        Button guideButton = TrueBimUi.CreateSecondaryButton(
+            "Методичка",
+            TrueBimIcon.Help,
+            (_, _) => ShowGuide(),
+            minWidth: 135);
+        guideButton.ToolTip = "Открыть полную пошаговую методичку по поиску, сборкам, загружаемым .rfa, видам и PNG.";
+        AutomationProperties.SetName(guideButton, "Открыть методичку по перемычкам");
+        AutomationProperties.SetHelpText(guideButton, "Полный пошаговый сценарий работы с модулем «Перемычки».");
 
         return TrueBimUi.CreateCommandBar(
+            guideButton,
             selectReadyButton,
             clearSelectionButton,
             refreshButton,
             preflightButton,
             diagnosticsButton);
+    }
+
+    private void ShowGuide()
+    {
+        logger.Info("Lintels guide requested from the main window.");
+        LintelGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
     }
 
     private UIElement CreateBody()
