@@ -31,11 +31,13 @@ public sealed record FinishScheduleHeaderCell(
             : FinishScheduleHeaderMergeMode.CellMerge;
 }
 
-public sealed record FinishScheduleHeaderNormalizationPlan(int RowsToInsert);
+public sealed record FinishScheduleHeaderNormalizationPlan(
+    int RowsToInsert,
+    int ColumnsToInsert);
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v10";
+    public const string LayoutRevision = "v11";
     public const int HeaderRowCount = 4;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
@@ -93,15 +95,17 @@ public static class FinishRoomScheduleStyleRules
                 "Header must contain at least one expected column.");
         }
 
-        if (existingColumnCount != expectedColumnCount)
+        if (existingColumnCount < 1 || existingColumnCount > expectedColumnCount)
         {
-            throw new ArgumentException(
-                $"Header contains {existingColumnCount} columns instead of {expectedColumnCount}.",
-                nameof(existingColumnCount));
+            throw new ArgumentOutOfRangeException(
+                nameof(existingColumnCount),
+                existingColumnCount,
+                $"Header must contain from 1 to {expectedColumnCount} columns before normalization.");
         }
 
         return new FinishScheduleHeaderNormalizationPlan(
-            GetHeaderRowsToInsert(existingRowCount));
+            GetHeaderRowsToInsert(existingRowCount),
+            expectedColumnCount - existingColumnCount);
     }
 
     public static IReadOnlyList<FinishScheduleHeaderCell> BuildHeaderCells(

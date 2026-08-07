@@ -1105,7 +1105,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             MainInstruction = "Revit не смог создать составную шапку спецификации.",
             MainContent = "Расчёт выполнен, но изменения безопасно отменены. Выберите вариант повторного формирования:",
             CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Cancel,
-            DefaultButton = Autodesk.Revit.UI.TaskDialogResult.CommandLink1,
             FooterText = "Технические подробности сохранены в журнале TrueBIM."
         };
         dialog.AddCommandLink(

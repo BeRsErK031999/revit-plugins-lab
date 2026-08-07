@@ -55,7 +55,7 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
         content.Children.Add(banner);
 
         Border nextSteps = TrueBimUi.CreateInfoBanner(
-            "Дальше: шаг 2 — отметьте один или несколько типоразмеров; шаг 3 — создайте для них сборки; шаг 4 — выберите файл семейства рамки .rfa и создайте оформленные виды 1:10.");
+            "Дальше: шаг 2 — отметьте один или несколько типоразмеров; шаг 3 — создайте для них сборки; шаг 4 — выберите файлы семейств рамки и высотной аннотации .rfa и создайте оформленные виды 1:10.");
         nextSteps.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing16);
         content.Children.Add(nextSteps);
 

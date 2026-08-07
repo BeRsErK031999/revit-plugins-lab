@@ -2,47 +2,61 @@
 #define AppVersion "0.2.0"
 #define Publisher "TrueBIM"
 
-#if !FileExists("..\..\..\dist\revit\2019\TrueBIM.App.dll")
-  #error Missing dist\revit\2019\TrueBIM.App.dll. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2019
+  #if !FileExists("..\..\..\dist\revit\2019\TrueBIM.App.dll")
+    #error Missing dist\revit\2019\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2019\TrueBIM.addin")
+    #error Missing dist\revit\2019\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
-#if !FileExists("..\..\..\dist\revit\2019\TrueBIM.addin")
-  #error Missing dist\revit\2019\TrueBIM.addin. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2020
+  #if !FileExists("..\..\..\dist\revit\2020\TrueBIM.App.dll")
+    #error Missing dist\revit\2020\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2020\TrueBIM.addin")
+    #error Missing dist\revit\2020\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
-#if !FileExists("..\..\..\dist\revit\2020\TrueBIM.App.dll")
-  #error Missing dist\revit\2020\TrueBIM.App.dll. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2021
+  #if !FileExists("..\..\..\dist\revit\2021\TrueBIM.App.dll")
+    #error Missing dist\revit\2021\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2021\TrueBIM.addin")
+    #error Missing dist\revit\2021\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
-#if !FileExists("..\..\..\dist\revit\2020\TrueBIM.addin")
-  #error Missing dist\revit\2020\TrueBIM.addin. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2022
+  #if !FileExists("..\..\..\dist\revit\2022\TrueBIM.App.dll")
+    #error Missing dist\revit\2022\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2022\TrueBIM.addin")
+    #error Missing dist\revit\2022\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
-#if !FileExists("..\..\..\dist\revit\2021\TrueBIM.App.dll")
-  #error Missing dist\revit\2021\TrueBIM.App.dll. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2023
+  #if !FileExists("..\..\..\dist\revit\2023\TrueBIM.App.dll")
+    #error Missing dist\revit\2023\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2023\TrueBIM.addin")
+    #error Missing dist\revit\2023\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
-#if !FileExists("..\..\..\dist\revit\2021\TrueBIM.addin")
-  #error Missing dist\revit\2021\TrueBIM.addin. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2024
+  #if !FileExists("..\..\..\dist\revit\2024\TrueBIM.App.dll")
+    #error Missing dist\revit\2024\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2024\TrueBIM.addin")
+    #error Missing dist\revit\2024\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
-#if !FileExists("..\..\..\dist\revit\2022\TrueBIM.App.dll")
-  #error Missing dist\revit\2022\TrueBIM.App.dll. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2022\TrueBIM.addin")
-  #error Missing dist\revit\2022\TrueBIM.addin. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2023\TrueBIM.App.dll")
-  #error Missing dist\revit\2023\TrueBIM.App.dll. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2023\TrueBIM.addin")
-  #error Missing dist\revit\2023\TrueBIM.addin. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2024\TrueBIM.App.dll")
-  #error Missing dist\revit\2024\TrueBIM.App.dll. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2024\TrueBIM.addin")
-  #error Missing dist\revit\2024\TrueBIM.addin. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2025\TrueBIM.App.dll")
-  #error Missing dist\revit\2025\TrueBIM.App.dll. Run build-installer.ps1 first.
-#endif
-#if !FileExists("..\..\..\dist\revit\2025\TrueBIM.addin")
-  #error Missing dist\revit\2025\TrueBIM.addin. Run build-installer.ps1 first.
+#ifndef ExcludeRevit2025
+  #if !FileExists("..\..\..\dist\revit\2025\TrueBIM.App.dll")
+    #error Missing dist\revit\2025\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2025\TrueBIM.addin")
+    #error Missing dist\revit\2025\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
 #endif
 #ifndef ExcludeRevit2026
   #if !FileExists("..\..\..\dist\revit\2026\TrueBIM.App.dll")
@@ -71,13 +85,27 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 
 [Files]
+#ifndef ExcludeRevit2019
 Source: "..\..\..\dist\revit\2019\*"; DestDir: "{app}\2019"; Excludes: "*.pdb"; Check: ShouldInstallYear('2019'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2020
 Source: "..\..\..\dist\revit\2020\*"; DestDir: "{app}\2020"; Excludes: "*.pdb"; Check: ShouldInstallYear('2020'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2021
 Source: "..\..\..\dist\revit\2021\*"; DestDir: "{app}\2021"; Excludes: "*.pdb"; Check: ShouldInstallYear('2021'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2022
 Source: "..\..\..\dist\revit\2022\*"; DestDir: "{app}\2022"; Excludes: "*.pdb"; Check: ShouldInstallYear('2022'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2023
 Source: "..\..\..\dist\revit\2023\*"; DestDir: "{app}\2023"; Excludes: "*.pdb"; Check: ShouldInstallYear('2023'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2024
 Source: "..\..\..\dist\revit\2024\*"; DestDir: "{app}\2024"; Excludes: "*.pdb"; Check: ShouldInstallYear('2024'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2025
 Source: "..\..\..\dist\revit\2025\*"; DestDir: "{app}\2025"; Excludes: "*.pdb"; Check: ShouldInstallYear('2025'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
 #ifndef ExcludeRevit2026
 Source: "..\..\..\dist\revit\2026\*"; DestDir: "{app}\2026"; Excludes: "*.pdb"; Check: ShouldInstallYear('2026'); Flags: ignoreversion recursesubdirs createallsubdirs
 #endif
@@ -202,9 +230,36 @@ var
   Index2023: Integer;
   Index2024: Integer;
   Index2025: Integer;
-#ifndef ExcludeRevit2026
   Index2026: Integer;
+
+function IsPackagedYear(Year: String): Boolean;
+begin
+  Result := False;
+#ifndef ExcludeRevit2019
+  if Year = '2019' then Result := True;
 #endif
+#ifndef ExcludeRevit2020
+  if Year = '2020' then Result := True;
+#endif
+#ifndef ExcludeRevit2021
+  if Year = '2021' then Result := True;
+#endif
+#ifndef ExcludeRevit2022
+  if Year = '2022' then Result := True;
+#endif
+#ifndef ExcludeRevit2023
+  if Year = '2023' then Result := True;
+#endif
+#ifndef ExcludeRevit2024
+  if Year = '2024' then Result := True;
+#endif
+#ifndef ExcludeRevit2025
+  if Year = '2025' then Result := True;
+#endif
+#ifndef ExcludeRevit2026
+  if Year = '2026' then Result := True;
+#endif
+end;
 
 function IsRevitInstalled(Year: String): Boolean;
 begin
@@ -255,16 +310,22 @@ begin
   VersionList.Width := VersionPage.SurfaceWidth;
   VersionList.Height := ScaleY(160);
 
-  Index2019 := AddVersion('2019');
-  Index2020 := AddVersion('2020');
-  Index2021 := AddVersion('2021');
-  Index2022 := AddVersion('2022');
-  Index2023 := AddVersion('2023');
-  Index2024 := AddVersion('2024');
-  Index2025 := AddVersion('2025');
-#ifndef ExcludeRevit2026
-  Index2026 := AddVersion('2026');
-#endif
+  Index2019 := -1;
+  Index2020 := -1;
+  Index2021 := -1;
+  Index2022 := -1;
+  Index2023 := -1;
+  Index2024 := -1;
+  Index2025 := -1;
+  Index2026 := -1;
+  if IsPackagedYear('2019') then Index2019 := AddVersion('2019');
+  if IsPackagedYear('2020') then Index2020 := AddVersion('2020');
+  if IsPackagedYear('2021') then Index2021 := AddVersion('2021');
+  if IsPackagedYear('2022') then Index2022 := AddVersion('2022');
+  if IsPackagedYear('2023') then Index2023 := AddVersion('2023');
+  if IsPackagedYear('2024') then Index2024 := AddVersion('2024');
+  if IsPackagedYear('2025') then Index2025 := AddVersion('2025');
+  if IsPackagedYear('2026') then Index2026 := AddVersion('2026');
 
   Note := TNewStaticText.Create(VersionPage);
   Note.Parent := VersionPage.Surface;
@@ -281,23 +342,37 @@ end;
 function ShouldInstallYear(Year: String): Boolean;
 begin
   if Year = '2019' then
-    Result := VersionList.Checked[Index2019]
+  begin
+    if Index2019 >= 0 then Result := VersionList.Checked[Index2019] else Result := False;
+  end
   else if Year = '2020' then
-    Result := VersionList.Checked[Index2020]
+  begin
+    if Index2020 >= 0 then Result := VersionList.Checked[Index2020] else Result := False;
+  end
   else if Year = '2021' then
-    Result := VersionList.Checked[Index2021]
+  begin
+    if Index2021 >= 0 then Result := VersionList.Checked[Index2021] else Result := False;
+  end
   else if Year = '2022' then
-    Result := VersionList.Checked[Index2022]
+  begin
+    if Index2022 >= 0 then Result := VersionList.Checked[Index2022] else Result := False;
+  end
   else if Year = '2023' then
-    Result := VersionList.Checked[Index2023]
+  begin
+    if Index2023 >= 0 then Result := VersionList.Checked[Index2023] else Result := False;
+  end
   else if Year = '2024' then
-    Result := VersionList.Checked[Index2024]
+  begin
+    if Index2024 >= 0 then Result := VersionList.Checked[Index2024] else Result := False;
+  end
   else if Year = '2025' then
-    Result := VersionList.Checked[Index2025]
-#ifndef ExcludeRevit2026
+  begin
+    if Index2025 >= 0 then Result := VersionList.Checked[Index2025] else Result := False;
+  end
   else if Year = '2026' then
-    Result := VersionList.Checked[Index2026]
-#endif
+  begin
+    if Index2026 >= 0 then Result := VersionList.Checked[Index2026] else Result := False;
+  end
   else
     Result := False;
 end;

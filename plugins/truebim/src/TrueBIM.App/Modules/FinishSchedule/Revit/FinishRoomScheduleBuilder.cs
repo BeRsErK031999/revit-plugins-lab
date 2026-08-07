@@ -230,9 +230,8 @@ public sealed class FinishRoomScheduleBuilder
         ScheduleDefinition definition = schedule.Definition;
         ResetCustomHeader(schedule);
         ClearDefinition(definition);
-        bool showStandardHeader = headerMode != FinishScheduleHeaderMode.None;
-        definition.ShowTitle = showStandardHeader;
-        definition.ShowHeaders = showStandardHeader;
+        definition.ShowTitle = headerMode != FinishScheduleHeaderMode.None;
+        definition.ShowHeaders = headerMode == FinishScheduleHeaderMode.Standard;
 #if REVIT2022_OR_GREATER
         definition.ShowGridLines = true;
 #endif
@@ -362,7 +361,7 @@ public sealed class FinishRoomScheduleBuilder
         int initialRowCount = header.NumberOfRows;
         int initialColumnCount = header.NumberOfColumns;
         logger.Info(
-            $"Finish Schedule header materialized. ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+            $"Finish Schedule title grid inspected. ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
                 + $"Refreshed={headerRefreshed}; Rows={initialRowCount}; "
                 + $"Columns={initialColumnCount}; ExpectedColumns={columns.Count}; "
                 + $"RowRange={header.FirstRowNumber}..{header.LastRowNumber}; "
@@ -370,7 +369,7 @@ public sealed class FinishRoomScheduleBuilder
         if (!headerRefreshed)
         {
             throw new InvalidOperationException(
-                "Revit не обновил секцию шапки ведомости после фиксации полей.");
+                "Revit не обновил область заголовка ведомости перед оформлением.");
         }
 
         FinishScheduleHeaderNormalizationPlan normalization;
@@ -387,26 +386,55 @@ public sealed class FinishRoomScheduleBuilder
                 $"Revit подготовил недопустимую область шапки: "
                     + $"строк {initialRowCount}, столбцов {initialColumnCount}; "
                     + $"ожидалось от 1 до {FinishRoomScheduleStyleRules.HeaderRowCount} строк "
-                    + $"и {columns.Count} столбцов.",
+                    + $"и от 1 до {columns.Count} столбцов до нормализации.",
                 exception);
         }
 
         int titleRow = header.FirstRowNumber;
         int groupRow = titleRow + 1;
-        for (int index = 0; index < normalization.RowsToInsert; index++)
+        for (int index = 0; index < normalization.ColumnsToInsert; index++)
         {
-            header.InsertRow(header.LastRowNumber + 1);
+            int insertionColumn = header.LastColumnNumber;
+            if (!header.CanInsertColumn(insertionColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Revit не разрешил добавить столбец {insertionColumn} в область заголовка.");
+            }
+
+            header.InsertColumn(insertionColumn);
         }
 
-        if (header.NumberOfRows != FinishRoomScheduleStyleRules.HeaderRowCount)
+        for (int index = 0; index < normalization.RowsToInsert; index++)
+        {
+            int insertionRow = header.LastRowNumber + 1;
+            if (!header.CanInsertRow(insertionRow))
+            {
+                throw new InvalidOperationException(
+                    $"Revit не разрешил добавить строку {insertionRow} в область заголовка.");
+            }
+
+            header.InsertRow(insertionRow);
+        }
+
+        if (header.NumberOfRows != FinishRoomScheduleStyleRules.HeaderRowCount
+            || header.NumberOfColumns != columns.Count)
         {
             throw new InvalidOperationException(
-                $"Не удалось нормализовать шапку: было {initialRowCount} строк, "
-                    + $"после вставки стало {header.NumberOfRows}, ожидалось "
-                    + $"{FinishRoomScheduleStyleRules.HeaderRowCount}.");
+                $"Не удалось нормализовать шапку: было {initialRowCount}×{initialColumnCount}, "
+                    + $"после вставки стало {header.NumberOfRows}×{header.NumberOfColumns}, "
+                    + $"ожидалось {FinishRoomScheduleStyleRules.HeaderRowCount}×{columns.Count}.");
         }
 
         int firstColumn = header.FirstColumnNumber;
+        int lastColumn = header.LastColumnNumber;
+        for (int index = 0; index < columns.Count; index++)
+        {
+            header.SetColumnWidth(
+                firstColumn + index,
+                FinishScheduleUnitAdapter.MillimetersToInternal(columns[index].WidthMillimeters));
+        }
+
+        header.MergeCells(new TableMergedCell(titleRow, firstColumn, titleRow, lastColumn));
         header.SetCellText(titleRow, firstColumn, FinishRoomScheduleStyleRules.ScheduleTitleText);
         foreach (FinishScheduleHeaderCell cell in cells)
         {
@@ -490,15 +518,28 @@ public sealed class FinishRoomScheduleBuilder
     {
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
-        if (header.NumberOfRows <= 2)
+        bool headerRefreshed = header.RefreshData();
+        if (!headerRefreshed)
+        {
+            throw new InvalidOperationException(
+                "Revit не обновил прежнюю шапку ведомости отделки перед очисткой.");
+        }
+
+        bool isManagedCustomLayout = schedule.Definition.ShowTitle
+            && !schedule.Definition.ShowHeaders;
+        if (!isManagedCustomLayout && !ContainsManagedCustomHeaderMarker(header))
         {
             return;
         }
 
-        int titleRow = header.FirstRowNumber;
+        if (header.NumberOfRows <= 1 && header.NumberOfColumns <= 1)
+        {
+            return;
+        }
+
         HashSet<string> seen = new(StringComparer.Ordinal);
         List<TableMergedCell> mergedCells = [];
-        for (int row = titleRow + 1; row <= header.LastRowNumber; row++)
+        for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
         {
             for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
             {
@@ -537,7 +578,7 @@ public sealed class FinishRoomScheduleBuilder
                 merged.Right);
         }
 
-        while (header.NumberOfRows > 2)
+        while (header.NumberOfRows > 1)
         {
             int row = header.LastRowNumber;
             if (!header.CanRemoveRow(row))
@@ -548,6 +589,38 @@ public sealed class FinishRoomScheduleBuilder
 
             header.RemoveRow(row);
         }
+
+        while (header.NumberOfColumns > 1)
+        {
+            int column = header.LastColumnNumber;
+            if (!header.CanRemoveColumn(column))
+            {
+                throw new InvalidOperationException(
+                    "Не удалось удалить прежний столбец шапки ведомости отделки.");
+            }
+
+            header.RemoveColumn(column);
+        }
+    }
+
+    private static bool ContainsManagedCustomHeaderMarker(TableSectionData header)
+    {
+        for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
+        {
+            for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
+            {
+                string text = header.GetCellText(row, column);
+                if (string.Equals(
+                        text,
+                        FinishRoomScheduleStyleRules.FinishGroupHeaderText,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void ConfigureBody(

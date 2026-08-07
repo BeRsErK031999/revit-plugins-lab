@@ -14,10 +14,16 @@ Build all Revit-version payloads and compile the installer from the repository r
 .\plugins\truebim\scripts\build-installer.ps1
 ```
 
+For a local package on a workstation that does not have every supported Revit API, build the available versions and exclude the missing ones from the installer:
+
+```powershell
+.\plugins\truebim\scripts\build-installer.ps1 -AllowMissingRevitApi
+```
+
 The script emits:
 
 ```text
-dist/revit/2019 ... dist/revit/2026
+dist/revit/<built-year>
 dist/installer/TrueBIM-Setup.exe
 ```
 
