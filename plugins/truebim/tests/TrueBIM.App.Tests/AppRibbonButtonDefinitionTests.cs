@@ -17,6 +17,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "раскраски"
         },
         {
+            "TrueBIM_ParameterAudit",
+            TrueBimRibbon.ModelReviewPanelName,
+            "Проверка\nпараметров",
+            $"TrueBIM.App.Commands.{nameof(ParameterAuditCommand)}",
+            TrueBimIcon.Check,
+            "CSV или XLSX"
+        },
+        {
             "TrueBIM_FinishSchedule",
             TrueBimRibbon.ArPanelName,
             "Ведомость\nотделки",
