@@ -213,7 +213,9 @@ public sealed class ParameterAuditRuleEvaluator
             rule.ParameterDisplay,
             value.ActualValue,
             rule.ExpectedDescription,
-            message);
+            message,
+            element.UniqueId,
+            element.HostLinkInstanceId);
     }
 
     private static string FormatNumber(double value)

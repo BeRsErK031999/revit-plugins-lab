@@ -155,6 +155,37 @@ public sealed class ParameterAuditProfileReaderTests
     }
 
     [Fact]
+    public void ReadCsv_MergesDuplicateMatrixHeadersWithoutBlockingAudit()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"truebim-parameter-audit-{Guid.NewGuid():N}.csv");
+        try
+        {
+            File.WriteAllText(
+                path,
+                "Описание;ADSK_Размер_Ширина;ADSK_Размер_Высота;ADSK_Размер_Ширина\n"
+                + "Блок дверной;;+;+",
+                Encoding.UTF8);
+
+            ParameterAuditProfile profile = new ParameterAuditProfileReader().Read(path);
+
+            Assert.True(profile.IsValid);
+            Assert.Equal(2, profile.Rules.Count);
+            Assert.Equal(2, profile.Rules.Select(rule => rule.ParameterName).Distinct().Count());
+            ParameterAuditProfileFix fix = Assert.Single(profile.AvailableFixes);
+            Assert.Equal(1, fix.PrimaryColumnIndex);
+            Assert.Equal(3, fix.DuplicateColumnIndex);
+            ParameterAuditProfileIssue issue = Assert.Single(profile.Issues, issue => issue.CanAutoFix);
+            Assert.Equal("D1", issue.CellAddress);
+            Assert.Contains("B1", issue.Message, StringComparison.Ordinal);
+            Assert.Contains("сразу запускать", issue.Recommendation, StringComparison.CurrentCultureIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void CreateTemplate_CanBeReadBack()
     {
         string path = Path.Combine(Path.GetTempPath(), $"truebim-parameter-audit-{Guid.NewGuid():N}.csv");

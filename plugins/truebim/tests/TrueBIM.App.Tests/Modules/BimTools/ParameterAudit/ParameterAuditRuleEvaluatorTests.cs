@@ -90,6 +90,32 @@ public sealed class ParameterAuditRuleEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_PreservesElementIdentityForRevitNavigation()
+    {
+        ParameterAuditElementSnapshot element = new(
+            "Linked model",
+            true,
+            42,
+            "linked-unique-id",
+            "Стены",
+            "Basic Wall",
+            "200 мм",
+            ParameterAuditScope.Instance,
+            700);
+
+        ParameterAuditResultRow? result = evaluator.Evaluate(
+            Rule(required: true),
+            element,
+            ParameterAuditValueSnapshot.Missing);
+
+        Assert.NotNull(result);
+        Assert.Equal("linked-unique-id", result.UniqueId);
+        Assert.Equal(700, result.HostLinkInstanceId);
+        Assert.True(result.CanNavigateInRevit);
+        Assert.Equal("Показать связь", result.NavigationActionDisplay);
+    }
+
+    [Fact]
     public void MatchesSelection_UsesParameterValueInsteadOfCategory()
     {
         ParameterAuditRule rule = Rule() with

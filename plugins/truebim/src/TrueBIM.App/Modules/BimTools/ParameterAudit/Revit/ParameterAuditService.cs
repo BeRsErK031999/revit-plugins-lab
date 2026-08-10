@@ -36,6 +36,7 @@ public sealed class ParameterAuditService
             document,
             document.Title,
             false,
+            null,
             enabledRules,
             rows,
             ref checkedCount,
@@ -71,6 +72,7 @@ public sealed class ParameterAuditService
                     linkDocument,
                     link.Name,
                     true,
+                    RevitElementIds.GetValue(link.Id),
                     enabledRules,
                     rows,
                     ref checkedCount,
@@ -101,6 +103,7 @@ public sealed class ParameterAuditService
         Document document,
         string sourceModel,
         bool isLinked,
+        long? hostLinkInstanceId,
         IReadOnlyList<ParameterAuditRule> rules,
         ICollection<ParameterAuditResultRow> resultRows,
         ref int checkedCount,
@@ -182,7 +185,8 @@ public sealed class ParameterAuditService
                         element,
                         sourceModel,
                         isLinked,
-                        representativeRule.Scope);
+                        representativeRule.Scope,
+                        hostLinkInstanceId);
                     if (!evaluator.MatchesTarget(representativeRule, snapshot)
                         || !MatchesSelectionParameter(document, element, representativeRule))
                     {
@@ -221,7 +225,9 @@ public sealed class ParameterAuditService
                                 rule.ParameterDisplay,
                                 string.Empty,
                                 rule.ExpectedDescription,
-                                $"Не удалось проверить параметр: {exception.Message}"));
+                                $"Не удалось проверить параметр: {exception.Message}",
+                                snapshot.UniqueId,
+                                snapshot.HostLinkInstanceId));
                             logger.Error(
                                 $"Parameter Audit failed for rule '{rule.RuleId}', element {snapshot.ElementId}.",
                                 exception);
@@ -285,7 +291,8 @@ public sealed class ParameterAuditService
         Element element,
         string sourceModel,
         bool isLinked,
-        ParameterAuditScope scope)
+        ParameterAuditScope scope,
+        long? hostLinkInstanceId)
     {
         string familyName = string.Empty;
         string typeName = string.Empty;
@@ -317,7 +324,8 @@ public sealed class ParameterAuditService
             element.Category?.Name ?? string.Empty,
             familyName,
             typeName,
-            scope);
+            scope,
+            hostLinkInstanceId);
     }
 
     private bool MatchesSelectionParameter(

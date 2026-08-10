@@ -40,8 +40,9 @@ public sealed class ParameterAuditCommand : IExternalCommand
             }
 
             ParameterAuditWindow window = new(
-                uiDocument.Document,
+                uiDocument,
                 new ParameterAuditProfileReader(),
+                new ParameterAuditProfileRepairService(),
                 new ParameterAuditService(new ParameterAuditRuleEvaluator(), logger),
                 new ParameterAuditReportExportService(),
                 logger);

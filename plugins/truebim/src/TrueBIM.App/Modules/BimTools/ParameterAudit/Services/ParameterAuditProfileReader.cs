@@ -423,6 +423,7 @@ public sealed class ParameterAuditProfileReader
     {
         List<ParameterAuditRule> rules = [];
         List<ParameterAuditProfileIssue> issues = [];
+        List<ParameterAuditProfileFix> fixes = [];
         RawTableRow? header = table.Rows
             .FirstOrDefault(row => row.Cells.Any(value => !string.IsNullOrWhiteSpace(value)));
         if (header is null)
@@ -438,11 +439,13 @@ public sealed class ParameterAuditProfileReader
             issues.Add(Error(
                 header.LineNumber,
                 string.Empty,
-                "В ячейке A1 укажите имя параметра, по значению которого выбираются элементы."));
+                "Не задан параметр отбора элементов.",
+                "A1",
+                "Введите в A1 точное имя параметра Revit, например «Описание»."));
         }
 
         Dictionary<int, string> requiredParameterColumns = [];
-        HashSet<string> seenParameterNames = new(StringComparer.CurrentCultureIgnoreCase);
+        Dictionary<string, int> firstParameterColumns = new(StringComparer.CurrentCultureIgnoreCase);
         for (int column = 1; column < header.Cells.Count; column++)
         {
             string parameterName = GetCell(header.Cells, column).Trim();
@@ -451,16 +454,28 @@ public sealed class ParameterAuditProfileReader
                 continue;
             }
 
-            if (!seenParameterNames.Add(parameterName))
+            requiredParameterColumns[column] = parameterName;
+            if (firstParameterColumns.TryGetValue(parameterName, out int primaryColumn))
             {
-                issues.Add(Error(
+                string primaryCell = $"{GetColumnName(primaryColumn)}{header.LineNumber}";
+                string duplicateCell = $"{GetColumnName(column)}{header.LineNumber}";
+                fixes.Add(new ParameterAuditProfileFix(
                     header.LineNumber,
-                    GetColumnName(column),
-                    $"Параметр «{parameterName}» повторяется в строке заголовков."));
+                    primaryColumn,
+                    column,
+                    parameterName));
+                issues.Add(new ParameterAuditProfileIssue(
+                    header.LineNumber,
+                    duplicateCell,
+                    ParameterAuditProfileIssueSeverity.Warning,
+                    $"Заголовок «{parameterName}» повторяется: первое вхождение — {primaryCell}, повторное — {duplicateCell}. Плюсы из обеих колонок уже объединены в одну проверку.",
+                    duplicateCell,
+                    $"Можно сразу запускать проверку. Чтобы привести XLSX в порядок, нажмите «Исправить копию XLSX»: TrueBIM перенесёт плюсы в {primaryCell} и пометит {duplicateCell} как объединённую колонку.",
+                    true));
                 continue;
             }
 
-            requiredParameterColumns[column] = parameterName;
+            firstParameterColumns[parameterName] = column;
         }
 
         if (requiredParameterColumns.Count == 0)
@@ -468,13 +483,17 @@ public sealed class ParameterAuditProfileReader
             issues.Add(Error(
                 header.LineNumber,
                 string.Empty,
-                "Начиная с B1 укажите параметры, заполненность которых нужно проверять."));
+                "Не найдены заголовки проверяемых параметров.",
+                "B1",
+                "Начиная с B1 укажите точные имена параметров Revit."));
         }
 
         foreach (RawTableRow row in table.Rows.Where(row => row.LineNumber > header.LineNumber))
         {
             IReadOnlyList<KeyValuePair<int, string>> markedColumns = requiredParameterColumns
                 .Where(column => IsRequiredMarker(GetCell(row.Cells, column.Key)))
+                .GroupBy(column => column.Value, StringComparer.CurrentCultureIgnoreCase)
+                .Select(group => group.OrderBy(column => column.Key).First())
                 .ToList();
             if (markedColumns.Count == 0)
             {
@@ -487,7 +506,9 @@ public sealed class ParameterAuditProfileReader
                 issues.Add(Error(
                     row.LineNumber,
                     string.Empty,
-                    "В колонке A укажите значение параметра отбора для строки с плюсами."));
+                    "Для строки с плюсами не задано значение параметра отбора.",
+                    $"A{row.LineNumber}",
+                    $"Введите в A{row.LineNumber} значение параметра «{selectionParameterName}» или удалите плюсы из этой строки."));
                 continue;
             }
 
@@ -524,7 +545,9 @@ public sealed class ParameterAuditProfileReader
             issues.Add(Error(
                 0,
                 string.Empty,
-                "В матрице нет правил: поставьте знак + на пересечении строки и обязательного параметра."));
+                "В матрице нет ни одного требования.",
+                string.Empty,
+                "Поставьте знак + на пересечении строки элемента и обязательного параметра."));
         }
         else
         {
@@ -540,7 +563,8 @@ public sealed class ParameterAuditProfileReader
             issues
                 .OrderBy(issue => issue.LineNumber)
                 .ThenBy(issue => issue.Message, StringComparer.CurrentCultureIgnoreCase)
-                .ToList());
+                .ToList(),
+            fixes);
     }
 
     private static string GetCell(IReadOnlyList<string> cells, int column)
@@ -866,13 +890,20 @@ public sealed class ParameterAuditProfileReader
         return false;
     }
 
-    private static ParameterAuditProfileIssue Error(int lineNumber, string ruleId, string message)
+    private static ParameterAuditProfileIssue Error(
+        int lineNumber,
+        string ruleId,
+        string message,
+        string cellAddress = "",
+        string recommendation = "")
     {
         return new ParameterAuditProfileIssue(
             lineNumber,
             ruleId,
             ParameterAuditProfileIssueSeverity.Error,
-            message);
+            message,
+            cellAddress,
+            recommendation);
     }
 
     private static char DetectDelimiter(string text)

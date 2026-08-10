@@ -121,19 +121,33 @@ public sealed record ParameterAuditProfileIssue(
     int LineNumber,
     string RuleId,
     ParameterAuditProfileIssueSeverity Severity,
-    string Message)
+    string Message,
+    string CellAddress = "",
+    string Recommendation = "",
+    bool CanAutoFix = false)
 {
     public string SeverityDisplay => Severity == ParameterAuditProfileIssueSeverity.Error
         ? "Ошибка"
         : "Предупреждение";
+
+    public string AutoFixDisplay => CanAutoFix ? "Да" : string.Empty;
 }
+
+public sealed record ParameterAuditProfileFix(
+    int HeaderLineNumber,
+    int PrimaryColumnIndex,
+    int DuplicateColumnIndex,
+    string ParameterName);
 
 public sealed record ParameterAuditProfile(
     IReadOnlyList<ParameterAuditRule> Rules,
-    IReadOnlyList<ParameterAuditProfileIssue> Issues)
+    IReadOnlyList<ParameterAuditProfileIssue> Issues,
+    IReadOnlyList<ParameterAuditProfileFix>? Fixes = null)
 {
     public bool IsValid => Rules.Count > 0
         && Issues.All(issue => issue.Severity != ParameterAuditProfileIssueSeverity.Error);
+
+    public IReadOnlyList<ParameterAuditProfileFix> AvailableFixes => Fixes ?? [];
 }
 
 public sealed record ParameterAuditElementSnapshot(
@@ -144,7 +158,8 @@ public sealed record ParameterAuditElementSnapshot(
     string CategoryName,
     string FamilyName,
     string TypeName,
-    ParameterAuditScope Scope);
+    ParameterAuditScope Scope,
+    long? HostLinkInstanceId = null);
 
 public sealed record ParameterAuditValueSnapshot(
     bool Exists,
@@ -183,13 +198,26 @@ public sealed record ParameterAuditResultRow(
     string ParameterName,
     string ActualValue,
     string ExpectedValue,
-    string Message)
+    string Message,
+    string UniqueId = "",
+    long? HostLinkInstanceId = null)
 {
     public string SeverityDisplay => Severity == ParameterAuditSeverity.Error ? "Ошибка" : "Предупреждение";
 
     public string ElementIdDisplay => ElementId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
+    public string HostLinkInstanceIdDisplay => HostLinkInstanceId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
     public string SourceDisplay => IsLinked ? $"Связь: {SourceModel}" : SourceModel;
+
+    public bool CanNavigateInRevit => ElementId.HasValue
+        && (!IsLinked || HostLinkInstanceId.HasValue);
+
+    public string NavigationActionDisplay => IsLinked ? "Показать связь" : "Показать";
+
+    public string NavigationToolTip => IsLinked
+        ? "Выбрать и приблизить экземпляр RVT-связи. ElementId вложенного элемента указан в соседней колонке."
+        : "Выбрать элемент, приблизить его в Revit и открыть палитру свойств.";
 }
 
 public sealed record ParameterAuditReport(
