@@ -112,9 +112,9 @@ public sealed class ParameterAuditProfileReaderTests
 
             Assert.True(profile.IsValid);
             Assert.Equal(3, profile.Rules.Count);
-            ParameterAuditRule floorRule = Assert.Single(profile.Rules.Where(rule =>
+            ParameterAuditRule floorRule = Assert.Single(profile.Rules, rule =>
                 rule.SelectionExpectedValue == "Стены, перегородки"
-                && rule.ParameterName == "ADSK_Этаж"));
+                && rule.ParameterName == "ADSK_Этаж");
             Assert.Equal("Описание", floorRule.SelectionParameterName);
             Assert.Equal("C2", floorRule.RuleId);
             Assert.Equal("*", floorRule.CategoryPattern);
