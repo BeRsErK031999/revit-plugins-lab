@@ -61,18 +61,18 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
 
     public string RunnerName => "Встроенный";
 
-    public string RunnerVersion => GetType().Assembly.GetName().Version?.ToString() ?? "unknown";
+    public string RunnerVersion => GetType().Assembly.GetName().Version?.ToString() ?? "неизвестно";
 
     public IsoFieldRecognitionResult Run(string? sourcePath)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
-            throw new ArgumentException("IsoField image path is required.", nameof(sourcePath));
+            throw new ArgumentException("Не указан путь к карте изополей.", nameof(sourcePath));
         }
 
         if (!File.Exists(sourcePath))
         {
-            throw new FileNotFoundException("IsoField image was not found.", sourcePath);
+            throw new FileNotFoundException("Выбранная карта изополей не найдена. Выберите файл заново.", sourcePath);
         }
 
         BitmapFrame frame = LoadFrame(sourcePath!);
@@ -90,14 +90,14 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
         List<string> diagnostics =
         [
             $"Встроенный распознаватель нашёл цветовую шкалу: уровней {legend.Bands.Count}.",
-            $"Цветных зон после фильтрации: {zones.Polylines.Count}; шумовых компонентов отброшено: {zones.RejectedComponents}.",
+            $"Цветных зон найдено: {zones.Polylines.Count}; мелких случайных пятен отброшено: {zones.RejectedComponents}.",
             "Соседние цветные ячейки объединены; зоне присвоен максимальный уровень внутри контура."
         ];
         diagnostics.Add(legend.HasNumericRanges
             ? $"Числовые границы шкалы распознаны: {FormatValue(legend.Bands[0].MinimumValue!.Value)}–{FormatValue(legend.Bands[legend.Bands.Count - 1].MaximumValue!.Value)} см²/м."
-            : "Числовые границы шкалы распознаны не полностью; зоны подписаны номером уровня и HEX-цветом.");
+            : "Числовые границы шкалы распознаны не полностью; зоны подписаны номером уровня и цветом.");
         diagnostics.Add(legend.HasReinforcementLabels
-            ? $"Подписи сочетаний диаметр/шаг распознаны: {legend.EffectiveBoundaries.Count}; минимальное совпадение {legend.EffectiveBoundaries.Min(boundary => boundary.LabelConfidence!.Value):P0}."
+            ? $"Подписи сочетаний диаметр/шаг распознаны: {legend.EffectiveBoundaries.Count}; минимальная уверенность {legend.EffectiveBoundaries.Min(boundary => boundary.LabelConfidence!.Value):P0}."
             : "Подписи сочетаний диаметр/шаг распознаны не полностью и не были приняты.");
         if (zones.Polylines.Count == 0)
         {
@@ -430,7 +430,7 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
             : [0, 7, 14, 20, 26, 34, 41, 48, 55, 62, 69, 75, 81, 89, 96];
         if (offsets.Length != text.Length)
         {
-            throw new InvalidOperationException($"Unsupported reinforcement label template: {text}.");
+            throw new InvalidOperationException($"Не удалось прочитать обозначение арматуры «{text}» на карте.");
         }
 
         List<PixelPoint> points = new();
@@ -918,8 +918,8 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
     private static string BuildZoneName(IsoFieldLegendBand band)
     {
         return band.MinimumValue.HasValue && band.MaximumValue.HasValue
-            ? $"{FormatValue(band.MinimumValue.Value)}–{FormatValue(band.MaximumValue.Value)} см²/м · {band.HexColor}"
-            : $"Макс. уровень {band.Index + 1} · {band.HexColor}";
+            ? $"{FormatValue(band.MinimumValue.Value)}–{FormatValue(band.MaximumValue.Value)} см²/м"
+            : $"Диапазон {band.Index + 1}";
     }
 
     private static byte[] ClassifyPixels(

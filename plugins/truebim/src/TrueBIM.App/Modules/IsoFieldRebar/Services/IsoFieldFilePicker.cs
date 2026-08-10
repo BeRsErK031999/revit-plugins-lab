@@ -6,13 +6,13 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 public sealed class IsoFieldFilePicker : IIsoFieldFilePicker
 {
     private const string DialogFilter =
-        "Файлы изополей (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.json)|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.json|Изображения (*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff)|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff|JSON (*.json)|*.json|Все файлы (*.*)|*.*";
+        "Карты или готовые зоны|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.json|Карты изополей|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff|Готовые зоны|*.json|Все файлы|*.*";
 
     public IReadOnlyList<string> PickIsoFieldSourceFiles()
     {
         OpenFileDialog dialog = new()
         {
-            Title = "Выбрать JSON или комплект карт изополей",
+            Title = "Выбрать четыре карты или готовые зоны",
             Filter = DialogFilter,
             Multiselect = true,
             CheckFileExists = true
@@ -27,8 +27,8 @@ public sealed class IsoFieldFilePicker : IIsoFieldFilePicker
     {
         SaveFileDialog dialog = new()
         {
-            Title = "Сохранить manifest комплекта изополей",
-            Filter = "Manifest комплекта (*.isofield-set.json)|*.isofield-set.json",
+            Title = "Сохранить комплект карт изополей",
+            Filter = "Сохранённый комплект TrueBIM|*.isofield-set.json",
             FileName = string.IsNullOrWhiteSpace(suggestedFileName)
                 ? IsoFieldSourceSetManifestService.DefaultManifestFileName
                 : suggestedFileName,
@@ -51,7 +51,7 @@ public sealed class IsoFieldFilePicker : IIsoFieldFilePicker
         SaveFileDialog dialog = new()
         {
             Title = "Сохранить отчёт армирования по изополям",
-            Filter = "JSON + CSV отчёт (*.json)|*.json",
+            Filter = "Отчёт TrueBIM|*.json",
             FileName = string.IsNullOrWhiteSpace(suggestedFileName)
                 ? IsoFieldRebarReportService.DefaultFileNamePrefix + ".json"
                 : suggestedFileName,

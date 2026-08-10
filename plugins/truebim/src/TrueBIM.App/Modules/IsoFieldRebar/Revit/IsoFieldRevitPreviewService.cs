@@ -50,14 +50,14 @@ public sealed class IsoFieldRevitPreviewService
                 0,
                 deletedOnly,
                 Array.Empty<ElementId>(),
-                "Нет контуров для предпросмотра в Revit.");
+                "Нет контуров, которые можно показать на текущем виде Revit.");
         }
 
         PreviewFrame frame = CreatePreviewFrame(uiDocument, activeView);
         List<ElementId> createdIds = new();
         int deletedCount = 0;
 
-        using Transaction transaction = new(document, "TrueBIM: предпросмотр изополей");
+        using Transaction transaction = new(document, "TrueBIM: показать вспомогательные линии");
         transaction.Start();
 
         try
@@ -95,8 +95,8 @@ public sealed class IsoFieldRevitPreviewService
             deletedCount,
             createdIds,
             createdIds.Count == 0
-                ? "Контуры прочитаны, но подходящих сегментов для калиброванного предпросмотра в Revit не найдено."
-                : $"Калиброванные линии предпросмотра в Revit созданы: {createdIds.Count}.");
+                ? "Контуры загружены, но вспомогательные линии для текущего вида создать не удалось. Проверьте их масштаб."
+                : $"На текущий вид Revit добавлены вспомогательные линии: {createdIds.Count}. Когда они станут не нужны, нажмите «Удалить линии с вида».");
     }
 
     public IsoFieldRevitPreviewResult Clear(
@@ -120,8 +120,8 @@ public sealed class IsoFieldRevitPreviewService
             deletedCount,
             Array.Empty<ElementId>(),
             deletedCount == 0
-                ? "Линии предпросмотра в Revit не найдены."
-                : $"Линии предпросмотра в Revit удалены: {deletedCount}.");
+                ? "Вспомогательные линии этого модуля на текущем виде не найдены."
+                : $"Вспомогательные линии удалены с текущего вида: {deletedCount}.");
     }
 
     private static int DeletePreviewElements(Document document, View activeView, IReadOnlyList<ElementId> idsToDelete)
@@ -131,7 +131,7 @@ public sealed class IsoFieldRevitPreviewService
             return 0;
         }
 
-        using Transaction transaction = new(document, "TrueBIM: очистить предпросмотр изополей");
+        using Transaction transaction = new(document, "TrueBIM: удалить вспомогательные линии");
         transaction.Start();
 
         try
@@ -206,7 +206,7 @@ public sealed class IsoFieldRevitPreviewService
     {
         if (view.IsTemplate || !IsDetailPreviewViewType(view.ViewType))
         {
-            throw new InvalidOperationException("Активный вид не поддерживает линии предпросмотра изополей.");
+            throw new InvalidOperationException("На текущем виде нельзя создать вспомогательные линии. Откройте план, разрез, фасад или чертёжный вид.");
         }
     }
 

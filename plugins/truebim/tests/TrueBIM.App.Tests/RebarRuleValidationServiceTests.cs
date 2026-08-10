@@ -59,10 +59,10 @@ public sealed class RebarRuleValidationServiceTests
 
         IReadOnlyList<string> diagnostics = service.ValidateRule(rule);
 
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Contains("HostKind", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Contains("тип конструкции", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(diagnostics, diagnostic => diagnostic.Contains("Тип арматуры", StringComparison.Ordinal));
         Assert.Contains(diagnostics, diagnostic => diagnostic.Contains("50-400", StringComparison.Ordinal));
-        Assert.Contains(diagnostics, diagnostic => diagnostic.Contains("Направление", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Contains("направление", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

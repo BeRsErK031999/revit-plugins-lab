@@ -33,7 +33,7 @@ public sealed class IsoFieldHostSupportService
             return new IsoFieldHostSupportResult(
                 IsoFieldHostSupportMode.Unsupported,
                 "WALL_PROFILE_UNRESOLVED",
-                "Профиль стены не зафиксирован. Выберите host заново, чтобы подтвердить прямую базовую стену до расчёта и записи.");
+                "Не удалось проверить форму стены. Выберите стену заново перед расчётом.");
         }
 
         if (string.Equals(hostElement.HostKind, SlabHostKind, StringComparison.Ordinal))
@@ -46,7 +46,7 @@ public sealed class IsoFieldHostSupportService
         return new IsoFieldHostSupportResult(
             IsoFieldHostSupportMode.Unsupported,
             "HOST_KIND_UNSUPPORTED",
-            $"Тип host '{hostElement.HostKind}' не поддерживается. Выберите прямую базовую стену или горизонтальную плиту.");
+                "Эта конструкция не поддерживается. Выберите прямую обычную стену или горизонтальную плиту.");
     }
 
     private static IsoFieldHostSupportResult CreateStraightWallResult()
@@ -54,7 +54,7 @@ public sealed class IsoFieldHostSupportService
         return new IsoFieldHostSupportResult(
             IsoFieldHostSupportMode.Engineering,
             "WALL_STRAIGHT_BASIC_ENGINEERING",
-            "Прямая базовая стена поддерживается в инженерном режиме после проверки трёхточечной привязки наружной плоскости.");
+                "Прямая обычная стена подходит для расчёта. Осталось проверить совмещение карты с наружной стороной по трём точкам.");
     }
 
     private static IsoFieldHostSupportResult CreateUnsupportedWallResult()
@@ -62,7 +62,7 @@ public sealed class IsoFieldHostSupportService
         return new IsoFieldHostSupportResult(
             IsoFieldHostSupportMode.Unsupported,
             "WALL_GEOMETRY_UNSUPPORTED",
-            "Поддерживаются только прямые базовые стены. Криволинейные, составные и витражные стены пока заблокированы до расчёта и записи.");
+                "Поддерживаются только прямые обычные стены. Криволинейные, составные и витражные стены пока нельзя рассчитать.");
     }
 
     private static IsoFieldHostSupportResult CreateUnresolvedWallResult()
@@ -70,7 +70,7 @@ public sealed class IsoFieldHostSupportService
         return new IsoFieldHostSupportResult(
             IsoFieldHostSupportMode.Unsupported,
             "WALL_PLANE_UNRESOLVED",
-            "Единственная непрерывная наружная плоскость прямой стены не распознана. Фрагментированная геометрия пока не поддерживается; расчёт и запись заблокированы.");
+                "Не удалось определить одну непрерывную наружную сторону стены. Стены со сложной или разделённой поверхностью пока не поддерживаются.");
     }
 
     private static IsoFieldHostSupportResult CreateHorizontalSlabResult()
@@ -78,7 +78,7 @@ public sealed class IsoFieldHostSupportService
         return new IsoFieldHostSupportResult(
             IsoFieldHostSupportMode.Engineering,
             "SLAB_HORIZONTAL_ENGINEERING",
-            "Горизонтальная плита поддерживается после проверки трёхточечной привязки.");
+                "Горизонтальная плита подходит для расчёта. Осталось проверить совмещение карты с верхней стороной по трём точкам.");
     }
 
     private static IsoFieldHostSupportResult CreateUnsupportedSlabResult()
@@ -86,6 +86,6 @@ public sealed class IsoFieldHostSupportService
         return new IsoFieldHostSupportResult(
             IsoFieldHostSupportMode.Unsupported,
             "SLAB_GEOMETRY_UNSUPPORTED",
-            "Горизонтальная верхняя грань плиты не распознана. Наклонные и геометрически неоднозначные плиты пока заблокированы до расчёта и записи.");
+                "Не удалось определить ровную верхнюю сторону плиты. Наклонные плиты и плиты сложной формы пока не поддерживаются.");
     }
 }

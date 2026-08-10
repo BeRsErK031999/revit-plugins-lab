@@ -54,7 +54,7 @@ public sealed class IsoFieldRebarCreationService
         IReadOnlyList<RebarRulePreviewItem> previewItems = ResolvePreviewItems(rulePreview, hostElement.HostKind);
         Document document = uiDocument.Document;
         Element host = document.GetElement(RevitElementIds.Create(hostElement.ElementId))
-            ?? throw new InvalidOperationException("Выбранный host-элемент не найден в текущем документе Revit.");
+            ?? throw new InvalidOperationException("Выбранная конструкция не найдена в текущем документе Revit. Выберите её заново.");
         EnsureHostMatchesSelection(host, hostElement);
 
         RebarCreationRequest[] requests = BuildCreationRequests(
@@ -75,7 +75,7 @@ public sealed class IsoFieldRebarCreationService
         logger.Info($"IsoField test rebar transaction starting. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}; ValidRules={previewItems.Count}.");
 
         string transactionName = rulePreview.IsEngineeringPreview
-            ? "TrueBIM: армирование плиты по изополям"
+            ? "TrueBIM: армирование по изополям"
             : "TrueBIM: пробное армирование по изополям";
         using Transaction transaction = new(document, transactionName);
         transaction.Start();
@@ -114,7 +114,7 @@ public sealed class IsoFieldRebarCreationService
             0,
             createdIds,
             Array.Empty<long>(),
-            $"Создано {resultKind}: {createdIds.Count}. Host: {hostElement.DisplayName}.");
+            $"Создано {resultKind}: {createdIds.Count}. Конструкция: {hostElement.DisplayName}.");
     }
 
     public IsoFieldRebarChangePlan PreviewEngineeringChanges(
@@ -142,13 +142,13 @@ public sealed class IsoFieldRebarCreationService
 
         if (!rulePreview.IsEngineeringPreview)
         {
-            throw new InvalidOperationException("Diff повторного запуска доступен только для инженерной раскладки host.");
+            throw new InvalidOperationException("Повторное сравнение доступно только для рассчитанной раскладки арматуры.");
         }
 
         IReadOnlyList<RebarRulePreviewItem> previewItems = ResolvePreviewItems(rulePreview, hostElement.HostKind);
         Document document = uiDocument.Document;
         Element host = document.GetElement(RevitElementIds.Create(hostElement.ElementId))
-            ?? throw new InvalidOperationException("Выбранный host-элемент не найден в текущем документе Revit.");
+            ?? throw new InvalidOperationException("Выбранная конструкция не найдена в текущем документе Revit. Выберите её заново.");
         EnsureHostMatchesSelection(host, hostElement);
         RebarCreationRequest[] requests = BuildCreationRequests(
                 document,
@@ -167,7 +167,7 @@ public sealed class IsoFieldRebarCreationService
     {
         if (!rulePreview.CanCreateRebar)
         {
-            throw new InvalidOperationException("Перед созданием пробного армирования рассчитайте валидные правила армирования.");
+            throw new InvalidOperationException("Перед созданием пробного армирования рассчитайте раскладку без ошибок.");
         }
 
         RebarRulePreviewItem[] validItems = rulePreview.Items
@@ -177,7 +177,7 @@ public sealed class IsoFieldRebarCreationService
             .ToArray();
         if (validItems.Length == 0)
         {
-            throw new InvalidOperationException("Нет валидной зоны для создания пробного армирования.");
+            throw new InvalidOperationException("Нет подходящей зоны для создания пробного армирования.");
         }
 
         return validItems;
@@ -186,7 +186,7 @@ public sealed class IsoFieldRebarCreationService
     private static void EnsureHostMatchesSelection(Element host, IsoFieldHostElement selectedHost)
     {
         Category category = host.Category
-            ?? throw new InvalidOperationException("У выбранного host-элемента нет категории.");
+            ?? throw new InvalidOperationException("Не удалось определить категорию выбранной конструкции. Выберите другую стену или плиту.");
 
         long categoryId = RevitElementIds.GetValue(category.Id);
         string actualHostKind = categoryId switch
@@ -198,7 +198,7 @@ public sealed class IsoFieldRebarCreationService
 
         if (!string.Equals(actualHostKind, selectedHost.HostKind, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Выбранный host-элемент больше не соответствует сохраненному типу стены или плиты.");
+            throw new InvalidOperationException("После выбора тип конструкции изменился. Выберите стену или плиту заново.");
         }
 
         IsoFieldHostElement actualHost = IsoFieldHostSelectionService.CreateHostElement(host);
@@ -206,7 +206,7 @@ public sealed class IsoFieldRebarCreationService
             && actualHost.GeometryProfile != selectedHost.GeometryProfile)
         {
             throw new InvalidOperationException(
-                "Профиль host изменился после выбора. Выберите host заново и повторите расчёт.");
+                "Форма конструкции изменилась после выбора. Выберите конструкцию заново и повторите расчёт.");
         }
 
         if (selectedHost.Geometry is not null
@@ -214,7 +214,7 @@ public sealed class IsoFieldRebarCreationService
                 || !HostGeometryMatches(selectedHost.Geometry, actualHost.Geometry)))
         {
             throw new InvalidOperationException(
-                "Геометрия или отверстия host изменились после привязки. Выберите host заново и повторите расчёт.");
+                "Форма конструкции или отверстия изменились после привязки. Выберите конструкцию заново и повторите расчёт.");
         }
     }
 
@@ -284,7 +284,7 @@ public sealed class IsoFieldRebarCreationService
 
         if (barTypes.Count == 0)
         {
-            throw new InvalidOperationException("В документе Revit не найден ни один тип арматуры RebarBarType.");
+            throw new InvalidOperationException("В документе Revit нет ни одного типа арматурного стержня. Добавьте подходящий тип и повторите расчёт.");
         }
 
         if (component is not null)
@@ -346,7 +346,7 @@ public sealed class IsoFieldRebarCreationService
                 if (slabBinding?.CanProceed != true || hostElement.Geometry is null)
                 {
                     throw new InvalidOperationException(
-                        "Инженерная раскладка стены требует актуальную проверенную привязку и геометрию наружной плоскости.");
+                        "Привязка стены устарела или не прошла проверку. Проверьте совмещение по трём точкам заново.");
                 }
 
                 placements = wallPlacementService.BuildEngineeringPlacements(
@@ -385,7 +385,7 @@ public sealed class IsoFieldRebarCreationService
                 if (slabBinding?.CanProceed != true || hostElement.Geometry is null)
                 {
                     throw new InvalidOperationException(
-                        "Инженерная раскладка плиты требует актуальную проверенную привязку и геометрию верхней грани.");
+                        "Привязка плиты устарела или не прошла проверку. Проверьте совмещение по трём точкам заново.");
                 }
 
                 placements = slabPlacementService.BuildEngineeringPlacements(
@@ -413,19 +413,19 @@ public sealed class IsoFieldRebarCreationService
             yield break;
         }
 
-        throw new InvalidOperationException("MVP пробного армирования поддерживает только простые стены и плиты.");
+        throw new InvalidOperationException("Пробное армирование доступно только для прямых стен и горизонтальных плит.");
     }
 
     private static IsoFieldWallPlacementFrame BuildWallPlacementFrame(Wall wall)
     {
         if (wall.Location is not LocationCurve locationCurve)
         {
-            throw new InvalidOperationException("Для пробного армирования стены нужна LocationCurve.");
+            throw new InvalidOperationException("Не удалось определить осевую линию стены. Выберите другую стену.");
         }
 
         if (locationCurve.Curve is not Line location)
         {
-            throw new InvalidOperationException("MVP пробного армирования поддерживает только прямые стены.");
+            throw new InvalidOperationException("Пробное армирование доступно только для прямых стен.");
         }
 
         XYZ start = location.GetEndPoint(0);
@@ -434,16 +434,16 @@ public sealed class IsoFieldRebarCreationService
         double lengthFeet = new XYZ(direction.X, direction.Y, 0).GetLength();
         if (lengthFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("LocationCurve стены слишком короткая для пробного армирования.");
+            throw new InvalidOperationException("Стена слишком короткая для пробного армирования.");
         }
 
         XYZ axis = NormalizeHorizontalDirection(direction);
         BoundingBoxXYZ boundingBox = wall.get_BoundingBox(null)
-            ?? throw new InvalidOperationException("У выбранной стены нет bounding box.");
+            ?? throw new InvalidOperationException("Не удалось определить границы выбранной стены.");
         double heightFeet = boundingBox.Max.Z - boundingBox.Min.Z;
         if (heightFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("Bounding box стены слишком мал для пробного армирования.");
+            throw new InvalidOperationException("Размер выбранной стены слишком мал для пробного армирования.");
         }
 
         XYZ centerOnCurve = location.Evaluate(0.5, true);
@@ -461,7 +461,7 @@ public sealed class IsoFieldRebarCreationService
     private static IsoFieldRebarPlacementBounds BuildPlacementBounds(Element slab)
     {
         BoundingBoxXYZ boundingBox = slab.get_BoundingBox(null)
-            ?? throw new InvalidOperationException("У выбранной плиты нет bounding box.");
+            ?? throw new InvalidOperationException("Не удалось определить границы выбранной плиты.");
 
         return new IsoFieldRebarPlacementBounds(
             boundingBox.Min.X,
@@ -477,7 +477,7 @@ public sealed class IsoFieldRebarCreationService
         XYZ horizontal = new(direction.X, direction.Y, 0);
         if (horizontal.GetLength() < MinimumDirectionLengthFeet)
         {
-            throw new InvalidOperationException("LocationCurve стены должна иметь ненулевое горизонтальное направление.");
+            throw new InvalidOperationException("Не удалось определить горизонтальное направление стены.");
         }
 
         return horizontal.Normalize();
@@ -509,7 +509,7 @@ public sealed class IsoFieldRebarCreationService
                 || string.IsNullOrWhiteSpace(signature)))
         {
             throw new InvalidOperationException(
-                "Созданный Rebar нельзя безопасно пометить stable id и сигнатурой TrueBIM. Транзакция отменена.");
+                "Не удалось сохранить служебные данные созданного стержня. Все изменения отменены.");
         }
 
         if (parameter is not null && !parameter.IsReadOnly)
@@ -527,7 +527,7 @@ public sealed class IsoFieldRebarCreationService
             if (!marked && placement.Component is not null)
             {
                 throw new InvalidOperationException(
-                    "Rebar создан, но Revit отклонил запись stable id TrueBIM. Транзакция отменена.");
+                    "Стержень создан, но Revit не позволил сохранить его служебные данные. Все изменения отменены.");
             }
         }
     }
@@ -552,9 +552,9 @@ public sealed class IsoFieldRebarCreationService
         IsoFieldRebarPlanItem[] plannedItems = requests
             .Select(request => new IsoFieldRebarPlanItem(
                 request.Placement.StableId
-                    ?? throw new InvalidOperationException("Инженерная линия не содержит стабильный id."),
+                    ?? throw new InvalidOperationException("У расчётного стержня нет служебного номера."),
                 request.Signature
-                    ?? throw new InvalidOperationException("Инженерная линия не содержит сигнатуру.")))
+                    ?? throw new InvalidOperationException("У расчётного стержня нет контрольных данных.")))
             .ToArray();
         Dictionary<string, RebarCreationRequest> requestsByStableId = requests
             .Where(request => !string.IsNullOrWhiteSpace(request.Placement.StableId))
@@ -692,7 +692,7 @@ public sealed class IsoFieldRebarCreationService
         if (!changePlan.HasChanges)
         {
             string unchangedMessage =
-                $"Армирование уже соответствует расчётной раскладке. Без изменений: {changePlan.UnchangedCount}. Host: {hostElement.DisplayName}.";
+                $"Армирование уже соответствует расчётной раскладке. Без изменений: {changePlan.UnchangedCount}. Конструкция: {hostElement.DisplayName}.";
             logger.Info($"IsoField engineering rebar is current. HostId={hostElement.ElementId}; Unchanged={changePlan.UnchangedCount}.");
             return new IsoFieldRebarCreationResult(
                 0,
@@ -750,7 +750,7 @@ public sealed class IsoFieldRebarCreationService
             throw;
         }
 
-        string message = $"Армирование обновлено. {changePlan.Summary} Host: {hostElement.DisplayName}.";
+        string message = $"Армирование обновлено. {changePlan.Summary} Конструкция: {hostElement.DisplayName}.";
         logger.Info(
             $"IsoField engineering rebar changes applied. HostId={hostElement.ElementId}; {changePlan.Summary}");
         return new IsoFieldRebarCreationResult(

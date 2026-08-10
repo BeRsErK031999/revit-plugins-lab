@@ -58,7 +58,7 @@ public sealed class IsoFieldRebarReviewService
                 item.ZoneName,
                 item.Rule.LayerRole,
                 ResolveStatus(item, changePlan, changes),
-                $"{item.Rule.PlacementDirection} · {FormatFace(item.Rule.Face)}",
+                $"{FormatDirection(item.Rule.PlacementDirection)} · {FormatFace(item.Rule.HostKind, item.Rule.Face)}",
                 FormatReinforcement(components, item.Rule.ReinforcementLabel),
                 FormatArea(item.Rule),
                 item.EstimatedBarCount,
@@ -245,8 +245,7 @@ public sealed class IsoFieldRebarReviewService
 
         return string.Join(
             " + ",
-            components.Select(component =>
-                $"Ø{FormatNumber(component.DiameterMillimeters)}/{FormatNumber(component.SpacingMillimeters)}"));
+            components.Select(component => component.UserDisplayName));
     }
 
     private static string FormatArea(RebarRule rule)
@@ -261,13 +260,35 @@ public sealed class IsoFieldRebarReviewService
             + $"{FormatNumber(rule.ProvidedAreaSquareCentimetersPerMeter.Value)} см²/м";
     }
 
-    private static string FormatFace(IsoFieldRebarFace? face)
+    private static string FormatFace(string hostKind, IsoFieldRebarFace? face)
     {
+        if (string.Equals(hostKind, "Wall", StringComparison.Ordinal))
+        {
+            return face switch
+            {
+                IsoFieldRebarFace.Bottom => "внутренняя сторона",
+                IsoFieldRebarFace.Top => "наружная сторона",
+                _ => "сторона не задана"
+            };
+        }
+
         return face switch
         {
             IsoFieldRebarFace.Bottom => "низ",
             IsoFieldRebarFace.Top => "верх",
             _ => "не задано"
+        };
+    }
+
+    private static string FormatDirection(string direction)
+    {
+        return direction switch
+        {
+            "X" => "направление X",
+            "Y" => "направление Y",
+            "AlongHost" => "вдоль конструкции",
+            "Vertical" => "по вертикали",
+            _ => "направление не задано"
         };
     }
 

@@ -109,8 +109,8 @@ public sealed class IsoFieldSlabBindingService
 
         ValidatePoint(input.ImagePoint1, "Первая точка изображения");
         ValidatePoint(input.ImagePoint2, "Вторая точка изображения");
-        ValidatePoint(input.HostPoint1Feet, "Первая точка host");
-        ValidatePoint(input.HostPoint2Feet, "Вторая точка host");
+        ValidatePoint(input.HostPoint1Feet, "Первая точка на конструкции");
+        ValidatePoint(input.HostPoint2Feet, "Вторая точка на конструкции");
 
         double imageDeltaX = input.ImagePoint2.X - input.ImagePoint1.X;
         double imageDeltaY = input.ImagePoint2.Y - input.ImagePoint1.Y;
@@ -132,7 +132,7 @@ public sealed class IsoFieldSlabBindingService
         if (hostSpan < MinimumHostSpanFeet)
         {
             throw new InvalidOperationException(
-                "Контрольные точки host расположены слишком близко друг к другу.");
+                "Первые две точки на конструкции расположены слишком близко друг к другу.");
         }
 
         double rotation = Math.Atan2(hostDeltaY, hostDeltaX)
@@ -152,11 +152,11 @@ public sealed class IsoFieldSlabBindingService
         if (input.ImagePoint3 is null || input.HostPoint3Feet is null)
         {
             throw new InvalidOperationException(
-                "Для независимой проверки привязки укажите третью точку на карте и на host.");
+                "Для проверки привязки укажите третью точку на карте и на конструкции.");
         }
 
         ValidatePoint(input.ImagePoint3, "Третья точка изображения");
-        ValidatePoint(input.HostPoint3Feet, "Третья точка host");
+        ValidatePoint(input.HostPoint3Feet, "Третья точка на конструкции");
         double imageOffset = PerpendicularDistance(
             input.ImagePoint3,
             input.ImagePoint1,
@@ -174,7 +174,7 @@ public sealed class IsoFieldSlabBindingService
         if (hostOffset < MinimumHostSpanFeet)
         {
             throw new InvalidOperationException(
-                "Третья точка host должна находиться в стороне от линии первых двух контрольных точек.");
+                "Третья точка на конструкции должна находиться в стороне от линии первых двух контрольных точек.");
         }
 
         IsoFieldPoint expectedHostPoint = transform.Map(input.ImagePoint3);
@@ -197,7 +197,7 @@ public sealed class IsoFieldSlabBindingService
             || hostGeometry.BoundaryLoopsFeet.Any(loop => loop.Count < 4))
         {
             throw new InvalidOperationException(
-                "Опорная плоскость host не содержит замкнутых границ для привязки.");
+                "На опорной поверхности конструкции не удалось найти замкнутую внешнюю границу.");
         }
     }
 
@@ -293,16 +293,16 @@ public sealed class IsoFieldSlabBindingService
         CultureInfo culture = CultureInfo.GetCultureInfo("ru-RU");
         List<string> diagnostics =
         [
-            $"Привязка: {transform.MillimetersPerPixel.ToString("0.###", culture)} мм/пикс; "
+            $"Привязка: {transform.MillimetersPerPixel.ToString("0.###", culture)} мм на точку изображения; "
                 + $"поворот {transform.RotationDegrees.ToString("0.##", culture)}°; "
-                + $"отражение Y: {(transform.MirrorImageY ? "да" : "нет")}.",
+                + $"вертикаль перевёрнута: {(transform.MirrorImageY ? "да" : "нет")}.",
             $"Третья точка: отклонение {thirdPoint.DeviationMillimeters.ToString("0.#", culture)} мм "
                 + $"при допуске {ThirdPointToleranceMillimeters.ToString("0.#", culture)} мм.",
-            $"Геометрия host: отверстий {holeCount}; сохранено {(retainedAreaRatio * 100).ToString("0.#", culture)}% площади зон."
+            $"Конструкция: отверстий {holeCount}; после обрезки сохранено {(retainedAreaRatio * 100).ToString("0.#", culture)}% площади зон."
         ];
         if (!controlPointsInside)
         {
-            diagnostics.Add("Одна или несколько контрольных точек находятся вне допустимого контура host.");
+            diagnostics.Add("Одна или несколько контрольных точек находятся за границами выбранной конструкции.");
         }
 
         if (!thirdPoint.IsValid)
@@ -312,7 +312,7 @@ public sealed class IsoFieldSlabBindingService
 
         if (clippedZoneCount > 0)
         {
-            diagnostics.Add($"По контуру host и отверстиям обрезано зон: {clippedZoneCount} из {zoneCount}.");
+            diagnostics.Add($"По границам конструкции и отверстиям обрезано зон: {clippedZoneCount} из {zoneCount}.");
         }
 
         if (removedZoneCount > 0)
@@ -322,7 +322,7 @@ public sealed class IsoFieldSlabBindingService
 
         diagnostics.Add(canProceed
             ? "Привязка и отсечение зон проверены. Можно переходить к расчёту правил."
-            : "Привязка требует исправления; расчёт правил для host заблокирован.");
+            : "Привязка требует исправления; расчёт раскладки пока недоступен.");
         return diagnostics;
     }
 

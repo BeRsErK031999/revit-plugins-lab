@@ -32,9 +32,27 @@ public sealed record RebarRulePreviewItem(
         : Rule.IsEngineeringRule
         ? $"{ZoneName}: требуется {Rule.RequiredAreaSquareCentimetersPerMeter:0.###}, "
             + $"принято {Rule.ProvidedAreaSquareCentimetersPerMeter:0.###} см²/м · "
-            + $"{Rule.ReinforcementLabel} · {Rule.PlacementDirection}/{FormatFace(Rule.HostKind, Rule.Face)} · "
+            + $"{FormatReinforcement(Rule)} · {FormatDirection(Rule.PlacementDirection)} · {FormatFace(Rule.HostKind, Rule.Face)} · "
             + $"стержней {EstimatedBarCount}"
-        : $"{ZoneName}: {Rule.BarTypeName}, шаг {Rule.SpacingMillimeters:0} мм, направление {Rule.PlacementDirection}";
+        : $"{ZoneName}: {Rule.BarTypeName}, шаг {Rule.SpacingMillimeters:0} мм, {FormatDirection(Rule.PlacementDirection)}";
+
+    private static string FormatReinforcement(RebarRule rule)
+    {
+        return rule.EffectiveComponents.Count > 0
+            ? string.Join(" + ", rule.EffectiveComponents.Select(component => component.UserDisplayName))
+            : rule.ReinforcementLabel ?? "арматура не определена";
+    }
+
+    private static string FormatDirection(string direction)
+    {
+        return direction switch
+        {
+            "X" => "направление X",
+            "Y" => "направление Y",
+            "AlongHost" => "вдоль конструкции",
+            _ => "направление выбрано автоматически"
+        };
+    }
 
     private static string FormatFace(string hostKind, IsoFieldRebarFace? face)
     {

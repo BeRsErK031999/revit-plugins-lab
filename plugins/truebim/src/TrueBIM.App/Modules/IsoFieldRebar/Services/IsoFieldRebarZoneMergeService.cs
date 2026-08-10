@@ -44,7 +44,7 @@ public sealed class IsoFieldRebarZoneMergeService
         if (preview.EngineeringSettings is null)
         {
             throw new InvalidOperationException(
-                "Объединение зон доступно только для инженерной раскладки host.");
+            "Объединение зон доступно только после расчёта раскладки для выбранной стены или плиты.");
         }
 
         if (merges.Count == 0)
@@ -62,7 +62,7 @@ public sealed class IsoFieldRebarZoneMergeService
                 if (!occupiedSourceIds.Add(sourceZoneId))
                 {
                     throw new InvalidOperationException(
-                        $"Зона '{sourceZoneId}' включена более чем в одно инженерное объединение.");
+                    $"Зона «{sourceZoneId}» включена более чем в одну группу объединения.");
                 }
             }
 
@@ -73,7 +73,7 @@ public sealed class IsoFieldRebarZoneMergeService
             if (!string.Equals(merge.MergedZoneId, expectedMergedZoneId, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
-                    "Состав инженерного объединения изменился. Снимите его и создайте заново.");
+                    "Состав объединённой зоны изменился. Разъедините её и создайте объединение заново.");
             }
 
             RebarRulePreviewItem mergedItem = BuildMergedItem(members, normalizedIds);
@@ -193,19 +193,19 @@ public sealed class IsoFieldRebarZoneMergeService
         if (members.Any(member => !member.HasValidRule || !member.Rule.IsEngineeringRule))
         {
             throw new InvalidOperationException(
-                "Объединять можно только зоны с валидными инженерными правилами.");
+                "Объединять можно только зоны, для которых раскладка рассчитана без ошибок.");
         }
 
         if (members.Any(member => !HasSamePlacementAndRule(first.Rule, member.Rule)))
         {
             throw new InvalidOperationException(
-                "Для объединения нужны одинаковые слой, грань, направление и сочетание арматуры. При необходимости сначала настройте правила выбранных зон.");
+                "Для объединения зоны должны относиться к одной карте и стороне конструкции, иметь одно направление и одинаковую арматуру. При необходимости сначала настройте выбранные зоны.");
         }
 
         if (members.Any(member => member.EffectiveRegions.Count == 0))
         {
             throw new InvalidOperationException(
-                "У одной из выбранных зон нет допустимой геометрии после отсечения по host.");
+                "Одна из выбранных зон полностью исчезла после обрезки по границам конструкции.");
         }
     }
 
@@ -259,7 +259,7 @@ public sealed class IsoFieldRebarZoneMergeService
         if (normalized.Length < 2)
         {
             throw new InvalidOperationException(
-                "Для инженерного объединения выберите минимум две зоны.");
+                "Для объединения выберите не менее двух зон.");
         }
 
         return normalized;

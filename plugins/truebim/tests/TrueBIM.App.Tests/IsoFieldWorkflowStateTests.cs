@@ -14,7 +14,7 @@ public sealed class IsoFieldWorkflowStateTests
         Assert.False(state.CanRunRecognition);
         Assert.False(state.CanCalculateRules);
         Assert.False(state.CanCreateRebar);
-        Assert.Contains("JSON", state.NextAction, StringComparison.Ordinal);
+        Assert.Contains("четыре карты", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class IsoFieldWorkflowStateTests
         IsoFieldWorkflowState state = new(true, false, false, false, false, false, false);
 
         Assert.False(state.CanRunRecognition);
-        Assert.Contains("обработчик", state.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("обработать карты", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class IsoFieldWorkflowStateTests
         IsoFieldWorkflowState state = new(true, true, true, true, false, true, false);
 
         Assert.False(state.CanCreateRebar);
-        Assert.Contains("верх/низ", state.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("сторону конструкции", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

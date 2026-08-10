@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.2.1"
+#define AppVersion "0.2.2"
 #define Publisher "TrueBIM"
 
 #ifndef ExcludeRevit2019
@@ -83,6 +83,9 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
+
+[Languages]
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Files]
 #ifndef ExcludeRevit2019
@@ -276,9 +279,9 @@ end;
 function VersionCaption(Year: String): String;
 begin
   if IsRevitInstalled(Year) then
-    Result := 'Revit ' + Year + ' (found)'
+    Result := 'Revit ' + Year + ' — найден на компьютере'
   else
-    Result := 'Revit ' + Year + ' (not found; confirmation required)';
+    Result := 'Revit ' + Year + ' — не найден, потребуется подтверждение';
 end;
 
 function AddVersion(Year: String): Integer;
@@ -300,8 +303,8 @@ var
 begin
   VersionPage := CreateCustomPage(
     wpSelectDir,
-    'Select Revit versions',
-    'Choose the Revit versions where TrueBIM should be installed.');
+    'Выберите версии Revit',
+    'Отметьте версии Revit, для которых нужно установить TrueBIM.');
 
   VersionList := TNewCheckListBox.Create(VersionPage);
   VersionList.Parent := VersionPage.Surface;
@@ -335,8 +338,8 @@ begin
   Note.Height := ScaleY(48);
   Note.WordWrap := True;
   Note.Caption :=
-    'Only versions detected on this PC are selected by default. ' +
-    'Selecting a version that is not detected is allowed only after explicit confirmation.';
+    'Версии Revit, найденные на этом компьютере, уже отмечены. ' +
+    'Можно выбрать и другую версию — перед продолжением установщик попросит подтверждение.';
 end;
 
 function ShouldInstallYear(Year: String): Boolean;
@@ -424,7 +427,7 @@ begin
   begin
     if not AnyYearSelected then
     begin
-      MsgBox('Select at least one Revit version.', mbError, MB_OK);
+      MsgBox('Выберите хотя бы одну версию Revit.', mbError, MB_OK);
       Result := False;
       exit;
     end;
@@ -434,8 +437,8 @@ begin
     begin
       Result :=
         MsgBox(
-          'Revit was not detected for these selected versions: ' + MissingYears + '.' + #13#10 + #13#10 +
-          'The installer can still copy the add-in manifest for later Revit installation. Continue?',
+          'На компьютере не найдены выбранные версии Revit: ' + MissingYears + '.' + #13#10 + #13#10 +
+          'TrueBIM всё равно можно установить заранее. Продолжить установку?',
           mbConfirmation,
           MB_YESNO) = IDYES;
     end;

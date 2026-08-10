@@ -15,6 +15,6 @@ public sealed record IsoFieldSourceFile(
     public bool HasValidImageSize => PixelWidth > 0 && PixelHeight > 0;
 
     public string ImageSizeText => HasValidImageSize
-        ? $"{PixelWidth}×{PixelHeight} px"
+        ? $"{PixelWidth}×{PixelHeight} точек"
         : "размер не определён";
 }

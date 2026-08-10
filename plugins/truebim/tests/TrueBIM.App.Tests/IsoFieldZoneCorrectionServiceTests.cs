@@ -24,11 +24,11 @@ public sealed class IsoFieldZoneCorrectionServiceTests
         IsoFieldPolyline zone = Assert.Single(result.Polylines);
         Assert.Equal("zone-b", zone.Id);
         Assert.Equal(1, zone.LegendBandIndex);
-        Assert.Equal("1,5–2,5 см²/м · #00FF00", zone.ZoneName);
+        Assert.Equal("1,5–2,5 см²/м", zone.ZoneName);
         Assert.Equal(2, source.Polylines.Count);
         Assert.Equal(0, source.Polylines[1].LegendBandIndex);
         Assert.Contains(result.Diagnostics, message => message.Contains("исключено 1", StringComparison.Ordinal));
-        Assert.Contains(result.Diagnostics, message => message.Contains("изменён класс у 1", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, message => message.Contains("изменён диапазон площади у 1", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class IsoFieldZoneCorrectionServiceTests
                     .ToArray(),
                 [new IsoFieldZoneMerge(["zone-a", "zone-b"])]));
 
-        Assert.Contains("одного расчётного слоя", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("одной расчётной карты", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class IsoFieldZoneCorrectionServiceTests
                     .ToArray(),
                 [new IsoFieldZoneMerge(["zone-a", "zone-b"])]));
 
-        Assert.Contains("одинаковый класс", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("одинаковый диапазон площади", exception.Message, StringComparison.Ordinal);
     }
 
     private static IsoFieldRecognitionResult CreateRecognitionResult(

@@ -33,7 +33,7 @@ public sealed class IsoFieldHostSelectionService
             new HostSelectionFilter(),
             "Выберите стену или плиту для армирования по изополям.");
         Element selectedElement = document.GetElement(reference.ElementId)
-            ?? throw new InvalidOperationException("Не удалось получить выбранный host-элемент.");
+            ?? throw new InvalidOperationException("Не удалось получить выбранную стену или плиту.");
         return CreateHostElement(selectedElement);
     }
 
@@ -55,7 +55,7 @@ public sealed class IsoFieldHostSelectionService
         if (hostElement.Geometry is null)
         {
             throw new InvalidOperationException(
-                "Контрольные точки доступны только для host с распознанной опорной плоскостью.");
+                "Контрольные точки доступны только для конструкции с распознанной ровной опорной поверхностью.");
         }
 
         string faceName = hostElement.IsWall ? "наружной плоскости стены" : "верхней грани плиты";
@@ -64,7 +64,7 @@ public sealed class IsoFieldHostSelectionService
             new HostFaceSelectionFilter(hostElement.ElementId),
             $"Укажите контрольную точку {pointNumber} на {faceName}.");
         XYZ worldPoint = reference.GlobalPoint
-            ?? throw new InvalidOperationException("Не удалось определить координаты выбранной точки host.");
+            ?? throw new InvalidOperationException("Не удалось определить положение выбранной точки на конструкции.");
         IsoFieldHostGeometry geometry = hostElement.Geometry;
         XYZ origin = ToXyz(geometry.OriginFeet);
         XYZ axisX = ToXyz(geometry.AxisX);
@@ -414,7 +414,7 @@ public sealed class IsoFieldHostSelectionService
             }
         }
 
-        return $"Element {elementId}";
+        return $"Элемент № {elementId}";
     }
 
     private sealed class HostSelectionFilter : ISelectionFilter

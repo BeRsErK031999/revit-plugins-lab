@@ -32,13 +32,13 @@ public sealed class IsoFieldRebarChangePlanService
             .GroupBy(item => item.StableId, StringComparer.Ordinal)
             .Where(group => group.Count() > 1))
         {
-            diagnostics.Add($"План содержит повторяющийся стабильный id: {duplicate.Key}.");
+                diagnostics.Add($"Один и тот же расчётный стержень встречается несколько раз: {duplicate.Key}.");
         }
 
         if (plannedItems.Any(item => string.IsNullOrWhiteSpace(item.StableId)
             || string.IsNullOrWhiteSpace(item.Signature)))
         {
-            diagnostics.Add("У каждой плановой линии должны быть стабильный id и сигнатура.");
+            diagnostics.Add("Не удалось однозначно определить все расчётные стержни. Пересчитайте раскладку.");
         }
 
         if (diagnostics.Count > 0)
@@ -108,7 +108,7 @@ public sealed class IsoFieldRebarChangePlanService
 
         if (string.IsNullOrWhiteSpace(placement.StableId) || placement.Component is null)
         {
-            throw new InvalidOperationException("Для инженерной линии нужны стабильный id и компонент армирования.");
+            throw new InvalidOperationException("Не удалось определить расчётный стержень и его параметры.");
         }
 
         string value = string.Join(

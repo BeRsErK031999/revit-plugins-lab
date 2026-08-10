@@ -34,14 +34,14 @@ public sealed record IsoFieldWorkflowState(
 
     public string NextAction => (HasSource, HasZones, HasHost, HasValidRules, HasConfirmedLayerMappings, HasValidHostBinding, HasSupportedHostGeometry) switch
     {
-        (false, _, _, _, _, _, _) => "Выберите JSON или изображение изополей.",
-        (true, false, _, _, _, _, _) when !CanProcessSource => "Обработчик изображений недоступен; выберите готовый JSON.",
-        (true, false, _, _, _, _, _) => "Загрузите или распознайте зоны изополей.",
-        (true, true, _, _, false, _, _) => "Подтвердите назначение верх/низ для всех расчётных слоёв.",
+        (false, _, _, _, _, _, _) => "Выберите четыре карты изополей или готовый файл с зонами.",
+        (true, false, _, _, _, _, _) when !CanProcessSource => "Не удалось обработать карты; выберите готовый файл с зонами.",
+        (true, false, _, _, _, _, _) => "Найдите зоны на картах или загрузите готовые зоны.",
+        (true, true, _, _, false, _, _) => "Подтвердите сторону конструкции для каждой карты.",
         (true, true, false, _, true, _, _) => "Выберите стену или плиту в модели.",
         (true, true, true, _, true, _, false) => "Выберите прямую базовую стену или горизонтальную плиту.",
-        (true, true, true, _, true, false, true) => "Привяжите зоны к плоскости host по трём контрольным точкам.",
-        (true, true, true, false, true, true, true) => "Рассчитайте и проверьте правила армирования.",
-        _ => "Проверьте раскладку и создайте армирование после подтверждения."
+        (true, true, true, _, true, false, true) => "Совместите зоны с выбранной конструкцией по трём контрольным точкам.",
+        (true, true, true, false, true, true, true) => "Рассчитайте и проверьте раскладку арматуры.",
+        _ => "Сравните раскладку с моделью и примените изменения после проверки."
     };
 }

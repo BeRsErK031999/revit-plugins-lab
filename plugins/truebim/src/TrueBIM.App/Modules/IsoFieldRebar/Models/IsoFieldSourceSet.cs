@@ -60,8 +60,8 @@ public sealed record IsoFieldSourceSet(
             string[] roleConflicts = Files
                 .Where(file => file.RoleDetection?.Kind == IsoFieldRoleDetectionKind.Conflict)
                 .Select(file =>
-                    $"{file.FileName}: имя файла указывает {file.RoleDetection!.FileNameRole}, "
-                    + $"а заголовок — {file.RoleDetection.HeaderRole}; выберите слой вручную.")
+                    $"{file.FileName}: имя файла указывает «{FormatRole(file.RoleDetection!.FileNameRole!.Value)}», "
+                    + $"а заголовок — «{FormatRole(file.RoleDetection.HeaderRole!.Value)}»; выберите правильное назначение вручную.")
                 .ToArray();
             messages.AddRange(roleConflicts);
             string[] missingSizeFiles = Files
@@ -75,12 +75,12 @@ public sealed record IsoFieldSourceSet(
 
             if (MissingRoles.Count > 0)
             {
-                messages.Add($"Не назначены слои: {string.Join(", ", MissingRoles)}.");
+                messages.Add($"Не хватает карт: {string.Join(", ", MissingRoles.Select(FormatRole))}.");
             }
 
             if (DuplicateRoles.Count > 0)
             {
-                messages.Add($"Дублируются слои: {string.Join(", ", DuplicateRoles)}.");
+                messages.Add($"Несколько файлов имеют одно назначение: {string.Join(", ", DuplicateRoles.Select(FormatRole))}.");
             }
 
             if (Files.Count > 0 && Files.All(file => file.HasValidImageSize) && !HasConsistentImageSize)
@@ -104,7 +104,7 @@ public sealed record IsoFieldSourceSet(
                 .ToArray();
             if (missingRoles.Length > 0)
             {
-                messages.Add($"Нет назначения для слоёв: {string.Join(", ", missingRoles)}.");
+                messages.Add($"Не указана сторона конструкции для карт: {string.Join(", ", missingRoles.Select(FormatRole))}.");
             }
 
             IsoFieldLayerRole[] duplicateRoles = EffectiveLayerMappings
@@ -115,7 +115,7 @@ public sealed record IsoFieldSourceSet(
                 .ToArray();
             if (duplicateRoles.Length > 0)
             {
-                messages.Add($"Дублируются назначения слоёв: {string.Join(", ", duplicateRoles)}.");
+                messages.Add($"Несколько карт назначены на одну сторону конструкции: {string.Join(", ", duplicateRoles.Select(FormatRole))}.");
             }
 
             IsoFieldLayerRole[] invalidDirectionRoles = EffectiveLayerMappings
@@ -126,7 +126,7 @@ public sealed record IsoFieldSourceSet(
                 .ToArray();
             if (invalidDirectionRoles.Length > 0)
             {
-                messages.Add($"Направление не соответствует роли: {string.Join(", ", invalidDirectionRoles)}.");
+                messages.Add($"Направление не соответствует назначению карт: {string.Join(", ", invalidDirectionRoles.Select(FormatRole))}.");
             }
 
             IsoFieldLayerRole[] unconfirmedRoles = EffectiveLayerMappings
@@ -137,7 +137,7 @@ public sealed record IsoFieldSourceSet(
                 .ToArray();
             if (unconfirmedRoles.Length > 0)
             {
-                messages.Add($"Не подтверждена грань: {string.Join(", ", unconfirmedRoles)}.");
+                messages.Add($"Не выбрана сторона конструкции: {string.Join(", ", unconfirmedRoles.Select(FormatRole))}.");
             }
 
             if (missingRoles.Length == 0
@@ -157,7 +157,7 @@ public sealed record IsoFieldSourceSet(
                     if (directionMappings.Count(mapping => mapping.Face == IsoFieldRebarFace.Bottom) != 1
                         || directionMappings.Count(mapping => mapping.Face == IsoFieldRebarFace.Top) != 1)
                     {
-                        messages.Add($"Для направления {direction} назначьте ровно по одному слою на каждую из двух граней host.");
+                        messages.Add($"Для направления {direction} назначьте ровно по одной карте на каждую из двух сторон конструкции.");
                     }
                 }
             }
@@ -177,5 +177,17 @@ public sealed record IsoFieldSourceSet(
     {
         return EffectiveLayerMappings.FirstOrDefault(mapping => mapping.Role == role)
             ?? IsoFieldLayerMapping.CreateDefault(role);
+    }
+
+    private static string FormatRole(IsoFieldLayerRole role)
+    {
+        return role switch
+        {
+            IsoFieldLayerRole.As1X => "X, карта 1",
+            IsoFieldLayerRole.As2X => "X, карта 2",
+            IsoFieldLayerRole.As3Y => "Y, карта 1",
+            IsoFieldLayerRole.As4Y => "Y, карта 2",
+            _ => "неизвестная карта"
+        };
     }
 }

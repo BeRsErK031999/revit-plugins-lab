@@ -26,16 +26,16 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
 
         if (string.IsNullOrWhiteSpace(options.ExecutablePath))
         {
-            throw new ArgumentException("IsoField CLI worker executable path is required.", nameof(options));
+            throw new ArgumentException("Не указан путь к программе обработки карт.", nameof(options));
         }
 
         if (options.Timeout <= TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(options), "IsoField CLI worker timeout must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(options), "Время ожидания обработки карт должно быть больше нуля.");
         }
     }
 
-    public string RunnerName => "CLI";
+    public string RunnerName => "внешняя программа";
 
     public string RunnerVersion => ResolveRunnerVersion();
 
@@ -43,19 +43,19 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
-            throw new InvalidOperationException("Для CLI-распознавания нужен исходный файл изополей.");
+            throw new InvalidOperationException("Выберите исходную карту изополей.");
         }
 
         string normalizedSourcePath = Path.GetFullPath(sourcePath!);
         if (!File.Exists(normalizedSourcePath))
         {
-            throw new FileNotFoundException("IsoField source file was not found.", normalizedSourcePath);
+            throw new FileNotFoundException("Выбранная карта изополей не найдена. Выберите файл заново.", normalizedSourcePath);
         }
 
         string workerPath = Path.GetFullPath(options.ExecutablePath);
         if (!File.Exists(workerPath))
         {
-            throw new FileNotFoundException("IsoField CLI worker executable was not found.", workerPath);
+            throw new FileNotFoundException("Программа обработки карт не найдена. Обратитесь в поддержку TrueBIM.", workerPath);
         }
 
         logger?.Info($"IsoField CLI recognition starting. Worker='{Path.GetFileName(workerPath)}'; Source='{Path.GetFileName(normalizedSourcePath)}'; TimeoutSeconds={options.Timeout.TotalSeconds:0.#}.");
@@ -72,13 +72,13 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
             if (processResult.ExitCode != 0)
             {
                 throw new InvalidOperationException(
-                    $"IsoField CLI worker failed. ExitCode={processResult.ExitCode}; StdErr={TrimProcessText(processResult.StandardError)}; StdOut={TrimProcessText(processResult.StandardOutput)}");
+                    "Программа обработки карт завершилась с ошибкой. Повторите попытку или обратитесь в поддержку TrueBIM.");
             }
 
             if (!File.Exists(outputPath))
             {
                 logger?.Warning("IsoField CLI worker finished without recognition-result JSON.");
-                throw new InvalidDataException("IsoField CLI worker did not create recognition-result JSON.");
+                throw new InvalidDataException("Программа обработки не вернула найденные зоны. Повторите попытку или обратитесь в поддержку TrueBIM.");
             }
 
             IsoFieldRecognitionResult result = jsonReader.Read(outputPath);
@@ -161,7 +161,7 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
 
         if (!process.Start())
         {
-            throw new InvalidOperationException("IsoField CLI worker process did not start.");
+            throw new InvalidOperationException("Не удалось запустить обработку карт. Обратитесь в поддержку TrueBIM.");
         }
 
         process.BeginOutputReadLine();
@@ -171,7 +171,7 @@ public sealed class IsoFieldCliRecognitionRunner : IIsoFieldRecognitionRunner, I
         {
             logger?.Warning($"IsoField CLI worker timeout. TimeoutSeconds={options.Timeout.TotalSeconds:0.#}; Worker='{Path.GetFileName(workerPath)}'.");
             TryKill(process);
-            throw new TimeoutException($"IsoField CLI worker timed out after {options.Timeout.TotalSeconds:0.#} seconds.");
+            throw new TimeoutException($"Обработка карты не завершилась за {options.Timeout.TotalSeconds:0.#} с. Повторите попытку.");
         }
 
         process.WaitForExit();

@@ -121,7 +121,7 @@ public sealed class IsoFieldSourceSetServiceTests
             Assert.Equal(IsoFieldRoleDetectionKind.Conflict, conflictedFile.RoleDetection?.Kind);
             Assert.Contains(
                 sourceSet.ValidationMessages,
-                message => message.Contains("имя файла указывает As1X", StringComparison.Ordinal));
+                message => message.Contains("имя файла указывает «X, карта 1»", StringComparison.Ordinal));
 
             IsoFieldSourceSet corrected = service.AssignRole(sourceSet, path, IsoFieldLayerRole.As2X);
 
@@ -246,7 +246,7 @@ public sealed class IsoFieldSourceSetServiceTests
             IsoFieldSourceSet loaded = manifestService.Load(manifestPath);
 
             Assert.False(loaded.IsComplete);
-            Assert.Contains("SHA-256", loaded.Files[0].ValidationError, StringComparison.Ordinal);
+            Assert.Contains("файл изменился после сохранения комплекта", loaded.Files[0].ValidationError, StringComparison.Ordinal);
         }
         finally
         {
@@ -266,7 +266,7 @@ public sealed class IsoFieldSourceSetServiceTests
             InvalidDataException exception = Assert.Throws<InvalidDataException>(
                 () => new IsoFieldSourceSetManifestService(new IsoFieldSourceSetService()).Load(manifestPath));
 
-            Assert.Contains("schemaVersion", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("версия сохранённого комплекта", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

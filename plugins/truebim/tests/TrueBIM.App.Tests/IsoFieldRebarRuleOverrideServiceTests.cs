@@ -106,7 +106,7 @@ public sealed class IsoFieldRebarRuleOverrideServiceTests
         Assert.True(item.IsIncluded);
         Assert.True(item.IsManuallyOverridden);
         Assert.Contains(item.Diagnostics, diagnostic =>
-            diagnostic.Contains("формат", StringComparison.Ordinal));
+            diagnostic.Contains("Не удалось прочитать", StringComparison.Ordinal));
     }
 
     private static RebarRulePreviewResult CreatePreview(params RebarRulePreviewItem[] items)

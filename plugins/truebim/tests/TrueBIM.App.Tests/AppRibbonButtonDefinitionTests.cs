@@ -38,7 +38,7 @@ public sealed class AppRibbonButtonDefinitionTests
             "Армирование\nпо изополям",
             $"TrueBIM.App.Commands.{nameof(IsoFieldRebarCommand)}",
             TrueBimIcon.IsoFieldRebar,
-            "изополям"
+            "изополей"
         },
         {
             "TrueBIM_Lintels",

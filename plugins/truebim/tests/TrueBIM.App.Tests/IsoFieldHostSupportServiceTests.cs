@@ -124,7 +124,7 @@ public sealed class IsoFieldHostSupportServiceTests
 
         Assert.False(result.IsSupported);
         Assert.Equal("WALL_PROFILE_UNRESOLVED", result.Code);
-        Assert.Contains("Выберите host заново", result.Message, StringComparison.Ordinal);
+        Assert.Contains("Выберите стену заново", result.Message, StringComparison.Ordinal);
     }
 
     private static IsoFieldHostGeometry CreateSlabGeometry()

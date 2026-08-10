@@ -1,45 +1,41 @@
-# Installer
+# Установщик TrueBIM
 
-TrueBIM uses Inno Setup for the release installer.
+Установочный пакет TrueBIM собирается с помощью Inno Setup.
 
-The active installer script is:
+Основной файл установщика:
 
 ```text
 plugins/truebim/installer/TrueBIM.iss
 ```
 
-Build all Revit-version payloads and compile the installer from the repository root:
+Чтобы собрать плагин для всех поддерживаемых версий Revit и создать установщик, выполните команду из корня репозитория:
 
 ```powershell
 .\plugins\truebim\scripts\build-installer.ps1
 ```
 
-For a local package on a workstation that does not have every supported Revit API, build the available versions and exclude the missing ones from the installer:
+Если на компьютере установлены не все поддерживаемые версии Revit, можно собрать пакет только для доступных версий:
 
 ```powershell
 .\plugins\truebim\scripts\build-installer.ps1 -AllowMissingRevitApi
 ```
 
-The script emits:
+Готовые файлы появятся здесь:
 
 ```text
-dist/revit/<built-year>
+dist/revit/<версия Revit>
 dist/installer/TrueBIM-Setup.exe
 ```
 
-The release installer is current-user and does not require admin privileges:
+Установщик работает для текущего пользователя и не требует прав администратора. Файлы размещаются по адресам:
 
 ```text
-%APPDATA%\TrueBIM\<year>\
-%APPDATA%\Autodesk\Revit\Addins\<year>\TrueBIM.addin
+%APPDATA%\TrueBIM\<версия Revit>\
+%APPDATA%\Autodesk\Revit\Addins\<версия Revit>\TrueBIM.addin
 ```
 
-The installer defaults to Revit versions detected on the PC. A user can select an undetected version only after explicit confirmation.
+На шаге выбора версий установщик заранее отмечает Revit, найденные на компьютере. Версию, которой пока нет на компьютере, тоже можно выбрать — установщик попросит отдельно подтвердить это решение.
 
-Release PDB files are intentionally excluded. The universal Revit 2019-2026 payload uses solid `lzma2/ultra64` compression because the legacy .NET Framework builds contain identical PDF/DWG parser dependencies for several Revit versions.
+Отладочные файлы в готовый пакет не включаются. Один установщик может содержать сборки для Revit 2019–2026; одинаковые файлы сжимаются вместе, поэтому размер пакета остаётся умеренным.
 
-Local compiler path used on the development workstation:
-
-```text
-C:\Users\Borodin_Artem\AppData\Local\Programs\Inno Setup 6\ISCC.exe
-```
+На рабочем компьютере путь к программе сборки можно указать параметром `-InnoCompilerPath`. Если Inno Setup установлен в обычную папку, сценарий найдёт его автоматически.
