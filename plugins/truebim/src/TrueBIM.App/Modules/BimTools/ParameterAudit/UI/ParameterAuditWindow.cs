@@ -59,7 +59,7 @@ public sealed class ParameterAuditWindow : TrueBimWindow
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ConfigureGrids();
         Content = CreateContent();
-        UpdateStatus("Выберите CSV или XLSX с правилами проверки.");
+        UpdateStatus("Выберите исходную матрицу XLSX/CSV или расширенную таблицу правил.");
     }
 
     private UIElement CreateContent()
@@ -115,7 +115,7 @@ public sealed class ParameterAuditWindow : TrueBimWindow
         });
         header.Children.Add(new TextBlock
         {
-            Text = "Read-only проверка текущего проекта по таблице требований: обязательность, ожидаемые и допустимые значения, формат и диапазон.",
+            Text = "Read-only проверка заполненности по матрице: A1 — параметр отбора, колонка A — его значения, знак + — обязательный параметр.",
             Foreground = Brushes.DimGray,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 12)
@@ -143,7 +143,7 @@ public sealed class ParameterAuditWindow : TrueBimWindow
 
         pathInput.Height = 30;
         pathInput.VerticalContentAlignment = VerticalAlignment.Center;
-        pathInput.ToolTip = "CSV или XLSX. Читается первый лист XLSX.";
+        pathInput.ToolTip = "CSV или XLSX. XLSX можно выбирать прямо из Excel после сохранения; читается первый лист.";
         fileBar.Children.Add(pathInput);
         return fileBar;
     }
@@ -228,6 +228,7 @@ public sealed class ParameterAuditWindow : TrueBimWindow
     {
         AddTextColumn(ruleGrid, "Строка", nameof(ParameterAuditRule.LineNumber), 65);
         AddTextColumn(ruleGrid, "RuleId", nameof(ParameterAuditRule.RuleId), 140);
+        AddTextColumn(ruleGrid, "Отбор элементов", nameof(ParameterAuditRule.SelectionDisplay), 260);
         AddTextColumn(ruleGrid, "Категория", nameof(ParameterAuditRule.CategoryPattern), 130);
         AddTextColumn(ruleGrid, "Семейство", nameof(ParameterAuditRule.FamilyPattern), 130);
         AddTextColumn(ruleGrid, "Тип", nameof(ParameterAuditRule.TypePattern), 130);
@@ -362,9 +363,9 @@ public sealed class ParameterAuditWindow : TrueBimWindow
     {
         SaveFileDialog dialog = new()
         {
-            Title = "Сохранить шаблон проверки параметров",
+            Title = "Сохранить шаблон матрицы проверки параметров",
             Filter = "CSV для Excel (*.csv)|*.csv",
-            FileName = "truebim-parameter-audit-template.csv",
+            FileName = "truebim-parameter-audit-matrix.csv",
             AddExtension = true,
             DefaultExt = ".csv"
         };

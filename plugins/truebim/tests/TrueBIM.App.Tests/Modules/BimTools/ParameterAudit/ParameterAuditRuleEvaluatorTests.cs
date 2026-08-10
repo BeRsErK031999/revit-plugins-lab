@@ -89,6 +89,21 @@ public sealed class ParameterAuditRuleEvaluatorTests
         Assert.Equal(ParameterAuditIssueCode.AmbiguousParameter, result?.IssueCode);
     }
 
+    [Fact]
+    public void MatchesSelection_UsesParameterValueInsteadOfCategory()
+    {
+        ParameterAuditRule rule = Rule() with
+        {
+            CategoryPattern = "*",
+            SelectionParameterName = "Описание",
+            SelectionExpectedValue = "Стены, перегородки"
+        };
+
+        Assert.True(evaluator.MatchesSelection(rule, Value("стены, перегородки")));
+        Assert.False(evaluator.MatchesSelection(rule, Value("Двери")));
+        Assert.False(evaluator.MatchesSelection(rule, ParameterAuditValueSnapshot.Missing));
+    }
+
     private static ParameterAuditRule Rule(
         bool required = true,
         string expected = "",

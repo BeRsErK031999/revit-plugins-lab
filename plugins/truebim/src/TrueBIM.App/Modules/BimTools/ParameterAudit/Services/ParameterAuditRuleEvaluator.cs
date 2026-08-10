@@ -14,6 +14,16 @@ public sealed class ParameterAuditRuleEvaluator
             && MatchesSelector(element.TypeName, rule.TypePattern);
     }
 
+    public bool MatchesSelection(
+        ParameterAuditRule rule,
+        ParameterAuditValueSnapshot selectionValue)
+    {
+        return !rule.HasSelectionFilter
+            || (selectionValue.Exists
+                && !selectionValue.IsEmpty
+                && MatchesAnyValue(selectionValue, rule.SelectionExpectedValue, false));
+    }
+
     public ParameterAuditResultRow? Evaluate(
         ParameterAuditRule rule,
         ParameterAuditElementSnapshot element,

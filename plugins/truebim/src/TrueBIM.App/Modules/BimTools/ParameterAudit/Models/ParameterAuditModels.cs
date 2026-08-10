@@ -56,7 +56,9 @@ public sealed record ParameterAuditRule(
     double? Maximum,
     bool CaseSensitive,
     ParameterAuditSeverity Severity,
-    string Message)
+    string Message,
+    string SelectionParameterName = "",
+    string SelectionExpectedValue = "")
 {
     public string ScopeDisplay => Scope == ParameterAuditScope.Type ? "Тип" : "Экземпляр";
 
@@ -65,6 +67,12 @@ public sealed record ParameterAuditRule(
     public string ParameterDisplay => !string.IsNullOrWhiteSpace(ParameterName)
         ? ParameterName
         : ParameterGuid?.ToString("D") ?? BuiltInParameter;
+
+    public bool HasSelectionFilter => !string.IsNullOrWhiteSpace(SelectionParameterName);
+
+    public string SelectionDisplay => HasSelectionFilter
+        ? $"{SelectionParameterName} = «{SelectionExpectedValue}»"
+        : "По категории";
 
     public bool HasValueValidation => !string.IsNullOrWhiteSpace(ExpectedValue)
         || AllowedValues.Count > 0

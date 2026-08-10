@@ -32,6 +32,11 @@ public sealed class ParameterAuditProfileReader
         "Message"
     ];
 
+    static ParameterAuditProfileReader()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     public ParameterAuditProfile Read(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -44,9 +49,15 @@ public sealed class ParameterAuditProfileReader
             throw new FileNotFoundException("Таблица правил не найдена.", path);
         }
 
-        TableData table = Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
+        RawTableData rawTable = Path.GetExtension(path).Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
             ? ReadXlsx(path)
             : ReadDelimited(path);
+        if (!LooksLikeStructuredTable(rawTable))
+        {
+            return ParseMatrix(rawTable);
+        }
+
+        TableData table = BuildStructuredTable(rawTable);
         ValidateHeaders(table.Headers);
 
         List<ParameterAuditRule> rules = [];
@@ -92,31 +103,12 @@ public sealed class ParameterAuditProfileReader
 
     public string CreateTemplate()
     {
-        string[] requiredRoom =
-        [
-            "ROOM_DEPARTMENT", "true", "Помещения", "*", "*", "Назначение", "", "",
-            "Instance", "true", "", "", "", "", "", "false", "Error",
-            "У помещения должно быть заполнено назначение."
-        ];
-        string[] allowedDoorValue =
-        [
-            "DOOR_FIRE_RATING", "true", "Двери", "*", "*", "Огнестойкость", "", "",
-            "Type", "true", "", "EI30|EI60|EI90", "", "", "", "false", "Error",
-            "Выберите допустимый предел огнестойкости."
-        ];
-        string[] builtInMark =
-        [
-            "WALL_MARK", "true", "Стены", "*", "*", "Марка", "", "ALL_MODEL_MARK",
-            "Instance", "true", "", "", "^[А-ЯA-Z0-9_-]+$", "", "", "false", "Warning",
-            "Марка должна состоять из букв, цифр, дефиса или подчёркивания."
-        ];
-
         return string.Join(Environment.NewLine,
         [
-            JoinCsvRow(TemplateHeaders),
-            JoinCsvRow(requiredRoom),
-            JoinCsvRow(allowedDoorValue),
-            JoinCsvRow(builtInMark)
+            JoinCsvRow(["Описание", "ADSK_Номер корпуса", "ADSK_Этаж", "ADSK_Наименование"]),
+            JoinCsvRow(["Стены, перегородки", "+", "+", "+"]),
+            JoinCsvRow(["Двери", "+", "+", ""]),
+            JoinCsvRow(["Ограждения", "+", "", "+"])
         ]);
     }
 
@@ -287,30 +279,29 @@ public sealed class ParameterAuditProfileReader
         return rule;
     }
 
-    private static TableData ReadDelimited(string path)
+    private static RawTableData ReadDelimited(string path)
     {
-        string text = File.ReadAllText(path, Encoding.UTF8);
+        string text = ReadDelimitedText(path);
         if (string.IsNullOrWhiteSpace(text))
         {
-            return new TableData(new HashSet<string>(StringComparer.OrdinalIgnoreCase), []);
+            return new RawTableData([]);
         }
 
         char delimiter = DetectDelimiter(text);
         IReadOnlyList<IReadOnlyList<string>> records = ParseDelimited(text, delimiter);
-        IReadOnlyList<string> headerRow = records.FirstOrDefault() ?? [];
-        Dictionary<int, string> headers = BuildHeaders(headerRow);
-        List<TableRow> rows = [];
-        for (int index = 1; index < records.Count; index++)
-        {
-            rows.Add(new TableRow(index + 1, MapValues(headers, records[index])));
-        }
-
-        return new TableData(headers.Values.ToHashSet(StringComparer.OrdinalIgnoreCase), rows);
+        return new RawTableData(records
+            .Select((cells, index) => new RawTableRow(index + 1, cells))
+            .ToList());
     }
 
-    private static TableData ReadXlsx(string path)
+    private static RawTableData ReadXlsx(string path)
     {
-        using ZipArchive archive = ZipFile.OpenRead(path);
+        using FileStream file = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using ZipArchive archive = new(file, ZipArchiveMode.Read, false);
         IReadOnlyList<string> sharedStrings = ReadSharedStrings(archive);
         ZipArchiveEntry sheetEntry = ResolveFirstWorksheet(archive)
             ?? throw new InvalidOperationException("XLSX не содержит листов.");
@@ -318,7 +309,7 @@ public sealed class ParameterAuditProfileReader
         XDocument sheet = XDocument.Load(stream);
         XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
-        List<(int LineNumber, IReadOnlyList<string> Cells)> rows = [];
+        List<RawTableRow> rows = [];
         foreach (XElement rowElement in sheet.Descendants(ns + "row"))
         {
             int lineNumber = int.TryParse((string?)rowElement.Attribute("r"), out int parsedRow)
@@ -340,22 +331,241 @@ public sealed class ParameterAuditProfileReader
                 values[cell.Key] = cell.Value;
             }
 
-            rows.Add((lineNumber, values));
+            rows.Add(new RawTableRow(lineNumber, values));
         }
 
-        (int LineNumber, IReadOnlyList<string> Cells) header = rows
+        return new RawTableData(rows);
+    }
+
+    private static string ReadDelimitedText(string path)
+    {
+        byte[] bytes;
+        using (FileStream file = new(
+                   path,
+                   FileMode.Open,
+                   FileAccess.Read,
+                   FileShare.ReadWrite | FileShare.Delete))
+        using (MemoryStream buffer = new())
+        {
+            file.CopyTo(buffer);
+            bytes = buffer.ToArray();
+        }
+
+        if (bytes.Length >= 3
+            && bytes[0] == 0xEF
+            && bytes[1] == 0xBB
+            && bytes[2] == 0xBF)
+        {
+            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        {
+            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        }
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        {
+            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+        }
+
+        try
+        {
+            return new UTF8Encoding(false, true).GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Encoding.GetEncoding(1251).GetString(bytes);
+        }
+    }
+
+    private static bool LooksLikeStructuredTable(RawTableData table)
+    {
+        RawTableRow? header = table.Rows
             .FirstOrDefault(row => row.Cells.Any(value => !string.IsNullOrWhiteSpace(value)));
-        if (header.Cells is null)
+        if (header is null)
+        {
+            return false;
+        }
+
+        HashSet<string> canonicalHeaders = header.Cells
+            .Select(CanonicalHeader)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        int recognizedHeaderCount = canonicalHeaders.Count(headerValue =>
+            TemplateHeaders.Contains(headerValue, StringComparer.OrdinalIgnoreCase));
+        return recognizedHeaderCount >= 2
+            || canonicalHeaders.Contains("RuleId")
+            || (canonicalHeaders.Contains("Category")
+                && (canonicalHeaders.Contains("ParameterName")
+                    || canonicalHeaders.Contains("ParameterGuid")
+                    || canonicalHeaders.Contains("BuiltInParameter")));
+    }
+
+    private static TableData BuildStructuredTable(RawTableData rawTable)
+    {
+        RawTableRow? header = rawTable.Rows
+            .FirstOrDefault(row => row.Cells.Any(value => !string.IsNullOrWhiteSpace(value)));
+        if (header is null)
         {
             return new TableData(new HashSet<string>(StringComparer.OrdinalIgnoreCase), []);
         }
 
         Dictionary<int, string> headers = BuildHeaders(header.Cells);
-        List<TableRow> dataRows = rows
+        List<TableRow> rows = rawTable.Rows
             .Where(row => row.LineNumber > header.LineNumber)
             .Select(row => new TableRow(row.LineNumber, MapValues(headers, row.Cells)))
             .ToList();
-        return new TableData(headers.Values.ToHashSet(StringComparer.OrdinalIgnoreCase), dataRows);
+        return new TableData(headers.Values.ToHashSet(StringComparer.OrdinalIgnoreCase), rows);
+    }
+
+    private static ParameterAuditProfile ParseMatrix(RawTableData table)
+    {
+        List<ParameterAuditRule> rules = [];
+        List<ParameterAuditProfileIssue> issues = [];
+        RawTableRow? header = table.Rows
+            .FirstOrDefault(row => row.Cells.Any(value => !string.IsNullOrWhiteSpace(value)));
+        if (header is null)
+        {
+            return new ParameterAuditProfile(
+                [],
+                [Error(0, string.Empty, "Таблица пуста.")]);
+        }
+
+        string selectionParameterName = GetCell(header.Cells, 0).Trim();
+        if (string.IsNullOrWhiteSpace(selectionParameterName))
+        {
+            issues.Add(Error(
+                header.LineNumber,
+                string.Empty,
+                "В ячейке A1 укажите имя параметра, по значению которого выбираются элементы."));
+        }
+
+        Dictionary<int, string> requiredParameterColumns = [];
+        HashSet<string> seenParameterNames = new(StringComparer.CurrentCultureIgnoreCase);
+        for (int column = 1; column < header.Cells.Count; column++)
+        {
+            string parameterName = GetCell(header.Cells, column).Trim();
+            if (string.IsNullOrWhiteSpace(parameterName))
+            {
+                continue;
+            }
+
+            if (!seenParameterNames.Add(parameterName))
+            {
+                issues.Add(Error(
+                    header.LineNumber,
+                    GetColumnName(column),
+                    $"Параметр «{parameterName}» повторяется в строке заголовков."));
+                continue;
+            }
+
+            requiredParameterColumns[column] = parameterName;
+        }
+
+        if (requiredParameterColumns.Count == 0)
+        {
+            issues.Add(Error(
+                header.LineNumber,
+                string.Empty,
+                "Начиная с B1 укажите параметры, заполненность которых нужно проверять."));
+        }
+
+        foreach (RawTableRow row in table.Rows.Where(row => row.LineNumber > header.LineNumber))
+        {
+            IReadOnlyList<KeyValuePair<int, string>> markedColumns = requiredParameterColumns
+                .Where(column => IsRequiredMarker(GetCell(row.Cells, column.Key)))
+                .ToList();
+            if (markedColumns.Count == 0)
+            {
+                continue;
+            }
+
+            string selectionExpectedValue = GetCell(row.Cells, 0).Trim();
+            if (string.IsNullOrWhiteSpace(selectionExpectedValue))
+            {
+                issues.Add(Error(
+                    row.LineNumber,
+                    string.Empty,
+                    "В колонке A укажите значение параметра отбора для строки с плюсами."));
+                continue;
+            }
+
+            foreach (KeyValuePair<int, string> markedColumn in markedColumns)
+            {
+                string cellAddress = $"{GetColumnName(markedColumn.Key)}{row.LineNumber}";
+                rules.Add(new ParameterAuditRule(
+                    row.LineNumber,
+                    cellAddress,
+                    true,
+                    "*",
+                    "*",
+                    "*",
+                    markedColumn.Value,
+                    null,
+                    string.Empty,
+                    ParameterAuditScope.Instance,
+                    true,
+                    string.Empty,
+                    [],
+                    string.Empty,
+                    null,
+                    null,
+                    false,
+                    ParameterAuditSeverity.Error,
+                    $"Для элементов, где «{selectionParameterName}» = «{selectionExpectedValue}», параметр должен быть заполнен.",
+                    selectionParameterName,
+                    selectionExpectedValue));
+            }
+        }
+
+        if (rules.Count == 0)
+        {
+            issues.Add(Error(
+                0,
+                string.Empty,
+                "В матрице нет правил: поставьте знак + на пересечении строки и обязательного параметра."));
+        }
+        else
+        {
+            issues.Add(new ParameterAuditProfileIssue(
+                header.LineNumber,
+                string.Empty,
+                ParameterAuditProfileIssueSeverity.Warning,
+                "Распознан матричный формат. Параметры отбора и проверки ищутся по именам; при отсутствии у экземпляра также проверяется его тип."));
+        }
+
+        return new ParameterAuditProfile(
+            rules,
+            issues
+                .OrderBy(issue => issue.LineNumber)
+                .ThenBy(issue => issue.Message, StringComparer.CurrentCultureIgnoreCase)
+                .ToList());
+    }
+
+    private static string GetCell(IReadOnlyList<string> cells, int column)
+    {
+        return column >= 0 && column < cells.Count ? cells[column] ?? string.Empty : string.Empty;
+    }
+
+    private static bool IsRequiredMarker(string value)
+    {
+        string normalized = value.Trim();
+        return normalized == "+" || normalized == "＋";
+    }
+
+    private static string GetColumnName(int zeroBasedColumn)
+    {
+        int value = zeroBasedColumn + 1;
+        StringBuilder result = new();
+        while (value > 0)
+        {
+            value--;
+            result.Insert(0, (char)('A' + (value % 26)));
+            value /= 26;
+        }
+
+        return result.ToString();
     }
 
     private static ZipArchiveEntry? ResolveFirstWorksheet(ZipArchive archive)
@@ -751,4 +961,11 @@ public sealed class ParameterAuditProfileReader
     private sealed record TableData(
         ISet<string> Headers,
         IReadOnlyList<TableRow> Rows);
+
+    private sealed record RawTableRow(
+        int LineNumber,
+        IReadOnlyList<string> Cells);
+
+    private sealed record RawTableData(
+        IReadOnlyList<RawTableRow> Rows);
 }

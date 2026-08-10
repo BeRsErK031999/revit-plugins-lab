@@ -114,39 +114,67 @@ public sealed class ParameterAuditService
             .ToList();
         Dictionary<string, IReadOnlyList<Element>> elementCache = new(StringComparer.Ordinal);
 
-        foreach (ParameterAuditRule rule in rules)
+        IEnumerable<IGrouping<ParameterAuditTargetKey, ParameterAuditRule>> ruleGroups = rules.GroupBy(rule =>
+            new ParameterAuditTargetKey(
+                rule.Scope,
+                rule.CategoryPattern,
+                rule.FamilyPattern,
+                rule.TypePattern,
+                rule.SelectionParameterName,
+                rule.SelectionExpectedValue));
+        foreach (IGrouping<ParameterAuditTargetKey, ParameterAuditRule> ruleGroup in ruleGroups)
         {
-            if (!string.IsNullOrWhiteSpace(rule.BuiltInParameter)
-                && !TryResolveBuiltInParameter(rule.BuiltInParameter, out _))
+            List<ParameterAuditRule> validRules = [];
+            foreach (ParameterAuditRule rule in ruleGroup)
             {
-                resultRows.Add(CreateRuleLevelResult(
-                    rule,
-                    sourceModel,
-                    isLinked,
-                    ParameterAuditIssueCode.RuleError,
-                    $"BuiltInParameter «{rule.BuiltInParameter}» не распознан.",
-                    ParameterAuditSeverity.Error));
+                if (!string.IsNullOrWhiteSpace(rule.BuiltInParameter)
+                    && !TryResolveBuiltInParameter(rule.BuiltInParameter, out _))
+                {
+                    resultRows.Add(CreateRuleLevelResult(
+                        rule,
+                        sourceModel,
+                        isLinked,
+                        ParameterAuditIssueCode.RuleError,
+                        $"BuiltInParameter «{rule.BuiltInParameter}» не распознан.",
+                        ParameterAuditSeverity.Error));
+                    continue;
+                }
+
+                validRules.Add(rule);
+            }
+
+            if (validRules.Count == 0)
+            {
                 continue;
             }
 
+            ParameterAuditRule representativeRule = validRules[0];
             IReadOnlyList<Category> matchingCategories = categories
-                .Where(category => evaluator.MatchesSelector(category.Name, rule.CategoryPattern))
+                .Where(category => evaluator.MatchesSelector(category.Name, representativeRule.CategoryPattern))
                 .ToList();
             if (matchingCategories.Count == 0)
             {
-                resultRows.Add(CreateRuleLevelResult(
-                    rule,
-                    sourceModel,
-                    isLinked,
-                    ParameterAuditIssueCode.CategoryNotFound,
-                    $"Категория «{rule.CategoryPattern}» не найдена в модели."));
+                foreach (ParameterAuditRule rule in validRules)
+                {
+                    resultRows.Add(CreateRuleLevelResult(
+                        rule,
+                        sourceModel,
+                        isLinked,
+                        ParameterAuditIssueCode.CategoryNotFound,
+                        $"Категория «{rule.CategoryPattern}» не найдена в модели."));
+                }
+
                 continue;
             }
 
             int matchingElementCount = 0;
             foreach (Category category in matchingCategories)
             {
-                IReadOnlyList<Element> elements = CollectElements(document, category, rule.Scope, elementCache);
+                IReadOnlyList<Element> elements = CollectElements(
+                    document,
+                    category,
+                    representativeRule.Scope,
+                    elementCache);
                 foreach (Element element in elements)
                 {
                     ParameterAuditElementSnapshot snapshot = CreateElementSnapshot(
@@ -154,58 +182,68 @@ public sealed class ParameterAuditService
                         element,
                         sourceModel,
                         isLinked,
-                        rule.Scope);
-                    if (!evaluator.MatchesTarget(rule, snapshot))
+                        representativeRule.Scope);
+                    if (!evaluator.MatchesTarget(representativeRule, snapshot)
+                        || !MatchesSelectionParameter(document, element, representativeRule))
                     {
                         continue;
                     }
 
                     matchingElementCount++;
-                    checkedCount++;
-                    try
+                    foreach (ParameterAuditRule rule in validRules)
                     {
-                        ParameterAuditValueSnapshot value = ResolveParameter(element, rule);
-                        ParameterAuditResultRow? result = evaluator.Evaluate(rule, snapshot, value);
-                        if (result is null)
+                        checkedCount++;
+                        try
                         {
-                            passedCount++;
+                            ParameterAuditValueSnapshot value = ResolveParameter(document, element, rule);
+                            ParameterAuditResultRow? result = evaluator.Evaluate(rule, snapshot, value);
+                            if (result is null)
+                            {
+                                passedCount++;
+                            }
+                            else
+                            {
+                                resultRows.Add(result);
+                            }
                         }
-                        else
+                        catch (Exception exception)
                         {
-                            resultRows.Add(result);
+                            resultRows.Add(new ParameterAuditResultRow(
+                                rule.RuleId,
+                                ParameterAuditSeverity.Error,
+                                ParameterAuditIssueCode.RuleError,
+                                sourceModel,
+                                isLinked,
+                                snapshot.ElementId,
+                                snapshot.CategoryName,
+                                snapshot.FamilyName,
+                                snapshot.TypeName,
+                                rule.ParameterDisplay,
+                                string.Empty,
+                                rule.ExpectedDescription,
+                                $"Не удалось проверить параметр: {exception.Message}"));
+                            logger.Error(
+                                $"Parameter Audit failed for rule '{rule.RuleId}', element {snapshot.ElementId}.",
+                                exception);
                         }
-                    }
-                    catch (Exception exception)
-                    {
-                        resultRows.Add(new ParameterAuditResultRow(
-                            rule.RuleId,
-                            ParameterAuditSeverity.Error,
-                            ParameterAuditIssueCode.RuleError,
-                            sourceModel,
-                            isLinked,
-                            snapshot.ElementId,
-                            snapshot.CategoryName,
-                            snapshot.FamilyName,
-                            snapshot.TypeName,
-                            rule.ParameterDisplay,
-                            string.Empty,
-                            rule.ExpectedDescription,
-                            $"Не удалось проверить параметр: {exception.Message}"));
-                        logger.Error(
-                            $"Parameter Audit failed for rule '{rule.RuleId}', element {snapshot.ElementId}.",
-                            exception);
                     }
                 }
             }
 
             if (matchingElementCount == 0)
             {
-                resultRows.Add(CreateRuleLevelResult(
-                    rule,
-                    sourceModel,
-                    isLinked,
-                    ParameterAuditIssueCode.NoMatchingElements,
-                    "Для правила не найдено элементов, подходящих по категории, семейству и типу."));
+                string message = representativeRule.HasSelectionFilter
+                    ? $"Не найдено элементов, где «{representativeRule.SelectionParameterName}» = «{representativeRule.SelectionExpectedValue}»."
+                    : "Для правила не найдено элементов, подходящих по категории, семейству и типу.";
+                foreach (ParameterAuditRule rule in validRules)
+                {
+                    resultRows.Add(CreateRuleLevelResult(
+                        rule,
+                        sourceModel,
+                        isLinked,
+                        ParameterAuditIssueCode.NoMatchingElements,
+                        message));
+                }
             }
         }
     }
@@ -282,7 +320,46 @@ public sealed class ParameterAuditService
             scope);
     }
 
+    private bool MatchesSelectionParameter(
+        Document document,
+        Element element,
+        ParameterAuditRule rule)
+    {
+        if (!rule.HasSelectionFilter)
+        {
+            return true;
+        }
+
+        IReadOnlyList<Parameter> parameters = GetNamedParameters(element, rule.SelectionParameterName);
+        if (parameters.Count == 0
+            && element is not ElementType
+            && document.GetElement(element.GetTypeId()) is ElementType elementType)
+        {
+            parameters = GetNamedParameters(elementType, rule.SelectionParameterName);
+        }
+
+        return parameters.Any(parameter =>
+            evaluator.MatchesSelection(rule, CreateValueSnapshot(parameter)));
+    }
+
     private static ParameterAuditValueSnapshot ResolveParameter(
+        Document document,
+        Element element,
+        ParameterAuditRule rule)
+    {
+        ParameterAuditValueSnapshot value = ResolveParameterOnElement(element, rule);
+        if (value.Exists
+            || !rule.HasSelectionFilter
+            || element is ElementType
+            || document.GetElement(element.GetTypeId()) is not ElementType elementType)
+        {
+            return value;
+        }
+
+        return ResolveParameterOnElement(elementType, rule);
+    }
+
+    private static ParameterAuditValueSnapshot ResolveParameterOnElement(
         Element element,
         ParameterAuditRule rule)
     {
@@ -303,10 +380,7 @@ public sealed class ParameterAuditService
         }
         else
         {
-            IReadOnlyList<Parameter> parameters = element.GetParameters(rule.ParameterName)
-                .Cast<Parameter>()
-                .Where(candidate => candidate is not null)
-                .ToList();
+            IReadOnlyList<Parameter> parameters = GetNamedParameters(element, rule.ParameterName);
             if (parameters.Count > 1)
             {
                 return new ParameterAuditValueSnapshot(
@@ -322,6 +396,14 @@ public sealed class ParameterAuditService
         }
 
         return parameter is null ? ParameterAuditValueSnapshot.Missing : CreateValueSnapshot(parameter);
+    }
+
+    private static IReadOnlyList<Parameter> GetNamedParameters(Element element, string parameterName)
+    {
+        return element.GetParameters(parameterName)
+            .Cast<Parameter>()
+            .Where(candidate => candidate is not null)
+            .ToList();
     }
 
     private static ParameterAuditValueSnapshot CreateValueSnapshot(Parameter parameter)
@@ -441,4 +523,12 @@ public sealed class ParameterAuditService
             rule.ExpectedDescription,
             message);
     }
+
+    private sealed record ParameterAuditTargetKey(
+        ParameterAuditScope Scope,
+        string CategoryPattern,
+        string FamilyPattern,
+        string TypePattern,
+        string SelectionParameterName,
+        string SelectionExpectedValue);
 }
