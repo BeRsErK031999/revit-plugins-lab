@@ -40,7 +40,7 @@ public sealed class ViewFilterService
             return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0, ["Не выбрана ни одна категория."]);
         }
 
-        List<ElementId> categoryIds = GetApplicableCategoryIds(selectedCategoryIds, parameter);
+        List<ElementId> categoryIds = GetApplicableCategoryIds(document, selectedCategoryIds, parameter);
         if (categoryIds.Count == 0)
         {
             return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0, ["Выбранный параметр не назначен выбранным категориям. Обновите значения или выберите другие категории."]);
@@ -71,10 +71,17 @@ public sealed class ViewFilterService
 
             ElementParameterFilter elementFilter = new(rule);
             ISet<ElementId> categorySet = new HashSet<ElementId>(categoryIds);
+            using SubTransaction subTransaction = new(document);
             try
             {
+                if (subTransaction.Start() != TransactionStatus.Started)
+                {
+                    throw new InvalidOperationException("Revit не начал вложенную транзакцию фильтра.");
+                }
+
                 if (!ParameterFilterElement.ElementFilterIsAcceptableForParameterFilterElement(document, categorySet, elementFilter))
                 {
+                    subTransaction.RollBack();
                     skipped++;
                     messages.Add($"{row.DisplayValue}: выбранный параметр недоступен для выбранных категорий.");
                     continue;
@@ -82,22 +89,16 @@ public sealed class ViewFilterService
 
                 string filterName = filterNameBuilder.Build(parameter.Name, row.DisplayValue);
                 ParameterFilterElement? filter = FindParameterFilterByName(document, filterName);
+                bool wasCreated = filter is null;
                 if (filter is null)
                 {
                     filter = ParameterFilterElement.Create(document, filterName, categoryIds, elementFilter);
-                    created++;
                 }
                 else
                 {
                     filter.SetCategories(categoryIds);
-                    if (!filter.SetElementFilter(elementFilter))
-                    {
-                        skipped++;
-                        messages.Add($"{row.DisplayValue}: Revit не принял правило фильтра.");
-                        continue;
-                    }
-
-                    updated++;
+                    // False means that the existing rules are already equivalent, not that Revit rejected them.
+                    filter.SetElementFilter(elementFilter);
                 }
 
                 if (!activeView.GetFilters().Contains(filter.Id))
@@ -107,10 +108,29 @@ public sealed class ViewFilterService
 
                 activeView.SetFilterOverrides(filter.Id, CreateOverrides(row, solidFillPattern));
                 activeView.SetFilterVisibility(filter.Id, true);
+                if (subTransaction.Commit() != TransactionStatus.Committed)
+                {
+                    throw new InvalidOperationException("Revit откатил вложенную транзакцию фильтра.");
+                }
+
+                if (wasCreated)
+                {
+                    created++;
+                }
+                else
+                {
+                    updated++;
+                }
+
                 applied++;
             }
-            catch (Autodesk.Revit.Exceptions.ArgumentException exception)
+            catch (Exception exception)
             {
+                if (subTransaction.GetStatus() == TransactionStatus.Started)
+                {
+                    subTransaction.RollBack();
+                }
+
                 skipped++;
                 string message = $"{row.DisplayValue}: Revit отклонил фильтр для выбранных категорий ({exception.Message}).";
                 messages.Add(message);
@@ -149,20 +169,35 @@ public sealed class ViewFilterService
         return new ColorApplyResult(0, 0, 0, 0, filtersToRemove.Count, []);
     }
 
-    private static List<ElementId> GetApplicableCategoryIds(IReadOnlyList<ElementId> selectedCategoryIds, BimParameterItem parameter)
+    private static List<ElementId> GetApplicableCategoryIds(
+        Document document,
+        IReadOnlyList<ElementId> selectedCategoryIds,
+        BimParameterItem parameter)
     {
-        if (parameter.ApplicableCategoryIds.Count == 0)
-        {
-            return selectedCategoryIds.ToList();
-        }
-
         IReadOnlyList<long> applicableCategoryIds = ApplicableCategoryFilter.GetApplicableCategoryIds(
             selectedCategoryIds.Select(RevitElementIds.GetValue),
             parameter.ApplicableCategoryIds);
         HashSet<long> applicableCategoryIdSet = applicableCategoryIds.ToHashSet();
+        long parameterId = RevitElementIds.GetValue(parameter.ParameterId);
+        HashSet<long> filterableCategoryIdSet = ParameterFilterUtilities.GetAllFilterableCategories()
+            .Select(RevitElementIds.GetValue)
+            .ToHashSet();
 
         return selectedCategoryIds
-            .Where(categoryId => applicableCategoryIdSet.Contains(RevitElementIds.GetValue(categoryId)))
+            .Where(categoryId =>
+            {
+                long categoryIdValue = RevitElementIds.GetValue(categoryId);
+                if (!applicableCategoryIdSet.Contains(categoryIdValue)
+                    || !filterableCategoryIdSet.Contains(categoryIdValue))
+                {
+                    return false;
+                }
+
+                ICollection<ElementId> filterableParameters = ParameterFilterUtilities.GetFilterableParametersInCommon(
+                    document,
+                    new List<ElementId> { categoryId });
+                return filterableParameters.Any(id => RevitElementIds.GetValue(id) == parameterId);
+            })
             .ToList();
     }
 
@@ -232,13 +267,15 @@ public sealed class ViewFilterService
     {
         RevitColor color = new(row.Red, row.Green, row.Blue);
         OverrideGraphicSettings settings = new();
-        settings.SetProjectionLineColor(color);
         settings.SetSurfaceForegroundPatternColor(color);
         settings.SetSurfaceForegroundPatternVisible(true);
+        settings.SetCutForegroundPatternColor(color);
+        settings.SetCutForegroundPatternVisible(true);
 
         if (solidFillPattern is not null)
         {
             settings.SetSurfaceForegroundPatternId(solidFillPattern.Id);
+            settings.SetCutForegroundPatternId(solidFillPattern.Id);
         }
 
         return settings;

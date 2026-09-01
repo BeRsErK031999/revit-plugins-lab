@@ -8,17 +8,23 @@ namespace TrueBIM.App.Modules.Lintels.Revit;
 public sealed class LintelAssemblyViewAnnotationService
 {
     private const double ReferencePositionTolerance = 1.0 / 304800.0;
-    private const string ElevationAnnotationText = "отм.";
-    private static readonly string[] ElevationTextParameterNames =
+    private static readonly string[] ElevationUpperLineParameterNames =
     [
-        "Текст",
+        "Верхняя строка",
+        "Префикс",
+        "Upper line",
+        "Prefix"
+    ];
+    private static readonly string[] ElevationValueParameterNames =
+    [
+        "Нижняя строка",
         "Текст отметки",
         "Высотная отметка",
         "Отметка",
-        "Префикс",
-        "Text",
+        "Текст",
+        "Lower line",
         "Elevation text",
-        "Prefix"
+        "Text"
     ];
     private readonly ITrueBimLogger logger;
     private readonly LintelAnnotationFamilyPlacementService frameFamilyPlacementService = new();
@@ -73,6 +79,11 @@ public sealed class LintelAssemblyViewAnnotationService
             messages.Add("Не найдены две крайние вертикальные грани геометрии; линейный размер пропущен.");
         }
 
+        if (references.Bottom is null)
+        {
+            messages.Add("Не найдена нижняя горизонтальная грань геометрии; высотная отметка пропущена.");
+        }
+
         List<Element> createdAnnotations = [];
         int removedCount = 0;
         bool cropAdjusted = false;
@@ -102,17 +113,25 @@ public sealed class LintelAssemblyViewAnnotationService
                     messages);
             }
 
-            elevationCreated = TryCreateAnnotation(
-                document,
-                () => CreateElevationAnnotationFamilyInstance(
+            if (references.Bottom is not null)
+            {
+                LintelElevationAnnotationText elevationText =
+                    LintelElevationAnnotationText.Create(ResolveProjectElevationFeet(
+                        document,
+                        references.Bottom.WorldPoint));
+                elevationCreated = TryCreateAnnotation(
                     document,
-                    view,
-                    layout,
-                    elevationAnnotationFamilyFilePath),
-                $"Аннотация «отм.» размещена семейством «{Path.GetFileName(elevationAnnotationFamilyFilePath)}» без выноски по нижней грани перемычек.",
-                "Не удалось разместить аннотацию высотной отметки «отм.»",
-                createdAnnotations,
-                messages);
+                    () => CreateElevationAnnotationFamilyInstance(
+                        document,
+                        view,
+                        layout,
+                        elevationText,
+                        elevationAnnotationFamilyFilePath),
+                    $"Высотная отметка «{elevationText.UpperLine} {elevationText.LowerLine}» размещена семейством «{Path.GetFileName(elevationAnnotationFamilyFilePath)}» без выноски по нижней грани перемычек.",
+                    "Не удалось разместить высотную отметку с числовым значением",
+                    createdAnnotations,
+                    messages);
+            }
 
             frameCreated = TryCreateAnnotation(
                 document,
@@ -232,7 +251,9 @@ public sealed class LintelAssemblyViewAnnotationService
             View = view
         };
         XYZ right = view.RightDirection.Normalize();
+        XYZ up = view.UpDirection.Normalize();
         List<ReferenceCandidate> horizontal = [];
+        List<ReferenceCandidate> vertical = [];
 
         foreach (Element element in elements)
         {
@@ -246,7 +267,9 @@ public sealed class LintelAssemblyViewAnnotationService
                         Transform.Identity,
                         view.Origin,
                         right,
-                        horizontal);
+                        up,
+                        horizontal,
+                        vertical);
                 }
             }
             catch
@@ -266,7 +289,8 @@ public sealed class LintelAssemblyViewAnnotationService
 
         return new AnnotationReferences(
             left?.Reference,
-            rightReference?.Reference);
+            rightReference?.Reference,
+            SelectExtreme(vertical, minimum: true));
     }
 
     private static void CollectReferenceCandidates(
@@ -274,14 +298,23 @@ public sealed class LintelAssemblyViewAnnotationService
         Transform transform,
         XYZ origin,
         XYZ right,
-        ICollection<ReferenceCandidate> horizontal)
+        XYZ up,
+        ICollection<ReferenceCandidate> horizontal,
+        ICollection<ReferenceCandidate> vertical)
     {
         foreach (GeometryObject geometryObject in geometry)
         {
             switch (geometryObject)
             {
                 case Solid solid:
-                    CollectSolidReferenceCandidates(solid, transform, origin, right, horizontal);
+                    CollectSolidReferenceCandidates(
+                        solid,
+                        transform,
+                        origin,
+                        right,
+                        up,
+                        horizontal,
+                        vertical);
                     break;
                 case GeometryInstance instance:
                     CollectReferenceCandidates(
@@ -289,7 +322,9 @@ public sealed class LintelAssemblyViewAnnotationService
                         transform.Multiply(instance.Transform),
                         origin,
                         right,
-                        horizontal);
+                        up,
+                        horizontal,
+                        vertical);
                     break;
             }
         }
@@ -300,7 +335,9 @@ public sealed class LintelAssemblyViewAnnotationService
         Transform transform,
         XYZ origin,
         XYZ right,
-        ICollection<ReferenceCandidate> horizontal)
+        XYZ up,
+        ICollection<ReferenceCandidate> horizontal,
+        ICollection<ReferenceCandidate> vertical)
     {
         if (solid.Faces.IsEmpty)
         {
@@ -321,7 +358,17 @@ public sealed class LintelAssemblyViewAnnotationService
                 horizontal.Add(new ReferenceCandidate(
                     planarFace.Reference,
                     (point - origin).DotProduct(right),
-                    planarFace.Area));
+                    planarFace.Area,
+                    point));
+            }
+
+            if (Math.Abs(normal.DotProduct(up)) >= 0.98)
+            {
+                vertical.Add(new ReferenceCandidate(
+                    planarFace.Reference,
+                    (point - origin).DotProduct(up),
+                    planarFace.Area,
+                    point));
             }
         }
     }
@@ -358,6 +405,7 @@ public sealed class LintelAssemblyViewAnnotationService
         Document document,
         ViewSection view,
         LintelAssemblyViewAnnotationLayout layout,
+        LintelElevationAnnotationText elevationText,
         string elevationAnnotationFamilyFilePath)
     {
         XYZ insertionPoint = ToWorldPoint(
@@ -369,9 +417,21 @@ public sealed class LintelAssemblyViewAnnotationService
             view,
             elevationAnnotationFamilyFilePath,
             insertionPoint,
-            "высотная отметка «отм.»");
-        TrySetElevationAnnotationText(annotation);
+            "высотная отметка с числовым значением");
+        SetElevationAnnotationText(
+            annotation,
+            elevationText);
         return annotation;
+    }
+
+    private static double ResolveProjectElevationFeet(Document document, XYZ worldPoint)
+    {
+#if REVIT2020_OR_GREATER
+        BasePoint projectBasePoint = BasePoint.GetProjectBasePoint(document);
+        return worldPoint.Z - projectBasePoint.Position.Z;
+#else
+        return worldPoint.Z;
+#endif
     }
 
     private FamilyInstance CreateFrameFamilyInstance(
@@ -392,26 +452,45 @@ public sealed class LintelAssemblyViewAnnotationService
             "рамка");
     }
 
-    private static bool TrySetElevationAnnotationText(FamilyInstance annotation)
+    private static void SetElevationAnnotationText(
+        FamilyInstance annotation,
+        LintelElevationAnnotationText text)
     {
-        return TrySetElevationAnnotationText(annotation.Parameters)
-            || TrySetElevationAnnotationText(annotation.Symbol.Parameters);
+        TrySetStringParameter(
+            annotation.Parameters,
+            ElevationUpperLineParameterNames,
+            text.UpperLine);
+        if (!TrySetStringParameter(
+                annotation.Parameters,
+                ElevationValueParameterNames,
+                text.LowerLine))
+        {
+            throw new InvalidOperationException(
+                $"В семействе «{annotation.Symbol.Family.Name} : {annotation.Symbol.Name}» не найден изменяемый строковый параметр экземпляра для числовой отметки. "
+                + "Ожидается «Нижняя строка», «Текст отметки», «Высотная отметка», «Отметка» или «Текст».");
+        }
     }
 
-    private static bool TrySetElevationAnnotationText(ParameterSet parameters)
+    private static bool TrySetStringParameter(
+        ParameterSet parameters,
+        IReadOnlyCollection<string> parameterNames,
+        string value)
     {
         foreach (Parameter parameter in parameters)
         {
             if (parameter.IsReadOnly
                 || parameter.StorageType != StorageType.String
-                || !ElevationTextParameterNames.Contains(
+                || !parameterNames.Contains(
                     parameter.Definition.Name,
                     StringComparer.CurrentCultureIgnoreCase))
             {
                 continue;
             }
 
-            return parameter.Set(ElevationAnnotationText);
+            if (parameter.Set(value))
+            {
+                return true;
+            }
         }
 
         return false;
@@ -578,7 +657,8 @@ public sealed class LintelAssemblyViewAnnotationService
 
     private sealed record AnnotationReferences(
         Reference? Left,
-        Reference? Right)
+        Reference? Right,
+        ReferenceCandidate? Bottom)
     {
         public bool HasWidthPair => Left is not null && Right is not null;
     }
@@ -586,5 +666,6 @@ public sealed class LintelAssemblyViewAnnotationService
     private sealed record ReferenceCandidate(
         Reference Reference,
         double Position,
-        double Area);
+        double Area,
+        XYZ WorldPoint);
 }

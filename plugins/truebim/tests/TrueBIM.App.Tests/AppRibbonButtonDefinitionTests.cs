@@ -57,6 +57,22 @@ public sealed class AppRibbonButtonDefinitionTests
             "таблиц"
         },
         {
+            "TrueBIM_ScheduleRegister",
+            TrueBimRibbon.BimDocumentationPanelName,
+            "Ведомость\nспецификаций",
+            $"TrueBIM.App.Commands.{nameof(ScheduleRegisterCommand)}",
+            TrueBimIcon.ScheduleRegister,
+            "выбранным"
+        },
+        {
+            "TrueBIM_ScheduleRegisterSettings",
+            TrueBimRibbon.BimDocumentationPanelName,
+            "Настройки\nведомости",
+            $"TrueBIM.App.Commands.{nameof(ScheduleRegisterSettingsCommand)}",
+            TrueBimIcon.Settings,
+            "фильтр"
+        },
+        {
             "TrueBIM_JoinCut",
             TrueBimRibbon.GeometryPanelName,
             "Соединить /\nВырезать",
@@ -341,7 +357,7 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         Dictionary<string, int> maxButtonCountByPanel = new(StringComparer.Ordinal)
         {
-            [TrueBimRibbon.BimDocumentationPanelName] = 4,
+            [TrueBimRibbon.BimDocumentationPanelName] = 5,
             [TrueBimRibbon.BimViewsPanelName] = 3,
             [TrueBimRibbon.BimCoordinationPanelName] = 2,
             [TrueBimRibbon.BimLibraryPanelName] = 2,

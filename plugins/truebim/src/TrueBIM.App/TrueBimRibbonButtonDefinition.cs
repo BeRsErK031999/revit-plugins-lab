@@ -359,6 +359,22 @@ public static class TrueBimRibbon
             "Распознаёт таблицы из PDF/DWG и записывает их в выбранную спецификацию Revit.",
             "Выберите PDF или DWG, проверьте предпросмотр и укажите спецификацию. TrueBIM заменит её редактируемую табличную секцию, сохранив сетку, размеры и текст исходника."),
         new(
+            BimDocumentationPanelName,
+            "TrueBIM_ScheduleRegister",
+            "Ведомость\nспецификаций",
+            $"{CommandNamespace}.{nameof(ScheduleRegisterCommand)}",
+            TrueBimIcon.ScheduleRegister,
+            "Создаёт ведомость спецификаций по выбранным в диспетчере проекта листам.",
+            "Собирает размещённые спецификации, читает название из первой строки шапки, объединяет сегменты и заполняет новую копию шаблона «• Т • Общие данные • Ведомость спецификаций»."),
+        new(
+            BimDocumentationPanelName,
+            "TrueBIM_ScheduleRegisterSettings",
+            "Настройки\nведомости",
+            $"{CommandNamespace}.{nameof(ScheduleRegisterSettingsCommand)}",
+            TrueBimIcon.Settings,
+            "Настраивает исключающий фильтр и источник восстановления шаблона ведомости спецификаций.",
+            "Позволяет включить фильтрацию по выбранному параметру и значению, а также указать эталонный проект или RTE-файл для безопасного восстановления повреждённого шаблона."),
+        new(
             ArPanelName,
             "TrueBIM_FinishSchedule",
             "Ведомость\nотделки",
