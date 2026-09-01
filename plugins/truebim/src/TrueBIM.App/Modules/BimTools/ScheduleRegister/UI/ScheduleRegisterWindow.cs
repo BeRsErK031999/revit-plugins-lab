@@ -75,12 +75,6 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             minWidth: 175);
         AutomationProperties.SetName(runButton, "Создать ведомость по выбранным листам");
 
-        Button cancelButton = TrueBimUi.CreateSecondaryButton(
-            "Отмена",
-            TrueBimIcon.Close,
-            (_, _) => Close(),
-            minWidth: 110);
-        cancelButton.IsCancel = true;
         Button settingsButton = TrueBimUi.CreateSecondaryButton(
             "Настройки",
             TrueBimIcon.Settings,
@@ -100,7 +94,7 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             CreateCommandBar(),
             CreateBody(),
             null,
-            TrueBimUi.CreateFooter(footerStatus, guideButton, settingsButton, cancelButton, runButton));
+            TrueBimUi.CreateFooter(footerStatus, guideButton, settingsButton, runButton));
 
         Loaded += (_, _) => searchInput.Focus();
         RefreshState();
@@ -172,11 +166,41 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         readiness.Children.Add(filterStatusHost);
         body.Children.Add(TrueBimUi.CreateSectionCard("Готовность", readiness));
 
-        Border sheetCard = TrueBimUi.CreateSectionCard("Листы для обработки", CreateSheetGrid());
+        Border sheetCard = CreateSheetCard();
         sheetCard.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         Grid.SetRow(sheetCard, 1);
         body.Children.Add(sheetCard);
         return body;
+    }
+
+    private Border CreateSheetCard()
+    {
+        Grid content = new()
+        {
+            Margin = TrueBimTheme.SectionPadding
+        };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        content.Children.Add(new TextBlock
+        {
+            Text = "Листы для обработки",
+            FontSize = TrueBimTheme.SectionTitleFontSize,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12)
+        });
+
+        UIElement grid = CreateSheetGrid();
+        Grid.SetRow(grid, 1);
+        content.Children.Add(grid);
+        return new Border
+        {
+            Background = TrueBimBrushes.Surface,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Child = content
+        };
     }
 
     private UIElement CreateSheetGrid()
@@ -197,6 +221,9 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             ToolTip = "Отмечайте листы флажками. Можно выделить несколько строк и нажать пробел."
         };
+        ScrollViewer.SetCanContentScroll(grid, true);
+        VirtualizingPanel.SetIsVirtualizing(grid, true);
+        VirtualizingPanel.SetVirtualizationMode(grid, VirtualizationMode.Recycling);
         grid.KeyDown += (_, args) =>
         {
             if (args.Key != Key.Space)

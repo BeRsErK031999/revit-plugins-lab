@@ -12,8 +12,7 @@ public sealed class ScheduleRegisterGuideWindow : TrueBimWindow
         (
             "Быстрый сценарий",
             [
-                "Нажмите «Ведомость спецификаций» на панели «Оформление». Предварительно выбирать листы в диспетчере необязательно.",
-                "В открывшемся окне отметьте нужные листы. Активный лист или листы, выбранные в диспетчере проекта, отмечаются заранее.",
+                "Отметьте нужные листы. Активный лист или листы, выбранные в диспетчере проекта, отмечаются заранее.",
                 "Проверьте блок «Готовность» и нажмите «Создать ведомость».",
                 "TrueBIM откроет новую ведомость. Ранее созданные ведомости останутся без изменений."
             ]),
@@ -82,9 +81,6 @@ public sealed class ScheduleRegisterGuideWindow : TrueBimWindow
     private static UIElement CreateBody()
     {
         StackPanel content = new();
-        content.Children.Add(TrueBimUi.CreateInfoBanner(
-            "Главное: после нажатия кнопки всегда открывается окно выбора листов. Выбирать их заранее необязательно.",
-            TrueBimUiSeverity.Info));
         foreach ((string title, string[] steps) in Sections)
         {
             StackPanel section = new();
