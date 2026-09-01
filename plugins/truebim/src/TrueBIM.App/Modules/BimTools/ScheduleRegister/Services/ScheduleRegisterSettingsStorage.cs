@@ -1,3 +1,4 @@
+using System.IO;
 using TrueBIM.App.Modules.BimTools.Common.Services.Storage;
 using TrueBIM.App.Modules.BimTools.ScheduleRegister.Models;
 using TrueBIM.App.Services.Logging;
@@ -73,6 +74,18 @@ public sealed class ScheduleRegisterSettingsStorage
         }
 
         return issues;
+    }
+
+    public static bool IsUsableTemplateProjectPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        string extension = Path.GetExtension(path!.Trim());
+        return string.Equals(extension, ".rvt", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".rte", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeVersion(string value)

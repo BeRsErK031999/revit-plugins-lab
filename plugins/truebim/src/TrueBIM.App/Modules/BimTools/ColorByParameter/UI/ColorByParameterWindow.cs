@@ -666,7 +666,8 @@ public sealed class ColorByParameterWindow : TrueBimWindow
             return false;
         }
 
-        if (!ReferenceEquals(currentUiDocument.Document, document))
+        // Revit may return different managed wrappers for the same open document.
+        if (!currentUiDocument.Document.Equals(document))
         {
             message = "Активен другой документ Revit. Вернитесь к исходному документу или переоткройте инструмент.";
             return false;

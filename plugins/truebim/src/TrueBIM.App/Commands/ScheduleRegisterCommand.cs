@@ -1,12 +1,13 @@
-using System.IO;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.ScheduleRegister.Models;
 using TrueBIM.App.Modules.BimTools.ScheduleRegister.Revit;
 using TrueBIM.App.Modules.BimTools.ScheduleRegister.Services;
+using TrueBIM.App.Modules.BimTools.ScheduleRegister.UI;
 using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -28,18 +29,46 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
             }
 
             Document document = uiDocument.Document;
-            ElementId[] selectedSheetIds = uiDocument.Selection.GetElementIds()
+            ElementId[] selectedElementIds = uiDocument.Selection.GetElementIds().ToArray();
+            ScheduleRegisterSettingsStorage settingsStorage = ScheduleRegisterSettingsStorage.ForRevitVersion(
+                commandData.Application.Application.VersionNumber,
+                logger);
+            ScheduleRegisterTemplateInspector inspector = new(new ScheduleRegisterTemplateValidator());
+            ScheduleRegisterTemplateInspection inspection = inspector.Inspect(document);
+            SchedulePlacementCollector collector = new();
+            IReadOnlyList<ScheduleRegisterSheetOption> sheetOptions = new ScheduleRegisterSheetCatalogService()
+                .Collect(document, selectedElementIds, uiDocument.ActiveView.Id);
+
+            logger.Info(
+                $"Schedule Register window opening. Document='{document.Title}'; "
+                + $"Sheets={sheetOptions.Count}; Preselected={sheetOptions.Count(sheet => sheet.IsSelected)}; "
+                + $"TemplateExists={inspection.Exists}; TemplateValid={inspection.IsValid}; "
+                + $"TemplateCanRepairLocally={inspection.CanRepairLocally}.");
+
+            ScheduleRegisterWindow window = new(
+                settingsStorage,
+                collector.CollectParameterNames(document),
+                inspection,
+                sheetOptions);
+            if (RevitModalWindowService.ShowDialog(
+                    window,
+                    commandData.Application.MainWindowHandle) != true)
+            {
+                logger.Info("Schedule Register canceled in the sheet-selection window.");
+                return Result.Cancelled;
+            }
+
+            ElementId[] selectedSheetIds = window.SelectedSheetIds
+                .Select(RevitElementIds.Create)
                 .Where(id => document.GetElement(id) is ViewSheet)
                 .ToArray();
             if (selectedSheetIds.Length == 0)
             {
+                logger.Warning("Schedule Register sheet-selection window returned no valid sheets.");
                 ShowNoSheetsError();
                 return Result.Succeeded;
             }
 
-            ScheduleRegisterSettingsStorage settingsStorage = ScheduleRegisterSettingsStorage.ForRevitVersion(
-                commandData.Application.Application.VersionNumber,
-                logger);
             ScheduleRegisterSettings settings = settingsStorage.Load();
             IReadOnlyList<string> settingsIssues = ScheduleRegisterSettingsStorage.Validate(settings);
             if (settingsIssues.Count > 0)
@@ -48,50 +77,37 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            ScheduleRegisterTemplateInspector inspector = new(new ScheduleRegisterTemplateValidator());
-            ScheduleRegisterTemplateInspection inspection = inspector.Inspect(document);
+            inspection = inspector.Inspect(document);
+            PrepareTemplate(
+                commandData.Application.Application,
+                uiDocument,
+                document,
+                selectedSheetIds,
+                settings,
+                inspection,
+                inspector,
+                logger);
+            inspection = inspector.Inspect(document);
             if (!inspection.IsValid)
             {
-                if (!CanRestoreTemplate(settings, inspection))
-                {
-                    return Result.Succeeded;
-                }
-
-                if (inspection.ScheduleId.HasValue
-                    && RevitElementIds.GetValue(uiDocument.ActiveView.Id) == inspection.ScheduleId.Value)
-                {
-                    ViewSheet? safeView = selectedSheetIds
-                        .Select(document.GetElement)
-                        .OfType<ViewSheet>()
-                        .FirstOrDefault();
-                    if (safeView is not null)
-                    {
-                        uiDocument.ActiveView = safeView;
-                    }
-                }
-
-                ScheduleRegisterTemplateRestoreService restoreService = new(inspector, logger);
-                restoreService.Restore(
-                    commandData.Application.Application,
-                    document,
-                    settings.TemplateProjectPath);
-                inspection = inspector.Inspect(document);
-                if (!inspection.IsValid)
-                {
-                    throw new InvalidOperationException(
-                        "Восстановленный шаблон не прошёл контрольную проверку.");
-                }
+                throw new InvalidOperationException(
+                    "Подготовленный шаблон не прошёл контрольную проверку: "
+                    + string.Join(" ", inspection.Validation.Issues));
             }
 
             ViewSchedule template = inspector.FindTemplate(document)
                                     ?? throw new InvalidOperationException("Проверенный шаблон не найден перед копированием.");
-            SchedulePlacementCollector collector = new();
             ScheduleRegisterCollectionResult collection = collector.Collect(
                 document,
                 selectedSheetIds,
                 settings);
             ScheduleRegisterAggregationResult aggregation = new ScheduleRegisterAggregationService()
                 .Aggregate(collection.Placements);
+            logger.Info(
+                $"Schedule Register collected placements. Sheets={selectedSheetIds.Length}; "
+                + $"Placements={collection.Placements.Count}; Excluded={collection.ExcludedByFilterCount}; "
+                + $"Rows={aggregation.Rows.Count}; "
+                + $"Warnings={collection.Warnings.Count + aggregation.Warnings.Count}.");
             if (aggregation.Rows.Count == 0)
             {
                 ShowEmptyResult(selectedSheetIds.Length, collection.ExcludedByFilterCount);
@@ -111,11 +127,15 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
                 uiDocument.ActiveView = createdSchedule;
             }
 
+            logger.Info(
+                $"Schedule Register completed. ScheduleId={result.ScheduleId}; "
+                + $"Name='{result.ScheduleName}'; Rows={result.RowCount}; Warnings={result.Warnings.Count}.");
             ShowCompletion(result, selectedSheetIds.Length, collection.ExcludedByFilterCount);
             return Result.Succeeded;
         }
         catch (OperationCanceledException)
         {
+            logger.Info("Schedule Register canceled by the user.");
             return Result.Cancelled;
         }
         catch (Exception exception)
@@ -135,43 +155,63 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
         }
     }
 
-    private static bool CanRestoreTemplate(
+    private static void PrepareTemplate(
+        Autodesk.Revit.ApplicationServices.Application application,
+        UIDocument uiDocument,
+        Document document,
+        IReadOnlyList<ElementId> selectedSheetIds,
         ScheduleRegisterSettings settings,
-        ScheduleRegisterTemplateInspection inspection)
+        ScheduleRegisterTemplateInspection inspection,
+        ScheduleRegisterTemplateInspector inspector,
+        ITrueBimLogger logger)
     {
-        string details = string.Join(Environment.NewLine, inspection.Validation.Issues.Select(issue => $"• {issue}"));
-        if (string.IsNullOrWhiteSpace(settings.TemplateProjectPath)
-            || !File.Exists(settings.TemplateProjectPath))
+        if (inspection.IsValid)
         {
-            TaskDialog dialog = new(DialogTitle)
-            {
-                TitleAutoPrefix = false,
-                MainInstruction = inspection.Exists
-                    ? "Шаблонная спецификация повреждена."
-                    : "Шаблонная спецификация отсутствует.",
-                MainContent = "Откройте «Настройки ведомости» и выберите эталонный файл .rte или .rvt для восстановления.",
-                ExpandedContent = details,
-                CommonButtons = TaskDialogCommonButtons.Close
-            };
-            dialog.Show();
-            return false;
+            return;
         }
 
-        TaskDialog confirmation = new(DialogTitle)
+        MoveAwayFromTemplateView(uiDocument, document, selectedSheetIds, inspection.ScheduleId);
+        if (inspection.CanRepairLocally)
         {
-            TitleAutoPrefix = false,
-            MainInstruction = inspection.Exists
-                ? "Восстановить повреждённый шаблон и продолжить?"
-                : "Добавить шаблон из эталонного файла и продолжить?",
-            MainContent = inspection.Exists
-                ? "Текущая шаблонная спецификация будет удалена и заново скопирована из выбранного эталонного файла. Ранее созданные ведомости не изменятся."
-                : "Исправная шаблонная спецификация будет скопирована из выбранного эталонного файла.",
-            ExpandedContent = details + Environment.NewLine + Environment.NewLine
-                              + $"Источник: {settings.TemplateProjectPath}",
-            CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
-            DefaultButton = TaskDialogResult.No
-        };
-        return confirmation.Show() == TaskDialogResult.Yes;
+            ViewSchedule damagedTemplate = inspector.FindTemplate(document)
+                                           ?? throw new InvalidOperationException(
+                                               "Шаблон для локального восстановления не найден.");
+            new ScheduleRegisterTemplateRepairService(inspector, logger)
+                .Repair(document, damagedTemplate);
+            return;
+        }
+
+        if (!ScheduleRegisterSettingsStorage.IsUsableTemplateProjectPath(settings.TemplateProjectPath))
+        {
+            throw new InvalidOperationException(
+                "Структура шаблонной спецификации повреждена. "
+                + "Выберите эталонный файл .rte или .rvt в настройках ведомости.");
+        }
+
+        new ScheduleRegisterTemplateRestoreService(inspector, logger)
+            .Restore(application, document, settings.TemplateProjectPath);
+    }
+
+    private static void MoveAwayFromTemplateView(
+        UIDocument uiDocument,
+        Document document,
+        IReadOnlyList<ElementId> selectedSheetIds,
+        long? templateId)
+    {
+        if (!templateId.HasValue
+            || RevitElementIds.GetValue(uiDocument.ActiveView.Id) != templateId.Value)
+        {
+            return;
+        }
+
+        ViewSheet? safeView = selectedSheetIds
+            .Select(document.GetElement)
+            .OfType<ViewSheet>()
+            .FirstOrDefault();
+        if (safeView is not null)
+        {
+            uiDocument.ActiveView = safeView;
+        }
     }
 
     private static void ShowNoSheetsError()
@@ -180,7 +220,7 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
         {
             TitleAutoPrefix = false,
             MainInstruction = "Не выбраны листы.",
-            MainContent = "Выберите один или несколько листов в диспетчере проекта и снова нажмите кнопку.",
+            MainContent = "Снова откройте команду и отметьте один или несколько листов в окне выбора.",
             CommonButtons = TaskDialogCommonButtons.Close
         };
         dialog.Show();

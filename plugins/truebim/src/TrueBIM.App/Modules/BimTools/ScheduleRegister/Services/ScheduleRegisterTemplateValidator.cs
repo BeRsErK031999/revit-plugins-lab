@@ -15,6 +15,7 @@ public sealed class ScheduleRegisterTemplateValidator
     {
         Guard.NotNull(snapshot, nameof(snapshot));
         List<string> issues = [];
+        List<string> structureIssues = [];
         IReadOnlyList<IReadOnlyList<string>> rows = snapshot.HeaderRows;
         if (rows.Count < 3)
         {
@@ -27,36 +28,48 @@ public sealed class ScheduleRegisterTemplateValidator
             .Any(value => EqualsNormalized(value, ScheduleRegisterConstants.ScheduleTitle));
         if (!titleMatches)
         {
-            issues.Add($"Первая строка должна содержать заголовок «{ScheduleRegisterConstants.ScheduleTitle}».");
+            structureIssues.Add($"Первая строка должна содержать заголовок «{ScheduleRegisterConstants.ScheduleTitle}».");
         }
 
         int columnHeaderRowIndex = FindColumnHeaderRow(rows);
         if (columnHeaderRowIndex < 0)
         {
-            issues.Add(
+            structureIssues.Add(
                 "Не найдена строка с колонками «Лист», «Наименование», «Примечание» в указанном порядке.");
         }
 
-        int dataStartRowIndex = columnHeaderRowIndex + 1;
+        int dataStartRowIndex = columnHeaderRowIndex < 0 ? -1 : columnHeaderRowIndex + 1;
         int dataRowCount = columnHeaderRowIndex < 0 ? 0 : rows.Count - dataStartRowIndex;
         if (columnHeaderRowIndex >= 0 && dataRowCount == 0)
         {
-            issues.Add("После названий столбцов должна оставаться хотя бы одна пустая строка шаблона.");
+            structureIssues.Add("После названий столбцов должна оставаться хотя бы одна пустая строка шаблона.");
         }
-        else if (columnHeaderRowIndex >= 0)
+
+        bool hasFilledDataRows = false;
+        if (columnHeaderRowIndex >= 0)
         {
             for (int rowIndex = dataStartRowIndex; rowIndex < rows.Count; rowIndex++)
             {
                 if (rows[rowIndex].Any(value => !string.IsNullOrWhiteSpace(value)))
                 {
-                    issues.Add("Строки данных шаблона должны быть пустыми.");
+                    hasFilledDataRows = true;
                     break;
                 }
             }
         }
 
+        issues.AddRange(structureIssues);
+        if (hasFilledDataRows)
+        {
+            issues.Add("Строки данных шаблона должны быть пустыми.");
+        }
+
+        bool hasValidStructure = structureIssues.Count == 0;
+
         return new ScheduleRegisterTemplateValidation(
-            issues.Count == 0,
+            hasValidStructure && !hasFilledDataRows,
+            hasValidStructure,
+            hasFilledDataRows,
             titleRowIndex,
             columnHeaderRowIndex,
             dataStartRowIndex,

@@ -56,6 +56,21 @@ public sealed class ScheduleRegisterSettingsAndNameTests
     }
 
     [Fact]
+    public void TemplateProjectPath_RequiresExistingRvtOrRteFile()
+    {
+        using TempDirectory temp = new();
+        string validPath = Path.Combine(temp.Path, "template.rte");
+        string wrongExtensionPath = Path.Combine(temp.Path, "template.txt");
+        File.WriteAllText(validPath, string.Empty);
+        File.WriteAllText(wrongExtensionPath, string.Empty);
+
+        Assert.True(ScheduleRegisterSettingsStorage.IsUsableTemplateProjectPath(validPath));
+        Assert.False(ScheduleRegisterSettingsStorage.IsUsableTemplateProjectPath(wrongExtensionPath));
+        Assert.False(ScheduleRegisterSettingsStorage.IsUsableTemplateProjectPath(
+            Path.Combine(temp.Path, "missing.rvt")));
+    }
+
+    [Fact]
     public void NameService_UsesFirstAvailableParenthesizedNumber()
     {
         string name = ScheduleRegisterNameService.CreateUniqueName(

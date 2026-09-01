@@ -62,7 +62,7 @@ public sealed class AppRibbonButtonDefinitionTests
             "Ведомость\nспецификаций",
             $"TrueBIM.App.Commands.{nameof(ScheduleRegisterCommand)}",
             TrueBimIcon.ScheduleRegister,
-            "выбранным"
+            "выбора"
         },
         {
             "TrueBIM_ScheduleRegisterSettings",

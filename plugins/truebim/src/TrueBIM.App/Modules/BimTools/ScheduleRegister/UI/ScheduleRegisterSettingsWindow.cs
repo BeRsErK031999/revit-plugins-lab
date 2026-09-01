@@ -136,8 +136,11 @@ public sealed class ScheduleRegisterSettingsWindow : TrueBimWindow
         StackPanel content = new();
         string inspectionText = inspection.IsValid
             ? $"Шаблон «{ScheduleRegisterConstants.TemplateScheduleName}» найден и готов к работе."
+            : inspection.CanRepairLocally
+                ? "Шаблон имеет правильные заголовок и колонки, но его рабочие строки заполнены или он размещён на листе. "
+                  + "Основная команда автоматически создаст чистый шаблон с тем же оформлением."
             : inspection.Exists
-                ? "Шаблон найден, но повреждён: " + string.Join(" ", inspection.Validation.Issues)
+                ? "Структура шаблона повреждена: " + string.Join(" ", inspection.Validation.Issues)
                 : $"Шаблон «{ScheduleRegisterConstants.TemplateScheduleName}» в проекте не найден.";
         content.Children.Add(TrueBimUi.CreateInfoBanner(
             inspectionText,
@@ -165,6 +168,7 @@ public sealed class ScheduleRegisterSettingsWindow : TrueBimWindow
         content.Children.Add(new TextBlock
         {
             Text = "Путь используется только для восстановления отсутствующего или повреждённого шаблона. "
+                   + "При обычном заполнении строк он не нужен: TrueBIM очистит шаблон автоматически. "
                    + "Файл должен быть совместим с запущенной версией Revit и содержать исправную таблицу с тем же именем.",
             Foreground = TrueBimBrushes.TextSecondary,
             TextWrapping = TextWrapping.Wrap,

@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace TrueBIM.App.Modules.BimTools.ScheduleRegister.Models;
 
 public static class ScheduleRegisterConstants
@@ -26,6 +28,8 @@ public sealed record ScheduleRegisterTemplateSnapshot(
 
 public sealed record ScheduleRegisterTemplateValidation(
     bool IsValid,
+    bool HasValidStructure,
+    bool HasFilledDataRows,
     int TitleRowIndex,
     int ColumnHeaderRowIndex,
     int DataStartRowIndex,
@@ -35,6 +39,8 @@ public sealed record ScheduleRegisterTemplateValidation(
     public static ScheduleRegisterTemplateValidation Missing(string issue)
     {
         return new ScheduleRegisterTemplateValidation(
+            false,
+            false,
             false,
             -1,
             -1,
@@ -75,6 +81,10 @@ public sealed record ScheduleRegisterTemplateInspection(
     public bool Exists => ScheduleId.HasValue;
 
     public bool IsValid => Exists && Validation.IsValid && PlacementCount == 0;
+
+    public bool CanRepairLocally => Exists
+                                    && Validation.HasValidStructure
+                                    && !IsValid;
 }
 
 public sealed record ScheduleRegisterCreationResult(
@@ -82,3 +92,51 @@ public sealed record ScheduleRegisterCreationResult(
     string ScheduleName,
     int RowCount,
     IReadOnlyList<string> Warnings);
+
+public sealed class ScheduleRegisterSheetOption : INotifyPropertyChanged
+{
+    private bool isSelected;
+
+    public ScheduleRegisterSheetOption(
+        long sheetId,
+        string sheetNumber,
+        string sheetName,
+        int placedScheduleCount,
+        bool isSelected)
+    {
+        SheetId = sheetId;
+        SheetNumber = sheetNumber;
+        SheetName = sheetName;
+        PlacedScheduleCount = placedScheduleCount;
+        this.isSelected = isSelected;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public long SheetId { get; }
+
+    public string SheetNumber { get; }
+
+    public string SheetName { get; }
+
+    public int PlacedScheduleCount { get; }
+
+    public string PlacedSchedulesText => PlacedScheduleCount == 0
+        ? "Нет"
+        : PlacedScheduleCount.ToString(System.Globalization.CultureInfo.CurrentCulture);
+
+    public bool IsSelected
+    {
+        get => isSelected;
+        set
+        {
+            if (isSelected == value)
+            {
+                return;
+            }
+
+            isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+}
