@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace TrueBIM.App.Modules.BimTools.ScheduleRegister.Models;
 
 public static class ScheduleRegisterConstants
@@ -93,25 +91,19 @@ public sealed record ScheduleRegisterCreationResult(
     int RowCount,
     IReadOnlyList<string> Warnings);
 
-public sealed class ScheduleRegisterSheetOption : INotifyPropertyChanged
+public sealed class ScheduleRegisterSheetOption
 {
-    private bool isSelected;
-
     public ScheduleRegisterSheetOption(
         long sheetId,
         string sheetNumber,
         string sheetName,
-        int placedScheduleCount,
-        bool isSelected)
+        int placedScheduleCount)
     {
         SheetId = sheetId;
         SheetNumber = sheetNumber;
         SheetName = sheetName;
         PlacedScheduleCount = placedScheduleCount;
-        this.isSelected = isSelected;
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 
     public long SheetId { get; }
 
@@ -124,19 +116,4 @@ public sealed class ScheduleRegisterSheetOption : INotifyPropertyChanged
     public string PlacedSchedulesText => PlacedScheduleCount == 0
         ? "Нет"
         : PlacedScheduleCount.ToString(System.Globalization.CultureInfo.CurrentCulture);
-
-    public bool IsSelected
-    {
-        get => isSelected;
-        set
-        {
-            if (isSelected == value)
-            {
-                return;
-            }
-
-            isSelected = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
-        }
-    }
 }

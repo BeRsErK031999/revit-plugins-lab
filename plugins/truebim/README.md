@@ -26,7 +26,7 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 
 - `БИМ > Видимость` - active-view category visibility control. It lets users turn controllable Revit categories on and off in the current view, with grouping, search, status text, logging, manual QA notes, and automated ribbon metadata smoke tests.
 - `Проверка модели > Проверка параметров` - read-only validation of instance/type parameters against a manually selected CSV/XLSX requirements table, with optional loaded-link scope and CSV error export. See [docs/parameter-audit.md](docs/parameter-audit.md).
-- `Оформление > Ведомость спецификаций` - opens a searchable sheet-selection workflow and builds a new manual register from placed schedules, with segment aggregation, duplicate diagnostics, optional parameter filtering, self-repair of filled template rows, and safe structural recovery. See [docs/schedule-register.md](docs/schedule-register.md).
+- `Оформление > Ведомость спецификаций` - builds a new manual register from sheets preselected in Revit Project Browser, with a searchable read-only preview, segment aggregation, duplicate diagnostics, optional parameter filtering, self-repair of filled template rows, and safe structural recovery. See [docs/schedule-register.md](docs/schedule-register.md).
 
 ## Current completion status
 

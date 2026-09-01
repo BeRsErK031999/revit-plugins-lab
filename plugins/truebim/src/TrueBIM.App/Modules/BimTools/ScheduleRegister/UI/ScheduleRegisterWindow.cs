@@ -4,7 +4,6 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
-using System.Windows.Input;
 using TrueBIM.App.Modules.BimTools.ScheduleRegister.Models;
 using TrueBIM.App.Modules.BimTools.ScheduleRegister.Services;
 using TrueBIM.App.UI;
@@ -28,9 +27,12 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         VerticalAlignment = VerticalAlignment.Center
     };
     private readonly Button runButton;
+    private readonly Button readinessButton;
+    private readonly Border readinessCard;
+    private readonly Border sheetCard;
     private ScheduleRegisterSettings currentSettings;
     private bool templateCanProceed;
-    private bool updatingSelection;
+    private TrueBimUiSeverity readinessSeverity = TrueBimUiSeverity.Info;
 
     public ScheduleRegisterWindow(
         ScheduleRegisterSettingsStorage settingsStorage,
@@ -53,11 +55,6 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         Icon = IconFactory.CreateImage(TrueBimIcon.ScheduleRegister, 32);
 
         sheets = new ObservableCollection<ScheduleRegisterSheetOption>(sheetOptions);
-        foreach (ScheduleRegisterSheetOption sheet in sheets)
-        {
-            sheet.PropertyChanged += OnSheetPropertyChanged;
-        }
-
         sheetView = CollectionViewSource.GetDefaultView(sheets);
         sheetView.Filter = MatchesSearch;
         searchInput.MinWidth = 300;
@@ -75,6 +72,10 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             minWidth: 175);
         AutomationProperties.SetName(runButton, "Создать ведомость по выбранным листам");
 
+        readinessCard = CreateReadinessCard();
+        sheetCard = CreateSheetCard();
+        readinessButton = CreateReadinessButton();
+
         Button settingsButton = TrueBimUi.CreateSecondaryButton(
             "Настройки",
             TrueBimIcon.Settings,
@@ -89,7 +90,7 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader(
                 "Создание ведомости спецификаций",
-                "1. Отметьте листы.  2. Проверьте шаблон и фильтр.  3. Нажмите «Создать ведомость».",
+                "Проверьте листы, выбранные в диспетчере проекта, и нажмите «Создать ведомость».",
                 TrueBimIcon.ScheduleRegister),
             CreateCommandBar(),
             CreateBody(),
@@ -99,11 +100,6 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         Loaded += (_, _) => searchInput.Focus();
         RefreshState();
     }
-
-    public IReadOnlyList<long> SelectedSheetIds => sheets
-        .Where(sheet => sheet.IsSelected)
-        .Select(sheet => sheet.SheetId)
-        .ToArray();
 
     private UIElement CreateCommandBar()
     {
@@ -119,38 +115,11 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         search.Children.Add(searchInput);
         bar.Children.Add(search);
 
-        StackPanel actions = new()
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Bottom
-        };
-        Button selectVisible = TrueBimUi.CreateSecondaryButton(
-            "Выбрать найденные",
-            TrueBimIcon.Apply,
-            (_, _) => SetVisibleSelection(true),
-            minWidth: 160);
-        selectVisible.ToolTip = "Отметить все листы, оставшиеся после поиска.";
-        actions.Children.Add(selectVisible);
-
-        Button onlyWithSchedules = TrueBimUi.CreateSecondaryButton(
-            "Только со спецификациями",
-            TrueBimIcon.ScheduleRegister,
-            (_, _) => SelectOnlyVisibleWithSchedules(),
-            minWidth: 195);
-        onlyWithSchedules.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        onlyWithSchedules.ToolTip = "Снять текущий выбор и отметить найденные листы, на которых есть спецификации.";
-        actions.Children.Add(onlyWithSchedules);
-
-        Button clear = TrueBimUi.CreateSecondaryButton(
-            "Снять выбор",
-            TrueBimIcon.Close,
-            (_, _) => SetAllSelection(false),
-            minWidth: 125);
-        clear.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        actions.Children.Add(clear);
-        Grid.SetColumn(actions, 1);
-        bar.Children.Add(actions);
+        readinessButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        readinessButton.HorizontalAlignment = HorizontalAlignment.Right;
+        readinessButton.VerticalAlignment = VerticalAlignment.Bottom;
+        Grid.SetColumn(readinessButton, 1);
+        bar.Children.Add(readinessButton);
         return bar;
     }
 
@@ -160,17 +129,47 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        body.Children.Add(readinessCard);
+
+        Grid.SetRow(sheetCard, 1);
+        body.Children.Add(sheetCard);
+        return body;
+    }
+
+    private Border CreateReadinessCard()
+    {
         StackPanel readiness = new();
         readiness.Children.Add(templateStatusHost);
         filterStatusHost.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         readiness.Children.Add(filterStatusHost);
-        body.Children.Add(TrueBimUi.CreateSectionCard("Готовность", readiness));
+        Border card = TrueBimUi.CreateSectionCard("Готовность", readiness);
+        card.Visibility = Visibility.Collapsed;
+        return card;
+    }
 
-        Border sheetCard = CreateSheetCard();
-        sheetCard.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        Grid.SetRow(sheetCard, 1);
-        body.Children.Add(sheetCard);
-        return body;
+    private Button CreateReadinessButton()
+    {
+        Button button = new()
+        {
+            Width = TrueBimTheme.ControlHeight32,
+            Height = TrueBimTheme.ControlHeight32,
+            MinWidth = TrueBimTheme.ControlHeight32,
+            Padding = new Thickness(0),
+            Style = TrueBimStyles.CreateButtonStyle()
+        };
+        button.Click += ToggleReadiness;
+        AutomationProperties.SetName(button, "Показать готовность");
+        return button;
+    }
+
+    private void ToggleReadiness(object sender, RoutedEventArgs args)
+    {
+        bool showDetails = readinessCard.Visibility != Visibility.Visible;
+        readinessCard.Visibility = showDetails ? Visibility.Visible : Visibility.Collapsed;
+        sheetCard.Margin = showDetails
+            ? new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
+            : new Thickness(0);
+        UpdateReadinessButton();
     }
 
     private Border CreateSheetCard()
@@ -211,48 +210,19 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             CanUserAddRows = false,
             CanUserDeleteRows = false,
             CanUserReorderColumns = false,
-            IsReadOnly = false,
+            IsReadOnly = true,
             ItemsSource = sheetView,
-            SelectionMode = DataGridSelectionMode.Extended,
+            SelectionMode = DataGridSelectionMode.Single,
             SelectionUnit = DataGridSelectionUnit.FullRow,
             Style = TrueBimStyles.CreateDataGridStyle(),
             HeadersVisibility = DataGridHeadersVisibility.Column,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            ToolTip = "Отмечайте листы флажками. Можно выделить несколько строк и нажать пробел."
+            ToolTip = "Список листов, выбранных в диспетчере проекта перед запуском команды."
         };
         ScrollViewer.SetCanContentScroll(grid, true);
         VirtualizingPanel.SetIsVirtualizing(grid, true);
         VirtualizingPanel.SetVirtualizationMode(grid, VirtualizationMode.Recycling);
-        grid.KeyDown += (_, args) =>
-        {
-            if (args.Key != Key.Space)
-            {
-                return;
-            }
-
-            ScheduleRegisterSheetOption[] selectedRows = grid.SelectedItems
-                .Cast<ScheduleRegisterSheetOption>()
-                .ToArray();
-            bool nextValue = selectedRows.Any(row => !row.IsSelected);
-            updatingSelection = true;
-            try
-            {
-                foreach (ScheduleRegisterSheetOption row in selectedRows)
-                {
-                    row.IsSelected = nextValue;
-                }
-            }
-            finally
-            {
-                updatingSelection = false;
-            }
-
-            RefreshState();
-            args.Handled = true;
-        };
-
-        grid.Columns.Add(CreateSelectionColumn());
         grid.Columns.Add(CreateTextColumn("Номер", nameof(ScheduleRegisterSheetOption.SheetNumber), 130));
         grid.Columns.Add(CreateTextColumn(
             "Наименование листа",
@@ -263,26 +233,6 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             nameof(ScheduleRegisterSheetOption.PlacedSchedulesText),
             170));
         return grid;
-    }
-
-    private static DataGridTemplateColumn CreateSelectionColumn()
-    {
-        FrameworkElementFactory checkBox = new(typeof(CheckBox));
-        checkBox.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        checkBox.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        checkBox.SetBinding(
-            CheckBox.IsCheckedProperty,
-            new Binding(nameof(ScheduleRegisterSheetOption.IsSelected))
-            {
-                Mode = BindingMode.TwoWay,
-                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
-            });
-        return new DataGridTemplateColumn
-        {
-            Header = "Выбран",
-            Width = 75,
-            CellTemplate = new DataTemplate { VisualTree = checkBox }
-        };
     }
 
     private static DataGridTextColumn CreateTextColumn(string header, string path, double width)
@@ -312,78 +262,6 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
         return search.Length == 0
                || sheet.SheetNumber.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0
                || sheet.SheetName.IndexOf(search, StringComparison.CurrentCultureIgnoreCase) >= 0;
-    }
-
-    private void SetVisibleSelection(bool isSelected)
-    {
-        updatingSelection = true;
-        try
-        {
-            foreach (ScheduleRegisterSheetOption sheet in sheetView.Cast<ScheduleRegisterSheetOption>())
-            {
-                sheet.IsSelected = isSelected;
-            }
-        }
-        finally
-        {
-            updatingSelection = false;
-        }
-
-        RefreshState();
-    }
-
-    private void SelectOnlyVisibleWithSchedules()
-    {
-        updatingSelection = true;
-        try
-        {
-            foreach (ScheduleRegisterSheetOption sheet in sheets)
-            {
-                sheet.IsSelected = false;
-            }
-
-            foreach (ScheduleRegisterSheetOption sheet in sheetView
-                         .Cast<ScheduleRegisterSheetOption>()
-                         .Where(sheet => sheet.PlacedScheduleCount > 0))
-            {
-                sheet.IsSelected = true;
-            }
-        }
-        finally
-        {
-            updatingSelection = false;
-        }
-
-        RefreshState();
-    }
-
-    private void SetAllSelection(bool isSelected)
-    {
-        updatingSelection = true;
-        try
-        {
-            foreach (ScheduleRegisterSheetOption sheet in sheets)
-            {
-                sheet.IsSelected = isSelected;
-            }
-        }
-        finally
-        {
-            updatingSelection = false;
-        }
-
-        RefreshState();
-    }
-
-    private void OnSheetPropertyChanged(object? sender, PropertyChangedEventArgs args)
-    {
-        if (args.PropertyName == nameof(ScheduleRegisterSheetOption.IsSelected))
-        {
-            if (!updatingSelection)
-            {
-                RefreshState();
-            }
-        }
     }
 
     private void OpenSettings(object sender, RoutedEventArgs args)
@@ -430,30 +308,63 @@ public sealed class ScheduleRegisterWindow : TrueBimWindow
             filterText,
             settingsIssues.Count == 0 ? TrueBimUiSeverity.Info : TrueBimUiSeverity.Danger);
 
-        int selectedCount = sheets.Count(sheet => sheet.IsSelected);
-        int selectedPlacementCount = sheets
-            .Where(sheet => sheet.IsSelected)
-            .Sum(sheet => sheet.PlacedScheduleCount);
+        readinessSeverity = settingsIssues.Count > 0
+            ? TrueBimUiSeverity.Danger
+            : severity;
+        UpdateReadinessButton();
+
+        int sheetCount = sheets.Count;
+        int placementCount = sheets.Sum(sheet => sheet.PlacedScheduleCount);
         int visibleCount = sheetView.Cast<object>().Count();
-        if (sheets.Count == 0)
+        if (sheetCount == 0)
         {
-            footerStatus.Text = "В проекте нет обычных листов для обработки.";
+            footerStatus.Text = "В диспетчере проекта не выбраны листы для обработки.";
             footerStatus.Foreground = TrueBimBrushes.Danger;
-        }
-        else if (selectedCount == 0)
-        {
-            footerStatus.Text = $"Найдено листов: {visibleCount} из {sheets.Count}. Отметьте хотя бы один лист.";
-            footerStatus.Foreground = TrueBimBrushes.Warning;
         }
         else
         {
-            footerStatus.Text = $"Выбрано листов: {selectedCount}. На них размещено спецификаций: {selectedPlacementCount}.";
+            string searchStatus = visibleCount == sheetCount
+                ? string.Empty
+                : $" Показано по поиску: {visibleCount} из {sheetCount}.";
+            string readinessStatus = templateCanProceed
+                ? string.Empty
+                : " Готовность требует внимания — откройте её кнопкой рядом с поиском.";
+            footerStatus.Text = $"Выбрано в диспетчере листов: {sheetCount}. "
+                                + $"Размещено спецификаций: {placementCount}."
+                                + searchStatus
+                                + readinessStatus;
             footerStatus.Foreground = templateCanProceed
                 ? TrueBimBrushes.TextSecondary
                 : TrueBimBrushes.Danger;
         }
 
-        runButton.IsEnabled = selectedCount > 0 && templateCanProceed;
+        runButton.IsEnabled = sheetCount > 0 && templateCanProceed;
+    }
+
+    private void UpdateReadinessButton()
+    {
+        TrueBimIcon icon = readinessSeverity switch
+        {
+            TrueBimUiSeverity.Success => TrueBimIcon.Check,
+            TrueBimUiSeverity.Warning => TrueBimIcon.Warning,
+            TrueBimUiSeverity.Danger => TrueBimIcon.Error,
+            _ => TrueBimIcon.Info
+        };
+        bool detailsVisible = readinessCard.Visibility == Visibility.Visible;
+        string status = readinessSeverity switch
+        {
+            TrueBimUiSeverity.Success => "всё готово",
+            TrueBimUiSeverity.Warning => "есть предупреждение",
+            TrueBimUiSeverity.Danger => "требуется настройка",
+            _ => "информация"
+        };
+        string action = detailsVisible ? "Скрыть подробности" : "Показать подробности";
+        readinessButton.Content = IconFactory.Create(
+            icon,
+            TrueBimBrushes.ForSeverity(readinessSeverity).Color,
+            TrueBimTheme.IconSizeSmall);
+        readinessButton.ToolTip = $"Готовность: {status}. {action}.";
+        AutomationProperties.SetName(readinessButton, $"Готовность: {status}. {action}");
     }
 
     private (string Text, TrueBimUiSeverity Severity, bool CanProceed) BuildTemplateStatus(

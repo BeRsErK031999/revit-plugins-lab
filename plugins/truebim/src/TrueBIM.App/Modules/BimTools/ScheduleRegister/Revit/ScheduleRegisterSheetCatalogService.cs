@@ -10,21 +10,15 @@ public sealed class ScheduleRegisterSheetCatalogService
 {
     public IReadOnlyList<ScheduleRegisterSheetOption> Collect(
         Document document,
-        IReadOnlyCollection<ElementId> selectedElementIds,
-        ElementId activeViewId)
+        IReadOnlyCollection<ElementId> selectedSheetIds)
     {
         Guard.NotNull(document, nameof(document));
-        Guard.NotNull(selectedElementIds, nameof(selectedElementIds));
-        Guard.NotNull(activeViewId, nameof(activeViewId));
+        Guard.NotNull(selectedSheetIds, nameof(selectedSheetIds));
 
-        HashSet<long> explicitlySelectedSheetIds = selectedElementIds
+        HashSet<long> selectedIds = selectedSheetIds
             .Where(id => document.GetElement(id) is ViewSheet)
             .Select(RevitElementIds.GetValue)
             .ToHashSet();
-        long? activeSheetId = document.GetElement(activeViewId) is ViewSheet activeSheet
-            ? RevitElementIds.GetValue(activeSheet.Id)
-            : null;
-        bool useActiveSheetFallback = explicitlySelectedSheetIds.Count == 0 && activeSheetId.HasValue;
 
         Dictionary<long, HashSet<long>> scheduleIdsBySheet = [];
         foreach (ScheduleSheetInstance instance in new FilteredElementCollector(document)
@@ -52,6 +46,7 @@ public sealed class ScheduleRegisterSheetCatalogService
             .OfClass(typeof(ViewSheet))
             .Cast<ViewSheet>()
             .Where(sheet => !sheet.IsTemplate && !sheet.IsPlaceholder)
+            .Where(sheet => selectedIds.Contains(RevitElementIds.GetValue(sheet.Id)))
             .OrderBy(sheet => sheet.SheetNumber, PrintSheetNumberComparer.Instance)
             .ThenBy(sheet => sheet.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(sheet =>
@@ -60,14 +55,11 @@ public sealed class ScheduleRegisterSheetCatalogService
                 int scheduleCount = scheduleIdsBySheet.TryGetValue(sheetId, out HashSet<long>? ids)
                     ? ids.Count
                     : 0;
-                bool isSelected = explicitlySelectedSheetIds.Contains(sheetId)
-                                  || (useActiveSheetFallback && activeSheetId == sheetId);
                 return new ScheduleRegisterSheetOption(
                     sheetId,
                     sheet.SheetNumber ?? string.Empty,
                     sheet.Name ?? string.Empty,
-                    scheduleCount,
-                    isSelected);
+                    scheduleCount);
             })
             .ToArray();
     }

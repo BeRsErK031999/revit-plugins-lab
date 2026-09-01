@@ -30,6 +30,21 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
 
             Document document = uiDocument.Document;
             ElementId[] selectedElementIds = uiDocument.Selection.GetElementIds().ToArray();
+            ElementId[] selectedSheetIds = selectedElementIds
+                .Select(document.GetElement)
+                .OfType<ViewSheet>()
+                .Where(sheet => !sheet.IsTemplate && !sheet.IsPlaceholder)
+                .Select(sheet => sheet.Id)
+                .ToArray();
+            if (selectedSheetIds.Length == 0)
+            {
+                logger.Warning(
+                    $"Schedule Register was started without sheets selected in Project Browser. "
+                    + $"SelectedElements={selectedElementIds.Length}.");
+                ShowNoSheetsError();
+                return Result.Succeeded;
+            }
+
             ScheduleRegisterSettingsStorage settingsStorage = ScheduleRegisterSettingsStorage.ForRevitVersion(
                 commandData.Application.Application.VersionNumber,
                 logger);
@@ -37,11 +52,11 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
             ScheduleRegisterTemplateInspection inspection = inspector.Inspect(document);
             SchedulePlacementCollector collector = new();
             IReadOnlyList<ScheduleRegisterSheetOption> sheetOptions = new ScheduleRegisterSheetCatalogService()
-                .Collect(document, selectedElementIds, uiDocument.ActiveView.Id);
+                .Collect(document, selectedSheetIds);
 
             logger.Info(
                 $"Schedule Register window opening. Document='{document.Title}'; "
-                + $"Sheets={sheetOptions.Count}; Preselected={sheetOptions.Count(sheet => sheet.IsSelected)}; "
+                + $"SelectedSheets={sheetOptions.Count}; "
                 + $"TemplateExists={inspection.Exists}; TemplateValid={inspection.IsValid}; "
                 + $"TemplateCanRepairLocally={inspection.CanRepairLocally}.");
 
@@ -56,17 +71,6 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
             {
                 logger.Info("Schedule Register canceled in the sheet-selection window.");
                 return Result.Cancelled;
-            }
-
-            ElementId[] selectedSheetIds = window.SelectedSheetIds
-                .Select(RevitElementIds.Create)
-                .Where(id => document.GetElement(id) is ViewSheet)
-                .ToArray();
-            if (selectedSheetIds.Length == 0)
-            {
-                logger.Warning("Schedule Register sheet-selection window returned no valid sheets.");
-                ShowNoSheetsError();
-                return Result.Succeeded;
             }
 
             ScheduleRegisterSettings settings = settingsStorage.Load();
@@ -219,8 +223,8 @@ public sealed class ScheduleRegisterCommand : IExternalCommand
         TaskDialog dialog = new(DialogTitle)
         {
             TitleAutoPrefix = false,
-            MainInstruction = "Не выбраны листы.",
-            MainContent = "Снова откройте команду и отметьте один или несколько листов в окне выбора.",
+            MainInstruction = "В диспетчере проекта не выбраны листы.",
+            MainContent = "Выделите один или несколько листов в диспетчере проекта и снова запустите команду.",
             CommonButtons = TaskDialogCommonButtons.Close
         };
         dialog.Show();
