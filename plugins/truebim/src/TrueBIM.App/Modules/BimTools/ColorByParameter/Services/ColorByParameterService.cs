@@ -149,9 +149,16 @@ public sealed class ColorByParameterService
         View activeView,
         IReadOnlyList<BimCategoryItem> categories,
         BimParameterItem parameter,
-        IReadOnlyList<ColorRuleRow> rows)
+        IReadOnlyList<ColorRuleRow> rows,
+        bool useTemporaryViewProperties)
     {
-        return viewFilterService.Apply(document, activeView, categories, parameter, rows);
+        return viewFilterService.Apply(
+            document,
+            activeView,
+            categories,
+            parameter,
+            rows,
+            useTemporaryViewProperties);
     }
 
     public ColorApplyResult Clear(Document document, View activeView)

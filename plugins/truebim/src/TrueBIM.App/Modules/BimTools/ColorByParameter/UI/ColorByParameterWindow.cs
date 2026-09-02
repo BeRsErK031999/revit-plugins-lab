@@ -32,6 +32,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     private readonly WpfComboBox parameterInput = new();
     private readonly ListBox valueList = new();
     private readonly TextBlock statusText = new();
+    private readonly CheckBox temporaryViewCheckBox = new()
+    {
+        Content = "На временном виде",
+        IsChecked = true,
+        VerticalAlignment = VerticalAlignment.Center
+    };
     private List<BimParameterItem> parameters = [];
     private List<ColorRuleRow> rows = [];
     private int colorGenerationOffset;
@@ -225,6 +231,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
 
     private UIElement CreateFooter()
     {
+        temporaryViewCheckBox.Style = TrueBimStyles.CreateCheckBoxStyle();
+        temporaryViewCheckBox.ToolTip = "Включить временные свойства вида. После выхода из режима Revit вернет исходное оформление.";
+
         Button clearButton = TrueBimUi.CreateDangerButton("Очистить раскраску", TrueBimIcon.Close, minWidth: 170);
         clearButton.Click += (_, _) => ClearFilters();
 
@@ -235,7 +244,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
 
-        return TrueBimUi.CreateFooter(null, clearButton, applyButton, closeButton);
+        return TrueBimUi.CreateFooter(temporaryViewCheckBox, clearButton, applyButton, closeButton);
     }
 
     private void ApplySharedControlStyles()
@@ -542,8 +551,16 @@ public sealed class ColorByParameterWindow : TrueBimWindow
                 return;
             }
 
-            ColorApplyResult result = service.Apply(document, activeView!, GetSelectedCategories(), parameter, rows);
-            statusText.Text = $"Вид «{activeView!.Name}». Применено: {result.AppliedFilterCount}. Создано: {result.CreatedFilterCount}. Обновлено: {result.UpdatedFilterCount}. Пропущено: {result.SkippedValueCount}.";
+            bool useTemporaryViewProperties = temporaryViewCheckBox.IsChecked == true;
+            ColorApplyResult result = service.Apply(
+                document,
+                activeView!,
+                GetSelectedCategories(),
+                parameter,
+                rows,
+                useTemporaryViewProperties);
+            string modeText = useTemporaryViewProperties ? "Временно" : "Постоянно";
+            statusText.Text = $"Вид «{activeView!.Name}». {modeText}. Применено: {result.AppliedFilterCount}. Заменено прежних: {result.ClearedFilterCount}. Создано: {result.CreatedFilterCount}. Обновлено: {result.UpdatedFilterCount}. Пропущено: {result.SkippedValueCount}.";
             TaskDialog.Show("Цвета по параметрам", result.ToDialogText());
         }
         catch (Exception exception)
@@ -708,7 +725,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         TaskDialog dialog = new("Цвета по параметрам")
         {
             MainInstruction = "Очистить раскраску TrueBIM с активного вида?",
-            MainContent = "Будут сняты только фильтры, имя которых начинается с BIM_F_. Сами элементы фильтров в проекте не удаляются.",
+            MainContent = "Будут сняты только фильтры, имя которых начинается с BIM_F_. Неиспользуемые другими видами элементы фильтров будут удалены из проекта.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };

@@ -23,7 +23,8 @@ public sealed class ViewFilterService
         View activeView,
         IReadOnlyList<BimCategoryItem> categories,
         BimParameterItem parameter,
-        IReadOnlyList<ColorRuleRow> rows)
+        IReadOnlyList<ColorRuleRow> rows,
+        bool useTemporaryViewProperties)
     {
         List<ColorRuleRow> selectedRows = rows.Where(row => row.IsSelected).ToList();
         if (selectedRows.Count == 0)
@@ -46,11 +47,38 @@ public sealed class ViewFilterService
             return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0, ["Выбранный параметр не назначен выбранным категориям. Обновите значения или выберите другие категории."]);
         }
 
+        bool temporaryViewPropertiesEnabled = activeView.IsTemporaryViewPropertiesModeEnabled();
+        if (!useTemporaryViewProperties && temporaryViewPropertiesEnabled)
+        {
+            return new ColorApplyResult(
+                0,
+                0,
+                0,
+                selectedRows.Count,
+                0,
+                ["На активном виде уже включены временные свойства. Включите флажок «На временном виде» или отключите режим временных свойств в Revit перед постоянным применением."]);
+        }
+
+        if (useTemporaryViewProperties
+            && !temporaryViewPropertiesEnabled
+            && !activeView.CanEnableTemporaryViewPropertiesMode())
+        {
+            return new ColorApplyResult(
+                0,
+                0,
+                0,
+                selectedRows.Count,
+                0,
+                ["Revit не разрешает включить временные свойства для активного вида. Снимите флажок «На временном виде» или выберите другой вид."]);
+        }
+
         FillPatternElement? solidFillPattern = FindSolidFillPattern(document);
         int created = 0;
         int updated = 0;
         int applied = 0;
         int skipped = 0;
+        int replaced = 0;
+        int deleted = 0;
         List<string> messages = [];
         int skippedCategoryCount = selectedCategoryIds.Count - categoryIds.Count;
         if (skippedCategoryCount > 0)
@@ -60,6 +88,26 @@ public sealed class ViewFilterService
 
         using Transaction transaction = new(document, "TrueBIM: цвета по параметрам");
         transaction.Start();
+
+        // When the view is still in its permanent state, orphaned filters can be removed safely.
+        // In an already active temporary mode GetFilters() does not expose the underlying permanent set.
+        if (!temporaryViewPropertiesEnabled)
+        {
+            deleted += DeleteOrphanedOwnedFilters(document);
+        }
+
+        if (useTemporaryViewProperties && !temporaryViewPropertiesEnabled)
+        {
+            activeView.EnableTemporaryViewPropertiesMode(activeView.Id);
+        }
+
+        List<ElementId> filtersToReplace = GetOwnedFilterIds(document, activeView);
+        foreach (ElementId filterId in filtersToReplace)
+        {
+            activeView.RemoveFilter(filterId);
+        }
+
+        replaced = filtersToReplace.Count;
         foreach (ColorRuleRow row in selectedRows)
         {
             if (!TryCreateRule(parameter, row.Value, out FilterRule? rule, out string? reason))
@@ -138,18 +186,30 @@ public sealed class ViewFilterService
             }
         }
 
+        if (!useTemporaryViewProperties)
+        {
+            deleted += DeleteOrphanedOwnedFilters(document);
+        }
+
         transaction.Commit();
 
-        logger.Info($"Color By Parameter applied {applied} filters. Created={created}, Updated={updated}, Skipped={skipped}.");
-        return new ColorApplyResult(created, updated, applied, skipped, 0, messages);
+        if (useTemporaryViewProperties)
+        {
+            messages.Insert(0, "Раскраска применена во временном режиме. После отключения временных свойств Revit вернет исходное оформление вида.");
+        }
+
+        if (deleted > 0)
+        {
+            messages.Add($"Удалено неиспользуемых фильтров BIM_F_ из проекта: {deleted}.");
+        }
+
+        logger.Info($"Color By Parameter applied {applied} filters. Created={created}, Updated={updated}, Replaced={replaced}, Deleted={deleted}, Skipped={skipped}, Temporary={useTemporaryViewProperties}.");
+        return new ColorApplyResult(created, updated, applied, skipped, replaced, messages);
     }
 
     public ColorApplyResult ClearOwnedFiltersFromView(Document document, View activeView)
     {
-        List<ElementId> filtersToRemove = activeView.GetFilters()
-            .Where(filterId => document.GetElement(filterId) is ParameterFilterElement filter
-                && filterNameBuilder.IsOwnedFilterName(filter.Name))
-            .ToList();
+        List<ElementId> filtersToRemove = GetOwnedFilterIds(document, activeView);
 
         if (filtersToRemove.Count == 0)
         {
@@ -163,10 +223,67 @@ public sealed class ViewFilterService
             activeView.RemoveFilter(filterId);
         }
 
+        int deleted = 0;
+        List<string> messages = [];
+        if (activeView.IsTemporaryViewPropertiesModeEnabled())
+        {
+            messages.Add("Фильтры сняты только с временного оформления. Постоянные свойства вида не изменены.");
+        }
+        else
+        {
+            deleted = DeleteOrphanedOwnedFilters(document);
+            if (deleted > 0)
+            {
+                messages.Add($"Удалено неиспользуемых фильтров BIM_F_ из проекта: {deleted}.");
+            }
+        }
+
         transaction.Commit();
 
-        logger.Info($"Color By Parameter removed {filtersToRemove.Count} filters from active view.");
-        return new ColorApplyResult(0, 0, 0, 0, filtersToRemove.Count, []);
+        logger.Info($"Color By Parameter removed {filtersToRemove.Count} filters from active view and deleted {deleted} orphaned filters.");
+        return new ColorApplyResult(0, 0, 0, 0, filtersToRemove.Count, messages);
+    }
+
+    private List<ElementId> GetOwnedFilterIds(Document document, View view)
+    {
+        return view.GetFilters()
+            .Where(filterId => document.GetElement(filterId) is ParameterFilterElement filter
+                && filterNameBuilder.IsOwnedFilterName(filter.Name))
+            .ToList();
+    }
+
+    private int DeleteOrphanedOwnedFilters(Document document)
+    {
+        HashSet<long> referencedFilterIds = [];
+        foreach (View view in new FilteredElementCollector(document).OfClass(typeof(View)).Cast<View>())
+        {
+            try
+            {
+                foreach (ElementId filterId in view.GetFilters())
+                {
+                    referencedFilterIds.Add(RevitElementIds.GetValue(filterId));
+                }
+            }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+            {
+                // Some view types do not support visibility/graphics filters.
+            }
+        }
+
+        List<ElementId> orphanedFilterIds = new FilteredElementCollector(document)
+            .OfClass(typeof(ParameterFilterElement))
+            .Cast<ParameterFilterElement>()
+            .Where(filter => filterNameBuilder.IsOwnedFilterName(filter.Name)
+                && !referencedFilterIds.Contains(RevitElementIds.GetValue(filter.Id)))
+            .Select(filter => filter.Id)
+            .ToList();
+
+        foreach (ElementId filterId in orphanedFilterIds)
+        {
+            document.Delete(filterId);
+        }
+
+        return orphanedFilterIds.Count;
     }
 
     private static List<ElementId> GetApplicableCategoryIds(
