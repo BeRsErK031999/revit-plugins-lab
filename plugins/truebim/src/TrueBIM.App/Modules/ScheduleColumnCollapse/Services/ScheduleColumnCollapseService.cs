@@ -36,11 +36,20 @@ public sealed class ScheduleColumnCollapseService
         {
             ScheduleDefinition definition = targetSchedule.Definition;
             IReadOnlyList<ScheduleFieldId> fieldIds = definition.GetFieldOrder().ToList();
+
+            // Hidden schedule fields are not represented by columns in the body table. Reveal every
+            // field that Revit allows us to reveal before reading the cells so the result does not
+            // depend on the visibility state in which the user left the schedule.
+            foreach (ScheduleFieldId fieldId in fieldIds)
+            {
+                TrySetHidden(definition.GetField(fieldId), isHidden: false);
+            }
+
+            document.Regenerate();
+
             IReadOnlyList<ScheduleFieldId> visibleFieldIds = fieldIds
                 .Where(fieldId => !definition.GetField(fieldId).IsHidden)
                 .ToList();
-
-            document.Regenerate();
 
             IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(targetSchedule, visibleFieldIds);
             IReadOnlyList<ScheduleColumnVisibilityDecision> decisions = analyzer.Analyze(snapshots.Select(snapshot => snapshot.Column));
@@ -299,16 +308,20 @@ public sealed class ScheduleColumnCollapseService
         int firstRow = body.FirstRowNumber;
         int lastRow = body.LastRowNumber;
 
+        int tableColumnCount = lastColumn >= firstColumn
+            ? lastColumn - firstColumn + 1
+            : 0;
+        if (tableColumnCount != fieldIds.Count)
+        {
+            throw new InvalidOperationException(
+                $"Не удалось сопоставить поля спецификации с колонками таблицы: полей {fieldIds.Count}, колонок {tableColumnCount}.");
+        }
+
         List<FieldSnapshot> snapshots = new();
         ScheduleDefinition definition = schedule.Definition;
         for (int index = 0; index < fieldIds.Count; index++)
         {
             int columnNumber = firstColumn + index;
-            if (columnNumber > lastColumn)
-            {
-                break;
-            }
-
             ScheduleField field = definition.GetField(fieldIds[index]);
             List<string> cellTexts = new();
             for (int rowNumber = firstRow; rowNumber <= lastRow; rowNumber++)

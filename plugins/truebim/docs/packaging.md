@@ -123,4 +123,4 @@ Runtime smoke-tests are not automated by this script. Pass `-SmokeTestedYears 20
 
 ## Local Development Deploy
 
-The `deploy-local-2022.ps1`, `deploy-local-2025.ps1`, and `deploy-local-2026.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the release installer. The Revit 2026 helper accepts `-RevitApiRoot` when the API reference assemblies are outside the default Revit installation directory.
+The `deploy-local-2022.ps1`, `deploy-local-2023.ps1`, `deploy-local-2025.ps1`, and `deploy-local-2026.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the release installer. The Revit 2026 helper accepts `-RevitApiRoot` when the API reference assemblies are outside the default Revit installation directory.

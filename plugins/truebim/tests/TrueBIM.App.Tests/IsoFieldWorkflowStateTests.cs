@@ -29,14 +29,34 @@ public sealed class IsoFieldWorkflowStateTests
     [Fact]
     public void ValidRules_EnableControlledCreation()
     {
-        IsoFieldWorkflowState state = new(true, true, true, true, true, true, true);
+        IsoFieldWorkflowState state = new(
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            HasComparedWithModel: true);
 
-        Assert.Equal(5, state.CompletedStepCount);
+        Assert.Equal(IsoFieldWorkflowState.RequiredStepCount, state.CompletedStepCount);
         Assert.True(state.CanRunRecognition);
         Assert.True(state.CanShowRevitPreview);
         Assert.True(state.CanClearRevitPreview);
         Assert.True(state.CanCalculateRules);
+        Assert.True(state.CanCompareWithModel);
         Assert.True(state.CanCreateRebar);
+    }
+
+    [Fact]
+    public void CalculatedRules_RequireExplicitModelComparison()
+    {
+        IsoFieldWorkflowState state = new(true, true, true, true, false, true, true);
+
+        Assert.Equal(5, state.CompletedStepCount);
+        Assert.True(state.CanCompareWithModel);
+        Assert.False(state.CanCreateRebar);
+        Assert.Contains("Сравнить с моделью", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

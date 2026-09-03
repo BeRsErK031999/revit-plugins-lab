@@ -19,7 +19,7 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 ## Initial modules
 
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
-- `schedule-column-collapse` - copies a schedule and hides zero-only numeric columns (`Свернуть ВРС`).
+- `schedule-column-collapse` - normalizes a schedule by showing non-zero columns and hiding zero-only numeric columns (`Свернуть ВРС`).
 - `print` - sheet batch print/export module (`Печать`) for PDF, DWG, and DXF export with filename templates, CAD export setups, multi-document sheet sources, saved settings, and Revit 2022/2025 preflight coverage.
 
 ## Core ribbon commands

@@ -8,6 +8,24 @@ namespace TrueBIM.App.Tests;
 
 public sealed class IsoFieldSourceSetServiceTests
 {
+    [Theory]
+    [InlineData("Плита_as1x1_результат.PNG", IsoFieldLayerRole.As1X)]
+    [InlineData("расчёт-AS2X-финал.png", IsoFieldLayerRole.As2X)]
+    [InlineData("prefix_As3Y1_suffix.jpeg", IsoFieldLayerRole.As3Y)]
+    [InlineData("AS4Y карта.tiff", IsoFieldLayerRole.As4Y)]
+    public void DetectRole_AcceptsMarkerAnywhereAndIgnoresCase(
+        string fileName,
+        IsoFieldLayerRole expectedRole)
+    {
+        Assert.Equal(expectedRole, IsoFieldSourceSetService.DetectRole(fileName));
+    }
+
+    [Fact]
+    public void DetectRole_RejectsAmbiguousFileName()
+    {
+        Assert.Null(IsoFieldSourceSetService.DetectRole("Плита_As1X_As2X.png"));
+    }
+
     [Fact]
     public void Build_DetectsFourRequiredRolesAndImageSize()
     {
@@ -24,6 +42,38 @@ public sealed class IsoFieldSourceSetServiceTests
             Assert.Equal(IsoFieldLayerRole.As1X, sourceSet.Files[0].Role);
             Assert.Equal(32, sourceSet.Files[0].PixelWidth);
             Assert.Equal(18, sourceSet.Files[0].PixelHeight);
+            Assert.Equal(IsoFieldRebarFace.Bottom, sourceSet.GetLayerMapping(IsoFieldLayerRole.As1X).Face);
+            Assert.Equal(IsoFieldRebarFace.Top, sourceSet.GetLayerMapping(IsoFieldLayerRole.As2X).Face);
+            Assert.Equal(IsoFieldRebarFace.Bottom, sourceSet.GetLayerMapping(IsoFieldLayerRole.As3Y).Face);
+            Assert.Equal(IsoFieldRebarFace.Top, sourceSet.GetLayerMapping(IsoFieldLayerRole.As4Y).Face);
+            Assert.True(sourceSet.HasConfirmedLayerMappings);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Build_ExplainsExpectedNamesForUnidentifiedFiles()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string[] paths =
+            [
+                CreatePng(directory, "first.png", 32, 18),
+                CreatePng(directory, "second.png", 32, 18),
+                CreatePng(directory, "third.png", 32, 18),
+                CreatePng(directory, "fourth.png", 32, 18)
+            ];
+
+            IsoFieldSourceSet sourceSet = new IsoFieldSourceSetService().Build(paths);
+
+            Assert.False(sourceSet.IsComplete);
+            Assert.Contains(
+                sourceSet.ValidationMessages,
+                message => message.Contains("As1X, As2X, As3Y и As4Y", StringComparison.Ordinal));
         }
         finally
         {

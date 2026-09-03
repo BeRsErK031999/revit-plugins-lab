@@ -1,6 +1,6 @@
 # IsoField Rebar manual QA
 
-Use this checklist for Revit 2022 and Revit 2025 smoke testing after local deploy
+Use this checklist for Revit 2023 and Revit 2025 smoke testing after local deploy
 or installer validation. The scenarios are intentionally lightweight: they verify
 the current MVP behavior without requiring a production recognition worker.
 
@@ -15,13 +15,15 @@ the current MVP behavior without requiring a production recognition worker.
     (the reference maps may require 10, 12, 14, 16 and 20 mm).
 - Keep `%APPDATA%\TrueBIM\Logs\truebim.log` open or easy to inspect.
 - Test JSON fixtures are available under `docs/IsoFieldRebar/examples/`.
+- The project contains `(Массив • У) Арматура • 000` with compatible types.
 
-## Revit 2022 Smoke
+## Revit 2023 Smoke
 
-1. Start Revit 2022 and open the test model.
-2. Open `TrueBIM -> BIM -> Армирование по изополям`.
-3. Choose the four reference PK LIRA maps `As1X/As2X/As3Y/As4Y`, assign exactly
-   one bottom and one top layer for X and Y, then click `Загрузить зоны`.
+1. Start Revit 2023 and open the test model.
+2. Open `TrueBIM -> КР -> Армирование по изополям`.
+3. Choose the four reference PK LIRA maps `As1X/As2X/As3Y/As4Y`. Verify the
+   initial mapping is As1/As3 bottom and As2/As4 top, then click
+   `Найти зоны на 4 картах`.
 4. Verify the WPF preview shows multiple contours, four numerical legends and
    the footer says the images were processed without changing the Revit model.
 5. Click `Показать в Revit` on an active 2D view.
@@ -40,21 +42,25 @@ the current MVP behavior without requiring a production recognition worker.
 11. Verify every valid zone shows required and accepted `см²/м`, the selected
     `d...s...` combination, X/Y, top/bottom and estimated bar count. Thin lines
     must be visible inside the clipped overlay and no model elements are created.
-12. Click `Применить изменения`, verify the confirmation states the mode, total
-    number of individual bars and `add/update/delete/unchanged` diff, then confirm.
-    Every created bar must remain inside the slab/zone and carry a
+12. Verify the right-hand readiness card says that model comparison is required
+    and its primary button is `Сравнить с моделью`. Run it and check the table.
+13. Click `Применить изменения`, verify the confirmation states the mode, total
+    number of calculated bars and `add/update/delete/unchanged` family-instance
+    diff, then confirm. The number of added family instances should normally be
+    lower than the calculated bar count. Every created instance must remain
+    inside the slab/zone and carry a
     `TrueBIM IsoFieldRebar` comment. One Undo must remove the entire transaction.
-13. Recalculate and apply the same layout. Expected: every bar is `без изменений`,
+14. Recalculate, compare and apply the same layout. Expected: every family is `без изменений`,
     no transaction starts and no duplicate is created.
-14. Repeat the four-map source, preview, host, binding, rule, diff and creation
+15. Repeat the four-map source, preview, host, binding, rule, diff and creation
     steps with a straight basic wall. Assign each X/Y pair to one interior and
     one exterior layer; `sample-wall-zones.json` remains parser/preview-only.
-15. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
+16. Inspect `%APPDATA%\TrueBIM\Logs\truebim.log` for source selection,
     preview, rule preview, and write-flow entries.
 
 ## Revit 2025 Smoke
 
-Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
+Repeat the Revit 2023 smoke in Revit 2025 with the same fixtures. Confirm:
 
 - the ribbon button opens the same window;
 - preview creation and cleanup work on a 2D view;
@@ -62,6 +68,26 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - engineering slab and straight-wall creation are guarded by explicit confirmation
   and report their bar counts;
 - logs contain the same workflow milestones.
+
+## Automated Revit 2025 Family Contract
+
+1. Run `plugins/truebim/scripts/test-revit-2025.ps1` with Revit closed. The
+   script builds a small local harness, starts an isolated Revit process in
+   read-only Viewer Mode and does not require Autodesk sign-in.
+2. On the first run, Revit can show an unsigned-add-in warning for
+   `TrueBIM Family Contract Harness`. Check that its assembly path is inside this
+   repository, then choose `Load Once`. The temporary manifest is removed when
+   the script exits.
+3. Close the Viewer Mode information dialog if Revit displays it. The harness
+   then opens every supplied family, never saves it, and writes
+   `plugins/truebim/test-results/revit-2025/isofield-family-contract.json`.
+4. Verify the report has `Succeeded: true`, contains every supplied `.rfa`, and
+   confirms that family `000`
+   exposes instance parameters `A` and `Зона • Ширина` plus type parameters for
+   diameter and spacing.
+5. The optional `test-revit-adapter-2025.ps1` route runs the same contract as an
+   NUnit test through `ricaun.RevitTest.TestAdapter`, but it requires an Autodesk
+   user already signed in to Revit 2025.
 
 ## Cancel And Guard Flows
 
@@ -118,6 +144,15 @@ Repeat the Revit 2022 smoke in Revit 2025 with the same fixtures. Confirm:
 - In `Полное сочетание внутри зон`, expected: all components are included and
   parallel components use a phase offset instead of coincident bars. No base
   mesh is created outside recognized zones.
+- Use a zone whose calculated scan lines have different lengths or a missing
+  intermediate line. Expected after model comparison: one generalized family
+  instance per zone and reinforcement component, with `A` equal to the longest
+  zone span and `Зона • Ширина` equal to the full transverse line envelope.
+- Use included fragments that have no bars after boundary offset and minimum
+  length are applied. Expected: the right readiness card explains the cause and
+  offers `Исключить без стержней (N)`. Clicking it excludes only those fragments
+  from the calculation, does not change Revit, and unlocks recalculation or
+  comparison when no other errors remain.
 - Change cover, boundary offset or minimum length after preview. Expected: the
   preview is reset immediately and must be recalculated.
 - Use a zone crossing an opening. Expected: each scan line splits at the opening;
@@ -295,8 +330,10 @@ must override the built-in runner.
   grammar, or skipped catalog level falls back without accepting partial labels.
 - Header detection is intentionally limited to the current PK LIRA marker style.
   A nonstandard font or scaled header falls back to file-name/manual assignment.
-- P4.1 creates individual engineering bars, not grouped `Rebar Set` or
-  `Area Reinforcement` elements. Neighboring zones are not merged.
+- P4.1 creates array-family instances rather than native `Rebar Set` or
+  `Area Reinforcement` elements. Each zone and reinforcement component becomes
+  one generalized rectangular family instance; neighboring zones are not
+  merged automatically.
 - Wall placement supports engineering layouts on straight basic walls, including
   clipped exterior-plane openings, but not curved, stacked or curtain walls.
 - Slab placement consumes clipped top-face regions and holes. Full-combination

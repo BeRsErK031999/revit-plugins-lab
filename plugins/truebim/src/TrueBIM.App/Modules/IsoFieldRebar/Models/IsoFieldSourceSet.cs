@@ -12,6 +12,9 @@ public sealed record IsoFieldSourceSet(
         IsoFieldLayerRole.As4Y
     ];
 
+    public const string ExpectedFileNameHint =
+        "В именах четырёх файлов должны встречаться метки As1X, As2X, As3Y и As4Y (например, result_As1X1.png).";
+
     public IReadOnlyList<IsoFieldLayerRole> MissingRoles => RequiredRoles
         .Where(role => Files.All(file => file.Role != role))
         .ToArray();
@@ -64,6 +67,17 @@ public sealed record IsoFieldSourceSet(
                     + $"а заголовок — «{FormatRole(file.RoleDetection.HeaderRole!.Value)}»; выберите правильное назначение вручную.")
                 .ToArray();
             messages.AddRange(roleConflicts);
+            string[] unidentifiedFiles = Files
+                .Where(file => !file.Role.HasValue
+                    && file.RoleDetection?.Kind != IsoFieldRoleDetectionKind.Conflict)
+                .Select(file => file.FileName)
+                .ToArray();
+            if (unidentifiedFiles.Length > 0)
+            {
+                messages.Add(
+                    $"Не удалось определить назначение: {string.Join(", ", unidentifiedFiles)}. "
+                    + ExpectedFileNameHint);
+            }
             string[] missingSizeFiles = Files
                 .Where(file => !file.HasValidImageSize && string.IsNullOrWhiteSpace(file.ValidationError))
                 .Select(file => file.FileName)

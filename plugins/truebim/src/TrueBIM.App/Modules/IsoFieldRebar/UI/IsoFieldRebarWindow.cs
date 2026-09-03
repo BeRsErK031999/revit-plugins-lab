@@ -87,11 +87,15 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly Button resetZoneRulesButton;
     private readonly Button saveSourceSetManifestButton;
     private readonly TextBlock workflowSummaryText;
+    private readonly TextBlock workflowStageText;
+    private readonly TextBlock workflowActionText;
+    private readonly Button workflowActionButton;
     private readonly TextBlock sourceStepText;
     private readonly TextBlock mappingStepText;
     private readonly TextBlock zonesStepText;
     private readonly TextBlock hostStepText;
     private readonly TextBlock rulesStepText;
+    private readonly TextBlock comparisonStepText;
     private readonly TextBlock layerMappingStatusText;
     private readonly TextBlock manifestStatusText;
     private readonly StackPanel sourceSetRows = new();
@@ -167,6 +171,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private int applicationRevision;
     private int lastReportApplicationRevision = -1;
     private bool isApplyConfirmed;
+    private WorkflowPrimaryAction workflowPrimaryAction;
     private IReadOnlyList<ElementId> activeRevitPreviewIds = Array.Empty<ElementId>();
     private const double PreviewCanvasWidth = 430;
     private const double PreviewCanvasHeight = 180;
@@ -271,6 +276,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             IsChecked = true,
             Style = TrueBimStyles.CreateCheckBoxStyle(),
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, TrueBimTheme.Spacing8),
             ToolTip = "Включите, если вертикальное направление на карте противоположно направлению на стене или плите. После изменения проверьте привязку заново."
         };
         pickSlabPoint1Button = CreateActionButton(
@@ -505,12 +511,31 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             168,
             "Сначала выберите и проверьте четыре карты изополей.",
             (_, _) => SaveSourceSetManifest());
-        workflowSummaryText = CreateMutedText("Готово 0 из 5 обязательных шагов.");
+        workflowSummaryText = CreateMutedText(
+            $"Выполнено 0 из {IsoFieldWorkflowState.RequiredStepCount} обязательных проверок.");
+        workflowStageText = new TextBlock
+        {
+            Text = "Этап 1 из 4 · Карты изополей",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            TextWrapping = TextWrapping.Wrap
+        };
+        workflowActionText = CreateMutedText("Выберите комплект из четырёх карт.");
+        workflowActionButton = CreateActionButton(
+            "Выбрать карты",
+            TrueBimIcon.Open,
+            0,
+            "Выберите четыре карты изополей.",
+            (_, _) => RunWorkflowPrimaryAction(),
+            TrueBimButtonStyleKind.Primary);
+        workflowActionButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        workflowActionButton.HorizontalContentAlignment = HorizontalAlignment.Center;
         sourceStepText = CreateWorkflowStepText("Источник выбран");
         mappingStepText = CreateWorkflowStepText("Грани назначены");
         zonesStepText = CreateWorkflowStepText("Зоны загружены");
         hostStepText = CreateWorkflowStepText("Конструкция выбрана и привязана");
         rulesStepText = CreateWorkflowStepText("Раскладка проверена");
+        comparisonStepText = CreateWorkflowStepText("Сравнение с моделью выполнено");
         layerMappingStatusText = CreateMutedText("Назначение верх/низ появится после выбора комплекта изображений.");
         manifestStatusText = CreateMutedText("Комплект ещё не сохранён.");
         footerStatusText = CreateMutedText("Арматура изменится только после отдельного сравнения и подтверждения.");
@@ -672,7 +697,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         StackPanel content = CreatePanelContent("1. Загрузите карты изополей");
         content.Children.Add(TrueBimUi.CreateInfoBanner(
-            "Для расчёта арматуры выберите сразу четыре карты: две для направления X и две для направления Y. Готовый файл с зонами подходит только для просмотра и проверки работы.",
+            "Для расчёта выберите сразу четыре карты. В именах файлов должны встречаться метки As1X, As2X, As3Y и As4Y; остальная часть имени и регистр не важны. Пример: «Плита_As1X1.png». По стандартной схеме модуль сразу назначит As1/As3 на низ, As2/As4 на верх — этот вариант можно изменить в таблице.",
             TrueBimUiSeverity.Neutral));
 
         WrapPanel buttonRow = new();
@@ -686,12 +711,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             HorizontalAlignment = HorizontalAlignment.Left,
             ToolTip = "Выберите сразу четыре карты изополей, ранее сохранённый комплект или готовый файл с контурами зон."
         };
-        chooseButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
+        chooseButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         chooseButton.Click += (_, _) => ChooseSourceFile();
         buttonRow.Children.Add(chooseButton);
-        recognizeButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        recognizeButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         buttonRow.Children.Add(recognizeButton);
-        saveSourceSetManifestButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        saveSourceSetManifestButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         buttonRow.Children.Add(saveSourceSetManifestButton);
         content.Children.Add(buttonRow);
 
@@ -724,7 +749,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     },
                     new TextBlock
                     {
-                        Text = "После назначения граней нажмите кнопку ниже. Искать эту команду в начале списка не нужно.",
+                        Text = "Проверьте автоматически назначенные грани, при необходимости измените их и нажмите кнопку ниже. Искать эту команду в начале списка не нужно.",
                         TextWrapping = TextWrapping.Wrap,
                         Foreground = TrueBimBrushes.TextSecondary,
                         Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing8)
@@ -778,7 +803,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         buttonRow.Children.Add(selectHostButton);
 
-        clearHostButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        clearHostButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         buttonRow.Children.Add(clearHostButton);
 
         content.Children.Add(buttonRow);
@@ -872,7 +897,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         WrapPanel actions = new();
         actions.Children.Add(slabMirrorImageYInput);
-        applySlabBindingButton.Margin = new Thickness(TrueBimTheme.Spacing16, 0, 0, 0);
+        applySlabBindingButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         actions.Children.Add(applySlabBindingButton);
         content.Children.Add(actions);
 
@@ -881,7 +906,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
         profileActions.Children.Add(loadSlabBindingProfileButton);
-        saveSlabBindingProfileButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        saveSlabBindingProfileButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         profileActions.Children.Add(saveSlabBindingProfileButton);
         content.Children.Add(profileActions);
 
@@ -904,7 +929,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
         previewActions.Children.Add(showRevitPreviewButton);
-        clearRevitPreviewButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        clearRevitPreviewButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         previewActions.Children.Add(clearRevitPreviewButton);
         content.Children.Add(previewActions);
         return new Expander
@@ -949,7 +974,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Foreground = TrueBimBrushes.TextMuted
         });
         row.Children.Add(yInput);
-        pickButton.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0);
+        pickButton.Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, TrueBimTheme.Spacing8);
         row.Children.Add(pickButton);
         return row;
     }
@@ -1019,10 +1044,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         WrapPanel reviewActions = new();
 
-        compareChangesButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
+        compareChangesButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         reviewActions.Children.Add(compareChangesButton);
 
-        exportReportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
+        exportReportButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         reviewActions.Children.Add(exportReportButton);
         finalActions.Children.Add(reviewActions);
 
@@ -1073,9 +1098,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
         actions.Children.Add(saveCompletionReportButton);
-        openLastReportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        openLastReportButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         actions.Children.Add(openLastReportButton);
-        openLogButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        openLogButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         actions.Children.Add(openLogButton);
         content.Children.Add(actions);
 
@@ -1130,13 +1155,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
         zoneActions.Children.Add(editZoneRuleButton);
-        mergeZonesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        mergeZonesButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         zoneActions.Children.Add(mergeZonesButton);
-        unmergeZonesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        unmergeZonesButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         zoneActions.Children.Add(unmergeZonesButton);
-        excludeEmptyZonesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        excludeEmptyZonesButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8);
         zoneActions.Children.Add(excludeEmptyZonesButton);
-        resetZoneRulesButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        resetZoneRulesButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         zoneActions.Children.Add(resetZoneRulesButton);
         content.Children.Add(zoneActions);
         content.Children.Add(rebarReviewGrid);
@@ -1529,7 +1554,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private RebarRulePreviewItem[] GetZonesWithoutBars()
     {
-        return calculatedRulePreview?.Items
+        return currentRulePreview?.Items
             .Where(item => item.IsIncluded
                 && item.Diagnostics.Any(diagnostic => diagnostic.IndexOf(
                     "не осталось стержней",
@@ -1808,7 +1833,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         StackPanel field = new()
         {
             Width = 174,
-            Margin = new Thickness(0, 0, TrueBimTheme.Spacing12, 0),
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing12, TrueBimTheme.Spacing8),
             ToolTip = toolTip
         };
         field.Children.Add(new TextBlock
@@ -1826,19 +1851,283 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     {
         StackPanel content = CreatePanelContent("Готовность");
 
+        StackPanel nextActionContent = new();
+        nextActionContent.Children.Add(workflowStageText);
+        workflowActionText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing8);
+        nextActionContent.Children.Add(workflowActionText);
+        nextActionContent.Children.Add(workflowActionButton);
+        Border nextActionPanel = TrueBimUi.CreateInfoBanner(
+            nextActionContent,
+            TrueBimUiSeverity.Info);
+        nextActionPanel.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
+        content.Children.Add(nextActionPanel);
+
         workflowSummaryText.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
-        content.Children.Add(TrueBimUi.CreateInfoBanner(workflowSummaryText));
+        content.Children.Add(workflowSummaryText);
         content.Children.Add(sourceStepText);
         content.Children.Add(mappingStepText);
         content.Children.Add(zonesStepText);
         content.Children.Add(hostStepText);
         content.Children.Add(rulesStepText);
+        content.Children.Add(comparisonStepText);
 
-        TextBlock note = CreateMutedText("Применение станет доступно после выполнения всех шагов. Перед подтверждением модуль сравнит расчёт с ранее созданной им арматурой на выбранной конструкции. Арматуру, созданную вручную, модуль не изменяет.");
+        TextBlock note = CreateMutedText("Кнопка выше всегда показывает следующее обязательное действие. Применение станет доступно только после отдельного сравнения с моделью. Арматуру, созданную вручную, модуль не изменяет.");
         note.Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, 0);
         content.Children.Add(note);
 
         return CreatePanel(content);
+    }
+
+    private void RunWorkflowPrimaryAction()
+    {
+        switch (workflowPrimaryAction)
+        {
+            case WorkflowPrimaryAction.ChooseSource:
+                ChooseSourceFile();
+                break;
+            case WorkflowPrimaryAction.ShowSourceMappings:
+                sourceSetRows.BringIntoView();
+                footerStatusText.Text = "Проверьте назначения в таблице карт и при необходимости измените значения в столбцах «Карта» и «Грань».";
+                break;
+            case WorkflowPrimaryAction.RunRecognition:
+                RunRecognition();
+                break;
+            case WorkflowPrimaryAction.SelectHost:
+                SelectHostElement();
+                break;
+            case WorkflowPrimaryAction.ShowBinding:
+                slabBindingExpander.IsExpanded = true;
+                slabBindingExpander.BringIntoView();
+                footerStatusText.Text = "Укажите три точки на карте и те же три точки на конструкции, затем нажмите «Проверить привязку».";
+                break;
+            case WorkflowPrimaryAction.LoadBinding:
+                LoadSlabBindingProfile();
+                break;
+            case WorkflowPrimaryAction.CalculateRules:
+                PreviewRebarRulesSafely();
+                break;
+            case WorkflowPrimaryAction.ExcludeEmptyZones:
+                ExcludeZonesWithoutBars();
+                break;
+            case WorkflowPrimaryAction.CompareWithModel:
+                CompareEngineeringChanges();
+                break;
+            case WorkflowPrimaryAction.ApplyChanges:
+                CreateTestRebar();
+                break;
+            case WorkflowPrimaryAction.SaveCompletionReport:
+                SaveCompletionReport();
+                break;
+        }
+    }
+
+    private void UpdateWorkflowGuidance(
+        IsoFieldWorkflowState state,
+        bool hasCompletedCurrentWorkflow,
+        bool completionReportIsCurrent,
+        int qualityBlockingCount,
+        int qualityWarningCount)
+    {
+        string stage;
+        string action;
+        string buttonText;
+        TrueBimIcon buttonIcon;
+        WorkflowPrimaryAction primaryAction;
+        bool isEnabled;
+        int emptyZoneCount = GetZonesWithoutBars().Length;
+
+        if (hasCompletedCurrentWorkflow)
+        {
+            stage = "Готово · Изменения применены";
+            if (completionReportIsCurrent)
+            {
+                action = "Итоговый отчёт сохранён. Можно закрыть окно или выбрать новый комплект карт.";
+                buttonText = "Работа завершена";
+                buttonIcon = TrueBimIcon.Apply;
+                primaryAction = WorkflowPrimaryAction.None;
+                isEnabled = false;
+            }
+            else
+            {
+                action = "Последний обязательный результат — сохраните итоговый JSON/CSV-отчёт.";
+                buttonText = "Сохранить итоговый отчёт";
+                buttonIcon = TrueBimIcon.Export;
+                primaryAction = WorkflowPrimaryAction.SaveCompletionReport;
+                isEnabled = saveCompletionReportButton.IsEnabled;
+            }
+        }
+        else if (selectedSourceSet is { IsComplete: false } incompleteSourceSet)
+        {
+            stage = "Этап 1 из 4 · Карты изополей";
+            action = FormatSourceSetIssues(incompleteSourceSet);
+            bool canRepairInTable = incompleteSourceSet.Files.Count == IsoFieldSourceSet.RequiredRoles.Count
+                && incompleteSourceSet.Files.All(file => file.HasValidImageSize)
+                && incompleteSourceSet.HasConsistentImageSize;
+            buttonText = canRepairInTable ? "Показать таблицу карт" : "Выбрать карты заново";
+            buttonIcon = canRepairInTable ? TrueBimIcon.Settings : TrueBimIcon.Open;
+            primaryAction = canRepairInTable
+                ? WorkflowPrimaryAction.ShowSourceMappings
+                : WorkflowPrimaryAction.ChooseSource;
+            isEnabled = true;
+        }
+        else if (!state.HasSource)
+        {
+            stage = "Этап 1 из 4 · Карты изополей";
+            action = "Выберите сразу четыре карты с метками As1X, As2X, As3Y и As4Y в именах.";
+            buttonText = "Выбрать 4 карты";
+            buttonIcon = TrueBimIcon.Open;
+            primaryAction = WorkflowPrimaryAction.ChooseSource;
+            isEnabled = true;
+        }
+        else if (!state.HasConfirmedLayerMappings)
+        {
+            stage = "Этап 1 из 4 · Проверьте стороны";
+            action = "Исправьте столбец «Грань» в таблице слева: для X и Y нужна одна нижняя и одна верхняя карта.";
+            buttonText = "Показать таблицу карт";
+            buttonIcon = TrueBimIcon.Settings;
+            primaryAction = WorkflowPrimaryAction.ShowSourceMappings;
+            isEnabled = true;
+        }
+        else if (!state.HasZones)
+        {
+            stage = "Этап 1 из 4 · Поиск зон";
+            action = "Комплект и стороны готовы. Запустите распознавание четырёх карт; модель Revit не изменится.";
+            buttonText = "Найти зоны на 4 картах";
+            buttonIcon = TrueBimIcon.Preview;
+            primaryAction = WorkflowPrimaryAction.RunRecognition;
+            isEnabled = state.CanRunRecognition;
+        }
+        else if (!state.HasHost || !state.HasSupportedHostGeometry)
+        {
+            stage = "Этап 3 из 4 · Конструкция";
+            action = state.HasHost
+                ? "Выбранная конструкция не поддерживается. Укажите прямую обычную стену или горизонтальную плиту."
+                : "Зоны готовы. Теперь укажите прямую стену или горизонтальную плиту в модели.";
+            buttonText = state.HasHost ? "Выбрать другую конструкцию" : "Выбрать стену/плиту";
+            buttonIcon = TrueBimIcon.Apply;
+            primaryAction = WorkflowPrimaryAction.SelectHost;
+            isEnabled = uiDocument is not null;
+        }
+        else if (!state.HasValidHostBinding)
+        {
+            stage = "Этап 3 из 4 · Совмещение";
+            if (availableSlabBindingProfile is not null)
+            {
+                action = "Для этой конструкции найдена сохранённая привязка. Восстановите её и проверьте наложение зон.";
+                buttonText = "Восстановить привязку";
+                buttonIcon = TrueBimIcon.Import;
+                primaryAction = WorkflowPrimaryAction.LoadBinding;
+                isEnabled = loadSlabBindingProfileButton.IsEnabled;
+            }
+            else
+            {
+                action = "Укажите три одинаковые точки на карте и конструкции, затем нажмите «Проверить привязку».";
+                buttonText = "Открыть привязку по 3 точкам";
+                buttonIcon = TrueBimIcon.Settings;
+                primaryAction = WorkflowPrimaryAction.ShowBinding;
+                isEnabled = true;
+            }
+        }
+        else if (emptyZoneCount > 0)
+        {
+            stage = "Этап 4 из 4 · Пустые фрагменты зон";
+            action = $"После отступа и проверки минимальной длины в {emptyZoneCount} фрагментах не осталось стержней. "
+                + $"Нажмите «Исключить без стержней ({emptyZoneCount})»: команда исключит их только из расчёта и не изменит модель Revit. "
+                + "Вместо исключения можно объединить фрагменты либо уменьшить отступ или минимальную длину и пересчитать.";
+            buttonText = $"Исключить без стержней ({emptyZoneCount})";
+            buttonIcon = TrueBimIcon.Close;
+            primaryAction = WorkflowPrimaryAction.ExcludeEmptyZones;
+            isEnabled = true;
+        }
+        else if (qualityBlockingCount > 0)
+        {
+            stage = "Этап 4 из 4 · Исправьте ошибки";
+            action = $"Проверка нашла ошибок: {qualityBlockingCount}. Исправьте зоны или параметры и пересчитайте раскладку.";
+            buttonText = "Пересчитать раскладку";
+            buttonIcon = TrueBimIcon.Refresh;
+            primaryAction = WorkflowPrimaryAction.CalculateRules;
+            isEnabled = state.CanCalculateRules;
+        }
+        else if (!state.HasValidRules)
+        {
+            stage = "Этап 4 из 4 · Расчёт";
+            action = "Нажмите «Рассчитать раскладку», затем проверьте количество и сообщения контроля качества.";
+            buttonText = "Рассчитать раскладку";
+            buttonIcon = TrueBimIcon.Preview;
+            primaryAction = WorkflowPrimaryAction.CalculateRules;
+            isEnabled = state.CanCalculateRules;
+        }
+        else if (!state.HasComparedWithModel)
+        {
+            stage = "Этап 4 из 4 · Обязательное сравнение";
+            action = !string.IsNullOrWhiteSpace(familyPreflightError)
+                ? familyPreflightError! + " После загрузки или исправления семейства повторите сравнение."
+                : "Раскладка рассчитана. Нажмите «Сравнить с моделью»: команда только читает модель и покажет, какие экземпляры массивов изменятся.";
+            buttonText = string.IsNullOrWhiteSpace(familyPreflightError)
+                ? "Сравнить с моделью"
+                : "Повторить сравнение";
+            buttonIcon = TrueBimIcon.Refresh;
+            primaryAction = WorkflowPrimaryAction.CompareWithModel;
+            isEnabled = state.CanCompareWithModel;
+        }
+        else if (qualityWarningCount > 0 && !areQualityWarningsAccepted)
+        {
+            stage = "Этап 4 из 4 · Решение по предупреждениям";
+            action = $"Проверьте предупреждения ({qualityWarningCount}) слева и установите флажок подтверждения. После этого станет доступно применение.";
+            buttonText = "Подтвердите предупреждения слева";
+            buttonIcon = TrueBimIcon.Settings;
+            primaryAction = WorkflowPrimaryAction.None;
+            isEnabled = false;
+        }
+        else if (currentChangePlan?.CanApply == true && currentChangePlan.HasChanges)
+        {
+            stage = "Этап 4 из 4 · Применение";
+            int plannedFamilyCount = CountPlannedFamilyInstances(currentChangePlan);
+            action = $"Расчётных стержней: {currentRulePreview?.EstimatedBarCount ?? 0}; "
+                + $"экземпляров семейств-массивов: {plannedFamilyCount}. "
+                + $"{currentChangePlan.Summary} Проверьте таблицу и примените изменения.";
+            buttonText = "Применить изменения";
+            buttonIcon = TrueBimIcon.Apply;
+            primaryAction = WorkflowPrimaryAction.ApplyChanges;
+            isEnabled = createTestRebarButton.IsEnabled;
+        }
+        else if (currentChangePlan?.CanApply == true)
+        {
+            stage = "Готово · Модель уже соответствует расчёту";
+            int plannedFamilyCount = CountPlannedFamilyInstances(currentChangePlan);
+            action = $"Расчётных стержней: {currentRulePreview?.EstimatedBarCount ?? 0}; "
+                + $"экземпляров семейств-массивов: {plannedFamilyCount}. "
+                + currentChangePlan.Summary
+                + " Применять нечего; при необходимости сохраните отчёт.";
+            buttonText = "Изменений нет";
+            buttonIcon = TrueBimIcon.Apply;
+            primaryAction = WorkflowPrimaryAction.None;
+            isEnabled = false;
+        }
+        else
+        {
+            stage = "Этап 4 из 4 · Сравнение заблокировано";
+            action = currentChangePlan is null
+                ? state.NextAction
+                : string.Join(" ", currentChangePlan.Diagnostics);
+            buttonText = "Повторить сравнение";
+            buttonIcon = TrueBimIcon.Refresh;
+            primaryAction = WorkflowPrimaryAction.CompareWithModel;
+            isEnabled = state.CanCompareWithModel;
+        }
+
+        workflowStageText.Text = stage;
+        workflowActionText.Text = action;
+        workflowActionButton.Content = IconFactory.CreateButtonContent(buttonIcon, buttonText);
+        workflowActionButton.IsEnabled = isEnabled;
+        workflowActionButton.ToolTip = action;
+        ToolTipService.SetShowOnDisabled(workflowActionButton, true);
+        workflowPrimaryAction = primaryAction;
+    }
+
+    private static int CountPlannedFamilyInstances(IsoFieldRebarChangePlan changePlan)
+    {
+        return changePlan.Changes.Count(change => change.PlannedItem is not null);
     }
 
     private UIElement CreateFooter()
@@ -1878,11 +2167,11 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     selectedSourceSet = null;
                     ResetSourceSetManifestState();
                     sourceSetRows.Children.Clear();
-                selectedFileText.Text = "Выбор отклонён: готовый файл с зонами нельзя выбирать вместе с картами.";
+                    selectedFileText.Text = "Выбор отклонён: готовый файл с зонами нельзя выбирать вместе с картами.";
                     selectedFileText.Foreground = TrueBimBrushes.Danger;
                     selectedFileText.ToolTip = null;
-                ClearPreview("Контуры не загружены: выберите один готовый файл с зонами или четыре карты.");
-                recognitionStatusText.Text = "Готовые зоны нужно выбирать отдельно от комплекта карт.";
+                    ClearPreview("Контуры не загружены: выберите один готовый файл с зонами или четыре карты.");
+                    recognitionStatusText.Text = "Готовые зоны нужно выбирать отдельно от комплекта карт.";
                     footerStatusText.Text = "Выбор отклонён. Модель Revit не изменялась.";
                     logger.Warning("IsoField source selection mixed JSON with other files and was rejected.");
                     return;
@@ -1950,7 +2239,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         selectedSourceSetManifestPath = manifestPath;
         isSourceSetManifestDirty = false;
         UpdateSourceSetPresentation();
-            ClearPreview("Сохранённый комплект восстановлен. Зоны нужно найти заново.");
+        ClearPreview("Сохранённый комплект восстановлен. Зоны нужно найти заново.");
         footerStatusText.Text = selectedSourceSet.IsComplete
                 ? "Сохранённый комплект загружен и проверен. Модель Revit не изменялась."
                 : "Сохранённый комплект загружен, но исходные карты не прошли проверку.";
@@ -1965,7 +2254,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             if (selectedSourceSet?.IsComplete != true)
             {
-            footerStatusText.Text = "Комплект не сохранён: сначала исправьте выбранные карты.";
+                footerStatusText.Text = "Комплект не сохранён: сначала исправьте выбранные карты.";
                 return;
             }
 
@@ -1978,7 +2267,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             string? manifestPath = filePicker.PickSourceSetManifestSavePath(initialDirectory, suggestedFileName);
             if (string.IsNullOrWhiteSpace(manifestPath))
             {
-            footerStatusText.Text = "Сохранение комплекта отменено.";
+                footerStatusText.Text = "Сохранение комплекта отменено.";
                 logger.Info("IsoField source-set manifest save canceled.");
                 return;
             }
@@ -2011,7 +2300,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         int assignedCount = selectedSourceSet.Files.Count(file => file.Role.HasValue);
         int headerRoleCount = selectedSourceSet.Files.Count(file => file.RoleDetection?.HeaderRole.HasValue == true);
         selectedFileText.Text = selectedSourceSet.IsComplete
-            ? $"Комплект готов: назначены все 4 карты, по заголовкам подтверждено {headerRoleCount} из 4."
+            ? $"Комплект готов: назначены все 4 карты, по заголовкам подтверждено {headerRoleCount} из 4. Стартовые грани заполнены автоматически."
             : $"Комплект не готов: назначено карт {assignedCount} из 4.";
         selectedFileText.Foreground = selectedSourceSet.IsComplete
             ? TrueBimBrushes.Success
@@ -2025,7 +2314,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         recognitionStatusText.Text = selectedSourceSet.IsComplete
-            ? "Комплект проверен. Нажмите «Найти зоны на 4 картах»."
+            ? "Комплект проверен. Проверьте предложенные грани и нажмите «Найти зоны на 4 картах»."
             : FormatSourceSetIssues(selectedSourceSet);
         UpdateLayerMappingStatus();
         UpdateManifestStatus();
@@ -2042,10 +2331,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         layerMappingStatusText.Visibility = Visibility.Visible;
         layerMappingStatusText.Text = selectedSourceSet.HasConfirmedLayerMappings
             ? selectedHostElement?.IsWall == true
-                ? "Назначение подтверждено: для X и Y выбрано по одной внутренней и наружной карте стены."
+                ? "Назначение готово: для X и Y выбрано по одной внутренней и наружной карте стены. Проверьте стартовый вариант."
                 : selectedHostElement?.IsSlab == true
-                    ? "Назначение подтверждено: для X и Y выбрано по одной верхней и нижней карте плиты."
-                : "Назначение подтверждено: для X и Y выбрано по одной карте на каждой стороне конструкции."
+                    ? "Назначение готово: As1/As3 — низ, As2/As4 — верх плиты. При необходимости измените его."
+                    : "Стартовое назначение заполнено: As1/As3 — сторона 1, As2/As4 — сторона 2. После выбора конструкции проверьте подписи."
             : string.Join(" ", selectedSourceSet.LayerMappingValidationMessages);
         bool hasUnconfirmedFaces = selectedSourceSet.EffectiveLayerMappings
             .Any(mapping => mapping.Face == IsoFieldRebarFace.Unconfirmed);
@@ -3140,7 +3429,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             if (!support.CanCalculateRules)
             {
                 ClearRulePreview(support.Message);
-            rebarCreationStatusText.Text = "Раскладка недоступна: выбранная стена или плита не подходит для расчёта.";
+                rebarCreationStatusText.Text = "Раскладка недоступна: выбранная стена или плита не подходит для расчёта.";
                 footerStatusText.Text = support.Message;
                 logger.Warning(
                     $"IsoField rule preview blocked by host preflight. HostId={selectedHostElement.ElementId}; "
@@ -3313,6 +3602,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void CompareEngineeringChanges()
     {
+        familyPreflightError = null;
+        SetCurrentChangePlan(null);
         rebarCreationStatusText.Text = "Подождите: Revit сравнивает раскладку с моделью.";
         revitActions.Raise(CompareEngineeringChangesInRevitContext);
     }
@@ -3612,8 +3903,11 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         familyPreflightError = null;
         SetCurrentChangePlan(changePlan);
+        int plannedFamilyCount = CountPlannedFamilyInstances(changePlan);
         rebarCreationStatusText.Text = changePlan.CanApply
-            ? "Сравнение семейств с моделью: " + changePlan.Summary
+            ? $"Расчётных стержней: {context.Preview.EstimatedBarCount}; "
+                + $"экземпляров семейств-массивов: {plannedFamilyCount}. "
+                + changePlan.Summary
             : "Изменения заблокированы: " + string.Join(" ", changePlan.Diagnostics);
         footerStatusText.Text = changePlan.CanApply
             ? "Семейства дополнительного армирования сравнены с экземплярами модуля. Проверьте таблицу; модель пока не изменялась."
@@ -3662,7 +3956,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                     "Армирование по изополям",
                     "Модель изменилась после последнего сравнения. Таблица обновлена; проверьте строки ещё раз перед применением.");
                 rebarCreationStatusText.Text = "Изменения не применены: предыдущий результат сравнения устарел.";
-            footerStatusText.Text = "Список изменений обновлён по текущей модели. Проверьте таблицу ещё раз.";
+                footerStatusText.Text = "Список изменений обновлён по текущей модели. Проверьте таблицу ещё раз.";
                 logger.Warning("IsoField engineering rebar apply blocked by a stale change-plan fingerprint.");
                 return;
             }
@@ -3819,7 +4113,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 TaskDialog.Show(
                     "Армирование по изополям",
                 $"Проверьте предупреждения ({currentQualityResult.Warnings.Count}) и подтвердите их в окне перед применением изменений.");
-            rebarCreationStatusText.Text = "Изменения не применены: предупреждения не подтверждены.";
+                rebarCreationStatusText.Text = "Изменения не применены: предупреждения не подтверждены.";
                 return null;
             }
         }
@@ -3841,9 +4135,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Error("Failed to preview IsoField engineering rebar changes.", exception);
             familyPreflightError = exception.Message;
+            SetCurrentChangePlan(null);
             rebarCreationStatusText.Text = exception.Message;
             footerStatusText.Text = "Сравнение остановлено: не хватает подходящего семейства или его типа.";
-            RefreshWorkflowState();
             return null;
         }
     }
@@ -4407,7 +4701,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             : selectedHostElement switch
             {
                 null => "Сначала выберите поддерживаемую прямую стену или горизонтальную плиту.",
-            { Geometry: null } => "У выбранной конструкции не удалось определить ровную опорную поверхность.",
+                { Geometry: null } => "У выбранной конструкции не удалось определить ровную опорную поверхность.",
                 _ when !state.HasZones => "Сначала загрузите или распознайте зоны.",
                 { IsWall: true } => "Укажите соответствующую точку на наружной плоскости выбранной стены.",
                 _ => "Укажите соответствующую точку на верхней грани выбранной плиты."
@@ -4473,7 +4767,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             || currentQualityResult?.CanCompare == true;
         bool qualityCanApply = !isEngineeringPreview
             || currentQualityResult?.CanApply(areQualityWarningsAccepted) == true;
-        compareChangesButton.IsEnabled = state.CanCreateRebar
+        compareChangesButton.IsEnabled = state.CanCompareWithModel
             && isEngineeringPreview
             && qualityCanCompare;
         compareChangesButton.ToolTip = state.HasHost && !state.HasSupportedHostGeometry
@@ -4482,7 +4776,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 ? $"Собрать {currentRulePreview!.EstimatedBarCount} расчётных стержней в семейства (Массив • У) и сравнить их с экземплярами модуля без изменения модели."
                 : qualityBlockingCount > 0
                     ? $"Проверка нашла ошибки: {qualityBlockingCount}. Исправьте границы зон или параметры арматуры."
-                : state.CanCreateRebar
+                : state.CanCompareWithModel
                     ? "Сравнение доступно после расчёта раскладки для прямой стены или горизонтальной плиты."
                     : "Сначала рассчитайте раскладку без ошибок.";
         exportReportButton.IsEnabled = isEngineeringPreview
@@ -4507,16 +4801,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 ? $"Применение заблокировано: ошибок проверки {qualityBlockingCount}."
             : qualityWarningCount > 0 && !areQualityWarningsAccepted
                 ? $"Проверьте и подтвердите предупреждения: {qualityWarningCount}."
-            : state.CanCreateRebar
-            ? isEngineeringPreview
-                ? currentChangePlan is null
-                    ? "Сначала нажмите «Сравнить с моделью» и проверьте таблицу."
-                    : !currentChangePlan.CanApply
+            : state.CanCompareWithModel
+            ? !state.HasComparedWithModel
+                ? "Сначала нажмите «Сравнить с моделью» и проверьте таблицу."
+                : isEngineeringPreview
+                    ? currentChangePlan is { CanApply: false }
                         ? "Список изменений содержит ошибки; исправьте замечания и повторите сравнение."
-                        : !currentChangePlan.HasChanges
+                        : currentChangePlan is { HasChanges: false }
                             ? "Раскладка уже соответствует модели; применять нечего."
-                            : $"Применить семейства после подтверждения: {currentChangePlan.Summary}"
-                : "Создать пробные семейства дополнительного армирования после отдельного подтверждения."
+                            : $"Применить семейства после подтверждения: {currentChangePlan?.Summary}"
+                    : "Создать пробные семейства дополнительного армирования после отдельного подтверждения."
             : !state.HasConfirmedLayerMappings && state.HasSource
                 ? selectedHostElement?.IsWall == true
                     ? "Подтвердите внутреннюю или наружную сторону для каждой карты."
@@ -4532,29 +4826,14 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             && File.Exists(lastReportSaveResult!.JsonPath)
             && File.Exists(lastReportSaveResult.CsvPath)
             && lastReportApplicationRevision == applicationRevision;
-        string nextAction = hasCompletedCurrentWorkflow
-            ? completionReportIsCurrent
-                ? "Изменения применены, итоговый отчёт сохранён."
-                : "Изменения применены. Сохраните итоговый отчёт."
-            : state.HasHost && !state.HasSupportedHostGeometry
-            ? hostSupport?.Message ?? state.NextAction
-            : !string.IsNullOrWhiteSpace(familyPreflightError)
-                ? familyPreflightError!
-            : qualityBlockingCount > 0
-                ? $"Исправьте ошибки проверки: {qualityBlockingCount}."
-            : qualityWarningCount > 0 && !areQualityWarningsAccepted
-                ? $"Проверьте и подтвердите предупреждения: {qualityWarningCount}."
-                : selectedSourceSet is not null && !selectedSourceSet.IsComplete
-                    ? FormatSourceSetIssues(selectedSourceSet)
-                    : state.NextAction;
         bool areRulesReady = state.HasValidRules
             && qualityCanApply
             && string.IsNullOrWhiteSpace(familyPreflightError);
         int completedStepCount = state.CompletedStepCount
             - (state.HasValidRules && !areRulesReady ? 1 : 0);
         workflowSummaryText.Text = hasCompletedCurrentWorkflow
-            ? $"Все {completedStepCount} шагов завершены. {nextAction}"
-            : $"Готово {completedStepCount} из 5. {nextAction}";
+            ? $"Все {IsoFieldWorkflowState.RequiredStepCount} обязательных проверок завершены."
+            : $"Выполнено {completedStepCount} из {IsoFieldWorkflowState.RequiredStepCount} обязательных проверок.";
         UpdateWorkflowStep(
             sourceStepText,
             state.HasSource,
@@ -4565,10 +4844,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             isJsonSource
                 ? "Назначение карт не требуется"
                 : selectedHostElement?.IsWall == true
-                    ? "Внутренняя/наружная подтверждены"
+                    ? "Внутренняя/наружная назначены"
                     : selectedHostElement?.IsSlab == true
-                        ? "Верх/низ подтверждены"
-                        : "Две грани подтверждены");
+                        ? "Верх/низ назначены"
+                        : "Стороны назначены автоматически");
         UpdateWorkflowStep(zonesStepText, state.HasZones, "Зоны загружены");
         string hostStepLabel = selectedHostElement switch
         {
@@ -4587,7 +4866,19 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 ? "Раскладка заблокирована проверкой"
                 : qualityWarningCount > 0 && !areQualityWarningsAccepted
                     ? "Ожидается решение по предупреждениям"
-                    : "Раскладка проверена");
+                     : "Раскладка проверена");
+        UpdateWorkflowStep(
+            comparisonStepText,
+            state.HasComparedWithModel,
+            state.HasComparedWithModel
+                ? "Сравнение с моделью выполнено"
+                : "Нужно сравнить с моделью");
+        UpdateWorkflowGuidance(
+            state,
+            hasCompletedCurrentWorkflow,
+            completionReportIsCurrent,
+            qualityBlockingCount,
+            qualityWarningCount);
         RefreshZoneRuleActions();
     }
 
@@ -4612,7 +4903,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             isJsonSource || selectedSourceSet?.IsComplete == true && canProcessImages,
             hasConfirmedLayerMappings,
             hasValidHostBinding,
-            hasSupportedHostGeometry);
+            hasSupportedHostGeometry,
+            currentChangePlan is not null);
     }
 
     private string ResolveRecognitionToolTip(IsoFieldWorkflowState state)
@@ -4689,6 +4981,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             MinHeight = TrueBimTheme.ControlHeight36,
             Style = TrueBimStyles.CreateButtonStyle(styleKind),
             HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, TrueBimTheme.Spacing8, TrueBimTheme.Spacing8),
             ToolTip = toolTip
         };
         button.Click += clickHandler;
@@ -4791,7 +5084,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             116,
             "На текущем виде нет вспомогательных линий для удаления.",
             (_, _) => ClearRevitPreview());
-        button.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        button.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8);
         return button;
     }
 
@@ -4928,6 +5221,22 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             new(IsoFieldRebarFace.Bottom, "1 · Низ/внутр."),
             new(IsoFieldRebarFace.Top, "2 · Верх/наруж.")
         ];
+    }
+
+    private enum WorkflowPrimaryAction
+    {
+        None,
+        ChooseSource,
+        ShowSourceMappings,
+        RunRecognition,
+        SelectHost,
+        ShowBinding,
+        LoadBinding,
+        CalculateRules,
+        ExcludeEmptyZones,
+        CompareWithModel,
+        ApplyChanges,
+        SaveCompletionReport
     }
 
     private sealed record IsoFieldFaceOption(IsoFieldRebarFace Face, string Label);

@@ -26,175 +26,11 @@ public sealed class IsoFieldArrayRebarGroupingService
             return Array.Empty<IsoFieldArrayRebarPlacement>();
         }
 
-        List<IsoFieldArrayRebarPlacement> arrays = new();
-        Dictionary<string, int> nextArrayIndexBySourcePrefix = new(StringComparer.Ordinal);
-        foreach (IGrouping<GroupKey, PreparedPlacement> group in prepared.GroupBy(BuildGroupKey))
-        {
-            PreparedPlacement[] ordered = group
-                .OrderBy(item => Dot(item.Midpoint, item.CrossDirection))
-                .ThenBy(item => item.Source.StableId, StringComparer.Ordinal)
-                .ToArray();
-            int startIndex = 0;
-            for (int index = 1; index <= ordered.Length; index++)
-            {
-                bool continuesRun = index < ordered.Length
-                    && AreConsecutive(ordered[index - 1], ordered[index]);
-                if (continuesRun)
-                {
-                    continue;
-                }
-
-                PreparedPlacement[] run = ordered
-                    .Skip(startIndex)
-                    .Take(index - startIndex)
-                    .ToArray();
-                string sourcePrefix = RemoveBarIndex(run[0].Source.StableId!);
-                int arrayIndex = nextArrayIndexBySourcePrefix.TryGetValue(sourcePrefix, out int nextIndex)
-                    ? nextIndex
-                    : 0;
-                nextArrayIndexBySourcePrefix[sourcePrefix] = arrayIndex + 1;
-                arrays.Add(CreateArray(run, arrayIndex));
-                startIndex = index;
-            }
-        }
-
-        return RepairSingletonArrays(arrays)
-            .GroupBy(BuildFamilyInstanceKey)
-            .Select(MergeCoincidentArrays)
+        return prepared
+            .GroupBy(BuildGroupKey)
+            .Select(CreateZoneArray)
             .OrderBy(item => item.StableId, StringComparer.Ordinal)
             .ToArray();
-    }
-
-    private static IReadOnlyList<IsoFieldArrayRebarPlacement> RepairSingletonArrays(
-        IReadOnlyList<IsoFieldArrayRebarPlacement> arrays)
-    {
-        List<IsoFieldArrayRebarPlacement> repaired = new(arrays.Count);
-        foreach (IGrouping<SingletonRepairKey, IsoFieldArrayRebarPlacement> group in arrays
-            .GroupBy(BuildSingletonRepairKey))
-        {
-            Vector direction = DirectionOf(group.First());
-            Vector normal = ToVector(group.First().Normal).Normalize();
-            Vector crossDirection = direction.Cross(normal).Normalize();
-            IsoFieldArrayRebarPlacement[] ordered = group
-                .OrderBy(item => Dot(item.FirstBarStart, crossDirection))
-                .ThenBy(item => item.StableId, StringComparer.Ordinal)
-                .ToArray();
-
-            int sequenceStart = 0;
-            for (int index = 1; index <= ordered.Length; index++)
-            {
-                bool continuesSequence = index < ordered.Length
-                    && AreArraysConsecutive(ordered[index - 1], ordered[index], crossDirection);
-                if (continuesSequence)
-                {
-                    continue;
-                }
-
-                RepairSingletonSequence(
-                    ordered.Skip(sequenceStart).Take(index - sequenceStart).ToArray(),
-                    repaired);
-                sequenceStart = index;
-            }
-        }
-
-        return repaired;
-    }
-
-    private static void RepairSingletonSequence(
-        IReadOnlyList<IsoFieldArrayRebarPlacement> sequence,
-        ICollection<IsoFieldArrayRebarPlacement> target)
-    {
-        List<IsoFieldArrayRebarPlacement> repaired = new(sequence.Count);
-        for (int index = 0; index < sequence.Count; index++)
-        {
-            IsoFieldArrayRebarPlacement current = sequence[index];
-            if (current.BarCount > 1)
-            {
-                repaired.Add(current);
-                continue;
-            }
-
-            bool nextIsSingleton = index + 1 < sequence.Count
-                && sequence[index + 1].BarCount == 1;
-            if (nextIsSingleton)
-            {
-                repaired.Add(MergeSequentialArrays(current, sequence[index + 1]));
-                index++;
-                continue;
-            }
-
-            if (repaired.Count > 0)
-            {
-                repaired[repaired.Count - 1] = MergeSequentialArrays(
-                    repaired[repaired.Count - 1],
-                    current);
-                continue;
-            }
-
-            if (index + 1 < sequence.Count)
-            {
-                repaired.Add(MergeSequentialArrays(current, sequence[index + 1]));
-                index++;
-                continue;
-            }
-
-            repaired.Add(current);
-        }
-
-        foreach (IsoFieldArrayRebarPlacement array in repaired)
-        {
-            target.Add(array);
-        }
-    }
-
-    private static bool AreArraysConsecutive(
-        IsoFieldArrayRebarPlacement previous,
-        IsoFieldArrayRebarPlacement current,
-        Vector crossDirection)
-    {
-        double actual = Dot(current.FirstBarStart, crossDirection)
-            - Dot(previous.LastBarStart, crossDirection);
-        double expected = previous.Component.SpacingMillimeters / MillimetersPerFoot;
-        return actual > 0
-            && Math.Abs(actual - expected) <= GeometryToleranceFeet;
-    }
-
-    private static IsoFieldArrayRebarPlacement MergeSequentialArrays(
-        IsoFieldArrayRebarPlacement first,
-        IsoFieldArrayRebarPlacement second)
-    {
-        Vector direction = DirectionOf(first);
-        double startAlong = Math.Min(
-            Dot(first.FirstBarStart, direction),
-            Dot(second.FirstBarStart, direction));
-        double endAlong = Math.Max(
-            Dot(first.FirstBarEnd, direction),
-            Dot(second.FirstBarEnd, direction));
-        IsoFieldRebarPoint3D firstStart = ShiftAlong(
-            first.FirstBarStart,
-            direction,
-            startAlong - Dot(first.FirstBarStart, direction));
-        IsoFieldRebarPoint3D firstEnd = ShiftAlong(
-            firstStart,
-            direction,
-            endAlong - startAlong);
-        IsoFieldRebarPoint3D lastStart = ShiftAlong(
-            second.LastBarStart,
-            direction,
-            startAlong - Dot(second.LastBarStart, direction));
-        string[] sourceStableIds = first.SourceStableIds
-            .Concat(second.SourceStableIds)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(value => value, StringComparer.Ordinal)
-            .ToArray();
-        return first with
-        {
-            FirstBarStart = firstStart,
-            FirstBarEnd = firstEnd,
-            LastBarStart = lastStart,
-            BarCount = first.BarCount + second.BarCount,
-            SourceStableIds = sourceStableIds
-        };
     }
 
     private static PreparedPlacement Prepare(IsoFieldRebarPlacement placement)
@@ -225,22 +61,19 @@ public sealed class IsoFieldArrayRebarGroupingService
 
         Vector normal = ToVector(placement.Normal).Normalize();
         Vector crossDirection = direction.Cross(normal).Normalize();
-        IsoFieldRebarPoint3D midpoint = Midpoint(start, end);
         return new PreparedPlacement(
             placement,
             start,
             end,
-            midpoint,
             direction,
             normal,
-            crossDirection,
-            length);
+            crossDirection);
     }
 
-    private static GroupKey BuildGroupKey(PreparedPlacement item)
+    private static ZoneArrayKey BuildGroupKey(PreparedPlacement item)
     {
         IsoFieldRebarComponent component = item.Source.Component!;
-        return new GroupKey(
+        return new ZoneArrayKey(
             item.Source.ZoneId,
             item.Source.Rule.LayerRole,
             item.Source.Rule.Face,
@@ -252,129 +85,74 @@ public sealed class IsoFieldArrayRebarGroupingService
             Quantize(item.Direction.X, DirectionTolerance),
             Quantize(item.Direction.Y, DirectionTolerance),
             Quantize(item.Direction.Z, DirectionTolerance),
-            Quantize(item.Length, GeometryToleranceFeet),
-            Quantize(Dot(item.Midpoint, item.Direction), GeometryToleranceFeet),
-            Quantize(Dot(item.Midpoint, item.Normal), GeometryToleranceFeet));
+            Quantize(item.Normal.X, DirectionTolerance),
+            Quantize(item.Normal.Y, DirectionTolerance),
+            Quantize(item.Normal.Z, DirectionTolerance),
+            Quantize(Dot(item.Start, item.Normal), GeometryToleranceFeet));
     }
 
-    private static bool AreConsecutive(PreparedPlacement previous, PreparedPlacement current)
+    private static IsoFieldArrayRebarPlacement CreateZoneArray(
+        IGrouping<ZoneArrayKey, PreparedPlacement> group)
     {
-        double actual = Dot(current.Midpoint, previous.CrossDirection)
-            - Dot(previous.Midpoint, previous.CrossDirection);
-        double expected = previous.Source.Component!.SpacingMillimeters / MillimetersPerFoot;
-        return actual > 0
-            && Math.Abs(actual - expected) <= GeometryToleranceFeet;
-    }
+        PreparedPlacement[] items = group
+            .OrderBy(item => item.Source.StableId, StringComparer.Ordinal)
+            .ToArray();
+        PreparedPlacement first = items[0];
+        Vector direction = first.Direction;
+        Vector crossDirection = first.CrossDirection;
+        IEnumerable<IsoFieldRebarPoint3D> points = items
+            .SelectMany(item => new[] { item.Start, item.End });
+        double minimumAlong = points.Min(point => Dot(point, direction));
+        double maximumAlong = points.Max(point => Dot(point, direction));
+        double minimumCross = points.Min(point => Dot(point, crossDirection));
+        double maximumCross = points.Max(point => Dot(point, crossDirection));
+        double length = maximumAlong - minimumAlong;
+        double width = maximumCross - minimumCross;
 
-    private static IsoFieldArrayRebarPlacement CreateArray(
-        IReadOnlyList<PreparedPlacement> run,
-        int runIndex)
-    {
-        PreparedPlacement first = run[0];
-        PreparedPlacement last = run[run.Count - 1];
-        string sourcePrefix = RemoveBarIndex(first.Source.StableId!);
+        IsoFieldRebarPoint3D origin = ShiftAlong(
+            first.Start,
+            direction,
+            minimumAlong - Dot(first.Start, direction));
+        origin = ShiftAlong(
+            origin,
+            crossDirection,
+            minimumCross - Dot(origin, crossDirection));
+        IsoFieldRebarPoint3D end = ShiftAlong(origin, direction, length);
+        IsoFieldRebarPoint3D lastStart = ShiftAlong(origin, crossDirection, width);
+        string[] sourceStableIds = items
+            .Select(item => item.Source.StableId!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
         return new IsoFieldArrayRebarPlacement(
             first.Source.ZoneId,
             first.Source.ZoneName,
             first.Source.Rule,
             first.Source.Component!,
-            first.Start,
-            first.End,
-            last.Start,
+            origin,
+            end,
+            lastStart,
             first.Source.Normal,
-            run.Count,
-            $"{sourcePrefix}:a{runIndex}",
-            run.Select(item => item.Source.StableId!).ToArray());
+            ResolveBarCount(width, first.Source.Component!.SpacingMillimeters),
+            BuildZoneArrayStableId(first.Source.StableId!),
+            sourceStableIds);
     }
 
-    private static SingletonRepairKey BuildSingletonRepairKey(
-        IsoFieldArrayRebarPlacement placement)
+    private static int ResolveBarCount(double widthFeet, double spacingMillimeters)
     {
-        Vector direction = DirectionOf(placement);
-        Vector normal = ToVector(placement.Normal).Normalize();
-        return new SingletonRepairKey(
-            placement.ZoneId,
-            placement.Rule.LayerRole,
-            placement.Rule.Face,
-            placement.Rule.PlacementDirection.ToUpperInvariant(),
-            placement.Component.DiameterMillimeters,
-            placement.Component.SpacingMillimeters,
-            placement.Component.CombinationIndex,
-            placement.Component.CombinationCount,
-            Quantize(direction.X, DirectionTolerance),
-            Quantize(direction.Y, DirectionTolerance),
-            Quantize(direction.Z, DirectionTolerance),
-            Quantize(Dot(placement.FirstBarStart, normal), GeometryToleranceFeet));
+        double spacingFeet = spacingMillimeters / MillimetersPerFoot;
+        return Math.Max(
+            1,
+            checked((int)Math.Floor((widthFeet + GeometryToleranceFeet) / spacingFeet) + 1));
     }
 
-    private static FamilyInstanceKey BuildFamilyInstanceKey(
-        IsoFieldArrayRebarPlacement placement)
+    private static string BuildZoneArrayStableId(string sourceStableId)
     {
-        Vector direction = DirectionOf(placement);
-        return new FamilyInstanceKey(
-            placement.Rule.Face,
-            placement.Rule.PlacementDirection.ToUpperInvariant(),
-            placement.Component.DiameterMillimeters,
-            placement.Component.SpacingMillimeters,
-            Quantize(placement.FirstBarStart.XFeet, GeometryToleranceFeet),
-            Quantize(placement.FirstBarStart.YFeet, GeometryToleranceFeet),
-            Quantize(placement.FirstBarStart.ZFeet, GeometryToleranceFeet),
-            Quantize(direction.X, DirectionTolerance),
-            Quantize(direction.Y, DirectionTolerance),
-            Quantize(direction.Z, DirectionTolerance));
-    }
-
-    private static IsoFieldArrayRebarPlacement MergeCoincidentArrays(
-        IGrouping<FamilyInstanceKey, IsoFieldArrayRebarPlacement> group)
-    {
-        IsoFieldArrayRebarPlacement first = group
-            .OrderBy(item => item.StableId, StringComparer.Ordinal)
-            .First();
-        Vector direction = DirectionOf(first);
-        Vector normal = ToVector(first.Normal).Normalize();
-        Vector crossDirection = direction.Cross(normal).Normalize();
-        double maximumLength = group.Max(item => item.BarLengthFeet);
-        double maximumWidth = group.Max(item => item.ArrayWidthFeet);
-        string[] sourceStableIds = group
-            .SelectMany(item => item.SourceStableIds)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(value => value, StringComparer.Ordinal)
-            .ToArray();
-        return first with
-        {
-            FirstBarEnd = ShiftAlong(first.FirstBarStart, direction, maximumLength),
-            LastBarStart = ShiftAlong(first.FirstBarStart, crossDirection, maximumWidth),
-            BarCount = group.Max(item => item.BarCount),
-            SourceStableIds = sourceStableIds
-        };
-    }
-
-    private static Vector DirectionOf(IsoFieldArrayRebarPlacement placement)
-    {
-        return new Vector(
-            placement.FirstBarEnd.XFeet - placement.FirstBarStart.XFeet,
-            placement.FirstBarEnd.YFeet - placement.FirstBarStart.YFeet,
-            placement.FirstBarEnd.ZFeet - placement.FirstBarStart.ZFeet)
-            .Normalize();
-    }
-
-    private static IsoFieldRebarPoint3D ShiftAlong(
-        IsoFieldRebarPoint3D point,
-        Vector direction,
-        double distance)
-    {
-        return new IsoFieldRebarPoint3D(
-            point.XFeet + (direction.X * distance),
-            point.YFeet + (direction.Y * distance),
-            point.ZFeet + (direction.Z * distance));
-    }
-
-    private static string RemoveBarIndex(string stableId)
-    {
-        int markerIndex = stableId.LastIndexOf(":b", StringComparison.Ordinal);
-        return markerIndex < 0
-            ? stableId
-            : stableId.Substring(0, markerIndex);
+        int regionMarkerIndex = sourceStableId.LastIndexOf(":r", StringComparison.Ordinal);
+        return regionMarkerIndex < 0
+            ? sourceStableId + ":r0:a0"
+            : sourceStableId.Substring(0, regionMarkerIndex) + ":r0:a0";
     }
 
     private static bool MustReverse(Vector direction)
@@ -392,19 +170,15 @@ public sealed class IsoFieldArrayRebarGroupingService
         return direction.Z < 0;
     }
 
-    private static long Quantize(double value, double tolerance)
-    {
-        return checked((long)Math.Round(value / tolerance, MidpointRounding.AwayFromZero));
-    }
-
-    private static IsoFieldRebarPoint3D Midpoint(
-        IsoFieldRebarPoint3D first,
-        IsoFieldRebarPoint3D second)
+    private static IsoFieldRebarPoint3D ShiftAlong(
+        IsoFieldRebarPoint3D point,
+        Vector direction,
+        double distance)
     {
         return new IsoFieldRebarPoint3D(
-            (first.XFeet + second.XFeet) / 2,
-            (first.YFeet + second.YFeet) / 2,
-            (first.ZFeet + second.ZFeet) / 2);
+            point.XFeet + (direction.X * distance),
+            point.YFeet + (direction.Y * distance),
+            point.ZFeet + (direction.Z * distance));
     }
 
     private static Vector Subtract(IsoFieldRebarPoint3D first, IsoFieldRebarPoint3D second)
@@ -427,17 +201,20 @@ public sealed class IsoFieldArrayRebarGroupingService
             + (point.ZFeet * vector.Z);
     }
 
+    private static long Quantize(double value, double tolerance)
+    {
+        return checked((long)Math.Round(value / tolerance, MidpointRounding.AwayFromZero));
+    }
+
     private sealed record PreparedPlacement(
         IsoFieldRebarPlacement Source,
         IsoFieldRebarPoint3D Start,
         IsoFieldRebarPoint3D End,
-        IsoFieldRebarPoint3D Midpoint,
         Vector Direction,
         Vector Normal,
-        Vector CrossDirection,
-        double Length);
+        Vector CrossDirection);
 
-    private sealed record GroupKey(
+    private sealed record ZoneArrayKey(
         string ZoneId,
         IsoFieldLayerRole? LayerRole,
         IsoFieldRebarFace? Face,
@@ -449,35 +226,10 @@ public sealed class IsoFieldArrayRebarGroupingService
         long DirectionX,
         long DirectionY,
         long DirectionZ,
-        long Length,
-        long AlongCenter,
+        long NormalX,
+        long NormalY,
+        long NormalZ,
         long Plane);
-
-    private sealed record SingletonRepairKey(
-        string ZoneId,
-        IsoFieldLayerRole? LayerRole,
-        IsoFieldRebarFace? Face,
-        string PlacementDirection,
-        double DiameterMillimeters,
-        double SpacingMillimeters,
-        int CombinationIndex,
-        int CombinationCount,
-        long DirectionX,
-        long DirectionY,
-        long DirectionZ,
-        long Plane);
-
-    private sealed record FamilyInstanceKey(
-        IsoFieldRebarFace? Face,
-        string PlacementDirection,
-        double DiameterMillimeters,
-        double SpacingMillimeters,
-        long FirstStartX,
-        long FirstStartY,
-        long FirstStartZ,
-        long DirectionX,
-        long DirectionY,
-        long DirectionZ);
 
     private sealed record Vector(double X, double Y, double Z)
     {

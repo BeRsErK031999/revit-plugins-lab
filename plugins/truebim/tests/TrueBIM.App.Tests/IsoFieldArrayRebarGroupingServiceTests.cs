@@ -9,7 +9,7 @@ public sealed class IsoFieldArrayRebarGroupingServiceTests
     private readonly IsoFieldArrayRebarGroupingService service = new();
 
     [Fact]
-    public void BuildArrays_GroupsConsecutiveEqualBarsIntoOneFamilyInstance()
+    public void BuildArrays_UsesOneFamilyInstanceForWholeZone()
     {
         IReadOnlyList<IsoFieldArrayRebarPlacement> arrays = service.BuildArrays(
         [
@@ -27,7 +27,7 @@ public sealed class IsoFieldArrayRebarGroupingServiceTests
     }
 
     [Fact]
-    public void BuildArrays_MergesSingletonWithAdjacentRunWhenLengthChanges()
+    public void BuildArrays_UsesConservativeZoneEnvelopeWhenBarLengthsChange()
     {
         IReadOnlyList<IsoFieldArrayRebarPlacement> arrays = service.BuildArrays(
         [
@@ -43,7 +43,7 @@ public sealed class IsoFieldArrayRebarGroupingServiceTests
     }
 
     [Fact]
-    public void BuildArrays_SplitsNonConsecutiveBars()
+    public void BuildArrays_FillsZoneEnvelopeAcrossMissingScanLine()
     {
         IReadOnlyList<IsoFieldArrayRebarPlacement> arrays = service.BuildArrays(
         [
@@ -51,13 +51,13 @@ public sealed class IsoFieldArrayRebarGroupingServiceTests
             CreatePlacement(2, 2)
         ]);
 
-        Assert.Equal(2, arrays.Count);
-        Assert.All(arrays, array => Assert.Equal(1, array.BarCount));
-        Assert.All(arrays, array => Assert.Equal(1, array.ArrayWidthFeet, precision: 6));
+        IsoFieldArrayRebarPlacement array = Assert.Single(arrays);
+        Assert.Equal(3, array.BarCount);
+        Assert.Equal(2, array.ArrayWidthFeet, precision: 6);
     }
 
     [Fact]
-    public void BuildArrays_CollapsesCoincidentFamiliesFromOverlappingZones()
+    public void BuildArrays_KeepsDifferentZonesAsSeparateFamilyInstances()
     {
         IsoFieldRebarPlacement first = CreatePlacement(0, 0);
         IsoFieldRebarPlacement duplicate = first with
@@ -69,14 +69,13 @@ public sealed class IsoFieldArrayRebarGroupingServiceTests
 
         IReadOnlyList<IsoFieldArrayRebarPlacement> arrays = service.BuildArrays([first, duplicate]);
 
-        IsoFieldArrayRebarPlacement array = Assert.Single(arrays);
-        Assert.Equal(2, array.SourceStableIds.Count);
-        Assert.Contains("As1X:zone-a:c0:r0:b0", array.SourceStableIds);
-        Assert.Contains("As1X:zone-b:c0:r0:b0", array.SourceStableIds);
+        Assert.Equal(2, arrays.Count);
+        Assert.Contains(arrays, array => array.ZoneId == "zone-a");
+        Assert.Contains(arrays, array => array.ZoneId == "zone-b");
     }
 
     [Fact]
-    public void BuildArrays_CollapsesSameOriginFamiliesUsingConservativeEnvelope()
+    public void BuildArrays_KeepsDifferentZoneEnvelopesIndependent()
     {
         IsoFieldRebarPlacement first = CreatePlacement(0, 0, endX: 4);
         IsoFieldRebarPlacement overlapping = first with
@@ -89,9 +88,39 @@ public sealed class IsoFieldArrayRebarGroupingServiceTests
 
         IReadOnlyList<IsoFieldArrayRebarPlacement> arrays = service.BuildArrays([first, overlapping]);
 
-        IsoFieldArrayRebarPlacement array = Assert.Single(arrays);
-        Assert.Equal(6, array.BarLengthFeet, precision: 6);
-        Assert.Equal(2, array.SourceStableIds.Count);
+        Assert.Equal(2, arrays.Count);
+        Assert.Contains(arrays, array => array.ZoneId == "zone-a" && Math.Abs(array.BarLengthFeet - 4) < 1e-6);
+        Assert.Contains(arrays, array => array.ZoneId == "zone-b" && Math.Abs(array.BarLengthFeet - 6) < 1e-6);
+    }
+
+    [Fact]
+    public void BuildArrays_UsesZeroWidthForSingleBarZone()
+    {
+        IsoFieldArrayRebarPlacement array = Assert.Single(service.BuildArrays(
+        [
+            CreatePlacement(0, 0)
+        ]));
+
+        Assert.Equal(1, array.BarCount);
+        Assert.Equal(0, array.ArrayWidthFeet, precision: 6);
+    }
+
+    [Fact]
+    public void BuildArrays_KeepsCombinationComponentsSeparate()
+    {
+        IsoFieldRebarPlacement first = CreatePlacement(0, 0);
+        IsoFieldRebarComponent secondComponent = new(16, 304.8, 1, 2);
+        IsoFieldRebarPlacement second = first with
+        {
+            Component = secondComponent,
+            StableId = "As1X:zone-a:c1:r0:b0"
+        };
+
+        IReadOnlyList<IsoFieldArrayRebarPlacement> arrays = service.BuildArrays([first, second]);
+
+        Assert.Equal(2, arrays.Count);
+        Assert.Contains(arrays, array => array.Component.CombinationIndex == 0);
+        Assert.Contains(arrays, array => array.Component.CombinationIndex == 1);
     }
 
     private static IsoFieldRebarPlacement CreatePlacement(
