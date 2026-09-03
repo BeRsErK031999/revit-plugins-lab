@@ -1,0 +1,44 @@
+<svg width="1120" height="560" viewBox="0 0 1120 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Назначение карт изополей проекта VTR2</title>
+  <desc id="desc">Четыре строки карт с назначением оси, номера и грани плиты, затем выделенная кнопка поиска зон.</desc>
+  <rect width="1120" height="560" rx="24" fill="#F5F7FA"/>
+  <rect x="36" y="32" width="1048" height="496" rx="16" fill="#FFFFFF" stroke="#D7DEE8" stroke-width="2"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="72" y="82" fill="#12263A" font-size="28" font-weight="700">Пример VTR2: проверьте четыре назначения</text>
+    <text x="72" y="116" fill="#4A5A6A" font-size="17">Грань 1 = низ плиты · Грань 2 = верх плиты</text>
+
+    <g transform="translate(72 146)">
+      <rect width="976" height="58" rx="8" fill="#F8FAFC" stroke="#D7DEE8"/>
+      <rect x="14" y="12" width="58" height="34" rx="4" fill="#EAF0FA" stroke="#3564A8"/>
+      <text x="92" y="36" fill="#12263A" font-size="16" font-weight="600">…As1X1.png</text>
+      <text x="520" y="36" fill="#3564A8" font-size="16" font-weight="700">X · карта 1</text>
+      <text x="758" y="36" fill="#1F8A70" font-size="16" font-weight="700">Низ / Грань 1</text>
+    </g>
+    <g transform="translate(72 214)">
+      <rect width="976" height="58" rx="8" fill="#F8FAFC" stroke="#D7DEE8"/>
+      <rect x="14" y="12" width="58" height="34" rx="4" fill="#EAF0FA" stroke="#3564A8"/>
+      <text x="92" y="36" fill="#12263A" font-size="16" font-weight="600">…As2X1.png</text>
+      <text x="520" y="36" fill="#3564A8" font-size="16" font-weight="700">X · карта 2</text>
+      <text x="758" y="36" fill="#B7791F" font-size="16" font-weight="700">Верх / Грань 2</text>
+    </g>
+    <g transform="translate(72 282)">
+      <rect width="976" height="58" rx="8" fill="#F8FAFC" stroke="#D7DEE8"/>
+      <rect x="14" y="12" width="58" height="34" rx="4" fill="#EAF0FA" stroke="#3564A8"/>
+      <text x="92" y="36" fill="#12263A" font-size="16" font-weight="600">…As3Y1.png</text>
+      <text x="520" y="36" fill="#3564A8" font-size="16" font-weight="700">Y · карта 1</text>
+      <text x="758" y="36" fill="#1F8A70" font-size="16" font-weight="700">Низ / Грань 1</text>
+    </g>
+    <g transform="translate(72 350)">
+      <rect width="976" height="58" rx="8" fill="#F8FAFC" stroke="#D7DEE8"/>
+      <rect x="14" y="12" width="58" height="34" rx="4" fill="#EAF0FA" stroke="#3564A8"/>
+      <text x="92" y="36" fill="#12263A" font-size="16" font-weight="600">…As4Y1.png</text>
+      <text x="520" y="36" fill="#3564A8" font-size="16" font-weight="700">Y · карта 2</text>
+      <text x="758" y="36" fill="#B7791F" font-size="16" font-weight="700">Верх / Грань 2</text>
+    </g>
+
+    <path d="M560 420 V444" stroke="#3564A8" stroke-width="3"/>
+    <path d="M560 452 l-9 -13 h18 z" fill="#3564A8"/>
+    <rect x="302" y="452" width="516" height="52" rx="9" fill="#3564A8"/>
+    <text x="560" y="485" text-anchor="middle" fill="#FFFFFF" font-size="18" font-weight="700">Продолжить: найти зоны на 4 картах</text>
+  </g>
+</svg>

@@ -24,7 +24,7 @@ public sealed record IsoFieldWorkflowState(
 
     public bool CanRunRecognition => HasSource && CanProcessSource;
 
-    public bool CanShowRevitPreview => HasZones;
+    public bool CanShowRevitPreview => HasZones && HasReadyHost;
 
     public bool CanClearRevitPreview => HasActiveRevitPreview;
 

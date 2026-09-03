@@ -70,6 +70,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly TextBlock footerStatusText;
     private readonly Canvas previewCanvas;
     private readonly Button recognizeButton;
+    private readonly Button recognizeBottomButton;
     private readonly Button correctZonesButton;
     private readonly Button showRevitPreviewButton;
     private readonly Button clearRevitPreviewButton;
@@ -288,7 +289,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             "Указать точку 3 на конструкции",
             TrueBimIcon.Apply,
             158,
-            "Третья точка проверяет, правильно ли совпали масштаб, поворот и направление карты.",
+            "Третья точка задаёт масштаб вдоль второй стороны и проверяет порядок углов и зеркальность карты.",
             (_, _) => PickSlabControlPoint(3));
         applySlabBindingButton = CreateActionButton(
             "Проверить привязку",
@@ -312,6 +313,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         slabHostPoint2Text = CreateMutedText("Точка 2 на конструкции не указана.");
         slabHostPoint3Text = CreateMutedText("Точка 3 на конструкции не указана.");
         slabBindingStatusText = CreateMutedText("Выберите поддерживаемую прямую стену или горизонтальную плиту, затем задайте три пары контрольных точек.");
+        showRevitPreviewButton = CreateRevitPreviewButton();
+        clearRevitPreviewButton = CreateClearRevitPreviewButton();
         slabBindingExpander = CreateSlabBindingPanel();
         reinforcementModeInput = new WpfComboBox
         {
@@ -423,14 +426,21 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             176,
             "Сначала выберите готовые зоны или полный комплект из четырёх карт.",
             (_, _) => RunRecognition());
+        recognizeBottomButton = CreateActionButton(
+            "Продолжить: найти зоны на 4 картах",
+            TrueBimIcon.Preview,
+            286,
+            "Назначьте сторону для каждой карты, затем запустите поиск зон.",
+            (_, _) => RunRecognition(),
+            TrueBimButtonStyleKind.Primary);
+        recognizeBottomButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        recognizeBottomButton.HorizontalContentAlignment = HorizontalAlignment.Center;
         correctZonesButton = CreateActionButton(
             "Исправить зоны",
             TrueBimIcon.Settings,
             152,
             "Сначала загрузите или распознайте зоны.",
             (_, _) => CorrectZones());
-        showRevitPreviewButton = CreateRevitPreviewButton();
-        clearRevitPreviewButton = CreateClearRevitPreviewButton();
         selectHostButton = CreateActionButton(
             "Выбрать стену/плиту",
             TrueBimIcon.Apply,
@@ -570,11 +580,6 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         rulePanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
         mainContent.Children.Add(rulePanel);
 
-        Border calibrationPanel = CreateCalibrationPanel();
-        WpfGrid.SetRow(calibrationPanel, 4);
-        calibrationPanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
-        mainContent.Children.Add(calibrationPanel);
-
         WpfGrid workspace = new();
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(264) });
@@ -706,6 +711,31 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         legendSummaryPanel.Visibility = Visibility.Collapsed;
         content.Children.Add(legendSummaryPanel);
 
+        Border continuePanel = TrueBimUi.CreateInfoBanner(
+            new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "Следующий шаг",
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = TrueBimBrushes.TextPrimary
+                    },
+                    new TextBlock
+                    {
+                        Text = "После назначения граней нажмите кнопку ниже. Искать эту команду в начале списка не нужно.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = TrueBimBrushes.TextSecondary,
+                        Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing8)
+                    },
+                    recognizeBottomButton
+                }
+            },
+            TrueBimUiSeverity.Info);
+        continuePanel.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0);
+        content.Children.Add(continuePanel);
+
         return CreatePanel(content);
     }
 
@@ -729,9 +759,6 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
         };
         buttonRow.Children.Add(correctZonesButton);
-        showRevitPreviewButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        buttonRow.Children.Add(showRevitPreviewButton);
-        buttonRow.Children.Add(clearRevitPreviewButton);
         content.Children.Add(buttonRow);
 
         previewStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
@@ -813,7 +840,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
         };
         content.Children.Add(TrueBimUi.CreateInfoBanner(
-            "Первые две точки задают масштаб и поворот. Третья точка должна находиться в стороне от их линии и независимо подтверждает привязку.",
+            "Выберите три одинаковых угла на карте и на плите: точку 1 — общий угол, точку 2 — далеко вдоль одной стороны, точку 3 — вдоль соседней стороны. Третья точка задаёт второй масштаб; небольшое различие масштаба X/Y на изображении компенсируется автоматически.",
             TrueBimUiSeverity.Neutral));
 
         StackPanel rows = new()
@@ -860,6 +887,26 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         slabBindingStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(slabBindingStatusText);
+
+        content.Children.Add(new TextBlock
+        {
+            Text = "Проверка на виде Revit",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing4)
+        });
+        TextBlock previewNote = CreateMutedText(
+            "После успешной привязки вспомогательные линии строятся в координатах выбранной конструкции и обрезаются по её контуру.");
+        previewNote.Margin = new Thickness(0);
+        content.Children.Add(previewNote);
+        WrapPanel previewActions = new()
+        {
+            Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0)
+        };
+        previewActions.Children.Add(showRevitPreviewButton);
+        clearRevitPreviewButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        previewActions.Children.Add(clearRevitPreviewButton);
+        content.Children.Add(previewActions);
         return new Expander
         {
             Header = "Совмещение карты с конструкцией по трём точкам",
@@ -947,25 +994,54 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             IsExpanded = true,
             ToolTip = "Параметры влияют на расчёт количества и фактическое положение стержней."
         });
-        previewRulesButton.Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing4);
+        content.Children.Add(new TextBlock
+        {
+            Text = "1. Выполните расчёт",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary,
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, TrueBimTheme.Spacing4)
+        });
+        previewRulesButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
         content.Children.Add(previewRulesButton);
         content.Children.Add(CreateQualityCheckPanel());
 
-        WrapPanel buttonRow = new()
+        StackPanel finalActions = new();
+        finalActions.Children.Add(new TextBlock
         {
-            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0)
-        };
+            Text = "2. Сверьте результат и только затем примените",
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TrueBimBrushes.TextPrimary
+        });
+        TextBlock finalActionsNote = CreateMutedText(
+            "Сравнение и отчёт не изменяют модель. Нижняя кнопка применения — единственное действие, которое создаёт или обновляет семейства дополнительного армирования.");
+        finalActionsNote.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing8);
+        finalActions.Children.Add(finalActionsNote);
+
+        WrapPanel reviewActions = new();
 
         compareChangesButton.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4);
-        buttonRow.Children.Add(compareChangesButton);
+        reviewActions.Children.Add(compareChangesButton);
 
         exportReportButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
-        buttonRow.Children.Add(exportReportButton);
+        reviewActions.Children.Add(exportReportButton);
+        finalActions.Children.Add(reviewActions);
 
-        createTestRebarButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, TrueBimTheme.Spacing4);
-        buttonRow.Children.Add(createTestRebarButton);
+        createTestRebarButton.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, 0);
+        createTestRebarButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        createTestRebarButton.HorizontalContentAlignment = HorizontalAlignment.Center;
+        finalActions.Children.Add(createTestRebarButton);
 
-        content.Children.Add(buttonRow);
+        Border finalActionsPanel = new()
+        {
+            Background = TrueBimBrushes.SurfaceAlt,
+            BorderBrush = TrueBimBrushes.Border,
+            BorderThickness = new Thickness(TrueBimTheme.BorderWidth),
+            CornerRadius = new CornerRadius(TrueBimTheme.Radius8),
+            Padding = new Thickness(TrueBimTheme.Spacing12),
+            Margin = new Thickness(0, TrueBimTheme.Spacing12, 0, 0),
+            Child = finalActions
+        };
+        content.Children.Add(finalActionsPanel);
 
         ruleStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing8, 0, 0);
         content.Children.Add(ruleStatusText);
@@ -2422,23 +2498,26 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             return;
         }
 
+        if (currentSlabBinding?.CanProceed != true)
+        {
+            const string message = "Сначала выберите конструкцию, укажите три соответствующих угла и выполните «Проверить привязку». Линии без проверенной привязки больше не создаются.";
+            logger.Warning("IsoField bound Revit preview was requested without a valid host binding.");
+            TaskDialog.Show("Армирование по изополям", message);
+            footerStatusText.Text = message;
+            return;
+        }
+
         try
         {
-            if (!ApplyCalibration(showDialogOnError: true))
-            {
-                return;
-            }
-
-            logger.Info($"IsoField Revit preview requested. Polylines={currentRecognitionResult.Polylines.Count}; ExistingPreviewIds={activeRevitPreviewIds.Count}; CalibrationScale={currentCalibration.MillimetersPerPixel}.");
+            logger.Info($"IsoField bound Revit preview requested. Zones={currentSlabBinding.ClippedZones.Count}; ExistingPreviewIds={activeRevitPreviewIds.Count}.");
             IsoFieldRevitPreviewResult result = revitPreviewService.Show(
                 uiDocument,
-                currentRecognitionResult,
-                activeRevitPreviewIds,
-                currentCalibration);
+                currentSlabBinding,
+                activeRevitPreviewIds);
             activeRevitPreviewIds = result.CreatedElementIds;
             footerStatusText.Text = result.Message;
             RefreshWorkflowState();
-            logger.Info($"IsoField Revit preview command completed. Created={result.CreatedCount}; Deleted={result.DeletedCount}.");
+            logger.Info($"IsoField bound Revit preview command completed. Created={result.CreatedCount}; Deleted={result.DeletedCount}.");
         }
         catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
         {
@@ -2686,14 +2765,16 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 selectedHostElement.Geometry,
                 input);
             string status = currentSlabBinding.CanProceed
-                ? currentSlabBinding.RemovedZoneIds.Count > 0
-                    ? $"Привязка проверена. Отклонение точки 3: {FormatNumber(currentSlabBinding.ThirdPointDeviationMillimeters)} мм; обрезано зон: {currentSlabBinding.ClippedZoneIds.Count}; полностью вне конструкции исключено: {currentSlabBinding.RemovedZoneIds.Count}."
-                    : $"Привязка проверена. Отклонение точки 3: {FormatNumber(currentSlabBinding.ThirdPointDeviationMillimeters)} мм; обрезано зон: {currentSlabBinding.ClippedZoneIds.Count}."
-                : currentSlabBinding.RemovedZoneIds.Count > 0
-                    ? $"Привязка не принята: за границами конструкции осталось зон {currentSlabBinding.RemovedZoneIds.Count}."
-                    : !currentSlabBinding.AreControlPointsInside
-                        ? "Привязка не принята: одна или несколько контрольных точек находятся за границей конструкции."
-                        : "Привязка не принята: третья точка не подтверждает масштаб, поворот или зеркальность.";
+                ? $"Привязка по трём точкам проверена. Масштаб X: {FormatNumber(currentSlabBinding.Transform.MillimetersPerPixel)} мм/точку; "
+                    + $"Y: {FormatNumber(currentSlabBinding.Transform.SecondaryMillimetersPerPixel)} мм/точку; "
+                    + $"обрезано зон: {currentSlabBinding.ClippedZoneIds.Count}; исключено: {currentSlabBinding.RemovedZoneIds.Count}."
+                : !currentSlabBinding.AreControlPointsInside
+                    ? "Привязка не принята: одна или несколько контрольных точек находятся за границей конструкции."
+                    : !currentSlabBinding.IsThirdPointValid
+                        ? "Привязка не принята: три точки не задают согласованную геометрию. Проверьте соответствие и порядок углов, затем переключатель переворота."
+                        : currentSlabBinding.RemovedZoneIds.Count > 0
+                            ? $"Привязка не принята: за границами конструкции осталось зон {currentSlabBinding.RemovedZoneIds.Count}."
+                            : "Привязка не принята. Подробности показаны во всплывающей подсказке статуса.";
             SetSlabBindingStatus(
                 status,
                 !currentSlabBinding.CanProceed
@@ -2721,7 +2802,9 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 + $"ClippedZones={currentSlabBinding.ClippedZoneIds.Count}; "
                 + $"RemovedZones={currentSlabBinding.RemovedZoneIds.Count}; "
                 + $"ThirdPointDeviationMm={currentSlabBinding.ThirdPointDeviationMillimeters}; "
-                + $"ScaleMmPerPixel={currentSlabBinding.Transform.MillimetersPerPixel}; "
+                + $"ScaleXMmPerPixel={currentSlabBinding.Transform.MillimetersPerPixel}; "
+                + $"ScaleYMmPerPixel={currentSlabBinding.Transform.SecondaryMillimetersPerPixel}; "
+                + $"AxisScaleDifferencePercent={currentSlabBinding.Transform.AxisScaleDifferencePercent}; "
                 + $"RotationDegrees={currentSlabBinding.Transform.RotationDegrees}.");
             return currentSlabBinding.CanProceed;
         }
@@ -4143,7 +4226,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 ? $"Совмещение не принято: красным отмечены зоны за пределами конструкции — {analysis.RemovedZoneIds.Count}."
                 : !analysis.AreControlPointsInside
                     ? "Совмещение не принято: одна или несколько контрольных точек находятся за границей конструкции. Перенесите отмеченные точки внутрь контура."
-                    : $"Совмещение не принято: третья точка отклоняется на {FormatNumber(analysis.ThirdPointDeviationMillimeters)} мм при допустимом отклонении {FormatNumber(analysis.ThirdPointToleranceMillimeters)} мм.";
+                    : "Совмещение не принято: проверьте, что точки 1–3 выбраны на одинаковых углах карты и плиты в одном порядке. Если сторона получилась зеркальной, переключите переворот карты.";
         previewStatusText.ToolTip = string.Join(Environment.NewLine, analysis.Diagnostics);
     }
 
@@ -4264,6 +4347,13 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             : isJsonSource ? "Перечитать готовые зоны" : "Найти зоны на 4 картах";
         recognizeButton.Content = IconFactory.CreateButtonContent(recognitionIcon, recognitionText);
         recognizeButton.ToolTip = ResolveRecognitionToolTip(state);
+        recognizeBottomButton.IsEnabled = state.CanRunRecognition;
+        recognizeBottomButton.Content = IconFactory.CreateButtonContent(
+            recognitionIcon,
+            state.HasZones
+                ? "Повторно найти зоны на 4 картах"
+                : "Продолжить: найти зоны на 4 картах");
+        recognizeBottomButton.ToolTip = ResolveRecognitionToolTip(state);
         saveSourceSetManifestButton.IsEnabled = selectedSourceSet?.IsComplete == true;
         saveSourceSetManifestButton.ToolTip = saveSourceSetManifestButton.IsEnabled
             ? "Сохранить выбранные карты и назначение сторон, чтобы позже быстро восстановить комплект."
@@ -4271,8 +4361,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
         showRevitPreviewButton.IsEnabled = state.CanShowRevitPreview;
         showRevitPreviewButton.ToolTip = state.CanShowRevitPreview
-            ? "Создать вспомогательные линии на текущем плане, разрезе, фасаде или чертёжном виде."
-            : "Сначала загрузите готовые зоны или найдите их на картах.";
+            ? "Показать на текущем плане, разрезе или фасаде контуры зон, привязанные и обрезанные по выбранной конструкции."
+            : state.HasZones && state.HasHost
+                ? "Сначала укажите три соответствующих угла и выполните «Проверить привязку»."
+                : "Сначала найдите зоны и выберите конструкцию.";
         correctZonesButton.IsEnabled = state.HasZones;
         correctZonesButton.ToolTip = state.HasZones
             ? "Открыть таблицу ручной проверки: исключение, выбор диапазона площади и объединение зон."
@@ -4684,10 +4776,10 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private Button CreateRevitPreviewButton()
     {
         return CreateActionButton(
-            "Показать линии на виде",
+            "Показать зоны на конструкции",
             TrueBimIcon.Apply,
-            158,
-            "Сначала загрузите готовые зоны или найдите их на картах. Кнопка добавит на текущий вид вспомогательные линии.",
+            220,
+            "Сначала проверьте привязку к конструкции. Кнопка покажет на текущем виде привязанные и обрезанные зоны.",
             (_, _) => ShowRevitPreview());
     }
 

@@ -10,7 +10,6 @@ public sealed class IsoFieldRevitPreviewService
 {
     private const string OwnedComment = "TrueBIM IsoFieldRebar Preview";
     private const double MinimumSegmentLengthFeet = 0.001;
-    private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly ITrueBimLogger logger;
 
     public IsoFieldRevitPreviewService(ITrueBimLogger logger)
@@ -20,40 +19,44 @@ public sealed class IsoFieldRevitPreviewService
 
     public IsoFieldRevitPreviewResult Show(
         UIDocument uiDocument,
-        IsoFieldRecognitionResult recognitionResult,
+        IsoFieldSlabBindingAnalysis bindingAnalysis,
         IReadOnlyCollection<ElementId> currentPreviewIds,
-        IsoFieldCalibration calibration)
+        bool includeZoneHoles = true)
     {
         if (uiDocument is null)
         {
             throw new ArgumentNullException(nameof(uiDocument));
         }
 
-        if (recognitionResult is null)
+        if (bindingAnalysis is null)
         {
-            throw new ArgumentNullException(nameof(recognitionResult));
+            throw new ArgumentNullException(nameof(bindingAnalysis));
         }
-
-        coordinateMapper.Validate(calibration);
 
         Document document = uiDocument.Document;
         View activeView = uiDocument.ActiveView;
         EnsureViewSupportsDetailPreview(activeView);
+        EnsureHostIsFaceOn(activeView, bindingAnalysis.HostGeometry);
 
         IReadOnlyList<ElementId> idsToDelete = CollectPreviewIds(document, activeView, currentPreviewIds);
-        logger.Info($"IsoField Revit preview service started. View='{activeView.Name}'; Polylines={recognitionResult.Polylines.Count}; ExistingPreviewIds={idsToDelete.Count}; MillimetersPerPixel={calibration.MillimetersPerPixel}.");
-        if (recognitionResult.Polylines.Count == 0)
+        IReadOnlyList<IReadOnlyList<IsoFieldPoint>> previewLoops = CollectPreviewLoops(
+            bindingAnalysis,
+            includeZoneHoles);
+        logger.Info(
+            $"IsoField bound Revit preview service started. View='{activeView.Name}'; "
+            + $"Zones={bindingAnalysis.ClippedZones.Count}; Loops={previewLoops.Count}; "
+            + $"ExistingPreviewIds={idsToDelete.Count}.");
+        if (previewLoops.Count == 0)
         {
             int deletedOnly = DeletePreviewElements(document, activeView, idsToDelete);
-            logger.Info($"IsoField Revit preview service finished without polylines. Deleted={deletedOnly}; View='{activeView.Name}'.");
+            logger.Info($"IsoField bound Revit preview service finished without loops. Deleted={deletedOnly}; View='{activeView.Name}'.");
             return new IsoFieldRevitPreviewResult(
                 0,
                 deletedOnly,
                 Array.Empty<ElementId>(),
-                "Нет контуров, которые можно показать на текущем виде Revit.");
+                "После привязки и обрезки не осталось контуров, которые можно показать на выбранной конструкции.");
         }
 
-        PreviewFrame frame = CreatePreviewFrame(uiDocument, activeView);
         List<ElementId> createdIds = new();
         int deletedCount = 0;
 
@@ -63,12 +66,12 @@ public sealed class IsoFieldRevitPreviewService
         try
         {
             deletedCount = DeletePreviewElementsWithoutTransaction(document, activeView, idsToDelete);
-            foreach (IsoFieldPolyline polyline in recognitionResult.Polylines)
+            foreach (IReadOnlyList<IsoFieldPoint> loop in previewLoops)
             {
-                for (int index = 0; index < polyline.Points.Count - 1; index++)
+                for (int index = 0; index < loop.Count - 1; index++)
                 {
-                    XYZ start = ToRevitPoint(frame, calibration, polyline.Points[index]);
-                    XYZ end = ToRevitPoint(frame, calibration, polyline.Points[index + 1]);
+                    XYZ start = ToRevitPoint(activeView, bindingAnalysis.HostGeometry, loop[index]);
+                    XYZ end = ToRevitPoint(activeView, bindingAnalysis.HostGeometry, loop[index + 1]);
                     if (start.DistanceTo(end) < MinimumSegmentLengthFeet)
                     {
                         continue;
@@ -89,14 +92,14 @@ public sealed class IsoFieldRevitPreviewService
             throw;
         }
 
-        logger.Info($"IsoField Revit preview updated. Created={createdIds.Count}; Deleted={deletedCount}; View='{activeView.Name}'; MillimetersPerPixel={calibration.MillimetersPerPixel}.");
+        logger.Info($"IsoField bound Revit preview updated. Created={createdIds.Count}; Deleted={deletedCount}; View='{activeView.Name}'.");
         return new IsoFieldRevitPreviewResult(
             createdIds.Count,
             deletedCount,
             createdIds,
             createdIds.Count == 0
-                ? "Контуры загружены, но вспомогательные линии для текущего вида создать не удалось. Проверьте их масштаб."
-                : $"На текущий вид Revit добавлены вспомогательные линии: {createdIds.Count}. Когда они станут не нужны, нажмите «Удалить линии с вида».");
+                ? "Привязанные контуры найдены, но вспомогательные линии для текущего вида создать не удалось."
+                : $"На выбранной конструкции показаны привязанные и обрезанные контуры: {createdIds.Count} линий. Когда они станут не нужны, нажмите «Удалить линии с вида».");
     }
 
     public IsoFieldRevitPreviewResult Clear(
@@ -223,34 +226,52 @@ public sealed class IsoFieldRevitPreviewService
             or ViewType.Legend;
     }
 
-    private PreviewFrame CreatePreviewFrame(UIDocument uiDocument, View activeView)
+    private static void EnsureHostIsFaceOn(View activeView, IsoFieldHostGeometry hostGeometry)
     {
-        return new PreviewFrame(
-            ResolveViewCenter(uiDocument, activeView),
-            activeView.RightDirection.Normalize(),
-            activeView.UpDirection.Normalize());
+        XYZ viewNormal = activeView.ViewDirection.Normalize();
+        XYZ hostNormal = ToXyz(hostGeometry.Normal).Normalize();
+        if (Math.Abs(viewNormal.DotProduct(hostNormal)) < 0.99)
+        {
+            throw new InvalidOperationException(
+                "Текущий вид смотрит на выбранную конструкцию сбоку. Откройте план для плиты или фасад/разрез, перпендикулярный поверхности стены, и повторите показ.");
+        }
     }
 
-    private static XYZ ResolveViewCenter(UIDocument uiDocument, View activeView)
+    private static IReadOnlyList<IReadOnlyList<IsoFieldPoint>> CollectPreviewLoops(
+        IsoFieldSlabBindingAnalysis bindingAnalysis,
+        bool includeZoneHoles)
     {
-        UIView? uiView = uiDocument.GetOpenUIViews()
-            .FirstOrDefault(view => view.ViewId == activeView.Id);
-        if (uiView is null)
+        List<IReadOnlyList<IsoFieldPoint>> loops = new();
+        foreach (IsoFieldPolygonRegion region in bindingAnalysis.ClippedZones
+            .Where(zone => !zone.IsEmpty)
+            .SelectMany(zone => zone.Regions))
         {
-            return activeView.Origin;
+            loops.Add(region.OuterBoundaryFeet);
+            if (includeZoneHoles)
+            {
+                loops.AddRange(region.HoleBoundariesFeet);
+            }
         }
 
-        IList<XYZ> corners = uiView.GetZoomCorners();
-        return corners.Count >= 2
-            ? (corners[0] + corners[1]) / 2
-            : activeView.Origin;
+        return loops;
     }
 
-    private XYZ ToRevitPoint(PreviewFrame frame, IsoFieldCalibration calibration, IsoFieldPoint point)
+    private static XYZ ToRevitPoint(
+        View activeView,
+        IsoFieldHostGeometry hostGeometry,
+        IsoFieldPoint localPoint)
     {
-        IsoFieldPoint mappedPoint = coordinateMapper.MapToRevitPlaneFeet(point, calibration);
-        return frame.Center + (frame.Right * mappedPoint.X) + (frame.Up * mappedPoint.Y);
+        XYZ origin = ToXyz(hostGeometry.OriginFeet);
+        XYZ axisX = ToXyz(hostGeometry.AxisX);
+        XYZ axisY = ToXyz(hostGeometry.AxisY);
+        XYZ worldPoint = origin + (axisX * localPoint.X) + (axisY * localPoint.Y);
+        XYZ viewNormal = activeView.ViewDirection.Normalize();
+        double distanceToViewPlane = (worldPoint - activeView.Origin).DotProduct(viewNormal);
+        return worldPoint - (viewNormal * distanceToViewPlane);
     }
 
-    private sealed record PreviewFrame(XYZ Center, XYZ Right, XYZ Up);
+    private static XYZ ToXyz(IsoFieldRebarPoint3D point)
+    {
+        return new XYZ(point.XFeet, point.YFeet, point.ZFeet);
+    }
 }

@@ -62,6 +62,7 @@ public sealed class IsoFieldWorkflowStateTests
             HasValidHostBinding: false);
 
         Assert.False(state.HasReadyHost);
+        Assert.False(state.CanShowRevitPreview);
         Assert.False(state.CanCalculateRules);
         Assert.False(state.CanCreateRebar);
         Assert.Contains("трём контрольным точкам", state.NextAction, StringComparison.OrdinalIgnoreCase);

@@ -40,6 +40,48 @@ public sealed class IsoFieldSlabBindingServiceTests
     }
 
     [Fact]
+    public void BuildTransform_UsesThirdPointToCompensateDifferentAxisScale()
+    {
+        IsoFieldSlabBindingInput input = new(
+            new IsoFieldPoint(0, 0),
+            new IsoFieldPoint(100, 0),
+            new IsoFieldPoint(-5, -5),
+            new IsoFieldPoint(5, -5),
+            MirrorImageY: false,
+            ImagePoint3: new IsoFieldPoint(0, 90),
+            HostPoint3Feet: new IsoFieldPoint(-5, 5));
+
+        IsoFieldPlanarTransform transform = service.BuildTransform(input);
+
+        Assert.True(transform.UsesThreePointMapping);
+        AssertPoint(input.HostPoint1Feet, transform.Map(input.ImagePoint1));
+        AssertPoint(input.HostPoint2Feet, transform.Map(input.ImagePoint2));
+        AssertPoint(input.HostPoint3Feet!, transform.Map(input.ImagePoint3!));
+        Assert.InRange(transform.AxisScaleDifferencePercent, 9, 11);
+    }
+
+    [Fact]
+    public void BuildTransform_AcceptsVtr2ControlPointsThatPreviouslyFailedByOneMeter()
+    {
+        IsoFieldSlabBindingInput input = new(
+            new IsoFieldPoint(10, 193),
+            new IsoFieldPoint(1464, 193),
+            new IsoFieldPoint(-54.481432084567, 27.7241167558202),
+            new IsoFieldPoint(63.792846130659, 27.7241167558202),
+            MirrorImageY: true,
+            ImagePoint3: new IsoFieldPoint(10, 795),
+            HostPoint3Feet: new IsoFieldPoint(-54.4814320845669, -24.7693215643917));
+
+        IsoFieldPlanarTransform transform = service.BuildTransform(input);
+
+        Assert.True(transform.UsesThreePointMapping);
+        Assert.InRange(transform.AxisScaleDifferencePercent, 6, 8);
+        AssertPoint(input.HostPoint1Feet, transform.Map(input.ImagePoint1));
+        AssertPoint(input.HostPoint2Feet, transform.Map(input.ImagePoint2));
+        AssertPoint(input.HostPoint3Feet!, transform.Map(input.ImagePoint3!));
+    }
+
+    [Fact]
     public void Analyze_AllowsZonesInsideSimpleSlab()
     {
         IsoFieldRecognitionResult recognition = CreateRecognition(
@@ -153,7 +195,27 @@ public sealed class IsoFieldSlabBindingServiceTests
         Assert.False(analysis.CanProceed);
         Assert.False(analysis.IsThirdPointValid);
         Assert.Equal(304.8, analysis.ThirdPointDeviationMillimeters, 6);
-        Assert.Contains(analysis.Diagnostics, message => message.Contains("не подтверждает", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(analysis.Diagnostics, message => message.Contains("не согласована", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Analyze_AllowsConsistentAxisScaleDifferenceBeyondLegacyPointTolerance()
+    {
+        IsoFieldSlabBindingInput input = CreateDefaultInput() with
+        {
+            ImagePoint3 = new IsoFieldPoint(0, 90)
+        };
+
+        IsoFieldSlabBindingAnalysis analysis = service.Analyze(
+            CreateRecognition(CreateZone("inside", 25, 25, 75, 75)),
+            CreateGeometry(includeHole: false),
+            input);
+
+        Assert.True(analysis.CanProceed, string.Join(Environment.NewLine, analysis.Diagnostics));
+        Assert.True(analysis.IsThirdPointValid);
+        Assert.True(analysis.ThirdPointDeviationMillimeters > analysis.ThirdPointToleranceMillimeters);
+        Assert.True(analysis.Transform.UsesThreePointMapping);
+        Assert.Contains(analysis.Diagnostics, message => message.Contains("компенсировано", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
