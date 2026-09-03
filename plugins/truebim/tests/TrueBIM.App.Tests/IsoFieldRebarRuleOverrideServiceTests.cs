@@ -70,6 +70,36 @@ public sealed class IsoFieldRebarRuleOverrideServiceTests
     }
 
     [Fact]
+    public void Apply_PreservesAutomaticallyExcludedZoneWithoutManualOverride()
+    {
+        RebarRulePreviewItem automaticallyExcluded = CreateItem(
+            "outside-zone",
+            "X",
+            IsoFieldLayerRole.As1X) with
+        {
+            IsIncluded = false,
+            Diagnostics = ["После обрезки по границам конструкции от зоны ничего не осталось."],
+            BaseDiagnostics = ["После обрезки по границам конструкции от зоны ничего не осталось."]
+        };
+        RebarRulePreviewResult preview = CreatePreview(
+            automaticallyExcluded,
+            CreateItem("inside-zone", "Y", IsoFieldLayerRole.As3Y));
+
+        RebarRulePreviewResult result = service.Apply(
+            preview,
+            new Dictionary<string, IsoFieldRebarRuleOverride>());
+
+        Assert.True(result.CanCreateRebar);
+        Assert.Single(result.ActiveItems);
+        RebarRulePreviewItem excluded = Assert.Single(
+            result.Items,
+            item => item.ZoneId == "outside-zone");
+        Assert.False(excluded.IsIncluded);
+        Assert.False(excluded.IsManuallyOverridden);
+        Assert.Equal(0, excluded.EstimatedBarCount);
+    }
+
+    [Fact]
     public void Apply_BlocksLayoutWhenEveryZoneIsExcluded()
     {
         RebarRulePreviewResult preview = CreatePreview(

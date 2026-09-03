@@ -11,6 +11,12 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Revit;
 
 public sealed class IsoFieldRebarCreationService
 {
+    private const string StraightArrayFamilyCode = "000";
+    private const string StraightArrayLengthParameter = "A";
+    private const string ArrayWidthParameter = "Зона • Ширина";
+    private const string DiameterParameter = "• Деталь • Арматура. Диаметр";
+    private const string SpacingParameter = "• Деталь • Шаг элементов";
+    private const string ConcreteClassParameter = "Деталь • Арматура. Класс бетона";
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
     private const double MillimetersPerFoot = 304.8;
@@ -20,6 +26,7 @@ public sealed class IsoFieldRebarCreationService
     private readonly SlabRebarPlacementService slabPlacementService = new();
     private readonly WallRebarPlacementService wallPlacementService = new();
     private readonly IsoFieldRebarChangePlanService changePlanService = new();
+    private readonly IsoFieldArrayRebarGroupingService arrayGroupingService = new();
     private readonly IsoFieldHostSupportService hostSupportService = new();
     private readonly ITrueBimLogger logger;
 
@@ -57,7 +64,7 @@ public sealed class IsoFieldRebarCreationService
             ?? throw new InvalidOperationException("Выбранная конструкция не найдена в текущем документе Revit. Выберите её заново.");
         EnsureHostMatchesSelection(host, hostElement);
 
-        RebarCreationRequest[] requests = BuildCreationRequests(
+        ArrayRebarCreationRequest[] requests = BuildArrayCreationRequests(
                 document,
                 host,
                 hostElement,
@@ -72,41 +79,43 @@ public sealed class IsoFieldRebarCreationService
         }
 
         List<long> createdIds = new();
-        logger.Info($"IsoField test rebar transaction starting. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}; ValidRules={previewItems.Count}.");
+        logger.Info($"IsoField test array-family transaction starting. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}; ValidRules={previewItems.Count}.");
 
         string transactionName = rulePreview.IsEngineeringPreview
             ? "TrueBIM: армирование по изополям"
             : "TrueBIM: пробное армирование по изополям";
         using Transaction transaction = new(document, transactionName);
         transaction.Start();
+        IsoFieldRebarFailuresPreprocessor failuresPreprocessor = ConfigureFailureHandling(transaction);
 
         try
         {
-            foreach (RebarCreationRequest request in requests)
+            foreach (ArrayRebarCreationRequest request in requests)
             {
-                Rebar rebar = CreateRebar(document, host, request);
-                MarkCreatedRebar(
-                    rebar,
+                FamilyInstance instance = CreateArrayFamily(document, host, request);
+                MarkCreatedArrayFamily(
+                    instance,
                     request.PreviewItem,
                     request.Placement,
                     request.Signature,
                     hostElement.ElementId);
-                createdIds.Add(RevitElementIds.GetValue(rebar.Id));
+                createdIds.Add(RevitElementIds.GetValue(instance.Id));
             }
 
-            transaction.Commit();
+            TransactionStatus commitStatus = transaction.Commit();
+            EnsureTransactionCommitted(commitStatus, failuresPreprocessor);
         }
         catch (Exception exception)
         {
-            transaction.RollBack();
-            logger.Error($"IsoField test rebar transaction rolled back. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}.", exception);
+            RollBackIfStarted(transaction);
+            logger.Error($"IsoField test array-family transaction rolled back. HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}.", exception);
             throw;
         }
 
-        logger.Info($"IsoField test rebar created. Count={createdIds.Count}; HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}.");
+        logger.Info($"IsoField test array families created. Count={createdIds.Count}; HostId={hostElement.ElementId}; HostKind={hostElement.HostKind}.");
         string resultKind = rulePreview.IsEngineeringPreview
-            ? "армирование по отсечённым зонам"
-            : "пробное армирование";
+            ? "семейства дополнительного армирования по отсечённым зонам"
+            : "пробные семейства дополнительного армирования";
         return new IsoFieldRebarCreationResult(
             createdIds.Count,
             0,
@@ -150,7 +159,7 @@ public sealed class IsoFieldRebarCreationService
         Element host = document.GetElement(RevitElementIds.Create(hostElement.ElementId))
             ?? throw new InvalidOperationException("Выбранная конструкция не найдена в текущем документе Revit. Выберите её заново.");
         EnsureHostMatchesSelection(host, hostElement);
-        RebarCreationRequest[] requests = BuildCreationRequests(
+        ArrayRebarCreationRequest[] requests = BuildArrayCreationRequests(
                 document,
                 host,
                 hostElement,
@@ -330,7 +339,7 @@ public sealed class IsoFieldRebarCreationService
         return barTypes[0];
     }
 
-    private IEnumerable<RebarCreationRequest> BuildCreationRequests(
+    private IReadOnlyList<ArrayRebarCreationRequest> BuildArrayCreationRequests(
         Document document,
         Element host,
         IsoFieldHostElement hostElement,
@@ -338,82 +347,51 @@ public sealed class IsoFieldRebarCreationService
         IReadOnlyList<RebarRulePreviewItem> previewItems,
         IsoFieldSlabBindingAnalysis? slabBinding)
     {
-        if (string.Equals(hostElement.HostKind, WallHostKind, StringComparison.Ordinal) && host is Wall wall)
+        if (!rulePreview.IsEngineeringPreview)
         {
-            IReadOnlyList<IsoFieldRebarPlacement> placements;
-            if (rulePreview.IsEngineeringPreview)
-            {
-                if (slabBinding?.CanProceed != true || hostElement.Geometry is null)
-                {
-                    throw new InvalidOperationException(
-                        "Привязка стены устарела или не прошла проверку. Проверьте совмещение по трём точкам заново.");
-                }
+            throw new InvalidOperationException(
+                "Создание семейств дополнительного армирования доступно после инженерного расчёта раскладки.");
+        }
 
-                placements = wallPlacementService.BuildEngineeringPlacements(
-                    hostElement.Geometry,
-                    wall.Width,
-                    rulePreview);
-            }
-            else
-            {
-                placements = wallPlacementService.BuildPlacements(
-                    BuildWallPlacementFrame(wall),
-                    previewItems);
-            }
-
-            foreach (IsoFieldRebarPlacement placement in placements)
-            {
-                logger.Info($"IsoField wall rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
-                yield return CreateRequest(
-                    previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
-                    ResolveBarType(document, placement.Rule.BarTypeName, placement.Component),
-                    new TestRebarGeometry(
-                        [Line.CreateBound(ToXyz(placement.Start), ToXyz(placement.End))],
-                        ToXyz(placement.Normal)),
-                    placement);
-            }
-
-            yield break;
+        if (string.Equals(hostElement.HostKind, WallHostKind, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Для стен семейства дополнительного армирования пока не настроены. Выберите плиту.");
         }
 
         if (string.Equals(hostElement.HostKind, SlabHostKind, StringComparison.Ordinal))
         {
             IsoFieldRebarPlacementBounds bounds = BuildPlacementBounds(host);
-            IReadOnlyList<IsoFieldRebarPlacement> placements;
-            if (rulePreview.IsEngineeringPreview)
+            if (slabBinding?.CanProceed != true || hostElement.Geometry is null)
             {
-                if (slabBinding?.CanProceed != true || hostElement.Geometry is null)
-                {
-                    throw new InvalidOperationException(
-                        "Привязка плиты устарела или не прошла проверку. Проверьте совмещение по трём точкам заново.");
-                }
-
-                placements = slabPlacementService.BuildEngineeringPlacements(
-                    hostElement.Geometry,
-                    bounds.WidthZFeet,
-                    rulePreview);
-            }
-            else
-            {
-                placements = slabPlacementService.BuildPlacements(bounds, previewItems);
+                throw new InvalidOperationException(
+                    "Привязка плиты устарела или не прошла проверку. Проверьте совмещение по трём точкам заново.");
             }
 
+            IReadOnlyList<IsoFieldRebarPlacement> placements = slabPlacementService.BuildEngineeringPlacements(
+                hostElement.Geometry,
+                bounds.WidthZFeet,
+                rulePreview);
             foreach (IsoFieldRebarPlacement placement in placements)
             {
                 logger.Info($"IsoField slab rebar placement prepared. ZoneId={placement.ZoneId}; Direction={placement.Rule.PlacementDirection}; LengthFeet={placement.LengthFeet:0.###}.");
-                yield return CreateRequest(
-                    previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
-                    ResolveBarType(document, placement.Rule.BarTypeName, placement.Component),
-                    new TestRebarGeometry(
-                        [Line.CreateBound(ToXyz(placement.Start), ToXyz(placement.End))],
-                        ToXyz(placement.Normal)),
-                    placement);
             }
 
-            yield break;
+            IReadOnlyList<IsoFieldArrayRebarPlacement> arrayPlacements = arrayGroupingService.BuildArrays(placements);
+            logger.Info(
+                $"IsoField slab array families prepared. Bars={placements.Count}; Families={arrayPlacements.Count}; "
+                + $"SingleBarFamilies={arrayPlacements.Count(item => item.BarCount <= 1)}; HostId={hostElement.ElementId}.");
+            return arrayPlacements
+                .Select(placement => CreateArrayRequest(
+                    document,
+                    host,
+                    previewItems.First(item => string.Equals(item.ZoneId, placement.ZoneId, StringComparison.Ordinal)),
+                    placement))
+                .ToArray();
         }
 
-        throw new InvalidOperationException("Пробное армирование доступно только для прямых стен и горизонтальных плит.");
+        throw new InvalidOperationException(
+            "Семейства дополнительного армирования доступны только для горизонтальных плит.");
     }
 
     private static IsoFieldWallPlacementFrame BuildWallPlacementFrame(Wall wall)
@@ -494,60 +472,305 @@ public sealed class IsoFieldRebarCreationService
         return normal.Normalize();
     }
 
-    private static void MarkCreatedRebar(
-        Rebar rebar,
+    private static void MarkCreatedArrayFamily(
+        FamilyInstance instance,
         RebarRulePreviewItem previewItem,
-        IsoFieldRebarPlacement placement,
+        IsoFieldArrayRebarPlacement placement,
         string? signature,
         long hostElementId)
     {
-        Parameter? parameter = rebar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
-        if (placement.Component is not null
-            && (parameter is null
-                || parameter.IsReadOnly
-                || string.IsNullOrWhiteSpace(placement.StableId)
-                || string.IsNullOrWhiteSpace(signature)))
+        Parameter? parameter = instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+        if (parameter is null
+            || parameter.IsReadOnly
+            || string.IsNullOrWhiteSpace(placement.StableId)
+            || string.IsNullOrWhiteSpace(signature))
         {
             throw new InvalidOperationException(
-                "Не удалось сохранить служебные данные созданного стержня. Все изменения отменены.");
+                "Не удалось сохранить служебные данные семейства дополнительного армирования. Все изменения отменены.");
         }
 
-        if (parameter is not null && !parameter.IsReadOnly)
+        string sourceMetadata = previewItem.IsMerged
+            ? $"sources={string.Join(",", previewItem.EffectiveSourceZoneIds)}; "
+            : string.Empty;
+        string comment =
+            $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix}; id={placement.StableId}; sig={signature}; host={hostElementId}; zone={previewItem.ZoneId}; "
+            + sourceMetadata
+            + $"layer={previewItem.Rule.LayerRole}; face={previewItem.Rule.Face}; shape={StraightArrayFamilyCode}; "
+            + $"bars={placement.BarCount}; {placement.Component.DisplayName}";
+        bool marked = parameter.Set(comment);
+        if (!marked)
         {
-            string sourceMetadata = previewItem.IsMerged
-                ? $"sources={string.Join(",", previewItem.EffectiveSourceZoneIds)}; "
-                : string.Empty;
-            string comment = placement.Component is null
-                ? $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix} Test: {previewItem.ZoneName}; {previewItem.Rule.BarTypeName}; spacing {previewItem.Rule.SpacingMillimeters.ToString("0", CultureInfo.InvariantCulture)} mm"
-                : $"{IsoFieldRebarChangePlanService.OwnedCommentPrefix}; id={placement.StableId}; sig={signature}; host={hostElementId}; zone={previewItem.ZoneId}; "
-                    + sourceMetadata
-                    + $"layer={previewItem.Rule.LayerRole}; face={previewItem.Rule.Face}; "
-                    + $"{placement.Component.DisplayName}";
-            bool marked = parameter.Set(comment);
-            if (!marked && placement.Component is not null)
-            {
-                throw new InvalidOperationException(
-                    "Стержень создан, но Revit не позволил сохранить его служебные данные. Все изменения отменены.");
-            }
+            throw new InvalidOperationException(
+                "Семейство создано, но Revit не позволил сохранить его служебные данные. Все изменения отменены.");
         }
     }
 
-    private RebarCreationRequest CreateRequest(
+    private ArrayRebarCreationRequest CreateArrayRequest(
+        Document document,
+        Element host,
         RebarRulePreviewItem previewItem,
-        RebarBarType barType,
-        TestRebarGeometry geometry,
-        IsoFieldRebarPlacement placement)
+        IsoFieldArrayRebarPlacement placement)
     {
-        string? signature = placement.Component is null
-            ? null
-            : changePlanService.BuildSignature(placement);
-        return new RebarCreationRequest(previewItem, barType, geometry, placement, signature);
+        ArrayFamilySymbolResolution symbolResolution = ResolveArrayFamilySymbol(
+            document,
+            host,
+            placement);
+        string signature = changePlanService.BuildSignature(placement);
+        return new ArrayRebarCreationRequest(
+            previewItem,
+            symbolResolution,
+            placement,
+            signature);
+    }
+
+    private static ArrayFamilySymbolResolution ResolveArrayFamilySymbol(
+        Document document,
+        Element host,
+        IsoFieldArrayRebarPlacement placement)
+    {
+        FamilySymbol[] familySymbols = new FilteredElementCollector(document)
+            .OfClass(typeof(FamilySymbol))
+            .Cast<FamilySymbol>()
+            .Where(symbol => IsArrayFamilyForShape(symbol, StraightArrayFamilyCode))
+            .OrderBy(symbol => symbol.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (familySymbols.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"В проекте не загружено семейство \"(Массив • У) Арматура • {StraightArrayFamilyCode}\" для прямых зон дополнительного армирования.");
+        }
+
+        string faceToken = placement.Rule.Face == IsoFieldRebarFace.Top
+            ? "ВЕРХ"
+            : "НИЗ";
+        string axisToken = string.Equals(
+            placement.Rule.PlacementDirection,
+            "X",
+            StringComparison.OrdinalIgnoreCase)
+            ? "Б/О"
+            : "Ц/О";
+        int? concreteClass = ResolveConcreteClass(document, host);
+        FamilySymbol[] parameterMatches = familySymbols
+            .Where(symbol => TypeHasToken(symbol.Name, faceToken)
+                && TypeHasToken(symbol.Name, axisToken)
+                && SizeMatches(
+                    symbol,
+                    placement.Component.DiameterMillimeters,
+                    placement.Component.SpacingMillimeters))
+            .ToArray();
+        FamilySymbol? exactMatch = parameterMatches.FirstOrDefault(symbol =>
+                concreteClass is null || ParameterMatchesInteger(
+                    symbol.LookupParameter(ConcreteClassParameter),
+                    concreteClass.Value))
+            ?? parameterMatches.FirstOrDefault();
+        if (exactMatch is not null)
+        {
+            return new ArrayFamilySymbolResolution(
+                exactMatch,
+                false,
+                exactMatch.Name,
+                concreteClass);
+        }
+
+        FamilySymbol[] compatibleTemplates = familySymbols
+            .Where(symbol => TypeHasToken(symbol.Name, faceToken)
+                && TypeHasToken(symbol.Name, axisToken))
+            .OrderBy(symbol => GetTemplateDistance(
+                symbol,
+                placement.Component.DiameterMillimeters,
+                placement.Component.SpacingMillimeters,
+                concreteClass))
+            .ToArray();
+        FamilySymbol? template = compatibleTemplates.FirstOrDefault();
+        if (template is null)
+        {
+            throw new InvalidOperationException(
+                $"В семействе {StraightArrayFamilyCode} нет основы для типа: "
+                + $"{faceToken.ToLowerInvariant()}, {axisToken.ToLowerInvariant()}. "
+                + "Загрузите хотя бы один тип для этой стороны и направления.");
+        }
+
+        string requiredTypeName = BuildArrayFamilyTypeName(
+            template.Name,
+            placement,
+            faceToken,
+            axisToken,
+            concreteClass);
+        return new ArrayFamilySymbolResolution(
+            template,
+            true,
+            requiredTypeName,
+            concreteClass);
+    }
+
+    private static double GetTemplateDistance(
+        FamilySymbol symbol,
+        double diameterMillimeters,
+        double spacingMillimeters,
+        int? concreteClass)
+    {
+        double diameter = GetParameterMillimeters(symbol.LookupParameter(DiameterParameter));
+        double spacing = GetParameterMillimeters(symbol.LookupParameter(SpacingParameter));
+        double concretePenalty = concreteClass is not null
+            && !ParameterMatchesInteger(
+                symbol.LookupParameter(ConcreteClassParameter),
+                concreteClass.Value)
+            ? 100000
+            : 0;
+        return concretePenalty
+            + (Math.Abs(diameter - diameterMillimeters) * 1000)
+            + Math.Abs(spacing - spacingMillimeters);
+    }
+
+    private static double GetParameterMillimeters(Parameter? parameter)
+    {
+        return parameter?.StorageType == StorageType.Double
+            ? parameter.AsDouble() * MillimetersPerFoot
+            : double.MaxValue / 10000;
+    }
+
+    private static string BuildArrayFamilyTypeName(
+        string templateName,
+        IsoFieldArrayRebarPlacement placement,
+        string faceToken,
+        string axisToken,
+        int? concreteClass)
+    {
+        string concrete = concreteClass is null
+            ? ResolveConcreteNamePrefix(templateName)
+            : $"B{concreteClass.Value}";
+        string diameter = placement.Component.DiameterMillimeters.ToString(
+            "0.###",
+            CultureInfo.InvariantCulture);
+        string spacing = placement.Component.SpacingMillimeters.ToString(
+            "0.###",
+            CultureInfo.InvariantCulture);
+        return $"{concrete} • ({ToTitleCase(faceToken)} - {axisToken.ToLowerInvariant()}) "
+            + $"⌀{diameter} A500С ш.{spacing} д/с";
+    }
+
+    private static string ResolveConcreteNamePrefix(string templateName)
+    {
+        string value = (templateName ?? string.Empty).Trim();
+        int separatorIndex = value.IndexOf('•');
+        return separatorIndex > 0
+            ? value.Substring(0, separatorIndex).Trim()
+            : "B25";
+    }
+
+    private static string ToTitleCase(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : char.ToUpperInvariant(value[0]) + value.Substring(1).ToLowerInvariant();
+    }
+
+    private static bool SizeMatches(
+        FamilySymbol symbol,
+        double expectedDiameterMillimeters,
+        double expectedSpacingMillimeters)
+    {
+        bool parametersMatch = ParameterMatchesMillimeters(
+                symbol.LookupParameter(DiameterParameter),
+                expectedDiameterMillimeters)
+            && ParameterMatchesMillimeters(
+                symbol.LookupParameter(SpacingParameter),
+                expectedSpacingMillimeters);
+        return parametersMatch
+            || TypeNameMatchesSize(
+                symbol.Name,
+                expectedDiameterMillimeters,
+                expectedSpacingMillimeters);
+    }
+
+    private static bool TypeNameMatchesSize(
+        string value,
+        double expectedDiameterMillimeters,
+        double expectedSpacingMillimeters)
+    {
+        string normalized = (value ?? string.Empty)
+            .ToUpperInvariant()
+            .Replace(" ", string.Empty)
+            .Replace(',', '.');
+        string diameter = expectedDiameterMillimeters.ToString("0.###", CultureInfo.InvariantCulture);
+        string spacing = expectedSpacingMillimeters.ToString("0.###", CultureInfo.InvariantCulture);
+        bool diameterMatches = normalized.IndexOf($"⌀{diameter}", StringComparison.Ordinal) >= 0
+            || normalized.IndexOf($"Ø{diameter}", StringComparison.Ordinal) >= 0
+            || normalized.IndexOf($"∅{diameter}", StringComparison.Ordinal) >= 0;
+        bool spacingMatches = normalized.IndexOf($"Ш.{spacing}", StringComparison.Ordinal) >= 0
+            || normalized.IndexOf($"Ш{spacing}", StringComparison.Ordinal) >= 0
+            || normalized.IndexOf($"ШАГ{spacing}", StringComparison.Ordinal) >= 0;
+        return diameterMatches && spacingMatches;
+    }
+
+    private static bool IsArrayFamilyForShape(FamilySymbol symbol, string shapeCode)
+    {
+        string normalized = NormalizeFamilyName(symbol.FamilyName);
+        return normalized.IndexOf("МАССИВ", StringComparison.Ordinal) >= 0
+            && normalized.IndexOf("АРМАТУРА", StringComparison.Ordinal) >= 0
+            && normalized.IndexOf("НАБОР", StringComparison.Ordinal) < 0
+            && normalized.EndsWith(shapeCode, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeFamilyName(string value)
+    {
+        return new string((value ?? string.Empty)
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToUpperInvariant)
+            .ToArray());
+    }
+
+    private static bool TypeHasToken(string value, string token)
+    {
+        return (value ?? string.Empty).IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool ParameterMatchesMillimeters(Parameter? parameter, double expectedMillimeters)
+    {
+        return parameter?.StorageType == StorageType.Double
+            && Math.Abs((parameter.AsDouble() * MillimetersPerFoot) - expectedMillimeters) <= 0.2;
+    }
+
+    private static bool ParameterMatchesInteger(Parameter? parameter, int expected)
+    {
+        return parameter?.StorageType == StorageType.Integer
+            && parameter.AsInteger() == expected;
+    }
+
+    private static int? ResolveConcreteClass(Document document, Element host)
+    {
+        Element? type = document.GetElement(host.GetTypeId());
+        string value = $"{host.Name} {type?.Name}".ToUpperInvariant();
+        for (int index = 0; index < value.Length - 1; index++)
+        {
+            if (value[index] is not ('B' or 'В') || !char.IsDigit(value[index + 1]))
+            {
+                continue;
+            }
+
+            int end = index + 1;
+            while (end < value.Length && char.IsDigit(value[end]))
+            {
+                end++;
+            }
+
+            if (int.TryParse(
+                value.Substring(index + 1, end - index - 1),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int result))
+            {
+                return result;
+            }
+        }
+
+        return null;
     }
 
     private IsoFieldRebarChangePlan BuildEngineeringChangePlan(
         Document document,
         Element host,
-        IReadOnlyList<RebarCreationRequest> requests)
+        IReadOnlyList<ArrayRebarCreationRequest> requests)
     {
         IsoFieldRebarPlanItem[] plannedItems = requests
             .Select(request => new IsoFieldRebarPlanItem(
@@ -556,7 +779,7 @@ public sealed class IsoFieldRebarCreationService
                 request.Signature
                     ?? throw new InvalidOperationException("У расчётного стержня нет контрольных данных.")))
             .ToArray();
-        Dictionary<string, RebarCreationRequest> requestsByStableId = requests
+        Dictionary<string, ArrayRebarCreationRequest> requestsByStableId = requests
             .Where(request => !string.IsNullOrWhiteSpace(request.Placement.StableId))
             .GroupBy(request => request.Placement.StableId!, StringComparer.Ordinal)
             .ToDictionary(
@@ -565,63 +788,84 @@ public sealed class IsoFieldRebarCreationService
                 StringComparer.Ordinal);
         long hostId = RevitElementIds.GetValue(host.Id);
         List<IsoFieldOwnedRebarSnapshot> existingElements = new();
-        foreach (Rebar rebar in new FilteredElementCollector(document)
-            .OfClass(typeof(Rebar))
-            .Cast<Rebar>())
+        Dictionary<string, int> mismatchCounts = new(StringComparer.Ordinal);
+        int loggedMismatchCount = 0;
+        foreach (FamilyInstance instance in new FilteredElementCollector(document)
+            .OfClass(typeof(FamilyInstance))
+            .Cast<FamilyInstance>())
         {
-            if (RevitElementIds.GetValue(rebar.GetHostId()) != hostId)
+            Parameter? comments = instance.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+            string? comment = comments?.AsString();
+            if (comment is null
+                || comment.IndexOf($"host={hostId};", StringComparison.Ordinal) < 0)
             {
                 continue;
             }
 
-            Parameter? comments = rebar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
             if (changePlanService.TryParseOwnedComment(
-                RevitElementIds.GetValue(rebar.Id),
-                comments?.AsString(),
+                RevitElementIds.GetValue(instance.Id),
+                comment,
                 out IsoFieldOwnedRebarSnapshot? snapshot))
             {
                 IsoFieldOwnedRebarSnapshot activeSnapshot = snapshot!;
                 activeSnapshot = activeSnapshot with
                 {
-                    StateSignature = BuildOwnedRebarStateSignature(document, rebar)
+                    StateSignature = BuildOwnedArrayFamilyStateSignature(instance)
                 };
-                if (requestsByStableId.TryGetValue(activeSnapshot.StableId, out RebarCreationRequest? request)
-                    && !RebarMatchesRequest(document, rebar, request))
+                if (requestsByStableId.TryGetValue(activeSnapshot.StableId, out ArrayRebarCreationRequest? request)
+                    && !ArrayFamilyMatchesRequest(instance, request, out string mismatchReason))
                 {
                     activeSnapshot = activeSnapshot with { Signature = null };
+                    mismatchCounts[mismatchReason] = mismatchCounts.TryGetValue(mismatchReason, out int count)
+                        ? count + 1
+                        : 1;
+                    if (loggedMismatchCount < 12)
+                    {
+                        logger.Warning(
+                            $"IsoField owned array family differs from request. StableId={activeSnapshot.StableId}; "
+                            + $"ElementId={RevitElementIds.GetValue(instance.Id)}; Reason={mismatchReason}; "
+                            + $"Actual={DescribeArrayFamilyState(instance)}; Planned={DescribeArrayFamilyRequest(request)}.");
+                        loggedMismatchCount++;
+                    }
                 }
 
                 existingElements.Add(activeSnapshot);
             }
         }
 
+        if (mismatchCounts.Count > 0)
+        {
+            logger.Warning(
+                "IsoField owned array-family mismatch summary. "
+                + string.Join(
+                    "; ",
+                    mismatchCounts
+                        .OrderByDescending(item => item.Value)
+                        .ThenBy(item => item.Key, StringComparer.Ordinal)
+                        .Select(item => $"{item.Key}={item.Value}")));
+        }
+
         return changePlanService.Build(plannedItems, existingElements);
     }
 
-    private static string BuildOwnedRebarStateSignature(Document document, Rebar rebar)
+    private static string BuildOwnedArrayFamilyStateSignature(FamilyInstance instance)
     {
-        IList<Curve> centerlineCurves = rebar.GetCenterlineCurves(
-            false,
-            false,
-            false,
-            MultiplanarOption.IncludeOnlyPlanarCurves,
-            0);
-        RebarBarType? barType = document.GetElement(rebar.GetTypeId()) as RebarBarType;
-        Parameter? diameterParameter = barType?.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER);
-        string diameter = diameterParameter?.StorageType == StorageType.Double
-            ? diameterParameter.AsDouble().ToString("0.#########", CultureInfo.InvariantCulture)
-            : "unknown";
+        LocationPoint? location = instance.Location as LocationPoint;
         return string.Join(
             "|",
-            RevitElementIds.GetValue(rebar.GetTypeId()),
-            diameter,
-            string.Join(
-                ";",
-                centerlineCurves.Select(curve => string.Join(
-                    ",",
-                    curve.GetType().Name,
-                    FormatStatePoint(curve.GetEndPoint(0)),
-                    FormatStatePoint(curve.GetEndPoint(1))))));
+            RevitElementIds.GetValue(instance.GetTypeId()),
+            location is null ? "<none>" : FormatStatePoint(location.Point),
+            location?.Rotation.ToString("0.#########", CultureInfo.InvariantCulture) ?? "<none>",
+            FormatParameterState(instance.LookupParameter(StraightArrayLengthParameter)),
+            FormatParameterState(instance.LookupParameter(ArrayWidthParameter)),
+            FormatParameterState(instance.get_Parameter(BuiltInParameter.INSTANCE_ELEVATION_PARAM)));
+    }
+
+    private static string FormatParameterState(Parameter? parameter)
+    {
+        return parameter?.StorageType == StorageType.Double
+            ? parameter.AsDouble().ToString("0.#########", CultureInfo.InvariantCulture)
+            : "<none>";
     }
 
     private static string FormatStatePoint(XYZ point)
@@ -633,43 +877,92 @@ public sealed class IsoFieldRebarCreationService
             point.Z.ToString("0.#########", CultureInfo.InvariantCulture));
     }
 
-    private static bool RebarMatchesRequest(
-        Document document,
-        Rebar rebar,
-        RebarCreationRequest request)
+    private static bool ArrayFamilyMatchesRequest(
+        FamilyInstance instance,
+        ArrayRebarCreationRequest request,
+        out string mismatchReason)
     {
-        IList<Curve> centerlineCurves = rebar.GetCenterlineCurves(
-            false,
-            false,
-            false,
-            MultiplanarOption.IncludeOnlyPlanarCurves,
-            0);
-        if (centerlineCurves.Count != 1 || centerlineCurves[0] is not Line actualLine)
+        bool symbolMatches = request.SymbolResolution.RequiresDuplication
+            ? SymbolMatchesPlacement(
+                instance.Symbol,
+                request.Placement,
+                request.SymbolResolution.ConcreteClass)
+            : RevitElementIds.GetValue(instance.GetTypeId())
+                == RevitElementIds.GetValue(request.SymbolResolution.TemplateSymbol.Id);
+        if (!symbolMatches
+            || instance.Location is not LocationPoint location)
         {
+            mismatchReason = symbolMatches ? "Location" : "Symbol";
             return false;
         }
 
-        Line plannedLine = (Line)request.Geometry.Curves[0];
-        XYZ actualStart = actualLine.GetEndPoint(0);
-        XYZ actualEnd = actualLine.GetEndPoint(1);
-        XYZ plannedStart = plannedLine.GetEndPoint(0);
-        XYZ plannedEnd = plannedLine.GetEndPoint(1);
-        bool geometryMatches = PointsMatch(actualStart, plannedStart)
-            && PointsMatch(actualEnd, plannedEnd)
-            || PointsMatch(actualStart, plannedEnd)
-            && PointsMatch(actualEnd, plannedStart);
-        if (!geometryMatches)
+        XYZ plannedOrigin = ToXyz(request.Placement.FirstBarStart);
+        if (!PointsMatch(location.Point, plannedOrigin))
         {
+            mismatchReason = "Origin";
             return false;
         }
 
-        RebarBarType? existingBarType = document.GetElement(rebar.GetTypeId()) as RebarBarType;
-        Parameter? diameterParameter = existingBarType?.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER);
-        return diameterParameter?.StorageType == StorageType.Double
-            && request.Placement.Component is not null
-            && Math.Abs(
-                (diameterParameter.AsDouble() * MillimetersPerFoot)
-                - request.Placement.Component.DiameterMillimeters) <= 0.2;
+        if (!ParameterMatchesFeet(
+                instance.LookupParameter(StraightArrayLengthParameter),
+                request.Placement.BarLengthFeet))
+        {
+            mismatchReason = "Length";
+            return false;
+        }
+
+        if (!ParameterMatchesFeet(
+                instance.LookupParameter(ArrayWidthParameter),
+                request.Placement.ArrayWidthFeet))
+        {
+            mismatchReason = "Width";
+            return false;
+        }
+
+        double expectedRotation = ResolveArrayRotation(request.Placement);
+        if (!AngleMatchesModuloPi(location.Rotation, expectedRotation))
+        {
+            mismatchReason = "Rotation";
+            return false;
+        }
+
+        mismatchReason = string.Empty;
+        return true;
+    }
+
+    private static string DescribeArrayFamilyState(FamilyInstance instance)
+    {
+        LocationPoint? location = instance.Location as LocationPoint;
+        return $"Symbol={RevitElementIds.GetValue(instance.GetTypeId())}:{instance.Symbol.Name}; "
+            + $"Origin={(location is null ? "<none>" : FormatStatePoint(location.Point))}; "
+            + $"Rotation={(location is null ? "<none>" : location.Rotation.ToString("0.#########", CultureInfo.InvariantCulture))}; "
+            + $"Length={FormatParameterState(instance.LookupParameter(StraightArrayLengthParameter))}; "
+            + $"Width={FormatParameterState(instance.LookupParameter(ArrayWidthParameter))}";
+    }
+
+    private static string DescribeArrayFamilyRequest(ArrayRebarCreationRequest request)
+    {
+        return $"Symbol={RevitElementIds.GetValue(request.SymbolResolution.TemplateSymbol.Id)}:{request.SymbolResolution.TemplateSymbol.Name}; "
+            + $"RequiresDuplication={request.SymbolResolution.RequiresDuplication}; "
+            + $"Origin={FormatStatePoint(ToXyz(request.Placement.FirstBarStart))}; "
+            + $"Rotation={ResolveArrayRotation(request.Placement).ToString("0.#########", CultureInfo.InvariantCulture)}; "
+            + $"Length={request.Placement.BarLengthFeet.ToString("0.#########", CultureInfo.InvariantCulture)}; "
+            + $"Width={request.Placement.ArrayWidthFeet.ToString("0.#########", CultureInfo.InvariantCulture)}";
+    }
+
+    private static bool ParameterMatchesFeet(Parameter? parameter, double expected)
+    {
+        return parameter?.StorageType == StorageType.Double
+            && Math.Abs(parameter.AsDouble() - expected) <= GeometryComparisonToleranceFeet;
+    }
+
+    private static bool AngleMatchesModuloPi(double actual, double expected)
+    {
+        // Revit normalizes a negative rotation to the equivalent positive angle
+        // (for example, -PI/2 becomes 3*PI/2). IEEERemainder avoids the 2*PI
+        // boundary error caused by a tiny negative floating-point remainder.
+        double difference = Math.Abs(Math.IEEERemainder(actual - expected, Math.PI));
+        return difference <= 1e-6;
     }
 
     private static bool PointsMatch(XYZ first, XYZ second)
@@ -681,7 +974,7 @@ public sealed class IsoFieldRebarCreationService
         Document document,
         Element host,
         IsoFieldHostElement hostElement,
-        IReadOnlyList<RebarCreationRequest> requests,
+        IReadOnlyList<ArrayRebarCreationRequest> requests,
         IsoFieldRebarChangePlan changePlan)
     {
         if (!changePlan.CanApply)
@@ -692,8 +985,8 @@ public sealed class IsoFieldRebarCreationService
         if (!changePlan.HasChanges)
         {
             string unchangedMessage =
-                $"Армирование уже соответствует расчётной раскладке. Без изменений: {changePlan.UnchangedCount}. Конструкция: {hostElement.DisplayName}.";
-            logger.Info($"IsoField engineering rebar is current. HostId={hostElement.ElementId}; Unchanged={changePlan.UnchangedCount}.");
+                $"Семейства дополнительного армирования уже соответствуют расчётной раскладке. Без изменений: {changePlan.UnchangedCount}. Конструкция: {hostElement.DisplayName}.";
+            logger.Info($"IsoField engineering array families are current. HostId={hostElement.ElementId}; Unchanged={changePlan.UnchangedCount}.");
             return new IsoFieldRebarCreationResult(
                 0,
                 0,
@@ -704,15 +997,16 @@ public sealed class IsoFieldRebarCreationService
                 unchangedMessage);
         }
 
-        Dictionary<string, RebarCreationRequest> requestsByStableId = requests.ToDictionary(
+        Dictionary<string, ArrayRebarCreationRequest> requestsByStableId = requests.ToDictionary(
             request => request.Placement.StableId!,
             StringComparer.Ordinal);
         List<long> createdIds = new();
         List<long> deletedIds = new();
         logger.Info(
-            $"IsoField engineering rebar change transaction starting. HostId={hostElement.ElementId}; {changePlan.Summary}");
-        using Transaction transaction = new(document, "TrueBIM: обновить армирование по изополям");
+            $"IsoField engineering array-family transaction starting. HostId={hostElement.ElementId}; {changePlan.Summary}");
+        using Transaction transaction = new(document, "TrueBIM: семейства допармирования по изополям");
         transaction.Start();
+        IsoFieldRebarFailuresPreprocessor failuresPreprocessor = ConfigureFailureHandling(transaction);
         try
         {
             foreach (IsoFieldRebarChange change in changePlan.Changes.Where(change =>
@@ -728,31 +1022,32 @@ public sealed class IsoFieldRebarCreationService
             foreach (IsoFieldRebarChange change in changePlan.Changes.Where(change =>
                 change.Kind is IsoFieldRebarChangeKind.Add or IsoFieldRebarChangeKind.Update))
             {
-                RebarCreationRequest request = requestsByStableId[change.StableId];
-                Rebar rebar = CreateRebar(document, host, request);
-                MarkCreatedRebar(
-                    rebar,
+                ArrayRebarCreationRequest request = requestsByStableId[change.StableId];
+                FamilyInstance instance = CreateArrayFamily(document, host, request);
+                MarkCreatedArrayFamily(
+                    instance,
                     request.PreviewItem,
                     request.Placement,
                     request.Signature,
                     hostElement.ElementId);
-                createdIds.Add(RevitElementIds.GetValue(rebar.Id));
+                createdIds.Add(RevitElementIds.GetValue(instance.Id));
             }
 
-            transaction.Commit();
+            TransactionStatus commitStatus = transaction.Commit();
+            EnsureTransactionCommitted(commitStatus, failuresPreprocessor);
         }
         catch (Exception exception)
         {
-            transaction.RollBack();
+            RollBackIfStarted(transaction);
             logger.Error(
-                $"IsoField engineering rebar change transaction rolled back. HostId={hostElement.ElementId}.",
+                $"IsoField engineering array-family transaction rolled back. HostId={hostElement.ElementId}.",
                 exception);
             throw;
         }
 
-        string message = $"Армирование обновлено. {changePlan.Summary} Конструкция: {hostElement.DisplayName}.";
+        string message = $"Семейства дополнительного армирования обновлены. {changePlan.Summary} Конструкция: {hostElement.DisplayName}.";
         logger.Info(
-            $"IsoField engineering rebar changes applied. HostId={hostElement.ElementId}; {changePlan.Summary}");
+            $"IsoField engineering array-family changes applied. HostId={hostElement.ElementId}; {changePlan.Summary}");
         return new IsoFieldRebarCreationResult(
             changePlan.AddCount,
             changePlan.UpdateCount,
@@ -761,6 +1056,42 @@ public sealed class IsoFieldRebarCreationService
             createdIds,
             deletedIds,
             message);
+    }
+
+    private static IsoFieldRebarFailuresPreprocessor ConfigureFailureHandling(
+        Transaction transaction)
+    {
+        IsoFieldRebarFailuresPreprocessor preprocessor = new();
+        FailureHandlingOptions options = transaction
+            .GetFailureHandlingOptions()
+            .SetFailuresPreprocessor(preprocessor)
+            .SetClearAfterRollback(true);
+        transaction.SetFailureHandlingOptions(options);
+        return preprocessor;
+    }
+
+    private static void EnsureTransactionCommitted(
+        TransactionStatus status,
+        IsoFieldRebarFailuresPreprocessor failuresPreprocessor)
+    {
+        if (status == TransactionStatus.Committed)
+        {
+            return;
+        }
+
+        string details = failuresPreprocessor.BuildUserMessage();
+        throw new InvalidOperationException(
+            string.IsNullOrWhiteSpace(details)
+                ? "Revit отменил создание семейств дополнительного армирования. Модель не изменена; подробности записаны в журнал работы."
+                : "Revit отменил создание семейств дополнительного армирования. Модель не изменена. " + details);
+    }
+
+    private static void RollBackIfStarted(Transaction transaction)
+    {
+        if (transaction.GetStatus() == TransactionStatus.Started)
+        {
+            transaction.RollBack();
+        }
     }
 
     private static string NormalizeBarTypeName(string value)
@@ -776,45 +1107,202 @@ public sealed class IsoFieldRebarCreationService
         return value.IndexOf(search, StringComparison.Ordinal) >= 0;
     }
 
-    private static Rebar CreateRebar(
+    private static FamilyInstance CreateArrayFamily(
         Document document,
         Element host,
-        RebarCreationRequest request)
+        ArrayRebarCreationRequest request)
     {
-#if REVIT2026_OR_GREATER
-        using BarTerminationsData barTerminations = new(document)
+        if (host is not Floor)
         {
-            TerminationOrientationAtStart = RebarTerminationOrientation.Left,
-            TerminationOrientationAtEnd = RebarTerminationOrientation.Right
-        };
-        Rebar rebar = Rebar.CreateFromCurves(
-            document,
-            RebarStyle.Standard,
-            request.BarType,
-            host,
-            request.Geometry.Normal,
-            request.Geometry.Curves,
-            barTerminations,
-            true,
-            true);
-#else
-        Rebar rebar = Rebar.CreateFromCurves(
-            document,
-            RebarStyle.Standard,
-            request.BarType,
-            null,
-            null,
-            host,
-            request.Geometry.Normal,
-            request.Geometry.Curves,
-            RebarHookOrientation.Left,
-            RebarHookOrientation.Right,
-            true,
-            true);
-#endif
+            throw new InvalidOperationException(
+                "Семейства дополнительного армирования этой версии предназначены только для плит.");
+        }
 
-        rebar.GetShapeDrivenAccessor().SetLayoutAsSingle();
-        return rebar;
+        FamilySymbol symbol = ResolveOrCreateArrayFamilySymbol(document, request);
+        if (!symbol.IsActive)
+        {
+            symbol.Activate();
+            document.Regenerate();
+        }
+
+        Level level = document.GetElement(host.LevelId) as Level
+            ?? ResolveNearestLevel(document, request.Placement.FirstBarStart.ZFeet);
+        XYZ origin = ToXyz(request.Placement.FirstBarStart);
+        FamilyInstance instance = document.Create.NewFamilyInstance(
+            origin,
+            symbol,
+            level,
+            StructuralType.NonStructural);
+        Parameter? elevation = instance.get_Parameter(BuiltInParameter.INSTANCE_ELEVATION_PARAM);
+        if (elevation is not null && !elevation.IsReadOnly)
+        {
+            elevation.Set(origin.Z - level.Elevation);
+        }
+
+        double rotation = ResolveArrayRotation(request.Placement);
+        if (Math.Abs(rotation) > 1e-9)
+        {
+            Line axis = Line.CreateBound(origin, origin + XYZ.BasisZ);
+            ElementTransformUtils.RotateElement(document, instance.Id, axis, rotation);
+        }
+
+        SetRequiredLengthParameter(
+            instance,
+            StraightArrayLengthParameter,
+            request.Placement.BarLengthFeet);
+        SetRequiredLengthParameter(
+            instance,
+            ArrayWidthParameter,
+            request.Placement.ArrayWidthFeet);
+        return instance;
+    }
+
+    private static FamilySymbol ResolveOrCreateArrayFamilySymbol(
+        Document document,
+        ArrayRebarCreationRequest request)
+    {
+        if (!request.SymbolResolution.RequiresDuplication)
+        {
+            return request.SymbolResolution.TemplateSymbol;
+        }
+
+        FamilySymbol? existing = new FilteredElementCollector(document)
+            .OfClass(typeof(FamilySymbol))
+            .Cast<FamilySymbol>()
+            .FirstOrDefault(symbol => IsArrayFamilyForShape(symbol, StraightArrayFamilyCode)
+                && SymbolMatchesPlacement(
+                    symbol,
+                    request.Placement,
+                    request.SymbolResolution.ConcreteClass));
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        FamilySymbol symbol = request.SymbolResolution.TemplateSymbol
+            .Duplicate(request.SymbolResolution.RequiredTypeName) as FamilySymbol
+            ?? throw new InvalidOperationException(
+                "Revit не смог создать недостающий тип семейства дополнительного армирования. Все изменения отменены.");
+        SetRequiredTypeLengthParameter(
+            symbol,
+            DiameterParameter,
+            request.Placement.Component.DiameterMillimeters / MillimetersPerFoot);
+        SetRequiredTypeLengthParameter(
+            symbol,
+            SpacingParameter,
+            request.Placement.Component.SpacingMillimeters / MillimetersPerFoot);
+        if (request.SymbolResolution.ConcreteClass is not null)
+        {
+            SetRequiredTypeIntegerParameter(
+                symbol,
+                ConcreteClassParameter,
+                request.SymbolResolution.ConcreteClass.Value);
+        }
+
+        return symbol;
+    }
+
+    private static bool SymbolMatchesPlacement(
+        FamilySymbol symbol,
+        IsoFieldArrayRebarPlacement placement,
+        int? concreteClass)
+    {
+        string faceToken = placement.Rule.Face == IsoFieldRebarFace.Top
+            ? "ВЕРХ"
+            : "НИЗ";
+        string axisToken = string.Equals(
+            placement.Rule.PlacementDirection,
+            "X",
+            StringComparison.OrdinalIgnoreCase)
+            ? "Б/О"
+            : "Ц/О";
+        return IsArrayFamilyForShape(symbol, StraightArrayFamilyCode)
+            && TypeHasToken(symbol.Name, faceToken)
+            && TypeHasToken(symbol.Name, axisToken)
+            && SizeMatches(
+                symbol,
+                placement.Component.DiameterMillimeters,
+                placement.Component.SpacingMillimeters)
+            && (concreteClass is null
+                || ParameterMatchesInteger(
+                    symbol.LookupParameter(ConcreteClassParameter),
+                    concreteClass.Value));
+    }
+
+    private static void SetRequiredTypeLengthParameter(
+        FamilySymbol symbol,
+        string parameterName,
+        double valueFeet)
+    {
+        Parameter? parameter = symbol.LookupParameter(parameterName);
+        if (parameter is null
+            || parameter.IsReadOnly
+            || parameter.StorageType != StorageType.Double
+            || !parameter.Set(valueFeet))
+        {
+            throw new InvalidOperationException(
+                $"Не удалось заполнить параметр типа \"{parameterName}\" у семейства дополнительного армирования. Все изменения отменены.");
+        }
+    }
+
+    private static void SetRequiredTypeIntegerParameter(
+        FamilySymbol symbol,
+        string parameterName,
+        int value)
+    {
+        Parameter? parameter = symbol.LookupParameter(parameterName);
+        if (parameter is null
+            || parameter.IsReadOnly
+            || parameter.StorageType != StorageType.Integer
+            || !parameter.Set(value))
+        {
+            throw new InvalidOperationException(
+                $"Не удалось заполнить параметр типа \"{parameterName}\" у семейства дополнительного армирования. Все изменения отменены.");
+        }
+    }
+
+    private static Level ResolveNearestLevel(Document document, double elevationFeet)
+    {
+        return new FilteredElementCollector(document)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .OrderBy(level => Math.Abs(level.Elevation - elevationFeet))
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                "В проекте нет уровня для размещения семейства дополнительного армирования.");
+    }
+
+    private static void SetRequiredLengthParameter(
+        FamilyInstance instance,
+        string parameterName,
+        double valueFeet)
+    {
+        Parameter? parameter = instance.LookupParameter(parameterName);
+        if (parameter?.StorageType != StorageType.Double || parameter.IsReadOnly)
+        {
+            throw new InvalidOperationException(
+                $"В семействе {instance.Symbol.FamilyName} недоступен параметр \"{parameterName}\". Все изменения отменены.");
+        }
+
+        if (!parameter.Set(Math.Max(0, valueFeet)))
+        {
+            throw new InvalidOperationException(
+                $"Revit не принял значение параметра \"{parameterName}\" семейства дополнительного армирования. Все изменения отменены.");
+        }
+    }
+
+    private static double ResolveArrayRotation(IsoFieldArrayRebarPlacement placement)
+    {
+        double dx = placement.FirstBarEnd.XFeet - placement.FirstBarStart.XFeet;
+        double dy = placement.FirstBarEnd.YFeet - placement.FirstBarStart.YFeet;
+        double horizontalLength = Math.Sqrt((dx * dx) + (dy * dy));
+        if (horizontalLength <= MinimumDirectionLengthFeet)
+        {
+            throw new InvalidOperationException(
+                $"Не удалось определить направление семейства для зоны {placement.ZoneName}.");
+        }
+
+        return Math.Atan2(dy, dx) - (Math.PI / 2);
     }
 
     private static XYZ ToXyz(IsoFieldRebarPoint3D point)
@@ -827,12 +1315,47 @@ public sealed class IsoFieldRebarCreationService
         return new IsoFieldRebarPoint3D(point.X, point.Y, point.Z);
     }
 
-    private sealed record RebarCreationRequest(
+    private sealed record ArrayRebarCreationRequest(
         RebarRulePreviewItem PreviewItem,
-        RebarBarType BarType,
-        TestRebarGeometry Geometry,
-        IsoFieldRebarPlacement Placement,
-        string? Signature);
+        ArrayFamilySymbolResolution SymbolResolution,
+        IsoFieldArrayRebarPlacement Placement,
+        string Signature);
 
-    private sealed record TestRebarGeometry(IList<Curve> Curves, XYZ Normal);
+    private sealed record ArrayFamilySymbolResolution(
+        FamilySymbol TemplateSymbol,
+        bool RequiresDuplication,
+        string RequiredTypeName,
+        int? ConcreteClass);
+
+    private sealed class IsoFieldRebarFailuresPreprocessor : IFailuresPreprocessor
+    {
+        private readonly List<string> messages = new();
+
+        public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
+        {
+            foreach (FailureMessageAccessor failure in failuresAccessor.GetFailureMessages())
+            {
+                string description = failure.GetDescriptionText();
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    messages.Add(description.Trim());
+                }
+            }
+
+            return messages.Count == 0
+                ? FailureProcessingResult.Continue
+                : FailureProcessingResult.ProceedWithRollBack;
+        }
+
+        public string BuildUserMessage()
+        {
+            string[] uniqueMessages = messages
+                .Distinct(StringComparer.Ordinal)
+                .Take(3)
+                .ToArray();
+            return uniqueMessages.Length == 0
+                ? string.Empty
+                : "Причина Revit: " + string.Join(" ", uniqueMessages);
+        }
+    }
 }

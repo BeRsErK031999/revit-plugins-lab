@@ -55,6 +55,7 @@ public sealed record IsoFieldSlabBindingAnalysis(
     double ThirdPointDeviationMillimeters,
     double ThirdPointToleranceMillimeters,
     bool IsThirdPointValid,
+    bool AreControlPointsInside,
     IReadOnlyList<string> Diagnostics,
     bool CanProceed)
 {

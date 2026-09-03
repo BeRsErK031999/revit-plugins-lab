@@ -68,9 +68,9 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
 
         Title = "Настройка зоны армирования";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
-        Width = 620;
+        Width = 700;
         Height = 470;
-        MinWidth = 540;
+        MinWidth = 620;
         MinHeight = 430;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -219,7 +219,7 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
         {
             Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(188) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.Children.Add(new TextBlock
         {
@@ -231,7 +231,8 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
             Text = value,
             Foreground = TrueBimBrushes.TextPrimary,
             FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0)
         };
         Grid.SetColumn(valueText, 1);
         row.Children.Add(valueText);

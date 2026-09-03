@@ -17,6 +17,7 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.UI;
 public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
 {
     private readonly IsoFieldRecognitionResult source;
+    private readonly HashSet<string> outsideHostZoneIds;
     private readonly IsoFieldZoneCorrectionService correctionService = new();
     private readonly ObservableCollection<IsoFieldZoneCorrectionRow> rows = new();
     private readonly DataGrid zoneGrid;
@@ -24,9 +25,14 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
     private readonly ContentControl statusHost;
     private int nextMergeGroupNumber = 1;
 
-    public IsoFieldZoneCorrectionWindow(IsoFieldRecognitionResult source)
+    public IsoFieldZoneCorrectionWindow(
+        IsoFieldRecognitionResult source,
+        IReadOnlyCollection<string>? outsideHostZoneIds = null)
     {
         this.source = source ?? throw new ArgumentNullException(nameof(source));
+        this.outsideHostZoneIds = outsideHostZoneIds is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(outsideHostZoneIds, StringComparer.Ordinal);
         summaryText = new TextBlock
         {
             Foreground = TrueBimBrushes.TextSecondary,
@@ -55,21 +61,43 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
             body: CreateBody(),
             status: statusHost,
             footer: CreateFooter());
-        SetStatus(
-            "Изменения относятся только к найденным зонам в этом окне. Модель Revit не изменяется.",
-            TrueBimUiSeverity.Info);
+        if (this.outsideHostZoneIds.Count > 0)
+        {
+            SetStatus(
+                $"Полностью за пределами конструкции: {this.outsideHostZoneIds.Count}. Эти зоны показаны первыми. Исключите их, чтобы повторить проверку привязки.",
+                TrueBimUiSeverity.Warning);
+        }
+        else
+        {
+            SetStatus(
+                "Изменения относятся только к найденным зонам в этом окне. Модель Revit не изменяется.",
+                TrueBimUiSeverity.Info);
+        }
     }
 
     public IsoFieldRecognitionResult? Result { get; private set; }
 
     private UIElement CreateCommandBar()
     {
+        List<Button> buttons = new();
+        if (outsideHostZoneIds.Count > 0)
+        {
+            Button excludeOutsideButton = TrueBimUi.CreateSecondaryButton(
+                $"Исключить вне конструкции ({outsideHostZoneIds.Count})",
+                TrueBimIcon.Close,
+                (_, _) => ExcludeOutsideHostZones(),
+                minWidth: 228);
+            excludeOutsideButton.ToolTip = "Снять флажок «Учитывать» только у зон, которые после привязки полностью оказались за пределами выбранной конструкции.";
+            buttons.Add(excludeOutsideButton);
+        }
+
         Button mergeButton = TrueBimUi.CreateSecondaryButton(
             "Объединить выбранные",
             TrueBimIcon.Apply,
             (_, _) => MergeSelected(),
             minWidth: 188);
         mergeButton.ToolTip = "Выделите вместе не менее двух учитываемых зон с одной карты и одного диапазона площади.";
+        buttons.Add(mergeButton);
 
         Button unmergeButton = TrueBimUi.CreateSecondaryButton(
             "Снять объединение",
@@ -77,6 +105,7 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
             (_, _) => UnmergeSelected(),
             minWidth: 164);
         unmergeButton.ToolTip = "Убрать группу объединения у выбранных строк. Остальные правки сохранятся.";
+        buttons.Add(unmergeButton);
 
         Button resetButton = TrueBimUi.CreateSecondaryButton(
             "Сбросить правки",
@@ -84,8 +113,9 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
             (_, _) => ResetRows(),
             minWidth: 154);
         resetButton.ToolTip = "Вернуть учёт зон, диапазоны площади и объединения к исходному результату поиска.";
+        buttons.Add(resetButton);
 
-        return TrueBimUi.CreateCommandBar(mergeButton, unmergeButton, resetButton);
+        return TrueBimUi.CreateCommandBar(buttons.ToArray());
     }
 
     private UIElement CreateBody()
@@ -95,7 +125,9 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         Border hint = TrueBimUi.CreateInfoBanner(
-            "Снимите флажок «Учитывать», чтобы убрать лишнюю зону из расчёта. Диапазон площади выбирается по цветовой шкале карты. Для объединения выделите несколько строк вместе.",
+            outsideHostZoneIds.Count > 0
+                ? "Строки с пометкой «Вне конструкции» блокируют следующий шаг. Исключите их общей кнопкой или снимите флажки вручную. Остальные зоны можно переклассифицировать и объединять."
+                : "Снимите флажок «Учитывать», чтобы убрать лишнюю зону из расчёта. Диапазон площади выбирается по цветовой шкале карты. Для объединения выделите несколько строк вместе.",
             TrueBimUiSeverity.Neutral);
         hint.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         body.Children.Add(hint);
@@ -147,6 +179,7 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
         grid.Columns.Add(CreateIncludedColumn());
         grid.Columns.Add(CreateTextColumn("Карта", nameof(IsoFieldZoneCorrectionRow.LayerName), 86));
         grid.Columns.Add(CreateTextColumn("Зона", nameof(IsoFieldZoneCorrectionRow.DisplayId), 150));
+        grid.Columns.Add(CreateTextColumn("Проверка", nameof(IsoFieldZoneCorrectionRow.ValidationText), 138));
         grid.Columns.Add(CreateClassColumn());
         grid.Columns.Add(CreateTextColumn("Распознано", nameof(IsoFieldZoneCorrectionRow.ConfidenceText), 98));
         grid.Columns.Add(CreateTextColumn(
@@ -165,9 +198,12 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
         }
 
         rows.Clear();
-        foreach (IsoFieldPolyline polyline in source.Polylines)
+        foreach (IsoFieldPolyline polyline in source.Polylines
+            .OrderByDescending(polyline => outsideHostZoneIds.Contains(polyline.Id)))
         {
-            IsoFieldZoneCorrectionRow row = CreateRow(polyline);
+            IsoFieldZoneCorrectionRow row = CreateRow(
+                polyline,
+                outsideHostZoneIds.Contains(polyline.Id));
             row.PropertyChanged += OnRowPropertyChanged;
             rows.Add(row);
         }
@@ -181,7 +217,9 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
         }
     }
 
-    private IsoFieldZoneCorrectionRow CreateRow(IsoFieldPolyline polyline)
+    private IsoFieldZoneCorrectionRow CreateRow(
+        IsoFieldPolyline polyline,
+        bool isOutsideHost)
     {
         IsoFieldLegend? legend = FindLegend(polyline.LayerRole);
         List<IsoFieldZoneClassOption> options = legend?.Bands
@@ -199,7 +237,24 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
             options.Insert(0, selected);
         }
 
-        return new IsoFieldZoneCorrectionRow(polyline, options, selected);
+        return new IsoFieldZoneCorrectionRow(polyline, options, selected, isOutsideHost);
+    }
+
+    private void ExcludeOutsideHostZones()
+    {
+        int changed = 0;
+        foreach (IsoFieldZoneCorrectionRow row in rows.Where(row => row.IsOutsideHost && row.IsIncluded))
+        {
+            row.IsIncluded = false;
+            changed++;
+        }
+
+        UpdateSummary();
+        SetStatus(
+            changed > 0
+                ? $"Исключено зон вне конструкции: {changed}. Нажмите «Применить правки», чтобы повторить проверку привязки."
+                : "Все зоны вне конструкции уже исключены. Нажмите «Применить правки».",
+            TrueBimUiSeverity.Success);
     }
 
     private IsoFieldLegend? FindLegend(IsoFieldLayerRole? layerRole)
@@ -375,8 +430,34 @@ public sealed class IsoFieldZoneCorrectionWindow : TrueBimWindow
             .Distinct(StringComparer.Ordinal)
             .Count();
         int selected = zoneGrid?.SelectedItems.Count ?? 0;
-        summaryText.Text = $"Зон: {rows.Count} · включено: {included} · исключено: {excluded} · "
-            + $"смена диапазона: {reclassified} · объединений: {mergeGroups} · выделено: {selected}";
+        int outsideIncluded = rows.Count(row => row.IsOutsideHost && row.IsIncluded);
+        List<string> parts =
+        [
+            $"Зон: {rows.Count}",
+            $"учитывается: {included}",
+            $"исключено: {excluded}"
+        ];
+        if (outsideIncluded > 0)
+        {
+            parts.Add($"вне конструкции: {outsideIncluded}");
+        }
+
+        if (reclassified > 0)
+        {
+            parts.Add($"смена диапазона: {reclassified}");
+        }
+
+        if (mergeGroups > 0)
+        {
+            parts.Add($"объединений: {mergeGroups}");
+        }
+
+        if (selected > 0)
+        {
+            parts.Add($"выделено: {selected}");
+        }
+
+        summaryText.Text = string.Join(" · ", parts);
     }
 
     private void SetStatus(string message, TrueBimUiSeverity severity)
@@ -475,11 +556,13 @@ internal sealed class IsoFieldZoneCorrectionRow : INotifyPropertyChanged
     public IsoFieldZoneCorrectionRow(
         IsoFieldPolyline source,
         IReadOnlyList<IsoFieldZoneClassOption> classOptions,
-        IsoFieldZoneClassOption selectedClassOption)
+        IsoFieldZoneClassOption selectedClassOption,
+        bool isOutsideHost = false)
     {
         Source = source;
         ClassOptions = classOptions;
         this.selectedClassOption = selectedClassOption;
+        IsOutsideHost = isOutsideHost;
         originalClassKey = selectedClassOption.ClassKey;
     }
 
@@ -499,6 +582,10 @@ internal sealed class IsoFieldZoneCorrectionRow : INotifyPropertyChanged
     };
 
     public string DisplayId => Source.Id;
+
+    public bool IsOutsideHost { get; }
+
+    public string ValidationText => IsOutsideHost ? "Вне конструкции" : "—";
 
     public string ConfidenceText => Source.Confidence.HasValue
         ? Source.Confidence.Value.ToString("P0", CultureInfo.GetCultureInfo("ru-RU"))

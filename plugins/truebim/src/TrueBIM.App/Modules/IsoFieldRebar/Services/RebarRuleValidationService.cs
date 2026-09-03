@@ -8,6 +8,7 @@ public sealed class RebarRuleValidationService
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
     private const double AreaToleranceSquareCentimetersPerMeter = 0.02;
+    private const double NumericEpsilon = 1e-9;
     private readonly IsoFieldReinforcementCombinationService combinationService = new();
     private readonly IsoFieldSlabRebarLayoutService layoutService = new();
 
@@ -82,6 +83,7 @@ public sealed class RebarRuleValidationService
         if (rule.IsEngineeringRule
             && rule.ProvidedAreaSquareCentimetersPerMeter
                 + AreaToleranceSquareCentimetersPerMeter
+                + NumericEpsilon
                 < rule.RequiredAreaSquareCentimetersPerMeter)
         {
             diagnostics.Add(
@@ -152,6 +154,8 @@ public sealed class RebarRuleValidationService
                 baseDiagnostics.Add("После обрезки по границам конструкции от зоны ничего не осталось.");
             }
 
+            bool isIncluded = clippedZone is not null;
+
             IsoFieldLayerMapping? mapping = polyline.LayerRole.HasValue
                 ? sourceSet!.GetLayerMapping(polyline.LayerRole.Value)
                 : null;
@@ -220,7 +224,8 @@ public sealed class RebarRuleValidationService
                 rule,
                 itemDiagnostics,
                 clippedZone?.Regions,
-                BaseDiagnostics: effectiveBaseDiagnostics));
+                BaseDiagnostics: effectiveBaseDiagnostics,
+                IsIncluded: isIncluded));
         }
 
         if (items.Count == 0)
@@ -256,10 +261,14 @@ public sealed class RebarRuleValidationService
                     : 0
             })
             .ToList();
-        foreach (RebarRulePreviewItem emptyItem in items.Where(item =>
-            item.IsValid && item.EstimatedBarCount == 0))
+        for (int index = 0; index < items.Count; index++)
         {
-            int index = items.IndexOf(emptyItem);
+            RebarRulePreviewItem emptyItem = items[index];
+            if (!emptyItem.IsValid || emptyItem.EstimatedBarCount != 0)
+            {
+                continue;
+            }
+
             items[index] = emptyItem with
             {
                 Diagnostics = [.. emptyItem.Diagnostics, "После отступов и проверки минимальной длины в зоне не осталось стержней."]

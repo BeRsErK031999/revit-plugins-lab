@@ -95,7 +95,7 @@ public sealed class IsoFieldRebarRuleOverrideService
             {
                 items.Add(sourceItem with
                 {
-                    IsIncluded = true,
+                    IsIncluded = sourceItem.IsIncluded,
                     IsManuallyOverridden = false
                 });
                 continue;

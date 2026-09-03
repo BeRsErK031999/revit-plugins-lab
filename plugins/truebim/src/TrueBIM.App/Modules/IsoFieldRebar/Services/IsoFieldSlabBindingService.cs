@@ -9,6 +9,7 @@ public sealed class IsoFieldSlabBindingService
     private const double MinimumHostSpanFeet = 0.01;
     private const double BoundaryToleranceFeet = 1e-6;
     private const double ThirdPointToleranceMillimeters = 50;
+    private const double MinimumRetainedZoneAreaRatio = 0.95;
     private readonly IsoFieldPolygonClipService polygonClipService = new();
 
     public IsoFieldSlabBindingAnalysis Analyze(
@@ -65,8 +66,12 @@ public sealed class IsoFieldSlabBindingService
         double retainedAreaRatio = totalOriginalArea <= BoundaryToleranceFeet * BoundaryToleranceFeet
             ? 0
             : Math.Max(0, Math.Min(1, totalClippedArea / totalOriginalArea));
+        bool hasEffectiveZones = clippedZones.Any(zone => !zone.IsEmpty);
+        bool removedZonesAreAcceptable = removedZoneIds.Length == 0
+            || retainedAreaRatio + 1e-9 >= MinimumRetainedZoneAreaRatio;
         bool canProceed = recognitionResult.Polylines.Count > 0
-            && removedZoneIds.Length == 0
+            && hasEffectiveZones
+            && removedZonesAreAcceptable
             && controlPointsInside
             && thirdPoint.IsValid;
         List<string> diagnostics = BuildDiagnostics(
@@ -75,6 +80,7 @@ public sealed class IsoFieldSlabBindingService
             clippedZoneIds.Length,
             removedZoneIds.Length,
             retainedAreaRatio,
+            removedZonesAreAcceptable,
             controlPointsInside,
             holes.Count,
             thirdPoint,
@@ -96,6 +102,7 @@ public sealed class IsoFieldSlabBindingService
             thirdPoint.DeviationMillimeters,
             ThirdPointToleranceMillimeters,
             thirdPoint.IsValid,
+            controlPointsInside,
             diagnostics,
             canProceed);
     }
@@ -285,6 +292,7 @@ public sealed class IsoFieldSlabBindingService
         int clippedZoneCount,
         int removedZoneCount,
         double retainedAreaRatio,
+        bool removedZonesAreAcceptable,
         bool controlPointsInside,
         int holeCount,
         ThirdPointCheck thirdPoint,
@@ -317,7 +325,16 @@ public sealed class IsoFieldSlabBindingService
 
         if (removedZoneCount > 0)
         {
-            diagnostics.Add($"Полностью вне допустимой области осталось зон: {removedZoneCount}. Они блокируют расчёт правил.");
+            diagnostics.Add(canProceed
+                ? $"Полностью вне допустимой области исключено зон: {removedZoneCount}. Перед применением подтвердите предупреждение проверки."
+                : $"Полностью вне допустимой области осталось зон: {removedZoneCount}.");
+        }
+
+        if (!removedZonesAreAcceptable)
+        {
+            diagnostics.Add(
+                $"После обрезки сохранено меньше {(MinimumRetainedZoneAreaRatio * 100).ToString("0.#", culture)}% площади зон. "
+                + "Проверьте контрольные точки, границы конструкции и отверстия.");
         }
 
         diagnostics.Add(canProceed

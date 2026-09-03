@@ -99,6 +99,26 @@ public sealed class IsoFieldSlabBindingServiceTests
     }
 
     [Fact]
+    public void Analyze_AllowsSmallRemovedZonesWhenMostAreaIsRetained()
+    {
+        IsoFieldRecognitionResult recognition = CreateRecognition(
+            CreateZone("large", 0, 0, 100, 100),
+            CreateZone("inside-hole", 47, 47, 53, 53));
+
+        IsoFieldSlabBindingAnalysis analysis = service.Analyze(
+            recognition,
+            CreateGeometry(includeHole: true),
+            CreateDefaultInput());
+
+        Assert.True(analysis.CanProceed, string.Join(Environment.NewLine, analysis.Diagnostics));
+        Assert.Equal(["inside-hole"], analysis.RemovedZoneIds);
+        Assert.InRange(analysis.RetainedAreaRatio, 0.95, 1);
+        Assert.Contains(
+            analysis.Diagnostics,
+            message => message.Contains("исключено", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void Analyze_ClipsHoleFromZoneAndAllowsWorkflow()
     {
         IsoFieldRecognitionResult recognition = CreateRecognition(
@@ -134,6 +154,28 @@ public sealed class IsoFieldSlabBindingServiceTests
         Assert.False(analysis.IsThirdPointValid);
         Assert.Equal(304.8, analysis.ThirdPointDeviationMillimeters, 6);
         Assert.Contains(analysis.Diagnostics, message => message.Contains("не подтверждает", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Analyze_ReportsControlPointsOutsideHostSeparatelyFromThirdPointTolerance()
+    {
+        IsoFieldSlabBindingInput input = CreateDefaultInput() with
+        {
+            HostPoint1Feet = new IsoFieldPoint(-6, -5),
+            HostPoint2Feet = new IsoFieldPoint(4, -5),
+            HostPoint3Feet = new IsoFieldPoint(-6, 5)
+        };
+
+        IsoFieldSlabBindingAnalysis analysis = service.Analyze(
+            CreateRecognition(CreateZone("inside", 25, 25, 75, 75)),
+            CreateGeometry(includeHole: false),
+            input);
+
+        Assert.False(analysis.CanProceed);
+        Assert.True(analysis.IsThirdPointValid);
+        Assert.False(analysis.AreControlPointsInside);
+        Assert.Empty(analysis.RemovedZoneIds);
+        Assert.Contains(analysis.Diagnostics, message => message.Contains("контрольных точек", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

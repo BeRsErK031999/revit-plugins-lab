@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
 using TrueBIM.App.Modules.IsoFieldRebar.Models;
+using TrueBIM.App.Modules.IsoFieldRebar.Services;
 using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.IsoFieldRebar.Revit;
@@ -13,6 +14,7 @@ public sealed class IsoFieldHostSelectionService
     private const double HorizontalNormalTolerance = 0.995;
     private const double PointPlaneToleranceFeet = 0.02;
     private const double GeometryToleranceFeet = 1e-7;
+    private readonly IsoFieldControlPointSnapService controlPointSnapService = new();
 
     public IsoFieldHostElement PickHost(UIDocument uiDocument)
     {
@@ -62,7 +64,7 @@ public sealed class IsoFieldHostSelectionService
         Reference reference = uiDocument.Selection.PickObject(
             ObjectType.Face,
             new HostFaceSelectionFilter(hostElement.ElementId),
-            $"Укажите контрольную точку {pointNumber} на {faceName}.");
+            $"Щёлкните рядом с углом {faceName}: контрольная точка {pointNumber} привяжется к ближайшему углу в радиусе {IsoFieldControlPointSnapService.SnapRadiusMillimeters:0} мм.");
         XYZ worldPoint = reference.GlobalPoint
             ?? throw new InvalidOperationException("Не удалось определить положение выбранной точки на конструкции.");
         IsoFieldHostGeometry geometry = hostElement.Geometry;
@@ -78,9 +80,10 @@ public sealed class IsoFieldHostSelectionService
                 $"Выбранная точка не лежит на {faceName}. Укажите точку на опорной плоскости.");
         }
 
-        return new IsoFieldPoint(
+        IsoFieldPoint selectedPoint = new(
             delta.DotProduct(axisX),
             delta.DotProduct(axisY));
+        return controlPointSnapService.SnapToNearestOuterCorner(selectedPoint, geometry);
     }
 
     public static bool IsSupportedHostCategory(long categoryId)

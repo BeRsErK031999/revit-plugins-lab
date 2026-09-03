@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 public sealed class IsoFieldRebarReviewService
 {
     private static readonly Regex StableIdPattern = new(
-        "^(?<layer>[^:]+):(?<zone>.+):c[0-9]+:r[0-9]+:b[0-9]+$",
+        "^(?<layer>[^:]+):(?<zone>.+):c[0-9]+:r[0-9]+:(?:a|b)[0-9]+$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public IReadOnlyList<IsoFieldRebarReviewRow> BuildRows(

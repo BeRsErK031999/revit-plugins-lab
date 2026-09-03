@@ -157,10 +157,10 @@ public sealed class IsoFieldRebarReportService
         AppendCsvRow(builder, ["Сравнение с моделью выполнено", FormatBoolean(report.ChangeSummary.Compared)]);
         AppendCsvRow(builder, ["Изменения применены", FormatBoolean(report.ApplicationSummary.Applied)]);
         AppendCsvRow(builder, ["Изменения завершены", FormatNullableDateTime(report.ApplicationSummary.CompletedAtUtc)]);
-        AppendCsvRow(builder, ["Добавлено", FormatInteger(report.ApplicationSummary.AddedCount)]);
-        AppendCsvRow(builder, ["Изменено", FormatInteger(report.ApplicationSummary.UpdatedCount)]);
-        AppendCsvRow(builder, ["Удалено", FormatInteger(report.ApplicationSummary.DeletedCount)]);
-        AppendCsvRow(builder, ["Без изменений", FormatInteger(report.ApplicationSummary.UnchangedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств добавлено", FormatInteger(report.ApplicationSummary.AddedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств изменено", FormatInteger(report.ApplicationSummary.UpdatedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств удалено", FormatInteger(report.ApplicationSummary.DeletedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств без изменений", FormatInteger(report.ApplicationSummary.UnchangedCount)]);
         AppendCsvRow(builder, ["Номера созданных элементов", string.Join(",", report.ApplicationSummary.CreatedElementIds)]);
         AppendCsvRow(builder, ["Номера удалённых элементов", string.Join(",", report.ApplicationSummary.DeletedElementIds)]);
         AppendCsvRow(builder, Array.Empty<string?>());
@@ -194,8 +194,8 @@ public sealed class IsoFieldRebarReportService
             "Номер зоны", "Название", "Исходные номера", "Карта", "Сторона", "Направление",
             "Режим", "Учитывается", "Настроена вручную", "Объединена", "Армирование",
             "Требуется, см2/м", "Принято, см2/м", "Площадь, м2", "Стержни",
-            "Распознано", "Состояние", "Добавить", "Изменить", "Удалить",
-            "Без изменений", "Наборы стержней", "Замечания"
+            "Распознано", "Состояние", "Семейств добавить", "Семейств изменить", "Семейств удалить",
+            "Семейств без изменений", "Наборы стержней", "Замечания"
         ]);
         foreach (IsoFieldRebarReportZone zone in report.Zones)
         {

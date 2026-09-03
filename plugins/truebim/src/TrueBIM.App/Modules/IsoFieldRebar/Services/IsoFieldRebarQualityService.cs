@@ -8,8 +8,10 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 public sealed class IsoFieldRebarQualityService
 {
     private const double SquareFeetToSquareMeters = 0.09290304;
-    private const double AreaToleranceSquareFeet = 1e-6;
-    private const double RequiredAreaTolerance = 1e-6;
+    private const double GeometryAreaToleranceSquareMeters = 0.0005;
+    private const double AreaToleranceSquareFeet = GeometryAreaToleranceSquareMeters / SquareFeetToSquareMeters;
+    private const double RequiredAreaTolerance = 0.02;
+    private const double NumericEpsilon = 1e-9;
     private const double FullCoverageRatio = 0.995;
     private readonly IsoFieldPolygonClipService polygonService = new();
 
@@ -94,7 +96,7 @@ public sealed class IsoFieldRebarQualityService
             double? required = item.Rule.RequiredAreaSquareCentimetersPerMeter;
             double? provided = item.Rule.ProvidedAreaSquareCentimetersPerMeter;
             if (!required.HasValue || !provided.HasValue
-                || provided.Value + RequiredAreaTolerance >= required.Value)
+                || provided.Value + RequiredAreaTolerance + NumericEpsilon >= required.Value)
             {
                 continue;
             }
@@ -241,8 +243,7 @@ public sealed class IsoFieldRebarQualityService
         IsoFieldSlabBindingAnalysis slabBinding,
         ICollection<IsoFieldRebarQualityIssue> issues)
     {
-        string[] outsideZoneIds = slabBinding.OutsideZoneIds
-            .Concat(slabBinding.RemovedZoneIds)
+        string[] outsideZoneIds = slabBinding.RemovedZoneIds
             .Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
@@ -251,7 +252,7 @@ public sealed class IsoFieldRebarQualityService
             issues.Add(new IsoFieldRebarQualityIssue(
                 IsoFieldRebarQualityCode.SourceZoneOutsideHost,
                 IsoFieldRebarQualitySeverity.Warning,
-                $"За границами конструкции осталось исходных зон: {outsideZoneIds.Length}. Проверьте совмещение по трём точкам и выбранную опорную поверхность.",
+                $"Полностью вне конструкции исключено исходных зон: {outsideZoneIds.Length}. Проверьте совмещение по трём точкам и выбранную опорную поверхность.",
                 ZoneIds: outsideZoneIds,
                 MeasuredValue: outsideZoneIds.Length,
                 LimitValue: 0));
