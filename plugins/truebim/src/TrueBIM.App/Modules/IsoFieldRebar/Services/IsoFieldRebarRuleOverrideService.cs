@@ -48,7 +48,7 @@ public sealed class IsoFieldRebarRuleOverrideService
             : parsedCombination.Components;
         if (selectedComponents.Count == 0)
         {
-            diagnostics.Add("Для режима дополнительного усиления сочетание должно содержать компонент сверх базовой сетки.");
+            diagnostics.Add("Для дополнительного усиления укажите хотя бы один новый набор стержней сверх базовой сетки.");
         }
 
         IsoFieldRebarComponent? firstComponent = selectedComponents.FirstOrDefault();
@@ -84,7 +84,7 @@ public sealed class IsoFieldRebarRuleOverrideService
 
         if (calculatedPreview.EngineeringSettings is null)
         {
-            throw new InvalidOperationException("Ручные настройки зон доступны только для инженерной раскладки host.");
+            throw new InvalidOperationException("Ручная настройка зон доступна только после расчёта раскладки для выбранной стены или плиты.");
         }
 
         IsoFieldEngineeringSettings settings = calculatedPreview.EngineeringSettings;
@@ -95,7 +95,7 @@ public sealed class IsoFieldRebarRuleOverrideService
             {
                 items.Add(sourceItem with
                 {
-                    IsIncluded = true,
+                    IsIncluded = sourceItem.IsIncluded,
                     IsManuallyOverridden = false
                 });
                 continue;

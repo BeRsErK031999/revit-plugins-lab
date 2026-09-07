@@ -21,18 +21,18 @@ public sealed class ScheduleColumnVisibilityAnalyzer
             return new ScheduleColumnVisibilityDecision(
                 column.FieldName,
                 ScheduleColumnVisibilityAction.Keep,
-                "Поле нельзя скрывать через API Revit.");
+                "Видимость служебного или недоступного для изменения поля сохранена.");
         }
 
-        NumericColumnSummary summary = SummarizeNumericValues(column);
-        if (!summary.HasNumericValues)
+        if (!column.IsNumeric)
         {
             return new ScheduleColumnVisibilityDecision(
                 column.FieldName,
-                ScheduleColumnVisibilityAction.Show,
-                "Колонка не выглядит числовой, поэтому оставлена видимой.");
+                ScheduleColumnVisibilityAction.Keep,
+                "Видимость текстовых и служебных полей не изменяется.");
         }
 
+        NumericColumnSummary summary = SummarizeNumericValues(column);
         if (summary.HasNonZeroValues)
         {
             return new ScheduleColumnVisibilityDecision(
@@ -41,37 +41,56 @@ public sealed class ScheduleColumnVisibilityAnalyzer
                 "В колонке есть ненулевые значения.");
         }
 
+        if (summary.HasUnparsedValues)
+        {
+            return new ScheduleColumnVisibilityDecision(
+                column.FieldName,
+                ScheduleColumnVisibilityAction.Keep,
+                "Есть нераспознанные значения; исходная видимость сохранена.");
+        }
+
         return new ScheduleColumnVisibilityDecision(
             column.FieldName,
             ScheduleColumnVisibilityAction.Hide,
-            "Все числовые значения в колонке равны нулю.");
+            "В числовой колонке только нули или пустые ячейки.");
     }
 
     private static NumericColumnSummary SummarizeNumericValues(ScheduleColumnState column)
     {
-        bool hasNumericValues = false;
         bool hasNonZeroValues = false;
+        bool hasUnparsedValues = false;
 
-        foreach (string cellText in column.CellTexts)
+        for (int index = 0; index < column.CellTexts.Count; index++)
         {
-            if (IsColumnLabel(cellText, column))
+            string cellText = column.CellTexts[index];
+            if (IsColumnLabel(cellText, column) || IsEmptyValue(cellText))
             {
                 continue;
             }
 
-            if (!TryParseDisplayedNumber(cellText, out decimal value))
+            double? parsedValue = column.ParsedNumericValues?[index];
+            if (parsedValue.HasValue)
             {
+                hasNonZeroValues |= parsedValue.Value != 0;
                 continue;
             }
 
-            hasNumericValues = true;
-            if (value != decimal.Zero)
+            if (TryParseDisplayedNumber(cellText, out decimal value))
             {
-                hasNonZeroValues = true;
+                hasNonZeroValues |= value != decimal.Zero;
+            }
+            else
+            {
+                hasUnparsedValues = true;
             }
         }
 
-        return new NumericColumnSummary(hasNumericValues, hasNonZeroValues);
+        return new NumericColumnSummary(hasNonZeroValues, hasUnparsedValues);
+    }
+
+    private static bool IsEmptyValue(string? text)
+    {
+        return string.IsNullOrWhiteSpace(text) || text!.Trim() is "-" or "–" or "—";
     }
 
     private static bool IsColumnLabel(string? text, ScheduleColumnState column)
@@ -97,6 +116,7 @@ public sealed class ScheduleColumnVisibilityAnalyzer
         return text
             .Trim()
             .Replace('\u00a0', ' ')
+            .Replace('\u202f', ' ')
             .Replace('\u2212', '-');
     }
 
@@ -112,6 +132,7 @@ public sealed class ScheduleColumnVisibilityAnalyzer
         string normalized = text!
             .Trim()
             .Replace('\u00a0', ' ')
+            .Replace('\u202f', ' ')
             .Replace(" ", string.Empty)
             .Replace(',', '.')
             .Replace('\u2212', '-');
@@ -123,5 +144,5 @@ public sealed class ScheduleColumnVisibilityAnalyzer
             out value);
     }
 
-    private sealed record NumericColumnSummary(bool HasNumericValues, bool HasNonZeroValues);
+    private sealed record NumericColumnSummary(bool HasNonZeroValues, bool HasUnparsedValues);
 }

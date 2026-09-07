@@ -73,7 +73,7 @@ public sealed class IsoFieldRebarChangePlanServiceTests
         Assert.False(plan.CanApply);
         Assert.False(plan.HasChanges);
         Assert.Contains(plan.Diagnostics, diagnostic =>
-            diagnostic.Contains("повторяющийся", StringComparison.Ordinal));
+            diagnostic.Contains("встречается несколько раз", StringComparison.Ordinal));
     }
 
     [Fact]

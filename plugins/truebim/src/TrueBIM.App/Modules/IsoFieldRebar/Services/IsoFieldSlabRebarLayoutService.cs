@@ -94,7 +94,7 @@ public sealed class IsoFieldSlabRebarLayoutService
             || settings.ConcreteCoverMillimeters < 10
             || settings.ConcreteCoverMillimeters > 100)
         {
-            diagnostics.Add("Защитный слой должен быть в диапазоне 10–100 мм.");
+            diagnostics.Add("Отступ арматуры от поверхности должен быть от 10 до 100 мм.");
         }
 
         if (!IsFinite(settings.BoundaryOffsetMillimeters)

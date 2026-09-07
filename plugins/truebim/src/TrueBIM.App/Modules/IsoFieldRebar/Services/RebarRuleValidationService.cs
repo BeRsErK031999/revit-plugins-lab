@@ -8,6 +8,7 @@ public sealed class RebarRuleValidationService
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
     private const double AreaToleranceSquareCentimetersPerMeter = 0.02;
+    private const double NumericEpsilon = 1e-9;
     private readonly IsoFieldReinforcementCombinationService combinationService = new();
     private readonly IsoFieldSlabRebarLayoutService layoutService = new();
 
@@ -61,7 +62,7 @@ public sealed class RebarRuleValidationService
 
         if (!IsSupportedHostKind(rule.HostKind))
         {
-            diagnostics.Add($"HostKind '{rule.HostKind}' не поддерживается. Ожидается Wall или Slab.");
+            diagnostics.Add("Этот тип конструкции не поддерживается. Выберите прямую стену или горизонтальную плиту.");
         }
 
         if (string.IsNullOrWhiteSpace(rule.BarTypeName))
@@ -76,12 +77,13 @@ public sealed class RebarRuleValidationService
 
         if (!IsSupportedPlacementDirection(rule.PlacementDirection))
         {
-            diagnostics.Add($"Направление армирования '{rule.PlacementDirection}' не поддерживается. Ожидается Auto, X, Y, AlongHost или Vertical.");
+            diagnostics.Add("Не удалось определить направление арматуры. Проверьте, к какой карте относится зона.");
         }
 
         if (rule.IsEngineeringRule
             && rule.ProvidedAreaSquareCentimetersPerMeter
                 + AreaToleranceSquareCentimetersPerMeter
+                + NumericEpsilon
                 < rule.RequiredAreaSquareCentimetersPerMeter)
         {
             diagnostics.Add(
@@ -102,12 +104,12 @@ public sealed class RebarRuleValidationService
         List<string> diagnostics = new();
         if (recognitionResult.Polylines.Count == 0)
         {
-            diagnostics.Add("Нет зон изополей для расчёта инженерных правил.");
+            diagnostics.Add("Нет зон изополей для расчёта арматуры.");
         }
 
         if (sourceSet is null || !sourceSet.IsComplete)
         {
-            diagnostics.Add("Для инженерной раскладки host нужен полный комплект из четырёх карт, а не одиночный JSON.");
+            diagnostics.Add("Для расчёта арматуры нужен полный комплект из четырёх карт. Готовый файл с зонами подходит только для просмотра.");
         }
         else if (!sourceSet.HasConfirmedLayerMappings)
         {
@@ -116,7 +118,7 @@ public sealed class RebarRuleValidationService
 
         if (slabBinding?.CanProceed != true)
         {
-            diagnostics.Add("Перед расчётом раскладки выполните проверенную трёхточечную привязку и отсечение зон по контуру host.");
+            diagnostics.Add("Перед расчётом совместите карты с конструкцией по трём точкам и проверьте обрезку зон по её границам.");
         }
 
         diagnostics.AddRange(layoutService.ValidateSettings(settings));
@@ -139,7 +141,7 @@ public sealed class RebarRuleValidationService
             List<string> ruleDiagnostics = new();
             if (polyline.LayerRole is null)
             {
-                baseDiagnostics.Add("Для зоны не определён расчётный слой As1X/As2X/As3Y/As4Y.");
+                baseDiagnostics.Add("Для зоны не определены карта и направление арматуры.");
             }
 
             if (polyline.LegendBandIndex is null)
@@ -149,8 +151,10 @@ public sealed class RebarRuleValidationService
 
             if (!clippedByZoneId.TryGetValue(polyline.Id, out IsoFieldClippedZone? clippedZone))
             {
-                baseDiagnostics.Add("После отсечения по контуру host зона не содержит допустимой геометрии.");
+                baseDiagnostics.Add("После обрезки по границам конструкции от зоны ничего не осталось.");
             }
+
+            bool isIncluded = clippedZone is not null;
 
             IsoFieldLayerMapping? mapping = polyline.LayerRole.HasValue
                 ? sourceSet!.GetLayerMapping(polyline.LayerRole.Value)
@@ -220,12 +224,13 @@ public sealed class RebarRuleValidationService
                 rule,
                 itemDiagnostics,
                 clippedZone?.Regions,
-                BaseDiagnostics: effectiveBaseDiagnostics));
+                BaseDiagnostics: effectiveBaseDiagnostics,
+                IsIncluded: isIncluded));
         }
 
         if (items.Count == 0)
         {
-            diagnostics.Add("После инженерной проверки не осталось зон для раскладки.");
+            diagnostics.Add("После проверки не осталось зон для раскладки.");
             return new RebarRulePreviewResult(items, diagnostics, settings);
         }
 
@@ -256,10 +261,14 @@ public sealed class RebarRuleValidationService
                     : 0
             })
             .ToList();
-        foreach (RebarRulePreviewItem emptyItem in items.Where(item =>
-            item.IsValid && item.EstimatedBarCount == 0))
+        for (int index = 0; index < items.Count; index++)
         {
-            int index = items.IndexOf(emptyItem);
+            RebarRulePreviewItem emptyItem = items[index];
+            if (!emptyItem.IsValid || emptyItem.EstimatedBarCount != 0)
+            {
+                continue;
+            }
+
             items[index] = emptyItem with
             {
                 Diagnostics = [.. emptyItem.Diagnostics, "После отступов и проверки минимальной длины в зоне не осталось стержней."]
@@ -334,7 +343,7 @@ public sealed class RebarRuleValidationService
             hostElement.HostKind,
             barTypeName,
             spacing,
-            $"Preview rule. Confidence={FormatConfidence(polyline.Confidence)}; Host={hostElement.DisplayName}.",
+            $"Предварительный расчёт. Зона найдена с точностью {FormatConfidence(polyline.Confidence)}. Конструкция: {hostElement.DisplayName}.",
             ResolvePlacementDirection(hostElement.HostKind));
     }
 
@@ -378,8 +387,8 @@ public sealed class RebarRuleValidationService
     private static string FormatConfidence(double? confidence)
     {
         return confidence.HasValue && IsFinite(confidence.Value)
-            ? confidence.Value.ToString("0.###", CultureInfo.InvariantCulture)
-            : "n/a";
+            ? confidence.Value.ToString("P0", CultureInfo.GetCultureInfo("ru-RU"))
+            : "не определена";
     }
 
     private static bool IsSupportedHostKind(string hostKind)

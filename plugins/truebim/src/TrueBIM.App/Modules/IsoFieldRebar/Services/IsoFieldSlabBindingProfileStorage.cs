@@ -93,7 +93,7 @@ public sealed class IsoFieldSlabBindingProfileStorage
         {
             DocumentKey = NormalizeDocumentKey(profile.DocumentKey, profile.DocumentKey),
             HostName = string.IsNullOrWhiteSpace(profile.HostName)
-                ? $"Element {profile.HostElementId}"
+                ? $"Элемент № {profile.HostElementId}"
                 : profile.HostName.Trim(),
             SavedAtUtc = profile.SavedAtUtc == default
                 ? DateTimeOffset.UtcNow

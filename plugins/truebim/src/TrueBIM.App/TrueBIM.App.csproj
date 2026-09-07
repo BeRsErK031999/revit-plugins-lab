@@ -97,5 +97,6 @@
     <Using Remove="System.Windows.Forms" />
     <PackageReference Include="ACadSharp" Version="3.6.35" />
     <PackageReference Include="PdfPig" Version="0.1.15" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>
 </Project>

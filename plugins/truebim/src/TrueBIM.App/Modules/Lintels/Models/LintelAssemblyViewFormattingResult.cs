@@ -23,7 +23,7 @@ public sealed record LintelAssemblyViewFormattingResult(
         List<string> lines =
         [
             $"Оформление: создано аннотаций — {CreatedAnnotationCount}; удалено ранее созданных — {RemovedAnnotationCount}; crop — {(CropAdjusted ? "настроен" : "без изменений")}.",
-            $"Линейный размер — {ResolveStatus(DimensionCreated)}; высотная отметка — {ResolveStatus(ElevationCreated)}; рамка — {ResolveStatus(FrameCreated)}."
+            $"Линейный размер — {ResolveStatus(DimensionCreated)}; аннотация высотной отметки — {ResolveStatus(ElevationCreated)}; рамка — {ResolveStatus(FrameCreated)}."
         ];
         lines.AddRange(Messages.Where(message => !string.IsNullOrWhiteSpace(message)));
         return string.Join(Environment.NewLine, lines);

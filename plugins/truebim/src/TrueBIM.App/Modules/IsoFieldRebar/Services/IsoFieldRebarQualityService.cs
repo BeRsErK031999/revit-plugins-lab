@@ -8,8 +8,10 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 public sealed class IsoFieldRebarQualityService
 {
     private const double SquareFeetToSquareMeters = 0.09290304;
-    private const double AreaToleranceSquareFeet = 1e-6;
-    private const double RequiredAreaTolerance = 1e-6;
+    private const double GeometryAreaToleranceSquareMeters = 0.0005;
+    private const double AreaToleranceSquareFeet = GeometryAreaToleranceSquareMeters / SquareFeetToSquareMeters;
+    private const double RequiredAreaTolerance = 0.02;
+    private const double NumericEpsilon = 1e-9;
     private const double FullCoverageRatio = 0.995;
     private readonly IsoFieldPolygonClipService polygonService = new();
 
@@ -65,7 +67,7 @@ public sealed class IsoFieldRebarQualityService
                 new IsoFieldRebarQualityIssue(
                     IsoFieldRebarQualityCode.GeometryAnalysisFailed,
                     IsoFieldRebarQualitySeverity.Blocking,
-                    "Не удалось проверить геометрию раскладки: " + exception.Message)
+                    "Не удалось проверить границы зон и положение стержней: " + exception.Message)
             ];
             return new IsoFieldRebarQualityResult(
                 issues,
@@ -94,7 +96,7 @@ public sealed class IsoFieldRebarQualityService
             double? required = item.Rule.RequiredAreaSquareCentimetersPerMeter;
             double? provided = item.Rule.ProvidedAreaSquareCentimetersPerMeter;
             if (!required.HasValue || !provided.HasValue
-                || provided.Value + RequiredAreaTolerance >= required.Value)
+                || provided.Value + RequiredAreaTolerance + NumericEpsilon >= required.Value)
             {
                 continue;
             }
@@ -102,7 +104,7 @@ public sealed class IsoFieldRebarQualityService
             issues.Add(new IsoFieldRebarQualityIssue(
                 IsoFieldRebarQualityCode.RequiredAreaDeficit,
                 IsoFieldRebarQualitySeverity.Blocking,
-                $"Зона {item.ZoneId}: принято {provided.Value:0.###} см²/м при требуемых {required.Value:0.###} см²/м.",
+                $"Зона «{item.ZoneName}»: принято {provided.Value:0.###} см²/м при требуемых {required.Value:0.###} см²/м.",
                 item.Rule.LayerRole,
                 item.EffectiveSourceZoneIds,
                 provided,
@@ -139,7 +141,7 @@ public sealed class IsoFieldRebarQualityService
                     issues.Add(new IsoFieldRebarQualityIssue(
                         IsoFieldRebarQualityCode.SameLayerOverlap,
                         IsoFieldRebarQualitySeverity.Blocking,
-                        $"Слой {layer.Key}: зоны {first.ZoneId} и {second.ZoneId} пересекаются на {overlapSquareMeters:0.###} м².",
+                        $"Карта «{FormatLayer(layer.Key)}»: зоны «{first.ZoneName}» и «{second.ZoneName}» пересекаются на {overlapSquareMeters:0.###} м².",
                         layer.Key,
                         first.EffectiveSourceZoneIds
                             .Concat(second.EffectiveSourceZoneIds)
@@ -174,7 +176,7 @@ public sealed class IsoFieldRebarQualityService
             issues.Add(new IsoFieldRebarQualityIssue(
                 IsoFieldRebarQualityCode.FinalGeometryOutsideHost,
                 IsoFieldRebarQualitySeverity.Blocking,
-                $"Зона {item.ZoneId}: итоговый контур выходит за host на {outsideSquareMeters:0.###} м².",
+                $"Зона «{item.ZoneName}» выходит за границы выбранной конструкции на {outsideSquareMeters:0.###} м².",
                 item.Rule.LayerRole,
                 item.EffectiveSourceZoneIds,
                 outsideSquareMeters,
@@ -215,7 +217,7 @@ public sealed class IsoFieldRebarQualityService
                 issues.Add(new IsoFieldRebarQualityIssue(
                     IsoFieldRebarQualityCode.MissingLayerCoverage,
                     IsoFieldRebarQualitySeverity.Warning,
-                    $"Слой {layerRole}: нет включённых зон; покрытие host равно 0%.",
+                    $"Карта «{FormatLayer(layerRole)}»: нет учитываемых зон; покрытие конструкции равно 0%.",
                     layerRole));
             }
             else if (ratio + 1e-9 < FullCoverageRatio)
@@ -223,7 +225,7 @@ public sealed class IsoFieldRebarQualityService
                 issues.Add(new IsoFieldRebarQualityIssue(
                     IsoFieldRebarQualityCode.PartialLayerCoverage,
                     IsoFieldRebarQualitySeverity.Warning,
-                    $"Слой {layerRole}: зоны покрывают {ratio:P1} площади host.",
+                    $"Карта «{FormatLayer(layerRole)}»: зоны покрывают {ratio:P1} площади конструкции.",
                     layerRole,
                     layerItems.SelectMany(item => item.EffectiveSourceZoneIds)
                         .Distinct(StringComparer.Ordinal)
@@ -241,8 +243,7 @@ public sealed class IsoFieldRebarQualityService
         IsoFieldSlabBindingAnalysis slabBinding,
         ICollection<IsoFieldRebarQualityIssue> issues)
     {
-        string[] outsideZoneIds = slabBinding.OutsideZoneIds
-            .Concat(slabBinding.RemovedZoneIds)
+        string[] outsideZoneIds = slabBinding.RemovedZoneIds
             .Distinct(StringComparer.Ordinal)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
@@ -251,7 +252,7 @@ public sealed class IsoFieldRebarQualityService
             issues.Add(new IsoFieldRebarQualityIssue(
                 IsoFieldRebarQualityCode.SourceZoneOutsideHost,
                 IsoFieldRebarQualitySeverity.Warning,
-                $"Исходные зоны вне host: {outsideZoneIds.Length}. Проверьте привязку и назначение опорной плоскости.",
+                $"Полностью вне конструкции исключено исходных зон: {outsideZoneIds.Length}. Проверьте совмещение по трём точкам и выбранную опорную поверхность.",
                 ZoneIds: outsideZoneIds,
                 MeasuredValue: outsideZoneIds.Length,
                 LimitValue: 0));
@@ -266,7 +267,7 @@ public sealed class IsoFieldRebarQualityService
             issues.Add(new IsoFieldRebarQualityIssue(
                 IsoFieldRebarQualityCode.ZoneClippedByHost,
                 IsoFieldRebarQualitySeverity.Warning,
-                $"По границе host отсечено зон: {clippedZoneIds.Length}. Проверьте overlay перед применением.",
+                $"По границе конструкции обрезано зон: {clippedZoneIds.Length}. Проверьте схему совмещения перед применением.",
                 ZoneIds: clippedZoneIds,
                 MeasuredValue: clippedZoneIds.Length,
                 LimitValue: 0));
@@ -300,5 +301,17 @@ public sealed class IsoFieldRebarQualityService
         using SHA256 sha256 = SHA256.Create();
         return string.Concat(sha256.ComputeHash(Encoding.UTF8.GetBytes(source.ToString()))
             .Select(value => value.ToString("x2", CultureInfo.InvariantCulture)));
+    }
+
+    private static string FormatLayer(IsoFieldLayerRole role)
+    {
+        return role switch
+        {
+            IsoFieldLayerRole.As1X => "X, карта 1",
+            IsoFieldLayerRole.As2X => "X, карта 2",
+            IsoFieldLayerRole.As3Y => "Y, карта 1",
+            IsoFieldLayerRole.As4Y => "Y, карта 2",
+            _ => "неизвестная карта"
+        };
     }
 }

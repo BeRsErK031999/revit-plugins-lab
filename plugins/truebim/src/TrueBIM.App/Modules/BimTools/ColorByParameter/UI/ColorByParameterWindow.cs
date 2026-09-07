@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.Models;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.Services;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
@@ -20,9 +21,10 @@ namespace TrueBIM.App.Modules.BimTools.ColorByParameter.UI;
 public sealed class ColorByParameterWindow : TrueBimWindow
 {
     private const int MaxValueCount = 40;
+    private readonly UIApplication application;
     private readonly Document document;
-    private readonly View activeView;
-    private readonly IReadOnlyList<BimCategoryItem> categories;
+    private readonly string initialViewName;
+    private readonly List<BimCategoryItem> categories;
     private readonly ColorByParameterService service;
     private readonly ITrueBimLogger logger;
     private readonly RevitActionDispatcher revitActions;
@@ -30,20 +32,28 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     private readonly WpfComboBox parameterInput = new();
     private readonly ListBox valueList = new();
     private readonly TextBlock statusText = new();
+    private readonly CheckBox temporaryViewCheckBox = new()
+    {
+        Content = "На временном виде",
+        IsChecked = true,
+        VerticalAlignment = VerticalAlignment.Center
+    };
     private List<BimParameterItem> parameters = [];
     private List<ColorRuleRow> rows = [];
     private int colorGenerationOffset;
 
     public ColorByParameterWindow(
+        UIApplication application,
         Document document,
         View activeView,
         IReadOnlyList<BimCategoryItem> categories,
         ColorByParameterService service,
         ITrueBimLogger logger)
     {
+        this.application = application ?? throw new ArgumentNullException(nameof(application));
         this.document = document ?? throw new ArgumentNullException(nameof(document));
-        this.activeView = activeView ?? throw new ArgumentNullException(nameof(activeView));
-        this.categories = categories ?? throw new ArgumentNullException(nameof(categories));
+        initialViewName = (activeView ?? throw new ArgumentNullException(nameof(activeView))).Name;
+        this.categories = (categories ?? throw new ArgumentNullException(nameof(categories))).ToList();
         this.service = service ?? throw new ArgumentNullException(nameof(service));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
         revitActions = new RevitActionDispatcher("цвета по параметрам", this.logger);
@@ -67,7 +77,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         return BuildShell(
             header: TrueBimUi.CreateHeader(
                 "Цвета по параметрам",
-                $"Активный вид: {activeView.Name}. Фильтры BIM_F_ создаются только для текущего вида.",
+                $"Исходный вид: {initialViewName}. Фильтры BIM_F_ применяются к виду, активному в момент нажатия.",
                 TrueBimIcon.ColorByParameter),
             commandBar: null,
             body: CreateMainPanel(),
@@ -128,9 +138,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         Button clearButton = CreateSmallButton("Снять", TrueBimIcon.Close, (_, _) => SelectCategories(false), 80);
         clearButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
         toolbar.Children.Add(clearButton);
-        Button refreshButton = CreateSmallButton("Обновить", TrueBimIcon.Refresh, (_, _) => LoadParameters(), 112);
+        Button refreshButton = CreateSmallButton("Обновить", TrueBimIcon.Refresh, (_, _) => RefreshActiveViewData(), 112);
         refreshButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
-        refreshButton.ToolTip = "Обновить список параметров проекта для выбранных категорий.";
+        refreshButton.ToolTip = "Обновить категории и параметры для активного сейчас вида Revit.";
         toolbar.Children.Add(refreshButton);
         WpfGrid.SetRow(toolbar, 1);
         panel.Children.Add(toolbar);
@@ -221,6 +231,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
 
     private UIElement CreateFooter()
     {
+        temporaryViewCheckBox.Style = TrueBimStyles.CreateCheckBoxStyle();
+        temporaryViewCheckBox.ToolTip = "Включить временные свойства вида. После выхода из режима Revit вернет исходное оформление.";
+
         Button clearButton = TrueBimUi.CreateDangerButton("Очистить раскраску", TrueBimIcon.Close, minWidth: 170);
         clearButton.Click += (_, _) => ClearFilters();
 
@@ -231,7 +244,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
 
-        return TrueBimUi.CreateFooter(null, clearButton, applyButton, closeButton);
+        return TrueBimUi.CreateFooter(temporaryViewCheckBox, clearButton, applyButton, closeButton);
     }
 
     private void ApplySharedControlStyles()
@@ -272,26 +285,13 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     {
         try
         {
-            IReadOnlyList<BimCategoryItem> selectedCategories = GetSelectedCategories();
-            if (selectedCategories.Count == 0)
+            if (!TryGetActiveView(out View? activeView, out string message))
             {
-                parameters = [];
-                parameterInput.ItemsSource = null;
-                rows = [];
-                RefreshValueList();
-                statusText.Text = "Выберите хотя бы одну категорию.";
+                statusText.Text = message;
                 return;
             }
 
-            parameters = service.CollectParameters(document, activeView, selectedCategories).ToList();
-            rows = [];
-            RefreshValueList();
-            parameterInput.ItemsSource = parameters;
-            parameterInput.DisplayMemberPath = nameof(BimParameterItem.DisplayName);
-            parameterInput.SelectedIndex = parameters.Count > 0 ? 0 : -1;
-            statusText.Text = parameters.Count == 0
-                ? "Для выбранных категорий не найдено параметров проекта, доступных для фильтра."
-                : $"Категорий: {selectedCategories.Count}. Параметров проекта: {parameters.Count}.";
+            LoadParameters(activeView!);
         }
         catch (Exception exception)
         {
@@ -310,6 +310,12 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     {
         try
         {
+            if (!TryGetActiveView(out View? activeView, out string message))
+            {
+                statusText.Text = message;
+                return;
+            }
+
             if (parameterInput.SelectedItem is not BimParameterItem parameter)
             {
                 rows = [];
@@ -319,7 +325,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
 
             ColorValueCollection collection = service.CollectValues(
                 document,
-                activeView,
+                activeView!,
                 GetSelectedCategories(),
                 parameter,
                 MaxValueCount);
@@ -327,8 +333,8 @@ public sealed class ColorByParameterWindow : TrueBimWindow
             colorGenerationOffset = 0;
             RefreshValueList();
             statusText.Text = collection.WasTruncated
-                ? $"Найдено уникальных значений: {collection.TotalValueCount}. Показаны первые {rows.Count}; сузьте категории перед применением."
-                : $"Найдено уникальных значений: {rows.Count}.";
+                ? $"Вид «{activeView!.Name}». Найдено значений: {collection.TotalValueCount}. Показаны первые {rows.Count}; сузьте категории перед применением."
+                : $"Вид «{activeView!.Name}». Найдено уникальных значений: {rows.Count}.";
         }
         catch (Exception exception)
         {
@@ -520,6 +526,13 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     {
         try
         {
+            if (!TryGetActiveView(out View? activeView, out string message))
+            {
+                statusText.Text = message;
+                TaskDialog.Show("Цвета по параметрам", message);
+                return;
+            }
+
             if (parameterInput.SelectedItem is not BimParameterItem parameter)
             {
                 statusText.Text = "Выберите параметр.";
@@ -538,8 +551,16 @@ public sealed class ColorByParameterWindow : TrueBimWindow
                 return;
             }
 
-            ColorApplyResult result = service.Apply(document, activeView, GetSelectedCategories(), parameter, rows);
-            statusText.Text = $"Применено: {result.AppliedFilterCount}. Создано: {result.CreatedFilterCount}. Обновлено: {result.UpdatedFilterCount}. Пропущено: {result.SkippedValueCount}.";
+            bool useTemporaryViewProperties = temporaryViewCheckBox.IsChecked == true;
+            ColorApplyResult result = service.Apply(
+                document,
+                activeView!,
+                GetSelectedCategories(),
+                parameter,
+                rows,
+                useTemporaryViewProperties);
+            string modeText = useTemporaryViewProperties ? "Временно" : "Постоянно";
+            statusText.Text = $"Вид «{activeView!.Name}». {modeText}. Применено: {result.AppliedFilterCount}. Заменено прежних: {result.ClearedFilterCount}. Создано: {result.CreatedFilterCount}. Обновлено: {result.UpdatedFilterCount}. Пропущено: {result.SkippedValueCount}.";
             TaskDialog.Show("Цвета по параметрам", result.ToDialogText());
         }
         catch (Exception exception)
@@ -559,13 +580,20 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     {
         try
         {
+            if (!TryGetActiveView(out View? activeView, out string message))
+            {
+                statusText.Text = message;
+                TaskDialog.Show("Цвета по параметрам", message);
+                return;
+            }
+
             if (!ConfirmClear())
             {
                 return;
             }
 
-            ColorApplyResult result = service.Clear(document, activeView);
-            statusText.Text = $"Очищено фильтров с активного вида: {result.ClearedFilterCount}.";
+            ColorApplyResult result = service.Clear(document, activeView!);
+            statusText.Text = $"Вид «{activeView!.Name}». Очищено фильтров: {result.ClearedFilterCount}.";
             TaskDialog.Show("Цвета по параметрам", result.ToDialogText());
         }
         catch (Exception exception)
@@ -578,6 +606,100 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     private IReadOnlyList<BimCategoryItem> GetSelectedCategories()
     {
         return categories.Where(category => category.IsSelected).ToList();
+    }
+
+    private void RefreshActiveViewData()
+    {
+        statusText.Text = "Обновление категорий и параметров активного вида передано в Revit.";
+        revitActions.Raise(RefreshActiveViewDataInRevitContext);
+    }
+
+    private void RefreshActiveViewDataInRevitContext()
+    {
+        try
+        {
+            if (!TryGetActiveView(out View? activeView, out string message))
+            {
+                statusText.Text = message;
+                return;
+            }
+
+            Dictionary<long, bool> previousSelection = categories.ToDictionary(
+                category => RevitElementIds.GetValue(category.CategoryId),
+                category => category.IsSelected);
+            IReadOnlyList<BimCategoryItem> currentCategories = service.CollectCategories(document, activeView!);
+            categories.Clear();
+            foreach (BimCategoryItem category in currentCategories)
+            {
+                if (previousSelection.TryGetValue(RevitElementIds.GetValue(category.CategoryId), out bool wasSelected))
+                {
+                    category.IsSelected = wasSelected;
+                }
+
+                categories.Add(category);
+            }
+
+            RefreshCategoryList();
+            LoadParameters(activeView!);
+        }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to refresh Color By Parameter active view data.", exception);
+            TaskDialog.Show("Цвета по параметрам", "Не удалось обновить данные активного вида. Используйте логи для диагностики.");
+        }
+    }
+
+    private void LoadParameters(View activeView)
+    {
+        IReadOnlyList<BimCategoryItem> selectedCategories = GetSelectedCategories();
+        if (selectedCategories.Count == 0)
+        {
+            parameters = [];
+            parameterInput.ItemsSource = null;
+            rows = [];
+            RefreshValueList();
+            statusText.Text = "Выберите хотя бы одну категорию.";
+            return;
+        }
+
+        parameters = service.CollectParameters(document, activeView, selectedCategories).ToList();
+        rows = [];
+        RefreshValueList();
+        parameterInput.ItemsSource = parameters;
+        parameterInput.DisplayMemberPath = nameof(BimParameterItem.DisplayName);
+        parameterInput.SelectedIndex = parameters.Count > 0 ? 0 : -1;
+        statusText.Text = parameters.Count == 0
+            ? $"Вид «{activeView.Name}». Для выбранных категорий не найдено параметров проекта, доступных для фильтра."
+            : $"Вид «{activeView.Name}». Категорий: {selectedCategories.Count}. Параметров проекта: {parameters.Count}.";
+    }
+
+    private bool TryGetActiveView(out View? activeView, out string message)
+    {
+        activeView = null;
+        UIDocument? currentUiDocument = application.ActiveUIDocument;
+        if (currentUiDocument is null)
+        {
+            message = "В Revit нет активного документа.";
+            return false;
+        }
+
+        // Revit may return different managed wrappers for the same open document.
+        if (!currentUiDocument.Document.Equals(document))
+        {
+            message = "Активен другой документ Revit. Вернитесь к исходному документу или переоткройте инструмент.";
+            return false;
+        }
+
+        View candidate = currentUiDocument.ActiveView;
+        if (candidate.IsTemplate || !candidate.AreGraphicsOverridesAllowed())
+        {
+            message = $"Вид «{candidate.Name}» не поддерживает графические переопределения.";
+            return false;
+        }
+
+        activeView = candidate;
+        message = string.Empty;
+        return true;
     }
 
     private void UpdateStatus()
@@ -603,7 +725,7 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         TaskDialog dialog = new("Цвета по параметрам")
         {
             MainInstruction = "Очистить раскраску TrueBIM с активного вида?",
-            MainContent = "Будут сняты только фильтры, имя которых начинается с BIM_F_. Сами элементы фильтров в проекте не удаляются.",
+            MainContent = "Будут сняты только фильтры, имя которых начинается с BIM_F_. Неиспользуемые другими видами элементы фильтров будут удалены из проекта.",
             CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
             DefaultButton = TaskDialogResult.No
         };

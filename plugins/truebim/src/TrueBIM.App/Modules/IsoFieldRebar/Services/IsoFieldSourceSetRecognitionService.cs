@@ -21,7 +21,7 @@ public sealed class IsoFieldSourceSetRecognitionService
         if (!sourceSet.IsComplete)
         {
             throw new InvalidOperationException(
-                $"IsoField source set is incomplete: {string.Join(" ", sourceSet.ValidationMessages)}");
+                $"Комплект карт не готов. {string.Join(" ", sourceSet.ValidationMessages)}");
         }
 
         List<IsoFieldPolyline> polylines = new();

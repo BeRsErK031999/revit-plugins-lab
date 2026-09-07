@@ -237,7 +237,10 @@ public sealed class LintelTypeImageService
                 throw new InvalidOperationException("Revit создал пустой PNG-файл.");
             }
 
-            File.Copy(exportedFilePath, imageFilePath, true);
+            File.Copy(
+                ToExtendedWindowsPath(exportedFilePath),
+                ToExtendedWindowsPath(imageFilePath),
+                true);
             (int pixelWidth, int pixelHeight) = ReadPngSize(imageFilePath);
             if (pixelWidth != ExportPixelWidth || pixelHeight <= 0)
             {
@@ -253,7 +256,7 @@ public sealed class LintelTypeImageService
             {
                 if (Directory.Exists(temporaryDirectory))
                 {
-                    Directory.Delete(temporaryDirectory, true);
+                    Directory.Delete(ToExtendedWindowsPath(temporaryDirectory), true);
                 }
             }
             catch
@@ -283,6 +286,19 @@ public sealed class LintelTypeImageService
         int width = ReadBigEndianInt32(header, 16);
         int height = ReadBigEndianInt32(header, 20);
         return (width, height);
+    }
+
+    private static string ToExtendedWindowsPath(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (fullPath.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            return fullPath;
+        }
+
+        return fullPath.StartsWith(@"\\", StringComparison.Ordinal)
+            ? @"\\?\UNC\" + fullPath.Substring(2)
+            : @"\\?\" + fullPath;
     }
 
     private static int ReadBigEndianInt32(byte[] bytes, int offset)

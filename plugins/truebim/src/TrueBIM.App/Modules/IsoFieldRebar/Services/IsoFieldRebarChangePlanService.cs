@@ -32,13 +32,13 @@ public sealed class IsoFieldRebarChangePlanService
             .GroupBy(item => item.StableId, StringComparer.Ordinal)
             .Where(group => group.Count() > 1))
         {
-            diagnostics.Add($"План содержит повторяющийся стабильный id: {duplicate.Key}.");
+                diagnostics.Add($"Один и тот же расчётный элемент дополнительного армирования встречается несколько раз: {duplicate.Key}.");
         }
 
         if (plannedItems.Any(item => string.IsNullOrWhiteSpace(item.StableId)
             || string.IsNullOrWhiteSpace(item.Signature)))
         {
-            diagnostics.Add("У каждой плановой линии должны быть стабильный id и сигнатура.");
+            diagnostics.Add("Не удалось однозначно определить все расчётные элементы дополнительного армирования. Пересчитайте раскладку.");
         }
 
         if (diagnostics.Count > 0)
@@ -108,7 +108,7 @@ public sealed class IsoFieldRebarChangePlanService
 
         if (string.IsNullOrWhiteSpace(placement.StableId) || placement.Component is null)
         {
-            throw new InvalidOperationException("Для инженерной линии нужны стабильный id и компонент армирования.");
+            throw new InvalidOperationException("Не удалось определить расчётный стержень и его параметры.");
         }
 
         string value = string.Join(
@@ -123,6 +123,46 @@ public sealed class IsoFieldRebarChangePlanService
             Format(placement.Normal.XFeet),
             Format(placement.Normal.YFeet),
             Format(placement.Normal.ZFeet),
+            Format(placement.Component.DiameterMillimeters),
+            Format(placement.Component.SpacingMillimeters),
+            placement.Rule.LayerRole,
+            placement.Rule.Face,
+            placement.Rule.PlacementDirection);
+        using SHA256 sha256 = SHA256.Create();
+        byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+        return string.Concat(hash
+            .Take(SignatureByteCount)
+            .Select(item => item.ToString("x2", CultureInfo.InvariantCulture)));
+    }
+
+    public string BuildSignature(IsoFieldArrayRebarPlacement placement)
+    {
+        if (placement is null)
+        {
+            throw new ArgumentNullException(nameof(placement));
+        }
+
+        if (string.IsNullOrWhiteSpace(placement.StableId))
+        {
+            throw new InvalidOperationException("Не удалось определить расчётное семейство дополнительного армирования.");
+        }
+
+        string value = string.Join(
+            "|",
+            placement.StableId,
+            Format(placement.FirstBarStart.XFeet),
+            Format(placement.FirstBarStart.YFeet),
+            Format(placement.FirstBarStart.ZFeet),
+            Format(placement.FirstBarEnd.XFeet),
+            Format(placement.FirstBarEnd.YFeet),
+            Format(placement.FirstBarEnd.ZFeet),
+            Format(placement.LastBarStart.XFeet),
+            Format(placement.LastBarStart.YFeet),
+            Format(placement.LastBarStart.ZFeet),
+            Format(placement.Normal.XFeet),
+            Format(placement.Normal.YFeet),
+            Format(placement.Normal.ZFeet),
+            placement.BarCount,
             Format(placement.Component.DiameterMillimeters),
             Format(placement.Component.SpacingMillimeters),
             placement.Rule.LayerRole,

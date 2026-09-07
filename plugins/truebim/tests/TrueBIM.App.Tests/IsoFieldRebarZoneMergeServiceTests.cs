@@ -81,7 +81,7 @@ public sealed class IsoFieldRebarZoneMergeServiceTests
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             service.CreateMerge(preview, ["zone-a", "zone-b"]));
 
-        Assert.Contains("одинаковые слой, грань, направление и сочетание", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("одной карте и стороне конструкции", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public sealed class IsoFieldRebarZoneMergeServiceTests
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             service.Apply(preview, [first, second]));
 
-        Assert.Contains("более чем в одно", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("более чем в одну группу", exception.Message, StringComparison.Ordinal);
     }
 
     private static RebarRulePreviewResult CreatePreview(params RebarRulePreviewItem[] items)

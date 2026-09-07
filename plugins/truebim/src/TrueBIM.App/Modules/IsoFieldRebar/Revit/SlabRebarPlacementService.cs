@@ -30,7 +30,7 @@ public sealed class SlabRebarPlacementService
 
         if (!preview.IsEngineeringPreview || preview.EngineeringSettings is null)
         {
-            throw new InvalidOperationException("Для раскладки плиты нужен валидный инженерный preview.");
+            throw new InvalidOperationException("Сначала рассчитайте раскладку арматуры для плиты без ошибок.");
         }
 
         if (!IsFinite(slabThicknessFeet) || slabThicknessFeet <= 0)
@@ -72,7 +72,7 @@ public sealed class SlabRebarPlacementService
         if ((slabThicknessFeet * MillimetersPerFoot) <= requiredThicknessMillimeters)
         {
             throw new InvalidOperationException(
-                $"Толщины плиты недостаточно для защитного слоя и разнесения четырёх слоёв. Нужно больше {requiredThicknessMillimeters:0.#} мм.");
+                $"Толщины плиты недостаточно для заданных отступов и четырёх рядов арматуры. Нужно больше {requiredThicknessMillimeters:0.#} мм.");
         }
 
         Dictionary<string, RebarRulePreviewItem> itemsByZone = preview.Items
@@ -134,7 +134,7 @@ public sealed class SlabRebarPlacementService
             .ToArray();
         if (slabItems.Length == 0)
         {
-            throw new InvalidOperationException("Для плиты нет валидных правил армирования.");
+            throw new InvalidOperationException("Для плиты нет зон с рассчитанной раскладкой без ошибок.");
         }
 
         bool alongX = ResolveDirectionAlongX(bounds, slabItems[0].Rule.PlacementDirection);
@@ -191,7 +191,7 @@ public sealed class SlabRebarPlacementService
 
         if (bounds.WidthXFeet < MinimumTestLengthFeet || bounds.WidthYFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("Bounding box плиты слишком мал для пробного армирования.");
+            throw new InvalidOperationException("Размер плиты слишком мал для пробного армирования.");
         }
     }
 

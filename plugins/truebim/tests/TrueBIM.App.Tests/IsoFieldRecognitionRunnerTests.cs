@@ -18,7 +18,7 @@ public sealed class IsoFieldRecognitionRunnerTests
         Assert.Empty(result.Polylines);
         Assert.Empty(result.Diagnostics);
         IIsoFieldRecognitionRunnerDiagnostics diagnostics = Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner);
-        Assert.Equal("Stub", diagnostics.RunnerName);
+        Assert.Equal("Обработка карт недоступна", diagnostics.RunnerName);
         Assert.False(string.IsNullOrWhiteSpace(diagnostics.RunnerVersion));
     }
 
@@ -122,7 +122,7 @@ public sealed class IsoFieldRecognitionRunnerTests
                 Assert.Null(band.MinimumValue);
                 Assert.Null(band.MaximumValue);
             });
-            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("уровень", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("диапазон", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(result.Diagnostics, message => message.Contains("не полностью", StringComparison.OrdinalIgnoreCase));
         }
         finally
@@ -195,7 +195,7 @@ public sealed class IsoFieldRecognitionRunnerTests
 
             Assert.IsType<IsoFieldCliRecognitionRunner>(runner);
             IIsoFieldRecognitionRunnerDiagnostics diagnostics = Assert.IsAssignableFrom<IIsoFieldRecognitionRunnerDiagnostics>(runner);
-            Assert.Equal("CLI", diagnostics.RunnerName);
+            Assert.Equal("внешняя программа", diagnostics.RunnerName);
             Assert.False(string.IsNullOrWhiteSpace(diagnostics.RunnerVersion));
         }
         finally
@@ -277,7 +277,7 @@ public sealed class IsoFieldRecognitionRunnerTests
             InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
                 () => runner.Run(sourcePath));
 
-            Assert.Contains("ExitCode=7", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("завершилась с ошибкой", exception.Message, StringComparison.Ordinal);
         }
         finally
         {

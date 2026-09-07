@@ -9,8 +9,11 @@ public sealed class FinishRoomScheduleStyleRulesTests
     [Fact]
     public void HeaderDimensions_MatchFinishScheduleRequirement()
     {
-        Assert.Equal(4, FinishRoomScheduleStyleRules.HeaderRowCount);
+        Assert.Equal("v19", FinishRoomScheduleStyleRules.LayoutRevision);
+        Assert.Equal(3, FinishRoomScheduleStyleRules.HeaderRowCount);
         Assert.Equal(12, FinishRoomScheduleStyleRules.TitleRowHeightMillimeters);
+        Assert.Equal(8, FinishRoomScheduleStyleRules.GroupHeaderRowHeightMillimeters);
+        Assert.Equal(12, FinishRoomScheduleStyleRules.ColumnHeaderRowHeightMillimeters);
         Assert.Equal(3.5, FinishRoomScheduleStyleRules.TitleTextSizeMillimeters);
         Assert.Equal(2.5, FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters);
         Assert.Equal(2.5, FinishRoomScheduleStyleRules.BodyTextSizeMillimeters);
@@ -18,10 +21,9 @@ public sealed class FinishRoomScheduleStyleRulesTests
     }
 
     [Theory]
-    [InlineData(1, 3)]
-    [InlineData(2, 2)]
-    [InlineData(3, 1)]
-    [InlineData(4, 0)]
+    [InlineData(1, 2)]
+    [InlineData(2, 1)]
+    [InlineData(3, 0)]
     public void GetHeaderRowsToInsert_NormalizesSupportedRevitHeaderShapes(
         int existingRowCount,
         int expectedRowsToInsert)
@@ -33,7 +35,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(5)]
+    [InlineData(4)]
     public void GetHeaderRowsToInsert_RejectsUnexpectedHeaderShapes(int existingRowCount)
     {
         Assert.Throws<ArgumentOutOfRangeException>(
@@ -41,14 +43,15 @@ public sealed class FinishRoomScheduleStyleRulesTests
     }
 
     [Theory]
-    [InlineData(1, 8, 8, 3)]
-    [InlineData(2, 8, 8, 2)]
-    [InlineData(4, 8, 8, 0)]
-    public void BuildHeaderNormalizationPlan_AcceptsMaterializedScheduleColumns(
+    [InlineData(1, 1, 8, 2, 7)]
+    [InlineData(2, 4, 8, 1, 4)]
+    [InlineData(3, 8, 8, 0, 0)]
+    public void BuildHeaderNormalizationPlan_ExpandsSupportedTitleGrid(
         int existingRowCount,
         int existingColumnCount,
         int expectedColumnCount,
-        int expectedRowsToInsert)
+        int expectedRowsToInsert,
+        int expectedColumnsToInsert)
     {
         FinishScheduleHeaderNormalizationPlan plan =
             FinishRoomScheduleStyleRules.BuildHeaderNormalizationPlan(
@@ -57,18 +60,20 @@ public sealed class FinishRoomScheduleStyleRulesTests
                 expectedColumnCount);
 
         Assert.Equal(expectedRowsToInsert, plan.RowsToInsert);
+        Assert.Equal(expectedColumnsToInsert, plan.ColumnsToInsert);
     }
 
-    [Fact]
-    public void BuildHeaderNormalizationPlan_RejectsStaleScheduleColumns()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(9)]
+    public void BuildHeaderNormalizationPlan_RejectsInvalidTitleGridColumns(
+        int existingColumnCount)
     {
-        ArgumentException exception = Assert.Throws<ArgumentException>(
+        Assert.Throws<ArgumentOutOfRangeException>(
             () => FinishRoomScheduleStyleRules.BuildHeaderNormalizationPlan(
                 existingRowCount: 1,
-                existingColumnCount: 1,
+                existingColumnCount,
                 expectedColumnCount: 8));
-
-        Assert.Contains("1 columns instead of 8", exception.Message);
     }
 
     [Fact]
@@ -108,7 +113,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
     }
 
     [Fact]
-    public void BuildHeaderCells_PutsGraphLettersAndNoteInsideThreeLevelHeader()
+    public void BuildHeaderCells_BuildsCaptionsWithoutGraphLetters()
     {
         FinishRoomSchedulePlan plan = new FinishRoomSchedulePlanBuilder().Build(
             Settings(),
@@ -138,12 +143,10 @@ public sealed class FinishRoomScheduleStyleRulesTests
                 1,
                 7,
                 FinishRoomScheduleStyleRules.NoteHeaderText));
-        Assert.Equal(
-            ["A", "B", "C", "D", "E", "F", "G", "H"],
-            cells
-                .Where(cell => cell.TopRowOffset == 2)
-                .OrderBy(cell => cell.LeftColumnIndex)
-                .Select(cell => cell.Text));
+        Assert.Equal(9, cells.Count);
+        Assert.DoesNotContain(
+            cells,
+            cell => cell.Text.Length == 1 && cell.Text[0] is >= 'A' and <= 'Z');
     }
 
     [Fact]
@@ -172,7 +175,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
                 cells,
                 cell => cell.Text == FinishRoomScheduleStyleRules.NoteHeaderText).MergeMode);
         Assert.All(
-            cells.Where(cell => cell.TopRowOffset == 2),
+            cells.Where(cell => cell.TopRowOffset == 1 && cell.BottomRowOffset == 1),
             cell => Assert.Equal(FinishScheduleHeaderMergeMode.None, cell.MergeMode));
     }
 

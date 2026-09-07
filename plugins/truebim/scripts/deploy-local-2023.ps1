@@ -1,0 +1,80 @@
+param(
+    [ValidateSet("Debug", "Release")]
+    [string] $Configuration = "Debug",
+
+    [switch] $SkipBuild
+)
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
+$projectPath = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\TrueBIM.App.csproj"
+$projectOutputDir = Join-Path $repoRoot "plugins\truebim\src\TrueBIM.App\bin\$Configuration\net48"
+$manifestSource = Join-Path $repoRoot "plugins\truebim\manifests\2022\TrueBIM.addin"
+$printModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\print"
+$sheetNumberingModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\sheet-numbering"
+$scheduleColumnCollapseModuleSourceDir = Join-Path $repoRoot "plugins\truebim\modules\schedule-column-collapse"
+$assetsSourceDir = Join-Path $repoRoot "plugins\truebim\assets"
+$coreTargetDir = Join-Path $env:APPDATA "TrueBIM\2023\Core"
+$printTargetDir = Join-Path $env:APPDATA "TrueBIM\2023\Modules\Print"
+$sheetNumberingTargetDir = Join-Path $env:APPDATA "TrueBIM\2023\Modules\SheetNumbering"
+$scheduleColumnCollapseTargetDir = Join-Path $env:APPDATA "TrueBIM\2023\Modules\ScheduleColumnCollapse"
+$assetsTargetDir = Join-Path $env:APPDATA "TrueBIM\2023\Assets"
+$addinTargetDir = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2023"
+$addinTargetPath = Join-Path $addinTargetDir "TrueBIM.addin"
+
+. (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
+$dotnetPath = Resolve-DotNetSdk
+
+$runningRevit = Get-Process -Name "Revit" -ErrorAction SilentlyContinue
+if ($runningRevit) {
+    throw "Revit is running. Close Revit before local deploy so TrueBIM.App.dll is not locked."
+}
+
+if (-not $SkipBuild) {
+    & $dotnetPath build $projectPath `
+        --configuration $Configuration `
+        --framework net48 `
+        --nologo `
+        --verbosity:minimal `
+        -p:RevitVersion=2023
+    if ($LASTEXITCODE -ne 0) {
+        throw "TrueBIM build for Revit 2023 failed."
+    }
+}
+
+$appAssembly = Join-Path $projectOutputDir "TrueBIM.App.dll"
+if (-not (Test-Path -LiteralPath $appAssembly)) {
+    throw "Build output was not found at '$appAssembly'."
+}
+
+& (Join-Path $PSScriptRoot "clean-local-2023.ps1")
+
+New-Item -ItemType Directory -Path $coreTargetDir -Force | Out-Null
+New-Item -ItemType Directory -Path $printTargetDir -Force | Out-Null
+New-Item -ItemType Directory -Path $sheetNumberingTargetDir -Force | Out-Null
+New-Item -ItemType Directory -Path $scheduleColumnCollapseTargetDir -Force | Out-Null
+New-Item -ItemType Directory -Path $assetsTargetDir -Force | Out-Null
+New-Item -ItemType Directory -Path $addinTargetDir -Force | Out-Null
+
+Copy-Item -Path (Join-Path $projectOutputDir "*") -Destination $coreTargetDir -Recurse -Force
+Copy-Item -Path (Join-Path $printModuleSourceDir "module.json") -Destination $printTargetDir -Force
+Copy-Item -Path (Join-Path $printModuleSourceDir "README.md") -Destination $printTargetDir -Force
+Copy-Item -Path (Join-Path $sheetNumberingModuleSourceDir "module.json") -Destination $sheetNumberingTargetDir -Force
+Copy-Item -Path (Join-Path $sheetNumberingModuleSourceDir "README.md") -Destination $sheetNumberingTargetDir -Force
+Copy-Item -Path (Join-Path $scheduleColumnCollapseModuleSourceDir "module.json") -Destination $scheduleColumnCollapseTargetDir -Force
+Copy-Item -Path (Join-Path $scheduleColumnCollapseModuleSourceDir "README.md") -Destination $scheduleColumnCollapseTargetDir -Force
+Copy-Item -Path (Join-Path $assetsSourceDir "icons") -Destination $assetsTargetDir -Recurse -Force
+
+$deployedAssemblyPath = [string] (Join-Path $coreTargetDir "TrueBIM.App.dll")
+
+[xml] $manifest = Get-Content -LiteralPath $manifestSource
+$manifest.RevitAddIns.AddIn.Assembly = $deployedAssemblyPath
+$manifest.Save($addinTargetPath)
+
+Write-Host "Deployed TrueBIM net48 output for Revit 2023 to $coreTargetDir"
+Write-Host "Deployed Print module manifest to $printTargetDir"
+Write-Host "Deployed Sheet Numbering module manifest to $sheetNumberingTargetDir"
+Write-Host "Deployed Schedule Column Collapse module manifest to $scheduleColumnCollapseTargetDir"
+Write-Host "Deployed TrueBIM assets to $assetsTargetDir"
+Write-Host "Deployed TrueBIM.addin to $addinTargetPath"

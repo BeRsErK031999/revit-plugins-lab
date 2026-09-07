@@ -35,6 +35,8 @@ public sealed class LintelAssemblyViewAnnotationLayout
         double dimensionStart,
         double dimensionEnd,
         double dimensionVertical,
+        double elevationHorizontal,
+        double elevationVertical,
         double frameCenterHorizontal,
         double frameCenterVertical,
         double frameMinHorizontal,
@@ -45,6 +47,8 @@ public sealed class LintelAssemblyViewAnnotationLayout
         DimensionStart = dimensionStart;
         DimensionEnd = dimensionEnd;
         DimensionVertical = dimensionVertical;
+        ElevationHorizontal = elevationHorizontal;
+        ElevationVertical = elevationVertical;
         FrameCenterHorizontal = frameCenterHorizontal;
         FrameCenterVertical = frameCenterVertical;
         FrameMinHorizontal = frameMinHorizontal;
@@ -58,6 +62,10 @@ public sealed class LintelAssemblyViewAnnotationLayout
     public double DimensionEnd { get; }
 
     public double DimensionVertical { get; }
+
+    public double ElevationHorizontal { get; }
+
+    public double ElevationVertical { get; }
 
     public double FrameCenterHorizontal { get; }
 
@@ -105,6 +113,8 @@ public sealed class LintelAssemblyViewAnnotationLayout
             bounds.MinHorizontal,
             bounds.MaxHorizontal,
             bounds.MinVertical - dimensionOffset,
+            bounds.CenterHorizontal,
+            bounds.MinVertical,
             centerHorizontal,
             centerVertical,
             centerHorizontal - (frameWidth * 0.5),

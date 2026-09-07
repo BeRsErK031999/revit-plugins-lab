@@ -17,6 +17,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "раскраски"
         },
         {
+            "TrueBIM_ParameterAudit",
+            TrueBimRibbon.ModelReviewPanelName,
+            "Проверка\nпараметров",
+            $"TrueBIM.App.Commands.{nameof(ParameterAuditCommand)}",
+            TrueBimIcon.Check,
+            "CSV или XLSX"
+        },
+        {
             "TrueBIM_FinishSchedule",
             TrueBimRibbon.ArPanelName,
             "Ведомость\nотделки",
@@ -30,7 +38,7 @@ public sealed class AppRibbonButtonDefinitionTests
             "Армирование\nпо изополям",
             $"TrueBIM.App.Commands.{nameof(IsoFieldRebarCommand)}",
             TrueBimIcon.IsoFieldRebar,
-            "изополям"
+            "изополей"
         },
         {
             "TrueBIM_Lintels",
@@ -47,6 +55,22 @@ public sealed class AppRibbonButtonDefinitionTests
             $"TrueBIM.App.Commands.{nameof(ScheduleImportCommand)}",
             TrueBimIcon.ScheduleImport,
             "таблиц"
+        },
+        {
+            "TrueBIM_ScheduleRegister",
+            TrueBimRibbon.BimDocumentationPanelName,
+            "Ведомость\nспецификаций",
+            $"TrueBIM.App.Commands.{nameof(ScheduleRegisterCommand)}",
+            TrueBimIcon.ScheduleRegister,
+            "диспетчере"
+        },
+        {
+            "TrueBIM_ScheduleRegisterSettings",
+            TrueBimRibbon.BimDocumentationPanelName,
+            "Настройки\nведомости",
+            $"TrueBIM.App.Commands.{nameof(ScheduleRegisterSettingsCommand)}",
+            TrueBimIcon.Settings,
+            "фильтр"
         },
         {
             "TrueBIM_JoinCut",
@@ -333,7 +357,7 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         Dictionary<string, int> maxButtonCountByPanel = new(StringComparer.Ordinal)
         {
-            [TrueBimRibbon.BimDocumentationPanelName] = 4,
+            [TrueBimRibbon.BimDocumentationPanelName] = 5,
             [TrueBimRibbon.BimViewsPanelName] = 3,
             [TrueBimRibbon.BimCoordinationPanelName] = 2,
             [TrueBimRibbon.BimLibraryPanelName] = 2,

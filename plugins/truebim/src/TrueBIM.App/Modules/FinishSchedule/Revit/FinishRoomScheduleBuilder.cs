@@ -9,6 +9,13 @@ namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 
 public sealed class FinishRoomScheduleBuilder
 {
+    private const string ManagedTitleTextTypeName =
+        "TrueBIM • Ведомость отделки • Название 3,5 мм";
+    private const string ManagedHeaderTextTypeName =
+        "TrueBIM • Ведомость отделки • Заголовок 2,5 мм";
+    private const string ManagedBodyTextTypeName =
+        "TrueBIM • Ведомость отделки • Тело 2,5 мм";
+
     private readonly FinishScheduleMetadataService metadataService;
     private readonly ITrueBimLogger logger;
 
@@ -74,7 +81,8 @@ public sealed class FinishRoomScheduleBuilder
 
     public FinishRoomScheduleApplyResult Apply(
         Document document,
-        FinishRoomSchedulePreflight preflight)
+        FinishRoomSchedulePreflight preflight,
+        FinishScheduleHeaderMode headerMode = FinishScheduleHeaderMode.Custom)
     {
         if (document is null)
         {
@@ -84,6 +92,11 @@ public sealed class FinishRoomScheduleBuilder
         if (preflight is null)
         {
             throw new ArgumentNullException(nameof(preflight));
+        }
+
+        if (!Enum.IsDefined(typeof(FinishScheduleHeaderMode), headerMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(headerMode), headerMode, null);
         }
 
         FinishRoomSchedulePlan plan = preflight.Plan
@@ -117,12 +130,13 @@ public sealed class FinishRoomScheduleBuilder
             ViewSchedule schedule = ConfigureDefinitionTransaction(
                 document,
                 preflight,
-                plan);
+                plan,
+                headerMode);
             long scheduleId = RevitElementIds.GetValue(schedule.Id);
             logger.Info(
                 $"Finish Schedule definition committed. ScheduleId={scheduleId}; "
-                    + $"Action={preflight.Action}; Fields={plan.Columns.Count}.");
-            ConfigureTableTransaction(document, scheduleId, plan);
+                    + $"Action={preflight.Action}; Fields={plan.Columns.Count}; HeaderMode={headerMode}.");
+            ConfigureTableTransaction(document, scheduleId, plan, headerMode);
             FinishTransactionStatus.EnsureAssimilated(group);
             groupStarted = false;
             return new FinishRoomScheduleApplyResult(
@@ -144,7 +158,8 @@ public sealed class FinishRoomScheduleBuilder
     private ViewSchedule ConfigureDefinitionTransaction(
         Document document,
         FinishRoomSchedulePreflight preflight,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         using Transaction transaction = new(document, "TrueBIM: подготовить ведомость отделки");
         FinishTransactionStatus.EnsureStarted(transaction);
@@ -154,7 +169,8 @@ public sealed class FinishRoomScheduleBuilder
                 ? CreateSchedule(document)
                 : GetManagedSchedule(document, preflight.ScheduleId!.Value);
             schedule.Name = plan.ScheduleName;
-            ConfigureDefinition(document, schedule, plan);
+            ConfigureDefinition(document, schedule, plan, headerMode);
+            document.Regenerate();
             FinishTransactionStatus.EnsureCommitted(transaction);
             return schedule;
         }
@@ -168,7 +184,8 @@ public sealed class FinishRoomScheduleBuilder
     private void ConfigureTableTransaction(
         Document document,
         long scheduleId,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         using Transaction transaction = new(document, "TrueBIM: оформить ведомость отделки");
         FinishTransactionStatus.EnsureStarted(transaction);
@@ -177,9 +194,19 @@ public sealed class FinishRoomScheduleBuilder
             ViewSchedule schedule = document.GetElement(RevitElementIds.Create(scheduleId)) as ViewSchedule
                 ?? throw new InvalidOperationException(
                     "Созданная ведомость отделки недоступна для оформления.");
-            ConfigureTable(document, schedule, plan);
+            ConfigureTable(document, schedule, plan, headerMode);
             metadataService.Write(schedule, plan);
             FinishTransactionStatus.EnsureCommitted(transaction);
+            ViewSchedule committedSchedule = document.GetElement(
+                    RevitElementIds.Create(scheduleId)) as ViewSchedule
+                ?? throw new InvalidOperationException(
+                    "Оформленная ведомость отделки недоступна после фиксации транзакции.");
+            logger.Info(
+                $"Finish Schedule text types verified after transaction commit. "
+                    + $"ScheduleId={scheduleId}; "
+                    + $"TitleTypeId={RevitElementIds.GetValue(committedSchedule.TitleTextTypeId)}; "
+                    + $"HeaderTypeId={RevitElementIds.GetValue(committedSchedule.HeaderTextTypeId)}; "
+                    + $"BodyTypeId={RevitElementIds.GetValue(committedSchedule.BodyTextTypeId)}.");
         }
         catch
         {
@@ -211,31 +238,32 @@ public sealed class FinishRoomScheduleBuilder
         return schedule;
     }
 
-    private static void ConfigureDefinition(
+    private void ConfigureDefinition(
         Document document,
         ViewSchedule schedule,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         ScheduleDefinition definition = schedule.Definition;
         ResetCustomHeader(schedule);
         ClearDefinition(definition);
-        definition.ShowTitle = true;
-        definition.ShowHeaders = true;
+        definition.ShowTitle = headerMode != FinishScheduleHeaderMode.None;
+        definition.ShowHeaders = headerMode == FinishScheduleHeaderMode.Standard;
 #if REVIT2022_OR_GREATER
         definition.ShowGridLines = true;
 #endif
         definition.IsItemized = false;
 
         IList<SchedulableField> availableFields = definition.GetSchedulableFields();
-        ElementId normalLineStyleId = GetLineStyleId(
+        ElementId normalLineStyleId = GetLineStyleCategoryId(
             document,
             FinishRoomScheduleStyleRules.NormalLineStyleName,
             BuiltInCategory.OST_CurvesMediumLines);
-        ElementId thinLineStyleId = GetLineStyleId(
+        ElementId thinLineStyleId = GetLineStyleCategoryId(
             document,
             FinishRoomScheduleStyleRules.ThinLineStyleName,
             BuiltInCategory.OST_CurvesThinLines);
-        EnsureLineStyles(normalLineStyleId, thinLineStyleId);
+        EnsureLineStyles(document, normalLineStyleId, thinLineStyleId);
         ScheduleField? sortField = null;
         foreach (FinishRoomScheduleColumn column in plan.Columns)
         {
@@ -265,10 +293,104 @@ public sealed class FinishRoomScheduleBuilder
         AddScopeFilter(definition, availableFields, plan.ScopeFilter);
     }
 
+    private void ConfigureScheduleTextTypes(Document document, ViewSchedule schedule)
+    {
+        ElementId titleTextTypeId = EnsureManagedTextType(
+            document,
+            schedule.TitleTextTypeId,
+            ManagedTitleTextTypeName,
+            "названия спецификации",
+            FinishRoomScheduleStyleRules.TitleTextSizeMillimeters,
+            forceBold: true);
+        ElementId headerTextTypeId = EnsureManagedTextType(
+            document,
+            schedule.HeaderTextTypeId,
+            ManagedHeaderTextTypeName,
+            "заголовков спецификации",
+            FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters,
+            forceBold: false);
+        ElementId bodyTextTypeId = EnsureManagedTextType(
+            document,
+            schedule.BodyTextTypeId,
+            ManagedBodyTextTypeName,
+            "тела спецификации",
+            FinishRoomScheduleStyleRules.BodyTextSizeMillimeters,
+            forceBold: false);
+
+        schedule.TitleTextTypeId = titleTextTypeId;
+        schedule.HeaderTextTypeId = headerTextTypeId;
+        schedule.BodyTextTypeId = bodyTextTypeId;
+        logger.Info(
+            $"Finish Schedule text types configured. "
+                + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+                + $"TitleTypeId={RevitElementIds.GetValue(titleTextTypeId)}; "
+                + $"HeaderTypeId={RevitElementIds.GetValue(headerTextTypeId)}; "
+                + $"BodyTypeId={RevitElementIds.GetValue(bodyTextTypeId)}; "
+                + $"TitleSizeMm={FinishRoomScheduleStyleRules.TitleTextSizeMillimeters}; "
+                + $"HeaderSizeMm={FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters}; "
+                + $"BodySizeMm={FinishRoomScheduleStyleRules.BodyTextSizeMillimeters}.");
+    }
+
+    private static ElementId EnsureManagedTextType(
+        Document document,
+        ElementId sourceTypeId,
+        string managedTypeName,
+        string role,
+        double textSizeMillimeters,
+        bool forceBold)
+    {
+        TextNoteType sourceType = document.GetElement(sourceTypeId) as TextNoteType
+            ?? throw new InvalidOperationException($"Не найден тип текста для {role}.");
+        TextNoteType? managedType = new FilteredElementCollector(document)
+            .OfClass(typeof(TextNoteType))
+            .Cast<TextNoteType>()
+            .FirstOrDefault(type => string.Equals(
+                type.Name,
+                managedTypeName,
+                StringComparison.Ordinal));
+        managedType ??= (TextNoteType)sourceType.Duplicate(managedTypeName);
+
+        string fontName = GetRequiredTextTypeParameter(
+            sourceType,
+            role,
+            BuiltInParameter.TEXT_FONT,
+            BuiltInParameter.TEXT_STYLE_FONT).AsString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(fontName))
+        {
+            throw new InvalidOperationException(
+                $"Тип текста для {role} содержит недопустимый шрифт.");
+        }
+
+        GetRequiredTextTypeParameter(
+            managedType,
+            role,
+            BuiltInParameter.TEXT_FONT,
+            BuiltInParameter.TEXT_STYLE_FONT).Set(fontName);
+        GetRequiredTextTypeParameter(
+            managedType,
+            role,
+            BuiltInParameter.TEXT_SIZE).Set(
+                FinishScheduleUnitAdapter.MillimetersToInternal(textSizeMillimeters));
+        SetTextStyleFlag(
+            managedType,
+            BuiltInParameter.TEXT_STYLE_BOLD,
+            forceBold || ReadTextStyleFlag(sourceType, BuiltInParameter.TEXT_STYLE_BOLD));
+        SetTextStyleFlag(
+            managedType,
+            BuiltInParameter.TEXT_STYLE_ITALIC,
+            ReadTextStyleFlag(sourceType, BuiltInParameter.TEXT_STYLE_ITALIC));
+        SetTextStyleFlag(
+            managedType,
+            BuiltInParameter.TEXT_STYLE_UNDERLINE,
+            ReadTextStyleFlag(sourceType, BuiltInParameter.TEXT_STYLE_UNDERLINE));
+        return managedType.Id;
+    }
+
     private void ConfigureTable(
         Document document,
         ViewSchedule schedule,
-        FinishRoomSchedulePlan plan)
+        FinishRoomSchedulePlan plan,
+        FinishScheduleHeaderMode headerMode)
     {
         bool scheduleRefreshed = schedule.RefreshData();
         if (!scheduleRefreshed)
@@ -277,17 +399,54 @@ public sealed class FinishRoomScheduleBuilder
                 "Revit не обновил табличные данные ведомости после фиксации полей.");
         }
 
-        ElementId normalLineStyleId = GetLineStyleId(
+        ConfigureScheduleTextTypes(document, schedule);
+
+        ElementId normalLineStyleId = GetLineStyleCategoryId(
             document,
             FinishRoomScheduleStyleRules.NormalLineStyleName,
             BuiltInCategory.OST_CurvesMediumLines);
-        ElementId thinLineStyleId = GetLineStyleId(
+        ElementId thinLineStyleId = GetLineStyleCategoryId(
             document,
             FinishRoomScheduleStyleRules.ThinLineStyleName,
             BuiltInCategory.OST_CurvesThinLines);
-        EnsureLineStyles(normalLineStyleId, thinLineStyleId);
-        ConfigureHeader(schedule, plan.Columns, normalLineStyleId, thinLineStyleId);
+        EnsureLineStyles(document, normalLineStyleId, thinLineStyleId);
+        logger.Info(
+            $"Finish Schedule line-style categories resolved. "
+                + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+                + $"NormalCategoryId={RevitElementIds.GetValue(normalLineStyleId)}; "
+                + $"ThinCategoryId={RevitElementIds.GetValue(thinLineStyleId)}.");
+        if (headerMode == FinishScheduleHeaderMode.Custom)
+        {
+            try
+            {
+                ConfigureHeader(
+                    document,
+                    schedule,
+                    plan.Columns,
+                    normalLineStyleId,
+                    thinLineStyleId);
+            }
+            catch (Exception exception)
+            {
+                throw new FinishScheduleHeaderFormattingException(
+                    "Revit не смог создать составную шапку ведомости отделки.",
+                    exception);
+            }
+        }
+        else
+        {
+            logger.Info(
+                $"Finish Schedule custom header skipped. "
+                    + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; HeaderMode={headerMode}.");
+        }
+
         ConfigureBody(schedule, normalLineStyleId, thinLineStyleId);
+        logger.Info(
+            $"Finish Schedule text types retained after table formatting. "
+                + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+                + $"TitleTypeId={RevitElementIds.GetValue(schedule.TitleTextTypeId)}; "
+                + $"HeaderTypeId={RevitElementIds.GetValue(schedule.HeaderTextTypeId)}; "
+                + $"BodyTypeId={RevitElementIds.GetValue(schedule.BodyTextTypeId)}.");
     }
 
     private static void ConfigureBodyField(
@@ -302,9 +461,10 @@ public sealed class FinishRoomScheduleBuilder
         using TableCellStyle style = field.GetStyle();
         using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
         style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
-        style.TextSize = FinishScheduleUnitAdapter.MillimetersToInternal(
-            FinishRoomScheduleStyleRules.BodyTextSizeMillimeters);
         overrides.VerticalAlignment = true;
+        UseScheduleTextDefaults(overrides);
+        style.TextSize = FinishScheduleUnitAdapter.MillimetersToTableTextSize(
+            FinishRoomScheduleStyleRules.BodyTextSizeMillimeters);
         overrides.FontSize = true;
         ApplyBorders(
             style,
@@ -317,11 +477,24 @@ public sealed class FinishRoomScheduleBuilder
     }
 
     private void ConfigureHeader(
+        Document document,
         ViewSchedule schedule,
         IReadOnlyList<FinishRoomScheduleColumn> columns,
         ElementId normalLineStyleId,
         ElementId thinLineStyleId)
     {
+        FinishScheduleTextStyle titleTextStyle = ReadScheduleTextStyle(
+            document,
+            schedule.TitleTextTypeId,
+            "названия спецификации",
+            FinishRoomScheduleStyleRules.TitleTextSizeMillimeters,
+            forceBold: true);
+        FinishScheduleTextStyle headerTextStyle = ReadScheduleTextStyle(
+            document,
+            schedule.HeaderTextTypeId,
+            "заголовков спецификации",
+            FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters,
+            forceBold: false);
         IReadOnlyList<FinishScheduleHeaderCell> cells =
             FinishRoomScheduleStyleRules.BuildHeaderCells(columns);
         using TableData table = schedule.GetTableData();
@@ -330,7 +503,7 @@ public sealed class FinishRoomScheduleBuilder
         int initialRowCount = header.NumberOfRows;
         int initialColumnCount = header.NumberOfColumns;
         logger.Info(
-            $"Finish Schedule header materialized. ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+            $"Finish Schedule title grid inspected. ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
                 + $"Refreshed={headerRefreshed}; Rows={initialRowCount}; "
                 + $"Columns={initialColumnCount}; ExpectedColumns={columns.Count}; "
                 + $"RowRange={header.FirstRowNumber}..{header.LastRowNumber}; "
@@ -338,7 +511,7 @@ public sealed class FinishRoomScheduleBuilder
         if (!headerRefreshed)
         {
             throw new InvalidOperationException(
-                "Revit не обновил секцию шапки ведомости после фиксации полей.");
+                "Revit не обновил область заголовка ведомости перед оформлением.");
         }
 
         FinishScheduleHeaderNormalizationPlan normalization;
@@ -355,26 +528,55 @@ public sealed class FinishRoomScheduleBuilder
                 $"Revit подготовил недопустимую область шапки: "
                     + $"строк {initialRowCount}, столбцов {initialColumnCount}; "
                     + $"ожидалось от 1 до {FinishRoomScheduleStyleRules.HeaderRowCount} строк "
-                    + $"и {columns.Count} столбцов.",
+                    + $"и от 1 до {columns.Count} столбцов до нормализации.",
                 exception);
         }
 
         int titleRow = header.FirstRowNumber;
         int groupRow = titleRow + 1;
-        for (int index = 0; index < normalization.RowsToInsert; index++)
+        for (int index = 0; index < normalization.ColumnsToInsert; index++)
         {
-            header.InsertRow(header.LastRowNumber + 1);
+            int insertionColumn = header.LastColumnNumber;
+            if (!header.CanInsertColumn(insertionColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Revit не разрешил добавить столбец {insertionColumn} в область заголовка.");
+            }
+
+            header.InsertColumn(insertionColumn);
         }
 
-        if (header.NumberOfRows != FinishRoomScheduleStyleRules.HeaderRowCount)
+        for (int index = 0; index < normalization.RowsToInsert; index++)
+        {
+            int insertionRow = header.LastRowNumber + 1;
+            if (!header.CanInsertRow(insertionRow))
+            {
+                throw new InvalidOperationException(
+                    $"Revit не разрешил добавить строку {insertionRow} в область заголовка.");
+            }
+
+            header.InsertRow(insertionRow);
+        }
+
+        if (header.NumberOfRows != FinishRoomScheduleStyleRules.HeaderRowCount
+            || header.NumberOfColumns != columns.Count)
         {
             throw new InvalidOperationException(
-                $"Не удалось нормализовать шапку: было {initialRowCount} строк, "
-                    + $"после вставки стало {header.NumberOfRows}, ожидалось "
-                    + $"{FinishRoomScheduleStyleRules.HeaderRowCount}.");
+                $"Не удалось нормализовать шапку: было {initialRowCount}×{initialColumnCount}, "
+                    + $"после вставки стало {header.NumberOfRows}×{header.NumberOfColumns}, "
+                    + $"ожидалось {FinishRoomScheduleStyleRules.HeaderRowCount}×{columns.Count}.");
         }
 
         int firstColumn = header.FirstColumnNumber;
+        int lastColumn = header.LastColumnNumber;
+        for (int index = 0; index < columns.Count; index++)
+        {
+            header.SetColumnWidth(
+                firstColumn + index,
+                FinishScheduleUnitAdapter.MillimetersToInternal(columns[index].WidthMillimeters));
+        }
+
+        header.MergeCells(new TableMergedCell(titleRow, firstColumn, titleRow, lastColumn));
         header.SetCellText(titleRow, firstColumn, FinishRoomScheduleStyleRules.ScheduleTitleText);
         foreach (FinishScheduleHeaderCell cell in cells)
         {
@@ -411,6 +613,10 @@ public sealed class FinishRoomScheduleBuilder
             }
         }
 
+        int overridableCellCount = 0;
+        int skippedCellCount = 0;
+        int verifiedFontSizeCount = 0;
+        int verifiedBorderCount = 0;
         for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
         {
             bool isTitleRow = row == titleRow;
@@ -418,30 +624,28 @@ public sealed class FinishRoomScheduleBuilder
             {
                 _ when isTitleRow => FinishRoomScheduleStyleRules.TitleRowHeightMillimeters,
                 _ when row == groupRow => FinishRoomScheduleStyleRules.GroupHeaderRowHeightMillimeters,
-                _ when row == groupRow + 1 => FinishRoomScheduleStyleRules.ColumnHeaderRowHeightMillimeters,
-                _ => FinishRoomScheduleStyleRules.GraphHeaderRowHeightMillimeters
+                _ => FinishRoomScheduleStyleRules.ColumnHeaderRowHeightMillimeters
             };
             header.SetRowHeight(row, FinishScheduleUnitAdapter.MillimetersToInternal(height));
             for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
             {
                 if (!header.AllowOverrideCellStyle(row, column))
                 {
+                    skippedCellCount++;
                     continue;
                 }
 
+                overridableCellCount++;
                 using TableCellStyle style = header.GetTableCellStyle(row, column);
                 using TableCellStyleOverrideOptions overrides = style.GetCellStyleOverrideOptions();
                 style.FontHorizontalAlignment = HorizontalAlignmentStyle.Center;
                 style.FontVerticalAlignment = VerticalAlignmentStyle.Middle;
                 overrides.HorizontalAlignment = true;
                 overrides.VerticalAlignment = true;
-                style.TextSize = FinishScheduleUnitAdapter.MillimetersToInternal(
-                    isTitleRow
-                        ? FinishRoomScheduleStyleRules.TitleTextSizeMillimeters
-                        : FinishRoomScheduleStyleRules.ColumnHeaderTextSizeMillimeters);
-                style.IsFontBold = isTitleRow;
-                overrides.FontSize = true;
-                overrides.Bold = true;
+                ApplyScheduleTextStyle(
+                    style,
+                    overrides,
+                    isTitleRow ? titleTextStyle : headerTextStyle);
                 ApplyBorders(
                     style,
                     overrides,
@@ -450,23 +654,64 @@ public sealed class FinishRoomScheduleBuilder
                     thinLineStyleId);
                 style.SetCellStyleOverrideOptions(overrides);
                 header.SetCellStyle(row, column, style);
+                using TableCellStyle appliedStyle = header.GetTableCellStyle(row, column);
+                using TableCellStyleOverrideOptions appliedOverrides =
+                    appliedStyle.GetCellStyleOverrideOptions();
+                double expectedTextSize = isTitleRow
+                    ? titleTextStyle.TextSize
+                    : headerTextStyle.TextSize;
+                if (appliedOverrides.FontSize
+                    && Math.Abs(appliedStyle.TextSize - expectedTextSize) < 0.0000001)
+                {
+                    verifiedFontSizeCount++;
+                }
+
+                if (HasExpectedBorders(
+                        appliedStyle,
+                        appliedOverrides,
+                        FinishRoomScheduleStyleRules.HeaderBorders,
+                        normalLineStyleId,
+                        thinLineStyleId))
+                {
+                    verifiedBorderCount++;
+                }
             }
         }
+
+        logger.Info(
+            $"Finish Schedule custom header cell styles applied. "
+                + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; "
+                + $"Overridable={overridableCellCount}; Skipped={skippedCellCount}; "
+                + $"FontSizeVerified={verifiedFontSizeCount}; "
+                + $"BordersVerified={verifiedBorderCount}.");
     }
 
     private static void ResetCustomHeader(ViewSchedule schedule)
     {
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
-        if (header.NumberOfRows <= 2)
+        bool headerRefreshed = header.RefreshData();
+        if (!headerRefreshed)
+        {
+            throw new InvalidOperationException(
+                "Revit не обновил прежнюю шапку ведомости отделки перед очисткой.");
+        }
+
+        bool isManagedCustomLayout = schedule.Definition.ShowTitle
+            && !schedule.Definition.ShowHeaders;
+        if (!isManagedCustomLayout && !ContainsManagedCustomHeaderMarker(header))
         {
             return;
         }
 
-        int titleRow = header.FirstRowNumber;
+        if (header.NumberOfRows <= 1 && header.NumberOfColumns <= 1)
+        {
+            return;
+        }
+
         HashSet<string> seen = new(StringComparer.Ordinal);
         List<TableMergedCell> mergedCells = [];
-        for (int row = titleRow + 1; row <= header.LastRowNumber; row++)
+        for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
         {
             for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
             {
@@ -505,7 +750,18 @@ public sealed class FinishRoomScheduleBuilder
                 merged.Right);
         }
 
-        while (header.NumberOfRows > 2)
+        for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
+        {
+            for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
+            {
+                if (header.AllowOverrideCellStyle(row, column))
+                {
+                    header.ResetCellOverride(row, column);
+                }
+            }
+        }
+
+        while (header.NumberOfRows > 1)
         {
             int row = header.LastRowNumber;
             if (!header.CanRemoveRow(row))
@@ -516,6 +772,38 @@ public sealed class FinishRoomScheduleBuilder
 
             header.RemoveRow(row);
         }
+
+        while (header.NumberOfColumns > 1)
+        {
+            int column = header.LastColumnNumber;
+            if (!header.CanRemoveColumn(column))
+            {
+                throw new InvalidOperationException(
+                    "Не удалось удалить прежний столбец шапки ведомости отделки.");
+            }
+
+            header.RemoveColumn(column);
+        }
+    }
+
+    private static bool ContainsManagedCustomHeaderMarker(TableSectionData header)
+    {
+        for (int row = header.FirstRowNumber; row <= header.LastRowNumber; row++)
+        {
+            for (int column = header.FirstColumnNumber; column <= header.LastColumnNumber; column++)
+            {
+                string text = header.GetCellText(row, column);
+                if (string.Equals(
+                        text,
+                        FinishRoomScheduleStyleRules.FinishGroupHeaderText,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static void ConfigureBody(
@@ -551,6 +839,107 @@ public sealed class FinishRoomScheduleBuilder
         }
     }
 
+    private static FinishScheduleTextStyle ReadScheduleTextStyle(
+        Document document,
+        ElementId textTypeId,
+        string role,
+        double textSizeMillimeters,
+        bool forceBold)
+    {
+        Element textType = document.GetElement(textTypeId)
+            ?? throw new InvalidOperationException(
+                $"Не найден тип текста для {role}.");
+        Parameter fontParameter = GetRequiredTextTypeParameter(
+            textType,
+            role,
+            BuiltInParameter.TEXT_FONT,
+            BuiltInParameter.TEXT_STYLE_FONT);
+        string fontName = fontParameter.AsString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(fontName)
+            || textSizeMillimeters <= 0
+            || double.IsNaN(textSizeMillimeters)
+            || double.IsInfinity(textSizeMillimeters))
+        {
+            throw new InvalidOperationException(
+                $"Тип текста для {role} содержит недопустимый шрифт или размер.");
+        }
+
+        return new FinishScheduleTextStyle(
+            fontName,
+            FinishScheduleUnitAdapter.MillimetersToTableTextSize(textSizeMillimeters),
+            forceBold || ReadTextStyleFlag(textType, BuiltInParameter.TEXT_STYLE_BOLD),
+            ReadTextStyleFlag(textType, BuiltInParameter.TEXT_STYLE_ITALIC),
+            ReadTextStyleFlag(textType, BuiltInParameter.TEXT_STYLE_UNDERLINE));
+    }
+
+    private static Parameter GetRequiredTextTypeParameter(
+        Element textType,
+        string role,
+        params BuiltInParameter[] candidates)
+    {
+        foreach (BuiltInParameter candidate in candidates)
+        {
+            Parameter? parameter = textType.get_Parameter(candidate);
+            if (parameter is not null)
+            {
+                return parameter;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Тип текста для {role} не содержит обязательный параметр оформления.");
+    }
+
+    private static bool ReadTextStyleFlag(Element textType, BuiltInParameter parameterId)
+    {
+        Parameter? parameter = textType.get_Parameter(parameterId);
+        return parameter is not null && parameter.AsInteger() != 0;
+    }
+
+    private static void SetTextStyleFlag(
+        Element textType,
+        BuiltInParameter parameterId,
+        bool value)
+    {
+        Parameter parameter = textType.get_Parameter(parameterId)
+            ?? throw new InvalidOperationException(
+                $"Тип текста «{textType.Name}» не содержит параметр {parameterId}.");
+        if (parameter.IsReadOnly)
+        {
+            throw new InvalidOperationException(
+                $"Параметр {parameterId} типа текста «{textType.Name}» доступен только для чтения.");
+        }
+
+        parameter.Set(value ? 1 : 0);
+    }
+
+    private static void ApplyScheduleTextStyle(
+        TableCellStyle style,
+        TableCellStyleOverrideOptions overrides,
+        FinishScheduleTextStyle textStyle)
+    {
+        style.FontName = textStyle.FontName;
+        style.TextSize = textStyle.TextSize;
+        style.IsFontBold = textStyle.IsBold;
+        style.IsFontItalic = textStyle.IsItalic;
+        style.IsFontUnderline = textStyle.IsUnderline;
+        overrides.Font = true;
+        overrides.FontSize = true;
+        overrides.Bold = true;
+        overrides.Italics = true;
+        overrides.Underline = true;
+    }
+
+    private static void UseScheduleTextDefaults(TableCellStyleOverrideOptions overrides)
+    {
+        overrides.Font = false;
+        overrides.FontSize = false;
+        overrides.FontColor = false;
+        overrides.Bold = false;
+        overrides.Italics = false;
+        overrides.Underline = false;
+    }
+
     private static void ApplyBorders(
         TableCellStyle style,
         TableCellStyleOverrideOptions overrides,
@@ -574,10 +963,47 @@ public sealed class FinishRoomScheduleBuilder
         style.BorderBottomLineStyle = bottom;
         style.BorderLeftLineStyle = left;
         style.BorderRightLineStyle = right;
+        // Revit 2022 requires the aggregate border override together with the
+        // individual side overrides for custom header borders to render reliably.
+        overrides.BorderLineStyle = true;
         overrides.BorderTopLineStyle = true;
         overrides.BorderBottomLineStyle = true;
         overrides.BorderLeftLineStyle = true;
         overrides.BorderRightLineStyle = true;
+    }
+
+    private static bool HasExpectedBorders(
+        TableCellStyle style,
+        TableCellStyleOverrideOptions overrides,
+        FinishScheduleCellBorderRules rules,
+        ElementId normalLineStyleId,
+        ElementId thinLineStyleId)
+    {
+        return overrides.BorderLineStyle
+            && overrides.BorderTopLineStyle
+            && overrides.BorderBottomLineStyle
+            && overrides.BorderLeftLineStyle
+            && overrides.BorderRightLineStyle
+            && RevitElementIds.GetValue(style.BorderTopLineStyle)
+                == RevitElementIds.GetValue(ResolveLineStyle(
+                    rules.Top,
+                    normalLineStyleId,
+                    thinLineStyleId))
+            && RevitElementIds.GetValue(style.BorderBottomLineStyle)
+                == RevitElementIds.GetValue(ResolveLineStyle(
+                    rules.Bottom,
+                    normalLineStyleId,
+                    thinLineStyleId))
+            && RevitElementIds.GetValue(style.BorderLeftLineStyle)
+                == RevitElementIds.GetValue(ResolveLineStyle(
+                    rules.Left,
+                    normalLineStyleId,
+                    thinLineStyleId))
+            && RevitElementIds.GetValue(style.BorderRightLineStyle)
+                == RevitElementIds.GetValue(ResolveLineStyle(
+                    rules.Right,
+                    normalLineStyleId,
+                    thinLineStyleId));
     }
 
     private static ElementId ResolveLineStyle(
@@ -590,7 +1016,7 @@ public sealed class FinishRoomScheduleBuilder
             : thinLineStyleId;
     }
 
-    private static ElementId GetLineStyleId(
+    private static ElementId GetLineStyleCategoryId(
         Document document,
         string preferredName,
         BuiltInCategory fallbackCategory)
@@ -607,30 +1033,30 @@ public sealed class FinishRoomScheduleBuilder
                     continue;
                 }
 
-                GraphicsStyle? preferred = subcategory.GetGraphicsStyle(GraphicsStyleType.Projection);
-                if (preferred is not null)
-                {
-                    return preferred.Id;
-                }
+                // Revit's schedule border editor persists the category id of the
+                // line style, not the id of its projection GraphicsStyle element.
+                return subcategory.Id;
             }
         }
 
         Category? category = Category.GetCategory(document, fallbackCategory);
-        GraphicsStyle? style = category?.GetGraphicsStyle(GraphicsStyleType.Projection);
-        return style?.Id ?? ElementId.InvalidElementId;
+        return category?.Id ?? ElementId.InvalidElementId;
     }
 
     private static void EnsureLineStyles(
+        Document document,
         ElementId normalLineStyleId,
         ElementId thinLineStyleId)
     {
-        if (normalLineStyleId == ElementId.InvalidElementId)
+        if (normalLineStyleId == ElementId.InvalidElementId
+            || Category.GetCategory(document, normalLineStyleId) is null)
         {
             throw new InvalidOperationException(
                 $"Не найден стиль линий «{FinishRoomScheduleStyleRules.NormalLineStyleName}».");
         }
 
-        if (thinLineStyleId == ElementId.InvalidElementId)
+        if (thinLineStyleId == ElementId.InvalidElementId
+            || Category.GetCategory(document, thinLineStyleId) is null)
         {
             throw new InvalidOperationException(
                 $"Не найден стиль линий «{FinishRoomScheduleStyleRules.ThinLineStyleName}».");
@@ -789,8 +1215,18 @@ public sealed class FinishRoomScheduleBuilder
     }
 }
 
+internal sealed record FinishScheduleTextStyle(
+    string FontName,
+    double TextSize,
+    bool IsBold,
+    bool IsItalic,
+    bool IsUnderline);
+
 internal static class FinishScheduleUnitAdapter
 {
+    private const double MillimetersPerInch = 25.4;
+    private const double TableTextUnitsPerInch = 96;
+
     public static double MillimetersToInternal(double millimeters)
     {
 #if REVIT2022_OR_GREATER
@@ -800,5 +1236,10 @@ internal static class FinishScheduleUnitAdapter
         return UnitUtils.ConvertToInternalUnits(millimeters, DisplayUnitType.DUT_MILLIMETERS);
 #pragma warning restore CS0618
 #endif
+    }
+
+    public static double MillimetersToTableTextSize(double millimeters)
+    {
+        return millimeters * TableTextUnitsPerInch / MillimetersPerInch;
     }
 }

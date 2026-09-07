@@ -28,17 +28,17 @@ public sealed class IsoFieldCoordinateMapper
 
         if (!IsFinite(calibration.ImageAnchor.X) || !IsFinite(calibration.ImageAnchor.Y))
         {
-            throw new InvalidOperationException("Координаты image anchor должны быть конечными числами.");
+            throw new InvalidOperationException("Начальная точка на изображении задана неверно.");
         }
 
         if (!IsFinite(calibration.RevitAnchorXFeet) || !IsFinite(calibration.RevitAnchorYFeet))
         {
-            throw new InvalidOperationException("Координаты Revit anchor должны быть конечными числами.");
+            throw new InvalidOperationException("Начальная точка в модели задана неверно.");
         }
 
         if (!IsFinite(calibration.MillimetersPerPixel) || calibration.MillimetersPerPixel <= 0)
         {
-            throw new InvalidOperationException("Масштаб калибровки должен быть больше 0 мм/пикс.");
+            throw new InvalidOperationException("Масштаб должен быть больше нуля миллиметров на точку изображения.");
         }
     }
 

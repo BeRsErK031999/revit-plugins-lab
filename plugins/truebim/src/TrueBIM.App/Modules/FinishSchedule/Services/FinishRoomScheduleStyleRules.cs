@@ -31,12 +31,14 @@ public sealed record FinishScheduleHeaderCell(
             : FinishScheduleHeaderMergeMode.CellMerge;
 }
 
-public sealed record FinishScheduleHeaderNormalizationPlan(int RowsToInsert);
+public sealed record FinishScheduleHeaderNormalizationPlan(
+    int RowsToInsert,
+    int ColumnsToInsert);
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v9";
-    public const int HeaderRowCount = 4;
+    public const string LayoutRevision = "v19";
+    public const int HeaderRowCount = 3;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
     public const string RoomHeaderText = "Наименование или номер помещения";
@@ -46,7 +48,6 @@ public static class FinishRoomScheduleStyleRules
     public const double TitleRowHeightMillimeters = 12;
     public const double GroupHeaderRowHeightMillimeters = 8;
     public const double ColumnHeaderRowHeightMillimeters = 12;
-    public const double GraphHeaderRowHeightMillimeters = 5;
     public const double TitleTextSizeMillimeters = 3.5;
     public const double ColumnHeaderTextSizeMillimeters = 2.5;
     public const double BodyTextSizeMillimeters = 2.5;
@@ -93,15 +94,17 @@ public static class FinishRoomScheduleStyleRules
                 "Header must contain at least one expected column.");
         }
 
-        if (existingColumnCount != expectedColumnCount)
+        if (existingColumnCount < 1 || existingColumnCount > expectedColumnCount)
         {
-            throw new ArgumentException(
-                $"Header contains {existingColumnCount} columns instead of {expectedColumnCount}.",
-                nameof(existingColumnCount));
+            throw new ArgumentOutOfRangeException(
+                nameof(existingColumnCount),
+                existingColumnCount,
+                $"Header must contain from 1 to {expectedColumnCount} columns before normalization.");
         }
 
         return new FinishScheduleHeaderNormalizationPlan(
-            GetHeaderRowsToInsert(existingRowCount));
+            GetHeaderRowsToInsert(existingRowCount),
+            expectedColumnCount - existingColumnCount);
     }
 
     public static IReadOnlyList<FinishScheduleHeaderCell> BuildHeaderCells(
@@ -138,16 +141,6 @@ public static class FinishRoomScheduleStyleRules
                 columns[column].Heading));
         }
 
-        for (int column = 0; column < columns.Count; column++)
-        {
-            cells.Add(new FinishScheduleHeaderCell(
-                2,
-                column,
-                2,
-                column,
-                ToGraphLabel(column)));
-        }
-
         return cells;
     }
 
@@ -164,19 +157,5 @@ public static class FinishRoomScheduleStyleRules
             normalizedActual,
             normalizedExpected,
             StringComparison.CurrentCultureIgnoreCase);
-    }
-
-    private static string ToGraphLabel(int zeroBasedColumn)
-    {
-        int index = zeroBasedColumn;
-        string label = string.Empty;
-        do
-        {
-            label = (char)('A' + index % 26) + label;
-            index = index / 26 - 1;
-        }
-        while (index >= 0);
-
-        return label;
     }
 }

@@ -8,6 +8,13 @@ public enum FinishRoomScheduleAction
     Blocked
 }
 
+public enum FinishScheduleHeaderMode
+{
+    Custom,
+    Standard,
+    None
+}
+
 public enum FinishRoomScheduleColumnKind
 {
     RoomList,

@@ -14,7 +14,7 @@ public sealed class IsoFieldWorkflowStateTests
         Assert.False(state.CanRunRecognition);
         Assert.False(state.CanCalculateRules);
         Assert.False(state.CanCreateRebar);
-        Assert.Contains("JSON", state.NextAction, StringComparison.Ordinal);
+        Assert.Contains("четыре карты", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -23,20 +23,40 @@ public sealed class IsoFieldWorkflowStateTests
         IsoFieldWorkflowState state = new(true, false, false, false, false, false, false);
 
         Assert.False(state.CanRunRecognition);
-        Assert.Contains("обработчик", state.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("обработать карты", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void ValidRules_EnableControlledCreation()
     {
-        IsoFieldWorkflowState state = new(true, true, true, true, true, true, true);
+        IsoFieldWorkflowState state = new(
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            HasComparedWithModel: true);
 
-        Assert.Equal(5, state.CompletedStepCount);
+        Assert.Equal(IsoFieldWorkflowState.RequiredStepCount, state.CompletedStepCount);
         Assert.True(state.CanRunRecognition);
         Assert.True(state.CanShowRevitPreview);
         Assert.True(state.CanClearRevitPreview);
         Assert.True(state.CanCalculateRules);
+        Assert.True(state.CanCompareWithModel);
         Assert.True(state.CanCreateRebar);
+    }
+
+    [Fact]
+    public void CalculatedRules_RequireExplicitModelComparison()
+    {
+        IsoFieldWorkflowState state = new(true, true, true, true, false, true, true);
+
+        Assert.Equal(5, state.CompletedStepCount);
+        Assert.True(state.CanCompareWithModel);
+        Assert.False(state.CanCreateRebar);
+        Assert.Contains("Сравнить с моделью", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -45,7 +65,7 @@ public sealed class IsoFieldWorkflowStateTests
         IsoFieldWorkflowState state = new(true, true, true, true, false, true, false);
 
         Assert.False(state.CanCreateRebar);
-        Assert.Contains("верх/низ", state.NextAction, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("сторону конструкции", state.NextAction, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -62,6 +82,7 @@ public sealed class IsoFieldWorkflowStateTests
             HasValidHostBinding: false);
 
         Assert.False(state.HasReadyHost);
+        Assert.False(state.CanShowRevitPreview);
         Assert.False(state.CanCalculateRules);
         Assert.False(state.CanCreateRebar);
         Assert.Contains("трём контрольным точкам", state.NextAction, StringComparison.OrdinalIgnoreCase);
