@@ -22,13 +22,20 @@ public sealed class ScheduleColumnCollapseService
     {
         Guard.NotNull(uiDocument, nameof(uiDocument));
 
-        Document document = uiDocument.Document;
         ViewSchedule? targetSchedule = ResolveTargetSchedule(uiDocument, ownerWindowHandle, out string? resolveError);
         if (targetSchedule is null)
         {
             return ScheduleColumnCollapseResult.Failure(resolveError ?? "Не удалось определить спецификацию для сворачивания.");
         }
 
+        return Collapse(targetSchedule);
+    }
+
+    public ScheduleColumnCollapseResult Collapse(ViewSchedule targetSchedule)
+    {
+        Guard.NotNull(targetSchedule, nameof(targetSchedule));
+
+        Document document = targetSchedule.Document;
         using Transaction transaction = new(document, "TrueBIM: свернуть ВРС");
         transaction.Start();
 
@@ -37,26 +44,14 @@ public sealed class ScheduleColumnCollapseService
             ScheduleDefinition definition = targetSchedule.Definition;
             IReadOnlyList<ScheduleFieldId> fieldIds = definition.GetFieldOrder().ToList();
 
-            // Hidden schedule fields are not represented by columns in the body table. Reveal every
-            // field that Revit allows us to reveal before reading the cells so the result does not
-            // depend on the visibility state in which the user left the schedule.
-            foreach (ScheduleFieldId fieldId in fieldIds)
-            {
-                TrySetHidden(definition.GetField(fieldId), isHidden: false);
-            }
-
-            document.Regenerate();
-
-            IReadOnlyList<ScheduleFieldId> visibleFieldIds = fieldIds
-                .Where(fieldId => !definition.GetField(fieldId).IsHidden)
-                .ToList();
-
-            IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(targetSchedule, visibleFieldIds);
+            IReadOnlyList<FieldSnapshot> snapshots = CreateFieldSnapshots(targetSchedule, fieldIds);
             IReadOnlyList<ScheduleColumnVisibilityDecision> decisions = analyzer.Analyze(snapshots.Select(snapshot => snapshot.Column));
+            // Rolling back the inspection can invalidate the previous definition wrapper.
+            definition = targetSchedule.Definition;
 
             int hiddenColumnCount = 0;
             int visibleColumnCount = 0;
-            int unchangedColumnCount = fieldIds.Count - visibleFieldIds.Count;
+            int unchangedColumnCount = 0;
 
             for (int index = 0; index < snapshots.Count; index++)
             {
@@ -96,13 +91,16 @@ public sealed class ScheduleColumnCollapseService
                 }
             }
 
-            transaction.Commit();
+            if (transaction.Commit() != TransactionStatus.Committed)
+            {
+                return ScheduleColumnCollapseResult.Failure("Revit отменил изменение видимости столбцов спецификации.");
+            }
             logger.Info(
                 $"Collapsed schedule '{targetSchedule.Name}' in place. Hidden fields: {hiddenColumnCount}; visible fields: {visibleColumnCount}; unchanged fields: {unchangedColumnCount}.");
 
             return new ScheduleColumnCollapseResult(
                 Succeeded: true,
-                Message: "Спецификация обновлена, пустые числовые столбцы скрыты.",
+                Message: "Спецификация обновлена: ненулевые числовые столбцы показаны, нулевые и пустые скрыты.",
                 ScheduleId: targetSchedule.Id,
                 ScheduleName: targetSchedule.Name,
                 HiddenColumnCount: hiddenColumnCount,
@@ -112,7 +110,10 @@ public sealed class ScheduleColumnCollapseService
         catch (Exception exception)
         {
             logger.Error("Failed to collapse schedule columns.", exception);
-            transaction.RollBack();
+            if (transaction.GetStatus() == TransactionStatus.Started)
+            {
+                transaction.RollBack();
+            }
             throw;
         }
     }
@@ -302,44 +303,131 @@ public sealed class ScheduleColumnCollapseService
 
     private static IReadOnlyList<FieldSnapshot> CreateFieldSnapshots(ViewSchedule schedule, IReadOnlyList<ScheduleFieldId> fieldIds)
     {
-        TableSectionData body = schedule.GetTableData().GetSectionData(SectionType.Body);
-        int firstColumn = body.FirstColumnNumber;
-        int lastColumn = body.LastColumnNumber;
-        int firstRow = body.FirstRowNumber;
-        int lastRow = body.LastRowNumber;
+        Document document = schedule.Document;
+        ScheduleDefinition definition = schedule.Definition;
+        Dictionary<ScheduleFieldId, bool> originalVisibility = fieldIds.ToDictionary(
+            fieldId => fieldId,
+            fieldId => definition.GetField(fieldId).IsHidden);
+        HashSet<ScheduleFieldId> serviceFieldIds = new(
+            definition.GetFilters().Select(filter => filter.FieldId)
+                .Concat(definition.GetSortGroupFields().Select(sort => sort.FieldId)));
 
-        int tableColumnCount = lastColumn >= firstColumn
-            ? lastColumn - firstColumn + 1
-            : 0;
-        if (tableColumnCount != fieldIds.Count)
+        // Reading hidden numeric fields requires temporarily exposing their body columns.
+        // Roll this back before applying decisions: Keep must preserve the original state.
+        using SubTransaction readingTransaction = new(document);
+        readingTransaction.Start();
+        foreach (ScheduleFieldId fieldId in fieldIds)
+        {
+            ScheduleField field = definition.GetField(fieldId);
+            if (field.IsHidden && IsNumericField(field) && !serviceFieldIds.Contains(fieldId))
+            {
+                TrySetHidden(field, isHidden: false);
+            }
+        }
+
+        document.Regenerate();
+        using TableData table = schedule.GetTableData();
+        using TableSectionData body = table.GetSectionData(SectionType.Body);
+        if (!body.RefreshData())
+        {
+            throw new InvalidOperationException("Не удалось обновить данные спецификации для анализа столбцов.");
+        }
+
+        int visibleFieldCount = fieldIds.Count(fieldId => !definition.GetField(fieldId).IsHidden);
+        if (body.NumberOfColumns != visibleFieldCount)
         {
             throw new InvalidOperationException(
-                $"Не удалось сопоставить поля спецификации с колонками таблицы: полей {fieldIds.Count}, колонок {tableColumnCount}.");
+                $"Не удалось сопоставить поля спецификации с колонками таблицы: полей {visibleFieldCount}, колонок {body.NumberOfColumns}.");
         }
 
         List<FieldSnapshot> snapshots = new();
-        ScheduleDefinition definition = schedule.Definition;
-        for (int index = 0; index < fieldIds.Count; index++)
+        using Units units = document.GetUnits();
+        int columnNumber = body.FirstColumnNumber;
+        foreach (ScheduleFieldId fieldId in fieldIds)
         {
-            int columnNumber = firstColumn + index;
-            ScheduleField field = definition.GetField(fieldIds[index]);
+            ScheduleField field = definition.GetField(fieldId);
+            bool isNumeric = IsNumericField(field);
             List<string> cellTexts = new();
-            for (int rowNumber = firstRow; rowNumber <= lastRow; rowNumber++)
+            if (!field.IsHidden)
             {
-                cellTexts.Add(schedule.GetCellText(SectionType.Body, rowNumber, columnNumber));
+                if (isNumeric && body.NumberOfRows > 0)
+                {
+                    for (int rowNumber = body.FirstRowNumber; rowNumber <= body.LastRowNumber; rowNumber++)
+                    {
+                        cellTexts.Add(schedule.GetCellText(SectionType.Body, rowNumber, columnNumber));
+                    }
+                }
+
+                columnNumber++;
             }
 
             snapshots.Add(new FieldSnapshot(
-                fieldIds[index],
+                fieldId,
                 new ScheduleColumnState(
                     FieldName: field.GetName(),
                     ColumnHeading: field.ColumnHeading,
-                    IsHidden: field.IsHidden,
-                    CanHide: true,
-                    CellTexts: cellTexts)));
+                    IsHidden: originalVisibility[fieldId],
+                    CanHide: !field.IsHidden && !serviceFieldIds.Contains(fieldId),
+                    CellTexts: cellTexts,
+                    IsNumeric: isNumeric,
+                    ParsedNumericValues: ParseNumericValues(units, field, cellTexts))));
         }
 
+        readingTransaction.RollBack();
         return snapshots;
+    }
+
+    private static bool IsNumericField(ScheduleField field)
+    {
+#if REVIT2022_OR_GREATER
+        ForgeTypeId specTypeId = field.GetSpecTypeId();
+        return UnitUtils.IsMeasurableSpec(specTypeId)
+            || specTypeId == SpecTypeId.Int.Integer
+            || field.FieldType == ScheduleFieldType.Count;
+#else
+#pragma warning disable CS0618 // Revit 2019-2021 expose schedule units through UnitType.
+        return field.UnitType != UnitType.UT_Undefined || field.FieldType == ScheduleFieldType.Count;
+#pragma warning restore CS0618
+#endif
+    }
+
+    private static IReadOnlyList<double?>? ParseNumericValues(
+        Units units,
+        ScheduleField field,
+        IReadOnlyList<string> cellTexts)
+    {
+#if REVIT2022_OR_GREATER
+        ForgeTypeId specTypeId = field.GetSpecTypeId();
+        if (!UnitUtils.IsMeasurableSpec(specTypeId))
+        {
+            return null;
+        }
+#else
+#pragma warning disable CS0618 // Revit 2019-2021 expose schedule units through UnitType.
+        UnitType unitType = field.UnitType;
+        if (unitType == UnitType.UT_Undefined)
+        {
+            return null;
+        }
+#endif
+
+        using ValueParsingOptions options = new();
+        using FormatOptions format = field.GetFormatOptions();
+        options.SetFormatOptions(format);
+        List<double?> values = new();
+        foreach (string cellText in cellTexts)
+        {
+            string normalized = cellText.Replace('\u00a0', ' ').Replace('\u202f', ' ').Replace('\u2212', '-');
+#if REVIT2022_OR_GREATER
+            bool parsed = UnitFormatUtils.TryParse(units, specTypeId, normalized, options, out double value);
+#else
+            bool parsed = UnitFormatUtils.TryParse(units, unitType, normalized, options, out double value);
+#pragma warning restore CS0618
+#endif
+            values.Add(parsed ? value : null);
+        }
+
+        return values;
     }
 
     private static bool TrySetHidden(ScheduleField field, bool isHidden)

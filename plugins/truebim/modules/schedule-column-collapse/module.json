@@ -2,7 +2,7 @@
   "id": "truebim.schedule-column-collapse",
   "displayName": "Свернуть ВРС",
   "description": "Показывает столбцы с ненулевыми значениями и скрывает нулевые столбцы выбранной спецификации.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "enabledByDefault": true,
   "revitVersions": ["2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026"]
 }
