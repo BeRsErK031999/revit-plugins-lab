@@ -31,8 +31,14 @@ try {
     [pscustomobject]@{ProcessId=$regressionProcess.Id;Manifest=$manifestPath;Report=$reportPath;Started=(Get-Date).ToString('o')} |
         ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $harnessStarted = $false
     while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $reportPath)) {
         if ($regressionProcess.HasExited) { break }
+        if (-not $harnessStarted -and (Test-Path -LiteralPath ($reportPath + '.progress.txt'))) {
+            # Give execution its full budget after manual add-in approval/startup.
+            $harnessStarted = $true
+            $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+        }
         Start-Sleep -Milliseconds 500
         $regressionProcess.Refresh()
     }
