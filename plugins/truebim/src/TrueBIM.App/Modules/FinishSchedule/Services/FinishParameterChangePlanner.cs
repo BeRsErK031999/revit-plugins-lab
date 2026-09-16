@@ -35,7 +35,7 @@ public sealed class FinishParameterChangePlanner
                 continue;
             }
 
-            if (string.Equals(candidate.CurrentValue, candidate.Target.Value, StringComparison.Ordinal))
+            if (FinishParameterValueComparison.AreEqual(candidate.CurrentValue, candidate.Target.Value))
             {
                 unchangedCount++;
                 continue;

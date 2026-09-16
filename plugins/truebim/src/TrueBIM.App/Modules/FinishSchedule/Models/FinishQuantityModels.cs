@@ -5,7 +5,9 @@ public enum FinishQuantityMethod
     RoomBoundarySubface,
     WallProbeIntersection,
     FloorProbeIntersection,
-    CeilingProbeIntersection
+    CeilingProbeIntersection,
+    ProjectedRoomFootprint,
+    ConnectedWallContour
 }
 
 public enum FinishGeometryWarningCode
@@ -18,7 +20,10 @@ public enum FinishGeometryWarningCode
     SlabGeometryUnsupported,
     ProbeCreationFailed,
     BooleanIntersectionFailed,
-    ProjectedAreaUnavailable
+    ProjectedAreaUnavailable,
+    FullElementAreaUnavailable,
+    MultipleRoomContacts,
+    UnassignedElement
 }
 
 public sealed record FinishGeometryWarning(

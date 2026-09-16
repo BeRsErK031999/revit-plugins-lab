@@ -38,6 +38,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldRevitPreviewService revitPreviewService;
     private readonly IsoFieldHostSelectionService hostSelectionService;
     private readonly IsoFieldRebarCreationService rebarCreationService;
+    private readonly IsoFieldControlPointSnapService controlPointSnapService = new();
     private readonly IsoFieldCoordinateMapper coordinateMapper = new();
     private readonly IsoFieldPreviewLayoutService previewLayoutService = new();
     private readonly IsoFieldSlabBindingService slabBindingService = new();
@@ -48,6 +49,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
     private readonly IsoFieldSourceSetManifestService sourceSetManifestService;
     private readonly IsoFieldSourceSetRecognitionService sourceSetRecognitionService = new();
     private readonly RebarRuleValidationService rebarRuleValidationService = new();
+    private readonly IsoFieldPatchArrayPlanningService patchArrayPlanningService = new();
+    private readonly IsoFieldArrayFabricationLengthService arrayFabricationLengthService = new();
     private readonly IsoFieldRebarReviewService rebarReviewService = new();
     private readonly IsoFieldRebarChangePlanService rebarChangePlanService = new();
     private readonly IsoFieldRebarRuleOverrideService rebarRuleOverrideService = new();
@@ -1416,8 +1419,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         RefreshWorkflowState();
     }
 
+    private bool IsAutomaticPatchPreview => selectedHostElement?.IsSlab == true
+        && calculatedRulePreview?.EngineeringSettings?.Mode == IsoFieldReinforcementMode.AdditionalOverBase;
+
     private void EditSelectedZoneRule()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            rebarCreationStatusText.Text = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            return;
+        }
+
         if (rebarReviewGrid.SelectedItems.Count != 1
             || rebarReviewGrid.SelectedItem is not IsoFieldRebarReviewRow selectedRow
             || selectedRow.IsMerged
@@ -1462,6 +1474,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void MergeSelectedZones()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            rebarCreationStatusText.Text = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            return;
+        }
+
         if (configuredRulePreview is null)
         {
             return;
@@ -1503,6 +1521,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void UnmergeSelectedZones()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            rebarCreationStatusText.Text = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            return;
+        }
+
         if (configuredRulePreview is null || zoneMerges.Count == 0)
         {
             return;
@@ -1530,6 +1554,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ExcludeZonesWithoutBars()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            rebarCreationStatusText.Text = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            return;
+        }
+
         RebarRulePreviewItem[] emptyItems = GetZonesWithoutBars();
         if (emptyItems.Length == 0)
         {
@@ -1554,6 +1584,11 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private RebarRulePreviewItem[] GetZonesWithoutBars()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            return Array.Empty<RebarRulePreviewItem>();
+        }
+
         return currentRulePreview?.Items
             .Where(item => item.IsIncluded
                 && item.Diagnostics.Any(diagnostic => diagnostic.IndexOf(
@@ -1565,6 +1600,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ResetManualZoneConfiguration()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            rebarCreationStatusText.Text = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            return;
+        }
+
         if (ruleOverrides.Count == 0 && zoneMerges.Count == 0)
         {
             return;
@@ -1589,6 +1630,12 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void ApplyZoneRuleOverrides()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            rebarCreationStatusText.Text = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            return;
+        }
+
         if (calculatedRulePreview is null)
         {
             return;
@@ -1730,6 +1777,22 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void RefreshZoneRuleActions()
     {
+        if (IsAutomaticPatchPreview)
+        {
+            foreach (Button button in new[]
+                {
+                    editZoneRuleButton, mergeZonesButton, unmergeZonesButton,
+                    excludeEmptyZonesButton, resetZoneRulesButton
+                })
+            {
+                button.IsEnabled = false;
+                button.ToolTip = IsoFieldRebarManualEditPolicy.PlannedPatchMessage;
+            }
+
+            excludeEmptyZonesButton.Content = "Исключить без стержней";
+            return;
+        }
+
         IsoFieldRebarReviewRow[] selectedRows = rebarReviewGrid?.SelectedItems
             .OfType<IsoFieldRebarReviewRow>()
             .ToArray()
@@ -3281,7 +3344,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         slabHostPoint1Text.Text = "Точка 1 на конструкции не указана.";
         slabHostPoint2Text.Text = "Точка 2 на конструкции не указана.";
         slabHostPoint3Text.Text = "Точка 3 на конструкции не указана.";
-        if (result?.Polylines.Count > 0)
+        bool slabPointsAutomaticallyPopulated = TryPopulateAutomaticSlabHostPoints();
+        if (result?.CalculationBounds is { IsValid: true } calculationBounds)
+        {
+            slabImagePoint1XInput.Text = FormatNumber(calculationBounds.MinimumX);
+            slabImagePoint1YInput.Text = FormatNumber(calculationBounds.MinimumY);
+            slabImagePoint2XInput.Text = FormatNumber(calculationBounds.MaximumX);
+            slabImagePoint2YInput.Text = FormatNumber(calculationBounds.MinimumY);
+            slabImagePoint3XInput.Text = FormatNumber(calculationBounds.MinimumX);
+            slabImagePoint3YInput.Text = FormatNumber(calculationBounds.MaximumY);
+        }
+        else if (result?.Polylines.Count > 0)
         {
             IsoFieldPoint[] points = result.Polylines.SelectMany(polyline => polyline.Points).ToArray();
             double minX = points.Min(point => point.X);
@@ -3299,6 +3372,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         string status = (result?.Polylines.Count > 0, selectedHostElement) switch
         {
             (false, { Geometry: not null }) => "Загрузите или распознайте зоны, затем задайте три пары контрольных точек.",
+            (true, { IsSlab: true, Geometry: not null }) when slabPointsAutomaticallyPopulated && availableSlabBindingProfile is not null => "Зоны загружены, а три точки плиты расставлены автоматически. При необходимости восстановите сохранённую привязку; иначе нажмите «Проверить привязку».",
+            (true, { IsSlab: true, Geometry: not null }) when slabPointsAutomaticallyPopulated => "Зоны загружены, а три точки плиты расставлены автоматически. Проверьте их и нажмите «Проверить привязку».",
             (true, { Geometry: not null }) when availableSlabBindingProfile is not null => "Зоны загружены. Восстановите сохранённую привязку или задайте три точки заново.",
             (true, { IsWall: true, Geometry: not null }) => "Укажите три соответствующие точки на наружной плоскости выбранной стены.",
             (true, { IsSlab: true, Geometry: not null }) => "Укажите три соответствующие точки на верхней грани выбранной плиты.",
@@ -3316,6 +3391,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         slabHostPoint1Text.Text = "Точка 1 на конструкции не указана.";
         slabHostPoint2Text.Text = "Точка 2 на конструкции не указана.";
         slabHostPoint3Text.Text = "Точка 3 на конструкции не указана.";
+        bool slabPointsAutomaticallyPopulated = TryPopulateAutomaticSlabHostPoints();
         availableSlabBindingProfile = selectedHostElement is { Geometry: not null }
             ? slabBindingProfileStorage.TryLoad(
                 documentKey,
@@ -3326,6 +3402,8 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             null => "Выберите поддерживаемую прямую стену или горизонтальную плиту, затем задайте три пары контрольных точек.",
             { Geometry: null } => "Не удалось определить ровную опорную поверхность конструкции. Привязка и расчёт недоступны.",
+            { IsSlab: true } when slabPointsAutomaticallyPopulated && availableSlabBindingProfile is not null => "Три точки плиты расставлены автоматически. При необходимости восстановите сохранённую привязку; иначе проверьте точки и нажмите «Проверить привязку».",
+            { IsSlab: true } when slabPointsAutomaticallyPopulated => "Три точки плиты расставлены автоматически. Проверьте их и нажмите «Проверить привязку».",
             _ when availableSlabBindingProfile is not null => "Для этой конструкции и вида найдена сохранённая привязка. Восстановите её или задайте три точки заново.",
             { IsWall: true } => "Стена готова. Укажите три соответствующие точки на её наружной плоскости.",
             _ => "Плита готова. Укажите три соответствующие точки на её верхней грани."
@@ -3462,15 +3540,52 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         }
 
         logger.Info($"IsoField rebar rules preview requested. Polylines={currentRecognitionResult.Polylines.Count}; HostSelected={selectedHostElement is not null}.");
-        RebarRulePreviewResult preview = rebarRuleValidationService.BuildPreview(
+        bool planPatches = selectedHostElement?.IsSlab == true
+            && engineeringSettings?.Mode == IsoFieldReinforcementMode.AdditionalOverBase;
+        RebarRulePreviewResult rawPreview = rebarRuleValidationService.BuildPreview(
             currentRecognitionResult,
             selectedHostElement,
             selectedSourceSet,
             currentSlabBinding,
-            engineeringSettings);
+            engineeringSettings,
+            deferLayout: planPatches);
+        RebarRulePreviewResult preview = rawPreview;
+        familyPreflightError = null;
+        if (planPatches && rawPreview.EngineeringSettings is not null
+            && selectedHostElement?.Geometry is not null && rawPreview.Diagnostics.Count == 0)
+        {
+            try
+            {
+                IReadOnlyDictionary<double, double> anchorageLengths = rawPreview.Items.Any(item => item.IsIncluded && item.HasValidRule)
+                    ? rebarCreationService.ReadAnchorageLengths(
+                        uiDocument ?? throw new InvalidOperationException("Для проверки анкеровки нужен открытый проект Revit."),
+                        selectedHostElement,
+                        rawPreview)
+                    : new Dictionary<double, double>();
+                RebarRulePreviewResult planned = patchArrayPlanningService.Build(
+                    rawPreview, selectedHostElement.Geometry, anchorageLengths,
+                    arrayFabricationLengthService.NormalizeMinimumLengthMillimeters);
+                preview = rebarRuleValidationService.CompleteLayout(planned);
+                logger.Info(
+                    $"IsoField patch array planning completed. SourceZones={rawPreview.Items.Count}; Patches={preview.Items.Count(IsoFieldRebarManualEditPolicy.IsPlannedPatch)}; "
+                    + $"Envelopes={preview.Items.Count(item => item.IsArrayEnvelope)}; EstimatedBars={preview.EstimatedBarCount}; "
+                    + $"BlockedPatches={preview.Items.Count(item => item.IsIncluded && !item.HasValidRule)}.");
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or Autodesk.Revit.Exceptions.ApplicationException or Autodesk.Revit.Exceptions.ArgumentException)
+            {
+                familyPreflightError = exception.Message;
+                preview = rawPreview with
+                {
+                    Diagnostics = [.. rawPreview.Diagnostics, exception.Message],
+                    BaseDiagnostics = [.. rawPreview.EffectiveBaseDiagnostics, exception.Message]
+                };
+                logger.Warning($"IsoField patch array planning blocked. {exception.Message}");
+            }
+        }
+
         currentRulePreview = preview;
-        calculatedRulePreview = preview;
-        configuredRulePreview = preview;
+        calculatedRulePreview = rawPreview;
+        configuredRulePreview = rawPreview;
         ruleOverrides.Clear();
         zoneMerges.Clear();
         currentChangePlan = null;
@@ -3513,6 +3628,17 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
 
     private void PreviewRebarRulesSafely()
     {
+        if (uiDocument is not null)
+        {
+            revitActions.Raise(PreviewRebarRulesInRevitContext);
+            return;
+        }
+
+        PreviewRebarRulesInRevitContext();
+    }
+
+    private void PreviewRebarRulesInRevitContext()
+    {
         try
         {
             PreviewRebarRules();
@@ -3528,6 +3654,37 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
                 "Не удалось рассчитать раскладку. Модель Revit не изменялась. Подробности сохранены в журнале работы.");
             RefreshWorkflowState();
         }
+    }
+
+    private bool TryPopulateAutomaticSlabHostPoints()
+    {
+        if (selectedHostElement is not { IsSlab: true, Geometry: not null } slab)
+        {
+            return false;
+        }
+
+        IsoFieldControlPointTriad? points = controlPointSnapService
+            .CreateAutomaticOuterCornerTriad(slab.Geometry);
+        if (points is null)
+        {
+            logger.Info(
+                $"IsoField slab control points were not populated automatically. HostId={slab.ElementId}; "
+                + "Reason=outer contour does not contain all bounding corners.");
+            return false;
+        }
+
+        slabHostPoint1Feet = points.Point1;
+        slabHostPoint2Feet = points.Point2;
+        slabHostPoint3Feet = points.Point3;
+        slabHostPoint1Text.Text = FormatSlabHostPoint(1, points.Point1);
+        slabHostPoint2Text.Text = FormatSlabHostPoint(2, points.Point2);
+        slabHostPoint3Text.Text = FormatSlabHostPoint(3, points.Point3);
+        logger.Info(
+            $"IsoField slab control points populated automatically. HostId={slab.ElementId}; "
+            + $"Point1=({points.Point1.X}; {points.Point1.Y}); "
+            + $"Point2=({points.Point2.X}; {points.Point2.Y}); "
+            + $"Point3=({points.Point3.X}; {points.Point3.Y}).");
+        return true;
     }
 
     private bool TryBuildEngineeringSettings(
@@ -4018,6 +4175,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
         {
             logger.Error("Failed to create IsoField array families.", exception);
             familyPreflightError = exception.Message;
+            SetCurrentChangePlan(null);
             rebarCreationStatusText.Text = exception.Message;
             footerStatusText.Text = "Семейства дополнительного армирования не созданы; транзакция отменена.";
             RefreshWorkflowState();
@@ -4861,7 +5019,7 @@ public sealed class IsoFieldRebarWindow : TrueBimWindow
             rulesStepText,
             areRulesReady,
             !string.IsNullOrWhiteSpace(familyPreflightError)
-                ? "Не найден подходящий тип семейства"
+                ? "Ошибка подготовки семейства"
                 : qualityBlockingCount > 0
                 ? "Раскладка заблокирована проверкой"
                 : qualityWarningCount > 0 && !areQualityWarningsAccepted

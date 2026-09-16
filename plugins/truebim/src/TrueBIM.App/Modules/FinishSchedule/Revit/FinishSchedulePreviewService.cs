@@ -45,9 +45,30 @@ public sealed class FinishSchedulePreviewService
 
         stageTimer.Restart();
         IFinishQuantitySource quantitySource = new PhysicalFinishQuantitySource(document, logger);
-        FinishQuantityResult quantities = quantitySource.Calculate(new FinishQuantityRequest(
-            build.RoomScope.SelectedRooms,
+        // Resolve against all rooms so a neighbouring section or storey cannot claim a whole element
+        // merely because its actual owner is outside the selected report scope.
+        FinishQuantityResult allQuantities = quantitySource.Calculate(new FinishQuantityRequest(
+            new RoomScopeService().Select(collection.Rooms, ReportScopeSettings.EntireProject()).SelectedRooms,
             build.Classification.Elements));
+        HashSet<long> selectedRoomIds = new(build.RoomScope.SelectedRooms.Select(room => room.ElementId));
+        HashSet<long> outsideOwnedIds = new(allQuantities.Occurrences
+            .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+        HashSet<long> selectedOwnedIds = new(allQuantities.Occurrences
+            .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+        build = build with
+        {
+            InScopeElements = build.InScopeElements.Concat(build.Classification.Elements
+                    .Where(item => selectedOwnedIds.Contains(item.Element.ElementId)))
+                .Where(item => !outsideOwnedIds.Contains(item.Element.ElementId))
+                .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray()
+        };
+        HashSet<long> scopeElementIds = new(build.InScopeElements.Select(item => item.Element.ElementId));
+        FinishQuantityResult quantities = new(
+            allQuantities.Occurrences.Where(item => selectedRoomIds.Contains(item.RoomId)),
+            allQuantities.Warnings.Where(warning => warning.RoomId.HasValue
+                ? selectedRoomIds.Contains(warning.RoomId.Value)
+                : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value)),
+            allQuantities.CacheMetrics);
         timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
         FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
         RoomFinishSnapshotBuildResult? roomSnapshots = null;

@@ -16,7 +16,7 @@ public sealed class ScheduleRegisterSheetCatalogService
         Guard.NotNull(selectedSheetIds, nameof(selectedSheetIds));
 
         HashSet<long> selectedIds = selectedSheetIds
-            .Where(id => document.GetElement(id) is ViewSheet)
+            .Where(id => document.GetElement(id) is ViewSheet { IsTemplate: false, IsPlaceholder: false })
             .Select(RevitElementIds.GetValue)
             .ToHashSet();
 
@@ -46,7 +46,6 @@ public sealed class ScheduleRegisterSheetCatalogService
             .OfClass(typeof(ViewSheet))
             .Cast<ViewSheet>()
             .Where(sheet => !sheet.IsTemplate && !sheet.IsPlaceholder)
-            .Where(sheet => selectedIds.Contains(RevitElementIds.GetValue(sheet.Id)))
             .OrderBy(sheet => sheet.SheetNumber, PrintSheetNumberComparer.Instance)
             .ThenBy(sheet => sheet.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(sheet =>
@@ -59,7 +58,8 @@ public sealed class ScheduleRegisterSheetCatalogService
                     sheetId,
                     sheet.SheetNumber ?? string.Empty,
                     sheet.Name ?? string.Empty,
-                    scheduleCount);
+                    scheduleCount,
+                    selectedIds.Count == 0 || selectedIds.Contains(sheetId));
             })
             .ToArray();
     }

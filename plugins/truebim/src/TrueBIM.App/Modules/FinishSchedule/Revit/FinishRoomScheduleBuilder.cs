@@ -40,43 +40,68 @@ public sealed class FinishRoomScheduleBuilder
         }
 
         List<ViewSchedule> schedules = CollectSchedules(document);
-        List<ViewSchedule> exactName = schedules
-            .Where(schedule => string.Equals(schedule.Name, plan.ScheduleName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (exactName.Any(schedule => !metadataService.IsManaged(schedule)))
-        {
-            return Conflict(
-                plan,
-                $"Спецификация «{plan.ScheduleName}» уже существует и не принадлежит TrueBIM. "
-                    + "Переименуйте её или задайте другое имя для ведомости отделки.");
-        }
-
-        List<ViewSchedule> managed = schedules
+        List<ViewSchedule> legacy = schedules
             .Where(IsRoomSchedule)
             .Where(metadataService.IsManaged)
+            .Where(schedule => !metadataService.IsSnapshot(schedule))
             .ToList();
-        if (managed.Count > 1)
+        foreach (ViewSchedule schedule in legacy)
         {
-            return Conflict(
-                plan,
-                "В проекте найдено несколько ведомостей отделки с маркером TrueBIM. "
-                    + "Оставьте одну управляемую ведомость и повторите запуск.");
+            string? issue = FinishScheduleSnapshotService.Validate(schedule);
+            if (issue is not null)
+            {
+                return Conflict(plan, issue);
+            }
         }
 
-        if (managed.Count == 0)
-        {
-            return new FinishRoomSchedulePreflight(plan, FinishRoomScheduleAction.Create, null, []);
-        }
-
-        ViewSchedule existing = managed[0];
-        FinishScheduleMetadata metadata = metadataService.Read(existing)!;
-        bool unchanged = string.Equals(existing.Name, plan.ScheduleName, StringComparison.Ordinal)
-            && string.Equals(metadata.SettingsHash, plan.SettingsHash, StringComparison.Ordinal);
+        string name = FinishScheduleVersionNameService.CreateUniqueName(
+            plan.ScheduleName,
+            schedules.Select(schedule => schedule.Name));
         return new FinishRoomSchedulePreflight(
-            plan,
-            unchanged ? FinishRoomScheduleAction.NoChanges : FinishRoomScheduleAction.Update,
-            RevitElementIds.GetValue(existing.Id),
-            []);
+            plan.WithName(name),
+            FinishRoomScheduleAction.Create,
+            null,
+            [],
+            legacy.Select(schedule => RevitElementIds.GetValue(schedule.Id)));
+    }
+
+    public void PreservePreviousVersions(Document document, FinishRoomSchedulePreflight preflight)
+    {
+        long[] currentIds = CollectSchedules(document)
+            .Where(IsRoomSchedule)
+            .Where(metadataService.IsManaged)
+            .Where(schedule => !metadataService.IsSnapshot(schedule))
+            .Select(schedule => RevitElementIds.GetValue(schedule.Id))
+            .OrderBy(id => id)
+            .ToArray();
+        if (!currentIds.SequenceEqual(preflight.LegacyScheduleIds))
+        {
+            throw new InvalidOperationException("Список прежних ведомостей изменился. Повторите формирование.");
+        }
+
+        if (currentIds.Length == 0)
+        {
+            return;
+        }
+
+        using Transaction transaction = new(document, "TrueBIM: сохранить прежние версии отделки");
+        FinishTransactionStatus.EnsureStarted(transaction);
+        try
+        {
+            foreach (long id in currentIds)
+            {
+                ViewSchedule schedule = GetManagedSchedule(document, id);
+                new FinishScheduleSnapshotService().Freeze(schedule);
+                metadataService.MarkAsSnapshot(schedule);
+            }
+
+            FinishTransactionStatus.EnsureCommitted(transaction);
+        }
+        catch
+        {
+            FinishTransactionStatus.RollBackIfStarted(transaction);
+            throw;
+        }
     }
 
     public FinishRoomScheduleApplyResult Apply(
@@ -115,7 +140,8 @@ public sealed class FinishRoomScheduleBuilder
         }
 
         FinishRoomSchedulePreflight current = Preflight(document, plan);
-        if (current.Action != preflight.Action || current.ScheduleId != preflight.ScheduleId)
+        if (current.Action != preflight.Action || current.ScheduleId != preflight.ScheduleId
+            || !string.Equals(current.Plan?.ScheduleName, plan.ScheduleName, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 "Состав спецификаций изменился после preflight. Повторите формирование ведомости отделки.");
@@ -195,6 +221,7 @@ public sealed class FinishRoomScheduleBuilder
                 ?? throw new InvalidOperationException(
                     "Созданная ведомость отделки недоступна для оформления.");
             ConfigureTable(document, schedule, plan, headerMode);
+            new FinishScheduleSnapshotService().Freeze(schedule);
             metadataService.Write(schedule, plan);
             FinishTransactionStatus.EnsureCommitted(transaction);
             ViewSchedule committedSchedule = document.GetElement(
@@ -435,6 +462,17 @@ public sealed class FinishRoomScheduleBuilder
         }
         else
         {
+            if (headerMode == FinishScheduleHeaderMode.Standard)
+            {
+                using TableData table = schedule.GetTableData();
+                using TableSectionData header = table.GetSectionData(SectionType.Header);
+                using TableCellStyle title = header.GetTableCellStyle(header.FirstRowNumber, header.FirstColumnNumber);
+                using TableCellStyleOverrideOptions options = title.GetCellStyleOverrideOptions();
+                ApplyBorders(title, options, FinishRoomScheduleStyleRules.TitleBorders, normalLineStyleId, thinLineStyleId);
+                title.SetCellStyleOverrideOptions(options);
+                header.SetCellStyle(header.FirstRowNumber, header.FirstColumnNumber, title);
+            }
+
             logger.Info(
                 $"Finish Schedule custom header skipped. "
                     + $"ScheduleId={RevitElementIds.GetValue(schedule.Id)}; HeaderMode={headerMode}.");
@@ -649,7 +687,7 @@ public sealed class FinishRoomScheduleBuilder
                 ApplyBorders(
                     style,
                     overrides,
-                    FinishRoomScheduleStyleRules.HeaderBorders,
+                    isTitleRow ? FinishRoomScheduleStyleRules.TitleBorders : FinishRoomScheduleStyleRules.HeaderBorders,
                     normalLineStyleId,
                     thinLineStyleId);
                 style.SetCellStyleOverrideOptions(overrides);
@@ -669,7 +707,7 @@ public sealed class FinishRoomScheduleBuilder
                 if (HasExpectedBorders(
                         appliedStyle,
                         appliedOverrides,
-                        FinishRoomScheduleStyleRules.HeaderBorders,
+                        isTitleRow ? FinishRoomScheduleStyleRules.TitleBorders : FinishRoomScheduleStyleRules.HeaderBorders,
                         normalLineStyleId,
                         thinLineStyleId))
                 {
@@ -951,14 +989,6 @@ public sealed class FinishRoomScheduleBuilder
         ElementId bottom = ResolveLineStyle(rules.Bottom, normalLineStyleId, thinLineStyleId);
         ElementId left = ResolveLineStyle(rules.Left, normalLineStyleId, thinLineStyleId);
         ElementId right = ResolveLineStyle(rules.Right, normalLineStyleId, thinLineStyleId);
-        if (top == ElementId.InvalidElementId
-            || bottom == ElementId.InvalidElementId
-            || left == ElementId.InvalidElementId
-            || right == ElementId.InvalidElementId)
-        {
-            return;
-        }
-
         style.BorderTopLineStyle = top;
         style.BorderBottomLineStyle = bottom;
         style.BorderLeftLineStyle = left;
@@ -1011,9 +1041,13 @@ public sealed class FinishRoomScheduleBuilder
         ElementId normalLineStyleId,
         ElementId thinLineStyleId)
     {
-        return weight == FinishScheduleLineWeight.Normal
-            ? normalLineStyleId
-            : thinLineStyleId;
+        return weight switch
+        {
+            FinishScheduleLineWeight.Normal => normalLineStyleId,
+            FinishScheduleLineWeight.Thin => thinLineStyleId,
+            FinishScheduleLineWeight.None => ElementId.InvalidElementId,
+            _ => throw new ArgumentOutOfRangeException(nameof(weight), weight, null)
+        };
     }
 
     private static ElementId GetLineStyleCategoryId(

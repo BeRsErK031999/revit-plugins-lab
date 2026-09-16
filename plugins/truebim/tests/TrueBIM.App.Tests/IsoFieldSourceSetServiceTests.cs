@@ -200,7 +200,7 @@ public sealed class IsoFieldSourceSetServiceTests
             new FakeRecognitionRunner());
 
         Assert.Equal(4, result.Polylines.Count);
-        Assert.Equal(4, result.Diagnostics.Count);
+        Assert.Equal(5, result.Diagnostics.Count);
         Assert.Collection(
             result.Polylines,
             polyline => Assert.Equal(IsoFieldLayerRole.As1X, polyline.LayerRole),
@@ -216,6 +216,30 @@ public sealed class IsoFieldSourceSetServiceTests
             legend => Assert.Equal(IsoFieldLayerRole.As2X, legend.LayerRole),
             legend => Assert.Equal(IsoFieldLayerRole.As3Y, legend.LayerRole),
             legend => Assert.Equal(IsoFieldLayerRole.As4Y, legend.LayerRole));
+        Assert.Equal(new IsoFieldImageBounds(40, 70, 379, 159), result.CalculationBounds);
+        Assert.Contains(
+            result.Diagnostics,
+            message => message.Contains("согласованы по 4 картам", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RecognitionService_UsesThreeMatchingBoundsWhenFourthMapDiffers()
+    {
+        IsoFieldSourceFile[] files = IsoFieldSourceSet.RequiredRoles
+            .Select(role => new IsoFieldSourceFile($"C:\\maps\\{role}.png", role, 420, 180))
+            .ToArray();
+        IsoFieldSourceSet sourceSet = new(files);
+        FakeRecognitionRunner runner = new(sourcePath =>
+            sourcePath!.Contains(nameof(IsoFieldLayerRole.As4Y), StringComparison.Ordinal)
+                ? new IsoFieldImageBounds(10, 20, 200, 100)
+                : new IsoFieldImageBounds(40, 70, 379, 159));
+
+        IsoFieldRecognitionResult result = new IsoFieldSourceSetRecognitionService().Run(sourceSet, runner);
+
+        Assert.Equal(new IsoFieldImageBounds(40, 70, 379, 159), result.CalculationBounds);
+        Assert.Contains(
+            result.Diagnostics,
+            message => message.Contains("согласованы по 3 картам", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -433,6 +457,14 @@ public sealed class IsoFieldSourceSetServiceTests
 
     private sealed class FakeRecognitionRunner : IIsoFieldRecognitionRunner
     {
+        private readonly Func<string?, IsoFieldImageBounds?> calculationBoundsFactory;
+
+        public FakeRecognitionRunner(Func<string?, IsoFieldImageBounds?>? calculationBoundsFactory = null)
+        {
+            this.calculationBoundsFactory = calculationBoundsFactory
+                ?? (_ => new IsoFieldImageBounds(40, 70, 379, 159));
+        }
+
         public IsoFieldRecognitionResult Run(string? sourcePath)
         {
             string id = Path.GetFileNameWithoutExtension(sourcePath ?? "source");
@@ -449,7 +481,8 @@ public sealed class IsoFieldSourceSetServiceTests
                         20,
                         10,
                         100)
-                ]);
+                ],
+                calculationBoundsFactory(sourcePath));
         }
     }
 }

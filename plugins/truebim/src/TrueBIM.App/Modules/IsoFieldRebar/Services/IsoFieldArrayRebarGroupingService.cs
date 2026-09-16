@@ -28,7 +28,7 @@ public sealed class IsoFieldArrayRebarGroupingService
 
         return prepared
             .GroupBy(BuildGroupKey)
-            .Select(CreateZoneArray)
+            .SelectMany(CreateUniformArrays)
             .OrderBy(item => item.StableId, StringComparer.Ordinal)
             .ToArray();
     }
@@ -91,13 +91,46 @@ public sealed class IsoFieldArrayRebarGroupingService
             Quantize(Dot(item.Start, item.Normal), GeometryToleranceFeet));
     }
 
-    private static IsoFieldArrayRebarPlacement CreateZoneArray(
+    private static IEnumerable<IsoFieldArrayRebarPlacement> CreateUniformArrays(
         IGrouping<ZoneArrayKey, PreparedPlacement> group)
+    {
+        // A family has one length for all of its bars. Only equal, consecutive
+        // scan lines can be represented by it without filling holes or gaps.
+        foreach (var spanGroup in group.GroupBy(item => (
+            Start: Quantize(Dot(item.Start, item.Direction), GeometryToleranceFeet),
+            End: Quantize(Dot(item.End, item.Direction), GeometryToleranceFeet))))
+        {
+            List<PreparedPlacement> run = new();
+            double previousCross = double.NaN;
+            foreach (PreparedPlacement item in spanGroup.OrderBy(item => Dot(item.Start, item.CrossDirection)))
+            {
+                double cross = Dot(item.Start, item.CrossDirection);
+                double spacing = item.Source.Component!.SpacingMillimeters / MillimetersPerFoot;
+                if (run.Count > 0 && Math.Abs(cross - previousCross - spacing) > GeometryToleranceFeet)
+                {
+                    yield return CreateZoneArray(run);
+                    run.Clear();
+                }
+                run.Add(item);
+                previousCross = cross;
+            }
+            if (run.Count > 0) yield return CreateZoneArray(run);
+        }
+    }
+
+    private static IsoFieldArrayRebarPlacement CreateZoneArray(
+        IEnumerable<PreparedPlacement> group)
     {
         PreparedPlacement[] items = group
             .OrderBy(item => item.Source.StableId, StringComparer.Ordinal)
             .ToArray();
         PreparedPlacement first = items[0];
+        if (items.Length < 2)
+        {
+            throw new InvalidOperationException(
+                $"В зоне {first.Source.ZoneName} остался одиночный стержень. Семейство массива требует минимум два стержня; "
+                + "увеличьте допустимую ширину пятна или примените отдельное семейство одиночного стержня.");
+        }
         Vector direction = first.Direction;
         Vector crossDirection = first.CrossDirection;
         IEnumerable<IsoFieldRebarPoint3D> points = items
@@ -107,7 +140,8 @@ public sealed class IsoFieldArrayRebarGroupingService
         double minimumCross = points.Min(point => Dot(point, crossDirection));
         double maximumCross = points.Max(point => Dot(point, crossDirection));
         double length = maximumAlong - minimumAlong;
-        double width = maximumCross - minimumCross;
+        double calculatedWidth = maximumCross - minimumCross;
+        double familyWidth = calculatedWidth;
 
         IsoFieldRebarPoint3D origin = ShiftAlong(
             first.Start,
@@ -118,7 +152,7 @@ public sealed class IsoFieldArrayRebarGroupingService
             crossDirection,
             minimumCross - Dot(origin, crossDirection));
         IsoFieldRebarPoint3D end = ShiftAlong(origin, direction, length);
-        IsoFieldRebarPoint3D lastStart = ShiftAlong(origin, crossDirection, width);
+        IsoFieldRebarPoint3D lastStart = ShiftAlong(origin, crossDirection, familyWidth);
         string[] sourceStableIds = items
             .Select(item => item.Source.StableId!)
             .Distinct(StringComparer.Ordinal)
@@ -134,7 +168,7 @@ public sealed class IsoFieldArrayRebarGroupingService
             end,
             lastStart,
             first.Source.Normal,
-            ResolveBarCount(width, first.Source.Component!.SpacingMillimeters),
+            ResolveBarCount(familyWidth, first.Source.Component!.SpacingMillimeters),
             BuildZoneArrayStableId(first.Source.StableId!),
             sourceStableIds);
     }
@@ -149,10 +183,7 @@ public sealed class IsoFieldArrayRebarGroupingService
 
     private static string BuildZoneArrayStableId(string sourceStableId)
     {
-        int regionMarkerIndex = sourceStableId.LastIndexOf(":r", StringComparison.Ordinal);
-        return regionMarkerIndex < 0
-            ? sourceStableId + ":r0:a0"
-            : sourceStableId.Substring(0, regionMarkerIndex) + ":r0:a0";
+        return sourceStableId + ":array";
     }
 
     private static bool MustReverse(Vector direction)

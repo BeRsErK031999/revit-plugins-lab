@@ -211,6 +211,109 @@ public sealed class RebarRuleValidationServiceTests
     }
 
     [Fact]
+    public void BuildPreview_DeferredAdditionalLayoutPreservesShortSourceRegionForAnchorage()
+    {
+        IsoFieldRecognitionResult recognition = CreateShortPatchRecognition();
+        IsoFieldHostElement host = CreateSlabHost();
+        IsoFieldEngineeringSettings settings = IsoFieldEngineeringSettings.Default with
+        {
+            Mode = IsoFieldReinforcementMode.AdditionalOverBase,
+            BoundaryOffsetMillimeters = 0,
+            MinimumBarLengthMillimeters = 1200
+        };
+        RebarRulePreviewResult raw = service.BuildPreview(
+            recognition, host, CreateSourceSet(), CreateBinding(recognition, host.Geometry!), settings, deferLayout: true);
+
+        RebarRulePreviewItem source = Assert.Single(raw.Items);
+        Assert.True(source.HasValidRule, string.Join("; ", source.Diagnostics));
+        Assert.Equal(0, source.EstimatedBarCount);
+        Assert.Equal(1, source.EffectiveRegions[0].OuterBoundaryFeet.Max(point => point.X)
+            - source.EffectiveRegions[0].OuterBoundaryFeet.Min(point => point.X), 6);
+        RebarRulePreviewResult planned = new IsoFieldPatchArrayPlanningService().Build(
+            raw, host.Geometry!, new Dictionary<double, double> { [10] = 500 });
+        RebarRulePreviewResult completed = service.CompleteLayout(planned);
+
+        Assert.True(completed.CanCreateRebar, string.Join("; ", completed.Diagnostics.Concat(completed.Items.SelectMany(item => item.Diagnostics))));
+        RebarRulePreviewItem patch = Assert.Single(completed.Items);
+        Assert.True(patch.IsArrayEnvelope);
+        Assert.True(patch.EstimatedBarCount >= 2);
+        Assert.Equal(patch.EstimatedBarCount, completed.EstimatedBarCount);
+        Assert.Equal(source.ZoneId, Assert.Single(patch.EffectiveSourceZoneIds));
+        Assert.False(source.IsArrayEnvelope);
+    }
+
+    [Fact]
+    public void CompleteLayout_PreservesBlockedPatchDiagnostics()
+    {
+        IsoFieldRecognitionResult recognition = CreateShortPatchRecognition();
+        IsoFieldHostElement host = CreateSlabHost();
+        RebarRulePreviewResult raw = service.BuildPreview(
+            recognition, host, CreateSourceSet(), CreateBinding(recognition, host.Geometry!),
+            IsoFieldEngineeringSettings.Default with { BoundaryOffsetMillimeters = 0 },
+            deferLayout: true);
+        RebarRulePreviewResult planned = new IsoFieldPatchArrayPlanningService().Build(raw, host.Geometry!, new Dictionary<double, double>());
+
+        RebarRulePreviewResult completed = service.CompleteLayout(planned);
+
+        Assert.False(completed.CanCreateRebar);
+        Assert.Equal(0, completed.EstimatedBarCount);
+        RebarRulePreviewItem patch = Assert.Single(completed.Items);
+        Assert.False(patch.IsArrayEnvelope);
+        Assert.Contains(patch.Diagnostics, message => message.Contains("анкеровки", StringComparison.Ordinal));
+        Assert.True(IsoFieldRebarManualEditPolicy.IsPlannedPatch(patch));
+    }
+
+    [Fact]
+    public void BuildPreview_FullCombinationRetainsLayoutValidationWhenDeferRequested()
+    {
+        IsoFieldRecognitionResult recognition = CreateShortPatchRecognition();
+        IsoFieldHostElement host = CreateSlabHost();
+
+        RebarRulePreviewResult preview = service.BuildPreview(
+            recognition, host, CreateSourceSet(), CreateBinding(recognition, host.Geometry!),
+            IsoFieldEngineeringSettings.Default with { Mode = IsoFieldReinforcementMode.FullCombination, MinimumBarLengthMillimeters = 1200 },
+            deferLayout: true);
+
+        Assert.False(preview.CanCreateRebar);
+        Assert.Contains(Assert.Single(preview.Items).Diagnostics, message => message.Contains("не осталось стержней", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(3.9, false)]
+    [InlineData(4.1, true)]
+    public void BuildPreview_DeferredAdditionalOnlyExcludesBaseWhenItMeetsRequiredArea(double requiredArea, bool included)
+    {
+        IsoFieldRecognitionResult recognition = CreateEngineeringRecognition(requiredArea);
+        IsoFieldLegend legend = Assert.Single(recognition.EffectiveLegends);
+        recognition = recognition with
+        {
+            Legends = [legend with
+            {
+                Boundaries = legend.EffectiveBoundaries.Select(boundary => boundary with { ReinforcementLabel = "d10s200" }).ToArray()
+            }]
+        };
+        IsoFieldHostElement host = CreateSlabHost();
+
+        RebarRulePreviewResult preview = service.BuildPreview(
+            recognition, host, CreateSourceSet(), CreateBinding(recognition, host.Geometry!),
+            IsoFieldEngineeringSettings.Default, deferLayout: true);
+
+        RebarRulePreviewItem item = Assert.Single(preview.Items);
+        Assert.Equal(included, item.IsIncluded);
+        Assert.False(preview.CanCreateRebar);
+        if (included)
+        {
+            Assert.Contains(item.Diagnostics, message => message.Contains("меньше требуемой", StringComparison.Ordinal));
+        }
+    }
+
+    private static IsoFieldRecognitionResult CreateShortPatchRecognition()
+    {
+        IsoFieldRecognitionResult recognition = CreateEngineeringRecognition(7.85);
+        return recognition with { Polylines = [recognition.Polylines[0] with { Points = CreateLoop(4, 4, 5, 4.3) }] };
+    }
+
+    [Fact]
     public void BuildPreview_BlocksSlabEngineeringRulesForJsonOnlySource()
     {
         IsoFieldRecognitionResult recognition = CreateEngineeringRecognition(maximumValue: 7.85);

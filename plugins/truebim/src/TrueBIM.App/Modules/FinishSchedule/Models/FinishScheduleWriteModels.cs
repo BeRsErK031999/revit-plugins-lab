@@ -195,7 +195,8 @@ public sealed class FinishScheduleWritePreview
         FinishWritePlan ownershipPlan,
         IEnumerable<string> calculationWarnings,
         FinishRoomSchedulePreflight? schedule = null,
-        FinishSchedulePreviewResult? calculation = null)
+        FinishSchedulePreviewResult? calculation = null,
+        IReadOnlyDictionary<long, string>? elementLabels = null)
     {
         if (groupCount < 0 || roomCount < 0)
         {
@@ -212,6 +213,7 @@ public sealed class FinishScheduleWritePreview
             null,
             []);
         Calculation = calculation;
+        ElementLabels = elementLabels ?? new Dictionary<long, string>();
         CalculationWarnings = (calculationWarnings ?? throw new ArgumentNullException(nameof(calculationWarnings)))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -230,6 +232,8 @@ public sealed class FinishScheduleWritePreview
     public FinishRoomSchedulePreflight Schedule { get; }
 
     public FinishSchedulePreviewResult? Calculation { get; }
+
+    public IReadOnlyDictionary<long, string> ElementLabels { get; }
 
     public IReadOnlyList<string> CalculationWarnings { get; }
 

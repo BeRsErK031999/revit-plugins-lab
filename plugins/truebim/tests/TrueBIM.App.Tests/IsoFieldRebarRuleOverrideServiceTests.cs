@@ -139,6 +139,44 @@ public sealed class IsoFieldRebarRuleOverrideServiceTests
             diagnostic.Contains("Не удалось прочитать", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Apply_RejectsRuleChangesAndExclusionForBlockedAutomaticPatch(bool include)
+    {
+        RebarRulePreviewItem patch = CreateItem("zone-patch-blocked", "X", IsoFieldLayerRole.As1X) with
+        {
+            Diagnostics = ["Не подтверждена анкеровка."],
+            BaseDiagnostics = Array.Empty<string>(),
+            SourceZoneIds = ["source-zone"],
+            IsArrayEnvelope = false
+        };
+        RebarRulePreviewResult preview = CreatePreview(patch);
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => service.Apply(
+            preview, new Dictionary<string, IsoFieldRebarRuleOverride> { [patch.ZoneId] = new(patch.ZoneId, include, "d16s200") }));
+
+        Assert.Contains("исходные зоны", exception.Message, StringComparison.Ordinal);
+        Assert.False(service.Validate(patch, CreateSettings(), include, "d16s200").IsValid);
+    }
+
+    [Fact]
+    public void Apply_EmptyOverridesPreserveAutomaticPatchAndGlobalDiagnostics()
+    {
+        RebarRulePreviewItem patch = CreateItem("zone-patch-test", "X", IsoFieldLayerRole.As1X);
+        RebarRulePreviewResult preview = CreatePreview(patch) with
+        {
+            Diagnostics = ["Массивы пересекаются."],
+            BaseDiagnostics = Array.Empty<string>()
+        };
+
+        RebarRulePreviewResult result = service.Apply(preview, new Dictionary<string, IsoFieldRebarRuleOverride>());
+
+        Assert.Same(preview, result);
+        Assert.False(result.CanCreateRebar);
+        Assert.Contains("Массивы пересекаются.", result.Diagnostics);
+    }
+
     private static RebarRulePreviewResult CreatePreview(params RebarRulePreviewItem[] items)
     {
         IsoFieldEngineeringSettings settings = CreateSettings();

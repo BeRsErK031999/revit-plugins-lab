@@ -88,6 +88,11 @@ public sealed class FinishRoomSchedulePlan
     public string SettingsHash { get; }
 
     public IReadOnlyList<string> ParameterIdentities { get; }
+
+    public FinishRoomSchedulePlan WithName(string name)
+    {
+        return new FinishRoomSchedulePlan(name, Columns, ScopeFilter, SettingsHash, ParameterIdentities);
+    }
 }
 
 public sealed class FinishRoomSchedulePreflight
@@ -96,12 +101,14 @@ public sealed class FinishRoomSchedulePreflight
         FinishRoomSchedulePlan? plan,
         FinishRoomScheduleAction action,
         long? scheduleId,
-        IEnumerable<FinishWriteIssue> issues)
+        IEnumerable<FinishWriteIssue> issues,
+        IEnumerable<long>? legacyScheduleIds = null)
     {
         Plan = plan;
         Action = action;
         ScheduleId = scheduleId;
         Issues = FinishWriteOrdering.OrderIssues(issues);
+        LegacyScheduleIds = (legacyScheduleIds ?? []).Distinct().OrderBy(id => id).ToArray();
     }
 
     public FinishRoomSchedulePlan? Plan { get; }
@@ -111,6 +118,8 @@ public sealed class FinishRoomSchedulePreflight
     public long? ScheduleId { get; }
 
     public IReadOnlyList<FinishWriteIssue> Issues { get; }
+
+    public IReadOnlyList<long> LegacyScheduleIds { get; }
 
     public bool RequiresTransaction => Action is FinishRoomScheduleAction.Create or FinishRoomScheduleAction.Update;
 

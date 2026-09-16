@@ -52,6 +52,11 @@ public sealed class IsoFieldRebarZoneMergeService
             return preview;
         }
 
+        if (preview.Items.Any(IsoFieldRebarManualEditPolicy.IsPlannedPatch))
+        {
+            throw new InvalidOperationException(IsoFieldRebarManualEditPolicy.PlannedPatchMessage);
+        }
+
         HashSet<string> occupiedSourceIds = new(StringComparer.Ordinal);
         Dictionary<string, RebarRulePreviewItem> replacementByFirstId = new(StringComparer.Ordinal);
         foreach (IsoFieldRebarZoneMerge merge in merges)
@@ -177,6 +182,11 @@ public sealed class IsoFieldRebarZoneMergeService
 
     private static void ValidateMembers(IReadOnlyList<RebarRulePreviewItem> members)
     {
+        if (members.Any(IsoFieldRebarManualEditPolicy.IsPlannedPatch))
+        {
+            throw new InvalidOperationException(IsoFieldRebarManualEditPolicy.PlannedPatchMessage);
+        }
+
         RebarRulePreviewItem first = members[0];
         if (members.Any(member => !member.IsIncluded))
         {

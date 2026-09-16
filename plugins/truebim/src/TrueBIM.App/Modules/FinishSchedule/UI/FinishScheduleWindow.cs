@@ -1035,12 +1035,13 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
             if (writePreview.RequiresTransaction)
             {
+                FinishScheduleWriteConfirmation notice = new FinishScheduleWriteConfirmationBuilder().Build(writePreview);
                 MessageBoxResult confirmation = MessageBox.Show(
                     this,
-                    CreateWriteConfirmation(writePreview),
-                    "Ведомость отделки — подтверждение записи",
+                    notice.Message,
+                    "Ведомость отделки — новая версия",
                     MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning,
+                    notice.ReplacesExistingValues ? MessageBoxImage.Warning : MessageBoxImage.Question,
                     MessageBoxResult.No);
                 if (confirmation != MessageBoxResult.Yes)
                 {
@@ -1257,50 +1258,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     {
         lastScheduleId = scheduleId;
         openScheduleButton.IsEnabled = scheduleId.HasValue;
-    }
-
-    private static string CreateWriteConfirmation(FinishScheduleWritePreview preview)
-    {
-        string[] samples = preview.RoomPlan.Changes
-            .Concat(preview.OwnershipPlan.Changes)
-            .Take(3)
-            .Select(change =>
-                $"• {change.Role}, id {change.ElementId}: «{CompactValue(change.PreviousValue)}» → «{CompactValue(change.NewValue)}»")
-            .ToArray();
-        string sampleText = samples.Length == 0
-            ? string.Empty
-            : $"\n\nПримеры изменений:\n{string.Join("\n", samples)}";
-        return "Выбранные параметры помещений будут обновлены. Один комплект параметров поддерживает "
-            + "один активный вариант агрегации.\n\n"
-            + $"Параметры помещений: {preview.RoomPlan.Changes.Count} изменений.\n"
-            + $"Ownership физических элементов: {preview.OwnershipPlan.Changes.Count} изменений.\n\n"
-            + $"Спецификация: {FormatScheduleAction(preview.Schedule.Action)}.\n\n"
-            + "Параметры и управляемая спецификация создаются или обновляются атомарно."
-            + sampleText
-            + "\n\n"
-            + "Продолжить?";
-    }
-
-    private static string FormatScheduleAction(FinishRoomScheduleAction action)
-    {
-        return action switch
-        {
-            FinishRoomScheduleAction.Create => "будет создана",
-            FinishRoomScheduleAction.Update => "будет обновлена",
-            FinishRoomScheduleAction.NoChanges => "уже актуальна",
-            FinishRoomScheduleAction.Blocked => "заблокирована",
-            _ => action.ToString()
-        };
-    }
-
-    private static string CompactValue(string value)
-    {
-        string compact = string.IsNullOrEmpty(value)
-            ? "пусто"
-            : value.Replace("\r\n", " / ").Replace("\n", " / ").Trim();
-        return compact.Length <= 80
-            ? compact
-            : $"{compact.Substring(0, 77)}…";
     }
 
     private void SaveProfile(bool showFeedback)

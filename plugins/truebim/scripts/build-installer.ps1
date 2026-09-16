@@ -254,6 +254,9 @@ foreach ($year in $revitYears) {
         --framework $framework `
         --nologo `
         --verbosity:minimal `
+        -m:1 `
+        -nodeReuse:false `
+        "-p:UseSharedCompilation=false" `
         "-p:RevitVersion=$year" `
         "-p:RevitApiRoot=$revitApiRoot" `
         "-p:OutputPath=$tempOutputDir\" `

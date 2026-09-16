@@ -13,12 +13,22 @@ public sealed record IsoFieldArrayRebarPlacement(
     string StableId,
     IReadOnlyList<string> SourceStableIds)
 {
+    private const double MillimetersPerFoot = 304.8;
+
     public double BarLengthFeet => Distance(FirstBarStart, FirstBarEnd);
 
-    public double ArrayWidthFeet => DistanceToLine(
-        LastBarStart,
-        FirstBarStart,
-        FirstBarEnd);
+    public double ArrayWidthFeet
+    {
+        get
+        {
+            double calculatedWidth = DistanceToLine(
+                LastBarStart,
+                FirstBarStart,
+                FirstBarEnd);
+            double minimumFamilyWidth = Component.SpacingMillimeters / MillimetersPerFoot;
+            return Math.Max(calculatedWidth, minimumFamilyWidth);
+        }
+    }
 
     private static double Distance(IsoFieldRebarPoint3D first, IsoFieldRebarPoint3D second)
     {

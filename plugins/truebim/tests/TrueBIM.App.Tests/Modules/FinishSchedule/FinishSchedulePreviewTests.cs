@@ -81,9 +81,9 @@ public sealed class FinishSchedulePreviewTests
                 FinishScheduleSettings.CreateDefault());
 
         Assert.Equal(new FinishPreviewCategoryCounts(1, 1, 1), build.Preview.Floors);
-        Assert.Equal(new FinishPreviewCategoryCounts(3, 2, 1), build.Preview.Ceilings);
-        Assert.Equal(2, build.Preview.Index.PotentialRoomElementPairs);
-        Assert.Equal([201L, 202L], build.InScopeElements.Select(element => element.Element.ElementId));
+        Assert.Equal(new FinishPreviewCategoryCounts(3, 2, 2), build.Preview.Ceilings);
+        Assert.Equal(3, build.Preview.Index.PotentialRoomElementPairs);
+        Assert.Equal([201L, 202L, 203L], build.InScopeElements.Select(element => element.Element.ElementId));
     }
 
     [Fact]

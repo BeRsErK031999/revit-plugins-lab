@@ -100,6 +100,42 @@ public sealed class IsoFieldRebarZoneMergeServiceTests
         Assert.Contains("более чем в одну группу", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CreateMerge_RejectsAutomaticPatchIncludingBlockedPatch(bool envelope)
+    {
+        RebarRulePreviewItem patch = CreateItem("zone-patch-test", 0, 0, 4, 4) with
+        {
+            IsArrayEnvelope = envelope,
+            Diagnostics = envelope ? Array.Empty<string>() : ["Не подтверждена анкеровка."],
+            BaseDiagnostics = Array.Empty<string>(),
+            SourceZoneIds = ["source-zone"]
+        };
+        RebarRulePreviewResult preview = new(
+            [patch, CreateItem("zone-b", 4, 0, 8, 4)], Array.Empty<string>(), CreateSettings());
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CreateMerge(preview, [patch.ZoneId, "zone-b"]));
+
+        Assert.Contains("исходные зоны", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Apply_ExistingManualMergeCannotClearBlockedAutomaticPatchDiagnostics()
+    {
+        RebarRulePreviewItem first = CreateItem("zone-a", 0, 0, 4, 4);
+        RebarRulePreviewItem second = CreateItem("zone-b", 4, 0, 8, 4);
+        RebarRulePreviewResult raw = CreatePreview(first, second);
+        IsoFieldRebarZoneMerge previousMerge = service.CreateMerge(raw, ["zone-a", "zone-b"]);
+        RebarRulePreviewResult planned = raw with
+        {
+            Items = [first, second, CreateItem("zone-patch-blocked", 8, 0, 12, 4) with { Diagnostics = ["Нет анкеровки."] }]
+        };
+
+        Assert.Throws<InvalidOperationException>(() => service.Apply(planned, [previousMerge]));
+    }
+
     private static RebarRulePreviewResult CreatePreview(params RebarRulePreviewItem[] items)
     {
         IsoFieldEngineeringSettings settings = CreateSettings();

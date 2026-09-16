@@ -73,9 +73,59 @@ public sealed class IsoFieldRecognitionRunnerTests
             Assert.Contains(result.Polylines, zone => zone.ZoneName!.Contains("2,5–3,5 см²/м", StringComparison.OrdinalIgnoreCase));
             Assert.All(result.Polylines, zone => Assert.InRange(zone.LegendBandIndex!.Value, 0, 2));
             Assert.All(result.Polylines, zone => Assert.True(zone.Points.Count >= 4));
+            Assert.Equal(new IsoFieldImageBounds(40, 70, 379, 159), result.CalculationBounds);
             Assert.Contains(result.Diagnostics, message => message.Contains("максимальный уровень", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(result.Diagnostics, message => message.Contains("границы расчётного поля", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(result.Diagnostics, message => message.Contains("числовые границы", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(result.Diagnostics, message => message.Contains("диаметр/шаг", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuiltInRecognitionRunner_RejectsOutsideAxisGlyphsAndKeepsNarrowMeshProjection()
+    {
+        string directory = CreateTempDirectory();
+        string imagePath = Path.Combine(directory, "pk-lira-map-with-axes.png");
+        try
+        {
+            CreateSyntheticPkLiraMap(imagePath, includeAxesAndProjection: true);
+
+            IsoFieldRecognitionResult result = new BuiltInIsoFieldRecognitionRunner().Run(imagePath);
+
+            Assert.Equal(new IsoFieldImageBounds(40, 70, 379, 159), result.CalculationBounds);
+            Assert.Equal(3, result.Polylines.Count);
+            IsoFieldPolyline projection = Assert.Single(result.Polylines, zone => zone.Points.Min(point => point.Y) > 159);
+            Assert.Equal(180, projection.Points.Min(point => point.X));
+            Assert.Equal(199, projection.Points.Max(point => point.X));
+            Assert.Equal(190, projection.Points.Min(point => point.Y));
+            Assert.Equal(207, projection.Points.Max(point => point.Y));
+            Assert.Equal(1, projection.LegendBandIndex);
+            Assert.DoesNotContain(result.Polylines, zone => zone.Points.Any(point => point.X < 40));
+            Assert.Contains(result.Diagnostics, message => message.Contains("вне расчётного поля отброшены: 2", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BuiltInRecognitionRunner_PreservesColorZonesWhenCalculationMeshIsAbsent()
+    {
+        string directory = CreateTempDirectory();
+        string imagePath = Path.Combine(directory, "pk-lira-map-without-mesh.png");
+        try
+        {
+            CreateSyntheticPkLiraMap(imagePath, includeCalculationField: false);
+
+            IsoFieldRecognitionResult result = new BuiltInIsoFieldRecognitionRunner().Run(imagePath);
+
+            Assert.Null(result.CalculationBounds);
+            Assert.Equal(2, result.Polylines.Count);
         }
         finally
         {
@@ -444,10 +494,12 @@ public sealed class IsoFieldRecognitionRunnerTests
         string path,
         bool includeNumericLabels = true,
         IReadOnlyList<string>? numericLabels = null,
-        bool includeReinforcementLabels = true)
+        bool includeReinforcementLabels = true,
+        bool includeCalculationField = true,
+        bool includeAxesAndProjection = false)
     {
         const int width = 420;
-        const int height = 180;
+        int height = includeAxesAndProjection ? 240 : 180;
         int stride = width * 4;
         byte[] pixels = CreateWhitePixels(width, height);
         int[] centers = [60, 160, 260, 360];
@@ -479,8 +531,22 @@ public sealed class IsoFieldRecognitionRunnerTests
             }
         }
 
+        if (includeCalculationField)
+        {
+            FillRectangle(pixels, stride, 40, 70, 340, 90, 225, 225, 225);
+        }
+
         FillRectangle(pixels, stride, 85, 82, 28, 24, 255, 255, 100);
         FillRectangle(pixels, stride, 290, 118, 32, 26, 255, 0, 0);
+        if (includeAxesAndProjection)
+        {
+            FillRectangle(pixels, stride, 175, 150, 30, 65, 225, 225, 225);
+            FillRectangle(pixels, stride, 180, 190, 14, 18, 255, 255, 100);
+            FillRectangle(pixels, stride, 194, 190, 6, 18, 0, 255, 0);
+            FillRectangle(pixels, stride, 8, 190, 10, 10, 0, 255, 0);
+            FillRectangle(pixels, stride, 280, 190, 10, 10, 0, 255, 0);
+        }
+
         SavePng(path, width, height, pixels, stride);
     }
 

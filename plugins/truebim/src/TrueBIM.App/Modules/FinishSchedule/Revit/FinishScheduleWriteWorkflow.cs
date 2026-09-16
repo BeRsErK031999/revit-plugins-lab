@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Services;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Revit;
@@ -95,7 +96,11 @@ public sealed class FinishScheduleWriteWorkflow
             ownershipPlan,
             calculation.Preview.Warnings,
             schedulePreflight,
-            calculation.Preview);
+            calculation.Preview,
+            roomPlan.Changes.Concat(ownershipPlan.Changes)
+                .Select(change => change.ElementId)
+                .Distinct()
+                .ToDictionary(id => id, id => DescribeElement(document, id)));
         logger.Info(
             $"Finish Schedule write plan prepared. Rooms={preview.RoomCount}; Groups={preview.GroupCount}; "
             + $"RoomChanges={roomPlan.Changes.Count}; OwnershipChanges={ownershipPlan.Changes.Count}; "
@@ -188,6 +193,7 @@ public sealed class FinishScheduleWriteWorkflow
         {
             FinishTransactionStatus.EnsureStarted(group);
             groupStarted = true;
+            scheduleBuilder.PreservePreviousVersions(document, preview.Schedule);
             stageTimer.Restart();
             FinishOwnershipApplyResult ownershipResult = ownershipWriter.Apply(
                 document,
@@ -226,7 +232,7 @@ public sealed class FinishScheduleWriteWorkflow
                 ownershipResult.AppliedCount,
                 preflightSkippedOwnership + ownershipResult.SkippedCount,
                 warnings,
-                BuildSuccessMessage(scheduleResult.Action, headerMode),
+                BuildSuccessMessage(scheduleResult, headerMode, appliedRoomValues, ownershipResult.AppliedCount),
                 scheduleResult,
                 performance);
         }
@@ -279,19 +285,34 @@ public sealed class FinishScheduleWriteWorkflow
     }
 
     private static string BuildSuccessMessage(
-        FinishRoomScheduleAction action,
-        FinishScheduleHeaderMode headerMode)
+        FinishRoomScheduleApplyResult schedule,
+        FinishScheduleHeaderMode headerMode,
+        int roomValues,
+        int ownershipValues)
     {
-        string operation = action == FinishRoomScheduleAction.Create
-            ? "Параметры обновлены, ведомость отделки создана"
-            : "Параметры и ведомость отделки обновлены";
+        string operation = $"Создана «{schedule.ScheduleName}»";
         string header = headerMode switch
         {
             FinishScheduleHeaderMode.Standard => " с простой шапкой Revit",
             FinishScheduleHeaderMode.None => " без шапки",
             _ => string.Empty
         };
-        return $"{operation}{header}.";
+        string parameterMessage = roomValues + ownershipValues == 0
+            ? " Параметры уже совпадают с расчётом и не перезаписывались."
+            : $" Обновлено значений параметров: {roomValues + ownershipValues}.";
+        return $"{operation}{header}. Прежние версии сохранены.{parameterMessage}";
+    }
+
+    private static string DescribeElement(Document document, long id)
+    {
+        Element? element = document.GetElement(RevitElementIds.Create(id));
+        if (element is Autodesk.Revit.DB.Architecture.Room room)
+        {
+            string name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? string.Empty;
+            return $"Помещение {room.Number} «{name}»";
+        }
+
+        return $"{element?.Category?.Name ?? "Элемент"} (ID {id})";
     }
 
     private static FinishScheduleStageTiming StopStage(string stage, Stopwatch timer)

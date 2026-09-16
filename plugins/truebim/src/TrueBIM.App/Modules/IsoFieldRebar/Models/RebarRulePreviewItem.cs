@@ -10,7 +10,8 @@ public sealed record RebarRulePreviewItem(
     IReadOnlyList<string>? BaseDiagnostics = null,
     bool IsIncluded = true,
     bool IsManuallyOverridden = false,
-    IReadOnlyList<string>? SourceZoneIds = null)
+    IReadOnlyList<string>? SourceZoneIds = null,
+    bool IsArrayEnvelope = false)
 {
     public bool HasValidRule => Diagnostics.Count == 0;
 

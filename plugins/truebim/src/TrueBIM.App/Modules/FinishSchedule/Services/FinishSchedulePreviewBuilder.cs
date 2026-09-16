@@ -40,6 +40,7 @@ public sealed class FinishSchedulePreviewBuilder
         FinishRoomScopeResult roomScope = roomScopeService.Select(collection.Rooms, settings.Scope);
         FinishClassificationResult classification = classificationService.Classify(collection, settings);
         FinishBoundingBoxIndex index = new(classification.Elements);
+        FinishRoomSearchBounds searchBounds = new(collection.Rooms);
 
         Dictionary<FinishPreviewCategory, HashSet<long>> inScopeIds = new()
         {
@@ -58,10 +59,8 @@ public sealed class FinishSchedulePreviewBuilder
         {
             foreach (FinishPreviewCategory category in categories)
             {
-                AxisAlignedBox3D searchBounds = FinishCandidateSearchRules.CreateSearchBounds(
-                    room.Bounds!,
-                    category);
-                foreach (FinishClassifiedElement element in index.Query(searchBounds)
+                AxisAlignedBox3D categoryBounds = searchBounds.Create(room, category);
+                foreach (FinishClassifiedElement element in index.Query(categoryBounds)
                              .Where(element => element.Category == category))
                 {
                     potentialPairs++;

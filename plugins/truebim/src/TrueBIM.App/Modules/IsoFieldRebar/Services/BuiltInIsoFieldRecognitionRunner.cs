@@ -86,13 +86,21 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
                 Array.Empty<IsoFieldLegend>());
         }
 
-        ZoneExtractionResult zones = ExtractZones(buffer, legend);
+        IsoFieldImageBounds? calculationBounds = DetectCalculationBounds(buffer, legend);
+        ZoneExtractionResult zones = ExtractZones(buffer, legend, calculationBounds);
         List<string> diagnostics =
         [
             $"Встроенный распознаватель нашёл цветовую шкалу: уровней {legend.Bands.Count}.",
             $"Цветных зон найдено: {zones.Polylines.Count}; мелких случайных пятен отброшено: {zones.RejectedComponents}.",
             "Соседние цветные ячейки объединены; зоне присвоен максимальный уровень внутри контура."
         ];
+        diagnostics.Add(calculationBounds is not null
+            ? $"Границы расчётного поля найдены: X {calculationBounds.MinimumX:0}–{calculationBounds.MaximumX:0}, Y {calculationBounds.MinimumY:0}–{calculationBounds.MaximumY:0}."
+            : "Границы расчётного поля не найдены; контрольные точки будут предложены по крайним распознанным зонам.");
+        if (zones.RejectedOutsideFieldComponents > 0)
+        {
+            diagnostics.Add($"Отдельные цветные обозначения вне расчётного поля отброшены: {zones.RejectedOutsideFieldComponents}.");
+        }
         diagnostics.Add(legend.HasNumericRanges
             ? $"Числовые границы шкалы распознаны: {FormatValue(legend.Bands[0].MinimumValue!.Value)}–{FormatValue(legend.Bands[legend.Bands.Count - 1].MaximumValue!.Value)} см²/м."
             : "Числовые границы шкалы распознаны не полностью; зоны подписаны номером уровня и цветом.");
@@ -104,7 +112,7 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
             diagnostics.Add("Плотные цветные области не найдены. Проверьте, что расчётная карта не была сжата или изменена.");
         }
 
-        return new IsoFieldRecognitionResult(zones.Polylines, diagnostics, [legend]);
+        return new IsoFieldRecognitionResult(zones.Polylines, diagnostics, [legend], calculationBounds);
     }
 
     private static BitmapFrame LoadFrame(string sourcePath)
@@ -859,13 +867,160 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
         return runs;
     }
 
-    private static ZoneExtractionResult ExtractZones(PixelBuffer buffer, IsoFieldLegend legend)
+    private static IsoFieldImageBounds? DetectCalculationBounds(
+        PixelBuffer buffer,
+        IsoFieldLegend legend)
+    {
+        int searchTop = Math.Min(
+            buffer.Height - 1,
+            Math.Max(legend.PixelY + 48, (int)(buffer.Height * 0.15)));
+        int rowSupportThreshold = Math.Max(8, buffer.Width / 4);
+        bool[] supportedRows = new bool[buffer.Height];
+        for (int y = searchTop; y < buffer.Height; y++)
+        {
+            int support = 0;
+            for (int x = 0; x < buffer.Width && support < rowSupportThreshold; x++)
+            {
+                if (IsCalculationFieldPixel(buffer.GetColor(x, y)))
+                {
+                    support++;
+                }
+            }
+
+            supportedRows[y] = support >= rowSupportThreshold;
+        }
+
+        (int Start, int End)? verticalSpan = FindLongestSupportedSpan(
+            supportedRows,
+            searchTop,
+            buffer.Height - 1,
+            maximumGap: 2);
+        int minimumHeight = Math.Max(20, buffer.Height / 5);
+        if (verticalSpan is null || verticalSpan.Value.End - verticalSpan.Value.Start + 1 < minimumHeight)
+        {
+            return null;
+        }
+
+        int spanHeight = verticalSpan.Value.End - verticalSpan.Value.Start + 1;
+        int columnSupportThreshold = Math.Max(4, spanHeight / 4);
+        bool[] supportedColumns = new bool[buffer.Width];
+        for (int x = 0; x < buffer.Width; x++)
+        {
+            int support = 0;
+            for (int y = verticalSpan.Value.Start;
+                 y <= verticalSpan.Value.End && support < columnSupportThreshold;
+                 y++)
+            {
+                if (IsCalculationFieldPixel(buffer.GetColor(x, y)))
+                {
+                    support++;
+                }
+            }
+
+            supportedColumns[x] = support >= columnSupportThreshold;
+        }
+
+        (int Start, int End)? horizontalSpan = FindLongestSupportedSpan(
+            supportedColumns,
+            0,
+            buffer.Width - 1,
+            maximumGap: 2);
+        int minimumWidth = Math.Max(20, buffer.Width / 4);
+        if (horizontalSpan is null || horizontalSpan.Value.End - horizontalSpan.Value.Start + 1 < minimumWidth)
+        {
+            return null;
+        }
+
+        return new IsoFieldImageBounds(
+            horizontalSpan.Value.Start,
+            verticalSpan.Value.Start,
+            horizontalSpan.Value.End,
+            verticalSpan.Value.End);
+    }
+
+    private static bool IsCalculationFieldPixel(PixelColor color)
+    {
+        return color.Alpha > 0
+            && (color.Red < 250 || color.Green < 250 || color.Blue < 250);
+    }
+
+    private static (int Start, int End)? FindLongestSupportedSpan(
+        IReadOnlyList<bool> supported,
+        int start,
+        int end,
+        int maximumGap)
+    {
+        int bestStart = -1;
+        int bestEnd = -1;
+        int currentStart = -1;
+        int lastSupported = -1;
+        int gap = 0;
+        for (int index = start; index <= end; index++)
+        {
+            if (supported[index])
+            {
+                if (currentStart < 0)
+                {
+                    currentStart = index;
+                }
+
+                lastSupported = index;
+                gap = 0;
+                continue;
+            }
+
+            if (currentStart < 0)
+            {
+                continue;
+            }
+
+            gap++;
+            if (gap <= maximumGap)
+            {
+                continue;
+            }
+
+            UpdateLongestSpan(currentStart, lastSupported, ref bestStart, ref bestEnd);
+            currentStart = -1;
+            lastSupported = -1;
+            gap = 0;
+        }
+
+        if (currentStart >= 0)
+        {
+            UpdateLongestSpan(currentStart, lastSupported, ref bestStart, ref bestEnd);
+        }
+
+        return bestStart >= 0 ? (bestStart, bestEnd) : null;
+    }
+
+    private static void UpdateLongestSpan(
+        int candidateStart,
+        int candidateEnd,
+        ref int bestStart,
+        ref int bestEnd)
+    {
+        if (candidateEnd - candidateStart > bestEnd - bestStart)
+        {
+            bestStart = candidateStart;
+            bestEnd = candidateEnd;
+        }
+    }
+
+    private static ZoneExtractionResult ExtractZones(
+        PixelBuffer buffer,
+        IsoFieldLegend legend,
+        IsoFieldImageBounds? calculationBounds)
     {
         int plotTop = Math.Min(buffer.Height - 1, Math.Max(legend.PixelY + 48, (int)(buffer.Height * 0.15)));
         int plotBottom = Math.Max(plotTop, buffer.Height - 12);
+        bool[]? calculationFieldMask = calculationBounds is null
+            ? null
+            : BuildCalculationFieldMask(buffer, calculationBounds, plotTop, plotBottom);
         byte[] classes = ClassifyPixels(buffer, legend, plotTop, plotBottom);
         List<IsoFieldPolyline> polylines = new();
         int rejectedComponents = 0;
+        int rejectedOutsideFieldComponents = 0;
         int nextZoneId = 1;
         bool[] rawMask = BuildColorMask(classes, buffer.Width, buffer.Height, plotTop, plotBottom);
         bool[] denseMask = BuildDenseMask(rawMask, buffer.Width, buffer.Height, plotTop, plotBottom);
@@ -879,6 +1034,13 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
             plotBottom);
         foreach (PixelComponent component in components)
         {
+            if (calculationFieldMask is not null
+                && !component.SupportPoints.Any(point => calculationFieldMask[(point.Y * buffer.Width) + point.X]))
+            {
+                rejectedOutsideFieldComponents++;
+                continue;
+            }
+
             int minimumSupport = Math.Max(14, (buffer.Width * buffer.Height) / 120000);
             bool isOversized = component.Width > buffer.Width * 0.85
                 || component.Height > (plotBottom - plotTop + 1) * 0.85;
@@ -912,7 +1074,71 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
             nextZoneId++;
         }
 
-        return new ZoneExtractionResult(polylines, rejectedComponents);
+        return new ZoneExtractionResult(polylines, rejectedComponents, rejectedOutsideFieldComponents);
+    }
+
+    private static bool[] BuildCalculationFieldMask(
+        PixelBuffer buffer,
+        IsoFieldImageBounds calculationBounds,
+        int plotTop,
+        int plotBottom)
+    {
+        // The detected rectangle covers the main mesh, not necessarily its narrow projections.
+        // Follow the mesh beyond that rectangle while leaving disconnected axis glyphs outside.
+        bool[] mask = new bool[buffer.Width * buffer.Height];
+        Queue<int> queue = new();
+        int left = Math.Max(0, (int)calculationBounds.MinimumX);
+        int right = Math.Min(buffer.Width - 1, (int)calculationBounds.MaximumX);
+        int top = Math.Max(plotTop, (int)calculationBounds.MinimumY);
+        int bottom = Math.Min(plotBottom, (int)calculationBounds.MaximumY);
+        for (int y = top; y <= bottom; y++)
+        {
+            for (int x = left; x <= right; x++)
+            {
+                int start = (y * buffer.Width) + x;
+                if (mask[start] || !IsCalculationFieldPixel(buffer.GetColor(x, y)))
+                {
+                    continue;
+                }
+
+                mask[start] = true;
+                queue.Enqueue(start);
+                while (queue.Count > 0)
+                {
+                    int index = queue.Dequeue();
+                    int pointY = index / buffer.Width;
+                    int pointX = index - (pointY * buffer.Width);
+                    for (int offsetY = -1; offsetY <= 1; offsetY++)
+                    {
+                        int neighborY = pointY + offsetY;
+                        if (neighborY < plotTop || neighborY > plotBottom)
+                        {
+                            continue;
+                        }
+
+                        for (int offsetX = -1; offsetX <= 1; offsetX++)
+                        {
+                            int neighborX = pointX + offsetX;
+                            if (neighborX < 0 || neighborX >= buffer.Width)
+                            {
+                                continue;
+                            }
+
+                            int neighbor = (neighborY * buffer.Width) + neighborX;
+                            if (mask[neighbor] || !IsCalculationFieldPixel(buffer.GetColor(neighborX, neighborY)))
+                            {
+                                continue;
+                            }
+
+                            mask[neighbor] = true;
+                            queue.Enqueue(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+
+        return mask;
     }
 
     private static string BuildZoneName(IsoFieldLegendBand band)
@@ -1242,7 +1468,8 @@ public sealed class BuiltInIsoFieldRecognitionRunner :
 
     private sealed record ZoneExtractionResult(
         IReadOnlyList<IsoFieldPolyline> Polylines,
-        int RejectedComponents);
+        int RejectedComponents,
+        int RejectedOutsideFieldComponents);
 
     private sealed record NumericToken(double Value, double CenterX);
 

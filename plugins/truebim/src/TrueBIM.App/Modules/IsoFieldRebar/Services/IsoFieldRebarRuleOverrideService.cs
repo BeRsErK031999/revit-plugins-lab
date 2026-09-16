@@ -24,6 +24,13 @@ public sealed class IsoFieldRebarRuleOverrideService
             throw new ArgumentNullException(nameof(settings));
         }
 
+        if (IsoFieldRebarManualEditPolicy.IsPlannedPatch(item))
+        {
+            return new IsoFieldRebarRuleOverrideValidation(
+                item.Rule,
+                [.. item.Diagnostics, IsoFieldRebarManualEditPolicy.PlannedPatchMessage]);
+        }
+
         if (!isIncluded)
         {
             return new IsoFieldRebarRuleOverrideValidation(item.Rule, Array.Empty<string>());
@@ -80,6 +87,16 @@ public sealed class IsoFieldRebarRuleOverrideService
         if (overrides is null)
         {
             throw new ArgumentNullException(nameof(overrides));
+        }
+
+        if (calculatedPreview.Items.Any(IsoFieldRebarManualEditPolicy.IsPlannedPatch))
+        {
+            if (overrides.Count > 0)
+            {
+                throw new InvalidOperationException(IsoFieldRebarManualEditPolicy.PlannedPatchMessage);
+            }
+
+            return calculatedPreview;
         }
 
         if (calculatedPreview.EngineeringSettings is null)

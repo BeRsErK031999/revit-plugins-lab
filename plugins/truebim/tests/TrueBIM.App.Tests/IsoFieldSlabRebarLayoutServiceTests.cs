@@ -6,6 +6,7 @@ namespace TrueBIM.App.Tests;
 
 public sealed class IsoFieldSlabRebarLayoutServiceTests
 {
+    private const double MillimetersPerFoot = 304.8;
     private readonly IsoFieldSlabRebarLayoutService service = new();
 
     [Fact]
@@ -78,6 +79,94 @@ public sealed class IsoFieldSlabRebarLayoutServiceTests
         Assert.Contains("больше 5", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("X")]
+    [InlineData("Y")]
+    public void BuildSegments_ArrayEnvelopeIncludesFourteenBarsAndBothEdgesWithoutOffsetOrPhase(string direction)
+    {
+        double length = 2340 / MillimetersPerFoot;
+        double width = 2600 / MillimetersPerFoot;
+        bool alongX = direction == "X";
+        RebarRulePreviewItem item = CreateItem(
+            CreateRegion(CreateLoop(0, 0, alongX ? length : width, alongX ? width : length)),
+            new IsoFieldRebarComponent(12, 200, 1, 2));
+        item = item with
+        {
+            IsArrayEnvelope = true,
+            Rule = item.Rule with { PlacementDirection = direction }
+        };
+        IsoFieldEngineeringSettings settings = IsoFieldEngineeringSettings.Default with
+        {
+            BoundaryOffsetMillimeters = 100
+        };
+
+        IReadOnlyList<IsoFieldSlabRebarSegment> segments = service.BuildSegments([item], settings);
+
+        Assert.Equal(14, segments.Count);
+        Assert.Equal(0, alongX ? segments[0].StartFeet.Y : segments[0].StartFeet.X, precision: 7);
+        Assert.Equal(width, alongX ? segments[13].StartFeet.Y : segments[13].StartFeet.X, precision: 7);
+        for (int index = 0; index < segments.Count; index++)
+        {
+            IsoFieldSlabRebarSegment segment = segments[index];
+            Assert.Equal(index * 200 / MillimetersPerFoot, alongX ? segment.StartFeet.Y : segment.StartFeet.X, precision: 7);
+            Assert.Equal(0, alongX ? segment.StartFeet.X : segment.StartFeet.Y, precision: 7);
+            Assert.Equal(length, alongX ? segment.EndFeet.X : segment.EndFeet.Y, precision: 7);
+        }
+    }
+
+    [Fact]
+    public void BuildSegments_ArrayEnvelopeRejectsTriangleInsteadOfFillingItsBoundingRectangle()
+    {
+        IsoFieldPolygonRegion triangle = CreateRegion(
+        [
+            new IsoFieldPoint(0, 0),
+            new IsoFieldPoint(10, 0),
+            new IsoFieldPoint(0, 4),
+            new IsoFieldPoint(0, 0)
+        ]);
+        RebarRulePreviewItem item = CreateItem(triangle, new IsoFieldRebarComponent(12, 304.8, 1, 2)) with
+        {
+            IsArrayEnvelope = true
+        };
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.BuildSegments([item], IsoFieldEngineeringSettings.Default));
+
+        Assert.Contains("прямоугольным массивом", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSegments_ArrayEnvelopeRejectsOpening()
+    {
+        RebarRulePreviewItem item = CreateItem(
+            CreateRegion(CreateLoop(0, 0, 10, 4), [CreateLoop(4, 1, 6, 3)]),
+            new IsoFieldRebarComponent(12, 304.8, 1, 2)) with
+        {
+            IsArrayEnvelope = true
+        };
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.BuildSegments([item], IsoFieldEngineeringSettings.Default));
+
+        Assert.Contains("прямоугольным массивом", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSegments_ArrayEnvelopeRejectsWidthThatCannotIncludeBothEdgesAtSelectedSpacing()
+    {
+        RebarRulePreviewItem item = CreateItem(
+            CreateRegion(CreateLoop(0, 0, 10, 4.5)),
+            new IsoFieldRebarComponent(12, 304.8, 1, 2)) with
+        {
+            IsArrayEnvelope = true
+        };
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            service.BuildSegments([item], IsoFieldEngineeringSettings.Default));
+
+        Assert.Contains("не кратна шагу", exception.Message, StringComparison.Ordinal);
+    }
+
     private static RebarRulePreviewItem CreateItem(
         IsoFieldPolygonRegion region,
         params IsoFieldRebarComponent[] components)
@@ -110,8 +199,12 @@ public sealed class IsoFieldSlabRebarLayoutServiceTests
         return new IsoFieldPolygonRegion(
             outer,
             holes ?? Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
-            AreaSquareFeet: 1);
+            AreaSquareFeet: CalculateArea(outer) - (holes?.Sum(CalculateArea) ?? 0));
     }
+
+    private static double CalculateArea(IReadOnlyList<IsoFieldPoint> loop) =>
+        Math.Abs(Enumerable.Range(0, loop.Count - 1).Sum(index =>
+            (loop[index].X * loop[index + 1].Y) - (loop[index + 1].X * loop[index].Y))) / 2;
 
     private static IReadOnlyList<IsoFieldPoint> CreateLoop(
         double minX,

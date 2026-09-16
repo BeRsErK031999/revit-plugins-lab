@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 public sealed class FinishScheduleMetadataService
 {
     public const string FeatureId = "TrueBIM.FinishSchedule";
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     private static readonly Guid SchemaGuid = new("C72569A6-4C99-4CD0-92D0-0198730E4551");
     private const string SchemaName = "TrueBIMFinishSchedule";
@@ -57,8 +57,26 @@ public sealed class FinishScheduleMetadataService
     {
         FinishScheduleMetadata? metadata = Read(schedule);
         return metadata is not null
-            && metadata.SchemaVersion == CurrentSchemaVersion
+            && metadata.SchemaVersion is >= 1 and <= CurrentSchemaVersion
             && string.Equals(metadata.FeatureId, FeatureId, StringComparison.Ordinal);
+    }
+
+    public bool IsSnapshot(ViewSchedule schedule)
+    {
+        return IsManaged(schedule) && Read(schedule)!.SchemaVersion == CurrentSchemaVersion;
+    }
+
+    public void MarkAsSnapshot(ViewSchedule schedule)
+    {
+        if (!IsManaged(schedule))
+        {
+            throw new InvalidOperationException("Архивировать можно только ведомость отделки TrueBIM.");
+        }
+
+        Schema schema = GetOrCreateSchema();
+        Entity entity = schedule.GetEntity(schema);
+        entity.Set(schema.GetField(SchemaVersionField), CurrentSchemaVersion);
+        schedule.SetEntity(entity);
     }
 
     public void Write(ViewSchedule schedule, FinishRoomSchedulePlan plan)

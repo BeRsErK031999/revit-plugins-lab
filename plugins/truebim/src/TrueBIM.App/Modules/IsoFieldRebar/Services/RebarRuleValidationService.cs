@@ -7,8 +7,8 @@ public sealed class RebarRuleValidationService
 {
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
-    private const double AreaToleranceSquareCentimetersPerMeter = 0.02;
-    private const double NumericEpsilon = 1e-9;
+    internal const double AreaToleranceSquareCentimetersPerMeter = 0.02;
+    internal const double NumericEpsilon = 1e-9;
     private readonly IsoFieldReinforcementCombinationService combinationService = new();
     private readonly IsoFieldSlabRebarLayoutService layoutService = new();
 
@@ -24,7 +24,8 @@ public sealed class RebarRuleValidationService
         IsoFieldHostElement? hostElement,
         IsoFieldSourceSet? sourceSet,
         IsoFieldSlabBindingAnalysis? slabBinding,
-        IsoFieldEngineeringSettings? engineeringSettings)
+        IsoFieldEngineeringSettings? engineeringSettings,
+        bool deferLayout = false)
     {
         if (recognitionResult is null)
         {
@@ -44,7 +45,9 @@ public sealed class RebarRuleValidationService
             hostElement!,
             sourceSet,
             slabBinding,
-            engineeringSettings);
+            engineeringSettings,
+            deferLayout && hostElement!.IsSlab
+                && engineeringSettings?.Mode == IsoFieldReinforcementMode.AdditionalOverBase);
     }
 
     public IReadOnlyList<string> ValidateRule(RebarRule rule)
@@ -99,7 +102,8 @@ public sealed class RebarRuleValidationService
         IsoFieldHostElement hostElement,
         IsoFieldSourceSet? sourceSet,
         IsoFieldSlabBindingAnalysis? slabBinding,
-        IsoFieldEngineeringSettings? settings)
+        IsoFieldEngineeringSettings? settings,
+        bool deferLayout)
     {
         List<string> diagnostics = new();
         if (recognitionResult.Polylines.Count == 0)
@@ -191,6 +195,13 @@ public sealed class RebarRuleValidationService
             if (combination is not null && selectedComponents.Count == 0)
             {
                 ruleDiagnostics.Add("Для режима дополнительного усиления сочетание не содержит арматуру сверх базовой сетки.");
+                if (band?.MaximumValue is double requiredBaseArea
+                    && combination.AreaSquareCentimetersPerMeter + AreaToleranceSquareCentimetersPerMeter + NumericEpsilon < requiredBaseArea)
+                {
+                    ruleDiagnostics.Add(
+                        $"Площадь базовой сетки {combination.AreaSquareCentimetersPerMeter:0.###} см²/м "
+                        + $"меньше требуемой {requiredBaseArea:0.###} см²/м. Выберите сочетание с дополнительной арматурой.");
+                }
             }
 
             double? requiredArea = band?.MaximumValue;
@@ -218,6 +229,18 @@ public sealed class RebarRuleValidationService
                 .Concat(ruleDiagnostics)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
+            if (deferLayout
+                && isIncluded
+                && effectiveBaseDiagnostics.Length == 0
+                && combination is not null
+                && selectedComponents.Count == 0
+                && requiredArea.HasValue
+                && combination.AreaSquareCentimetersPerMeter + AreaToleranceSquareCentimetersPerMeter + NumericEpsilon >= requiredArea.Value)
+            {
+                isIncluded = false;
+                itemDiagnostics = ["Базовая сетка обеспечивает требуемую площадь; дополнительное усиление в этой зоне не требуется."];
+            }
+
             items.Add(new RebarRulePreviewItem(
                 polyline.Id,
                 ResolveZoneName(polyline),
@@ -234,11 +257,25 @@ public sealed class RebarRuleValidationService
             return new RebarRulePreviewResult(items, diagnostics, settings);
         }
 
+        RebarRulePreviewResult preview = new(items, diagnostics, settings, BaseDiagnostics: diagnostics.ToArray());
+        return deferLayout ? preview : CompleteLayout(preview);
+    }
+
+    public RebarRulePreviewResult CompleteLayout(RebarRulePreviewResult preview)
+    {
+        if (preview is null)
+        {
+            throw new ArgumentNullException(nameof(preview));
+        }
+
+        IsoFieldEngineeringSettings settings = preview.EngineeringSettings
+            ?? throw new InvalidOperationException("Для проверки раскладки нужны инженерные параметры.");
+        List<string> diagnostics = preview.Diagnostics.ToList();
+        List<RebarRulePreviewItem> items = preview.Items.ToList();
         IReadOnlyList<IsoFieldSlabRebarSegment> segments;
-        string[] basePreviewDiagnostics = diagnostics.ToArray();
         try
         {
-            segments = layoutService.BuildSegments(items, activeSettings);
+            segments = layoutService.BuildSegments(items, settings);
         }
         catch (InvalidOperationException exception)
         {
@@ -247,7 +284,7 @@ public sealed class RebarRuleValidationService
                 items,
                 diagnostics,
                 settings,
-                BaseDiagnostics: basePreviewDiagnostics);
+                BaseDiagnostics: preview.EffectiveBaseDiagnostics);
         }
 
         Dictionary<string, int> countByZone = segments
@@ -264,7 +301,7 @@ public sealed class RebarRuleValidationService
         for (int index = 0; index < items.Count; index++)
         {
             RebarRulePreviewItem emptyItem = items[index];
-            if (!emptyItem.IsValid || emptyItem.EstimatedBarCount != 0)
+            if (!emptyItem.IsIncluded || !emptyItem.HasValidRule || emptyItem.EstimatedBarCount != 0)
             {
                 continue;
             }
@@ -280,7 +317,7 @@ public sealed class RebarRuleValidationService
             diagnostics,
             settings,
             segments.Count,
-            basePreviewDiagnostics);
+            preview.EffectiveBaseDiagnostics);
     }
 
     private RebarRulePreviewResult BuildLegacyPreview(

@@ -61,21 +61,21 @@ public sealed class IsoFieldSlabBindingServiceTests
     }
 
     [Fact]
-    public void BuildTransform_AcceptsVtr2ControlPointsThatPreviouslyFailedByOneMeter()
+    public void BuildTransform_MapsVtr2CalculationFieldWithConsistentAxisScale()
     {
         IsoFieldSlabBindingInput input = new(
-            new IsoFieldPoint(10, 193),
-            new IsoFieldPoint(1464, 193),
+            new IsoFieldPoint(148, 192),
+            new IsoFieldPoint(1465, 192),
             new IsoFieldPoint(-54.481432084567, 27.7241167558202),
             new IsoFieldPoint(63.792846130659, 27.7241167558202),
             MirrorImageY: true,
-            ImagePoint3: new IsoFieldPoint(10, 795),
+            ImagePoint3: new IsoFieldPoint(148, 776),
             HostPoint3Feet: new IsoFieldPoint(-54.4814320845669, -24.7693215643917));
 
         IsoFieldPlanarTransform transform = service.BuildTransform(input);
 
         Assert.True(transform.UsesThreePointMapping);
-        Assert.InRange(transform.AxisScaleDifferencePercent, 6, 8);
+        Assert.InRange(transform.AxisScaleDifferencePercent, 0, 0.2);
         AssertPoint(input.HostPoint1Feet, transform.Map(input.ImagePoint1));
         AssertPoint(input.HostPoint2Feet, transform.Map(input.ImagePoint2));
         AssertPoint(input.HostPoint3Feet!, transform.Map(input.ImagePoint3!));

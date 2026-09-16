@@ -7,6 +7,54 @@ public sealed class IsoFieldControlPointSnapService
     public const double SnapRadiusMillimeters = 1000;
     private const double MillimetersPerFoot = 304.8;
     private const double GeometryToleranceFeet = 1e-7;
+    private const double AutomaticCornerToleranceFeet = 1e-5;
+    private const double MinimumAutomaticSpanFeet = 0.01;
+
+    public IsoFieldControlPointTriad? CreateAutomaticOuterCornerTriad(
+        IsoFieldHostGeometry hostGeometry)
+    {
+        if (hostGeometry is null)
+        {
+            throw new ArgumentNullException(nameof(hostGeometry));
+        }
+
+        IReadOnlyList<IsoFieldPoint>? outerBoundary = FindOuterBoundary(hostGeometry);
+        if (outerBoundary is null)
+        {
+            return null;
+        }
+
+        IsoFieldPoint[] corners = GetDistinctCorners(outerBoundary).ToArray();
+        double minimumX = corners.Min(point => point.X);
+        double maximumX = corners.Max(point => point.X);
+        double minimumY = corners.Min(point => point.Y);
+        double maximumY = corners.Max(point => point.Y);
+        if (maximumX - minimumX < MinimumAutomaticSpanFeet
+            || maximumY - minimumY < MinimumAutomaticSpanFeet)
+        {
+            return null;
+        }
+
+        IsoFieldPoint[] targets =
+        [
+            new IsoFieldPoint(minimumX, maximumY),
+            new IsoFieldPoint(maximumX, maximumY),
+            new IsoFieldPoint(minimumX, minimumY),
+            new IsoFieldPoint(maximumX, minimumY)
+        ];
+        IsoFieldPoint?[] resolvedCorners = targets
+            .Select(target => FindMatchingCorner(corners, target))
+            .ToArray();
+        if (resolvedCorners.Any(point => point is null))
+        {
+            return null;
+        }
+
+        return new IsoFieldControlPointTriad(
+            resolvedCorners[0]!,
+            resolvedCorners[1]!,
+            resolvedCorners[2]!);
+    }
 
     public IsoFieldPoint SnapToNearestOuterCorner(
         IsoFieldPoint selectedPoint,
@@ -17,23 +65,13 @@ public sealed class IsoFieldControlPointSnapService
             throw new ArgumentNullException(nameof(hostGeometry));
         }
 
-        IReadOnlyList<IsoFieldPoint>? outerBoundary = hostGeometry.BoundaryLoopsFeet
-            .Where(loop => loop.Count >= 3)
-            .OrderByDescending(loop => Math.Abs(CalculateSignedArea(loop)))
-            .FirstOrDefault();
+        IReadOnlyList<IsoFieldPoint>? outerBoundary = FindOuterBoundary(hostGeometry);
         if (outerBoundary is null)
         {
             throw new InvalidOperationException("Не удалось найти углы внешнего контура конструкции.");
         }
 
-        IEnumerable<IsoFieldPoint> corners = outerBoundary;
-        if (outerBoundary.Count > 1
-            && Distance(outerBoundary[0], outerBoundary[outerBoundary.Count - 1]) <= GeometryToleranceFeet)
-        {
-            corners = outerBoundary.Take(outerBoundary.Count - 1);
-        }
-
-        IsoFieldPoint nearestCorner = corners
+        IsoFieldPoint nearestCorner = GetDistinctCorners(outerBoundary)
             .OrderBy(corner => Distance(corner, selectedPoint))
             .First();
         double distanceMillimeters = Distance(nearestCorner, selectedPoint) * MillimetersPerFoot;
@@ -44,6 +82,36 @@ public sealed class IsoFieldControlPointSnapService
         }
 
         return nearestCorner;
+    }
+
+    private static IReadOnlyList<IsoFieldPoint>? FindOuterBoundary(
+        IsoFieldHostGeometry hostGeometry)
+    {
+        return hostGeometry.BoundaryLoopsFeet
+            .Where(loop => loop.Count >= 3)
+            .OrderByDescending(loop => Math.Abs(CalculateSignedArea(loop)))
+            .FirstOrDefault();
+    }
+
+    private static IEnumerable<IsoFieldPoint> GetDistinctCorners(
+        IReadOnlyList<IsoFieldPoint> boundary)
+    {
+        return boundary.Count > 1
+            && Distance(boundary[0], boundary[boundary.Count - 1]) <= GeometryToleranceFeet
+                ? boundary.Take(boundary.Count - 1)
+                : boundary;
+    }
+
+    private static IsoFieldPoint? FindMatchingCorner(
+        IReadOnlyList<IsoFieldPoint> corners,
+        IsoFieldPoint target)
+    {
+        IsoFieldPoint nearestCorner = corners
+            .OrderBy(corner => Distance(corner, target))
+            .First();
+        return Distance(nearestCorner, target) <= AutomaticCornerToleranceFeet
+            ? nearestCorner
+            : null;
     }
 
     private static double CalculateSignedArea(IReadOnlyList<IsoFieldPoint> loop)

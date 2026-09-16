@@ -9,7 +9,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
     [Fact]
     public void HeaderDimensions_MatchFinishScheduleRequirement()
     {
-        Assert.Equal("v19", FinishRoomScheduleStyleRules.LayoutRevision);
+        Assert.Equal("v20", FinishRoomScheduleStyleRules.LayoutRevision);
         Assert.Equal(3, FinishRoomScheduleStyleRules.HeaderRowCount);
         Assert.Equal(12, FinishRoomScheduleStyleRules.TitleRowHeightMillimeters);
         Assert.Equal(8, FinishRoomScheduleStyleRules.GroupHeaderRowHeightMillimeters);
@@ -110,6 +110,14 @@ public sealed class FinishRoomScheduleStyleRulesTests
         Assert.All(
             new[] { borders.Top, borders.Bottom, borders.Left, borders.Right },
             weight => Assert.Equal(FinishScheduleLineWeight.Normal, weight));
+    }
+
+    [Fact]
+    public void TitleBorders_AreHiddenOnEverySide()
+    {
+        FinishScheduleCellBorderRules borders = FinishRoomScheduleStyleRules.TitleBorders;
+        Assert.All(new[] { borders.Top, borders.Bottom, borders.Left, borders.Right },
+            weight => Assert.Equal(FinishScheduleLineWeight.None, weight));
     }
 
     [Fact]

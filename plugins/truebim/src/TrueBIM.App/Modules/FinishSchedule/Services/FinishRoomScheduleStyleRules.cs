@@ -3,7 +3,8 @@ namespace TrueBIM.App.Modules.FinishSchedule.Services;
 public enum FinishScheduleLineWeight
 {
     Normal,
-    Thin
+    Thin,
+    None
 }
 
 public enum FinishScheduleHeaderMergeMode
@@ -37,7 +38,7 @@ public sealed record FinishScheduleHeaderNormalizationPlan(
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v19";
+    public const string LayoutRevision = "v20";
     public const int HeaderRowCount = 3;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
@@ -52,6 +53,12 @@ public static class FinishRoomScheduleStyleRules
     public const double ColumnHeaderTextSizeMillimeters = 2.5;
     public const double BodyTextSizeMillimeters = 2.5;
     public const bool ShowBlankLineBetweenGroups = false;
+
+    public static FinishScheduleCellBorderRules TitleBorders { get; } = new(
+        FinishScheduleLineWeight.None,
+        FinishScheduleLineWeight.None,
+        FinishScheduleLineWeight.None,
+        FinishScheduleLineWeight.None);
 
     public static FinishScheduleCellBorderRules HeaderBorders { get; } = new(
         FinishScheduleLineWeight.Normal,

@@ -17,6 +17,11 @@ public sealed class IsoFieldRebarCreationService
     private const string DiameterParameter = "• Деталь • Арматура. Диаметр";
     private const string SpacingParameter = "• Деталь • Шаг элементов";
     private const string ConcreteClassParameter = "Деталь • Арматура. Класс бетона";
+    private const string RollCodeParameter = "Деталь • Код проката";
+    private const string ProductNameParameter = "• Наименование";
+    private const string ActualLengthParameter = "• Габарит • Линейная длина";
+    private const string ActualWidthParameter = "ф.Зона • Ширина";
+    private const string ActualBarCountParameter = "• Количество элементов";
     private const string WallHostKind = "Wall";
     private const string SlabHostKind = "Slab";
     private const double MillimetersPerFoot = 304.8;
@@ -168,6 +173,77 @@ public sealed class IsoFieldRebarCreationService
                 slabBinding)
             .ToArray();
         return BuildEngineeringChangePlan(document, host, requests);
+    }
+
+    public IReadOnlyDictionary<double, double> ReadAnchorageLengths(
+        UIDocument uiDocument,
+        IsoFieldHostElement hostElement,
+        RebarRulePreviewResult rulePreview)
+    {
+        if (uiDocument is null || hostElement is null || rulePreview is null)
+        {
+            throw new ArgumentNullException(uiDocument is null ? nameof(uiDocument) : hostElement is null ? nameof(hostElement) : nameof(rulePreview));
+        }
+
+        Document document = uiDocument.Document;
+        Element host = document.GetElement(RevitElementIds.Create(hostElement.ElementId))
+            ?? throw new InvalidOperationException("Выбранная плита не найдена в текущем документе.");
+        EnsureHostMatchesSelection(host, hostElement);
+        int concreteClass = ResolveConcreteClass(document, host)
+            ?? throw new InvalidOperationException("Не удалось определить класс бетона плиты для чтения анкеровки из таблицы семейства.");
+        FamilySymbol[] templates = new FilteredElementCollector(document)
+            .OfClass(typeof(FamilySymbol))
+            .Cast<FamilySymbol>()
+            .Where(symbol => IsArrayFamilyForShape(symbol, StraightArrayFamilyCode) && HasVerifiedSteelGrade(symbol))
+            .GroupBy(symbol => new
+            {
+                FamilyId = RevitElementIds.GetValue(symbol.Family.Id),
+                RollCode = symbol.LookupParameter(RollCodeParameter)!.AsDouble()
+            })
+            .Select(group => group.First())
+            .ToArray();
+        if (templates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "Для чтения анкеровки нужен тип семейства 000 с подтверждёнными «• Наименование» A500С и «Деталь • Код проката».");
+        }
+
+        double[] diameters = rulePreview.Items
+            .Where(item => item.IsIncluded && item.HasValidRule)
+            .SelectMany(item => item.Rule.EffectiveComponents)
+            .Select(component => component.DiameterMillimeters)
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+        Dictionary<double, double> result = new();
+        IsoFieldFamilyAnchorageReader reader = new();
+        foreach (double diameter in diameters)
+        {
+            List<double> candidateLengths = new();
+            foreach (FamilySymbol template in templates)
+            {
+                if (reader.TryGetBaseAnchorageMillimeters(template, diameter, concreteClass, out double length, out string diagnostic))
+                {
+                    candidateLengths.Add(length);
+                    logger.Info("IsoField anchorage lookup succeeded. " + diagnostic);
+                }
+                else
+                {
+                    logger.Warning($"IsoField anchorage lookup unavailable. DiameterMm={diameter}; Concrete=B{concreteClass}; {diagnostic}");
+                }
+            }
+
+            if (candidateLengths.Count > 0 && candidateLengths.All(length => Math.Abs(length - candidateLengths[0]) <= 0.01))
+            {
+                result.Add(diameter, candidateLengths[0]);
+            }
+            else
+            {
+                logger.Warning($"IsoField anchorage lookup has no unambiguous value. DiameterMm={diameter}; Concrete=B{concreteClass}; Candidates={string.Join(",", candidateLengths)}.");
+            }
+        }
+
+        return result;
     }
 
     private static IReadOnlyList<RebarRulePreviewItem> ResolvePreviewItems(
@@ -515,7 +591,8 @@ public sealed class IsoFieldRebarCreationService
             document,
             host,
             placement);
-        string signature = changePlanService.BuildSignature(placement);
+        string signature = "centered-000-v1|" + changePlanService.BuildSignature(placement)
+            + "|" + FormatStatePoint(ToXyz(IsoFieldArrayFamilyCoordinates.GetInsertionPoint(placement)));
         return new ArrayRebarCreationRequest(
             previewItem,
             symbolResolution,
@@ -523,7 +600,7 @@ public sealed class IsoFieldRebarCreationService
             signature);
     }
 
-    private static ArrayFamilySymbolResolution ResolveArrayFamilySymbol(
+    private ArrayFamilySymbolResolution ResolveArrayFamilySymbol(
         Document document,
         Element host,
         IsoFieldArrayRebarPlacement placement)
@@ -550,7 +627,17 @@ public sealed class IsoFieldRebarCreationService
             ? "Б/О"
             : "Ц/О";
         int? concreteClass = ResolveConcreteClass(document, host);
-        FamilySymbol[] parameterMatches = familySymbols
+        FamilySymbol[] verifiedSymbols = familySymbols.Where(HasVerifiedSteelGrade).ToArray();
+        if (verifiedSymbols.Length == 0)
+        {
+            logger.Warning("IsoField array-family steel verification failed. " + string.Join("; ", familySymbols.Select(DescribeTypeParameters)));
+            throw new InvalidOperationException(
+                "В семействе 000 нет типа с подтверждённой арматурой A500С. "
+                + "Проверьте «Деталь • Код проката» и вычисляемый параметр «• Наименование»: "
+                + "название типоразмера не подтверждает класс стали. Загрузите исправный тип A500С из проектной библиотеки.");
+        }
+
+        FamilySymbol[] parameterMatches = verifiedSymbols
             .Where(symbol => TypeHasToken(symbol.Name, faceToken)
                 && TypeHasToken(symbol.Name, axisToken)
                 && SizeMatches(
@@ -561,18 +648,18 @@ public sealed class IsoFieldRebarCreationService
         FamilySymbol? exactMatch = parameterMatches.FirstOrDefault(symbol =>
                 concreteClass is null || ParameterMatchesInteger(
                     symbol.LookupParameter(ConcreteClassParameter),
-                    concreteClass.Value))
-            ?? parameterMatches.FirstOrDefault();
+                    concreteClass.Value));
         if (exactMatch is not null)
         {
             return new ArrayFamilySymbolResolution(
                 exactMatch,
                 false,
                 exactMatch.Name,
-                concreteClass);
+                concreteClass,
+                exactMatch.LookupParameter(RollCodeParameter)!.AsDouble());
         }
 
-        FamilySymbol[] compatibleTemplates = familySymbols
+        FamilySymbol[] compatibleTemplates = verifiedSymbols
             .Where(symbol => TypeHasToken(symbol.Name, faceToken)
                 && TypeHasToken(symbol.Name, axisToken))
             .OrderBy(symbol => GetTemplateDistance(
@@ -596,11 +683,18 @@ public sealed class IsoFieldRebarCreationService
             faceToken,
             axisToken,
             concreteClass);
+        string baseTypeName = requiredTypeName;
+        for (int suffix = 2; familySymbols.Any(symbol => string.Equals(symbol.Name, requiredTypeName, StringComparison.OrdinalIgnoreCase)); suffix++)
+        {
+            requiredTypeName = $"{baseTypeName} (TrueBIM {suffix})";
+        }
+
         return new ArrayFamilySymbolResolution(
             template,
             true,
             requiredTypeName,
-            concreteClass);
+            concreteClass,
+            template.LookupParameter(RollCodeParameter)!.AsDouble());
     }
 
     private static double GetTemplateDistance(
@@ -646,7 +740,7 @@ public sealed class IsoFieldRebarCreationService
             "0.###",
             CultureInfo.InvariantCulture);
         return $"{concrete} • ({ToTitleCase(faceToken)} - {axisToken.ToLowerInvariant()}) "
-            + $"⌀{diameter} A500С ш.{spacing} д/с";
+            + $"⌀{diameter} {IsoFieldArrayFamilyTypeRules.RequiredSteelGrade} ш.{spacing} д/с";
     }
 
     private static string ResolveConcreteNamePrefix(string templateName)
@@ -670,37 +764,33 @@ public sealed class IsoFieldRebarCreationService
         double expectedDiameterMillimeters,
         double expectedSpacingMillimeters)
     {
-        bool parametersMatch = ParameterMatchesMillimeters(
-                symbol.LookupParameter(DiameterParameter),
-                expectedDiameterMillimeters)
-            && ParameterMatchesMillimeters(
-                symbol.LookupParameter(SpacingParameter),
-                expectedSpacingMillimeters);
-        return parametersMatch
-            || TypeNameMatchesSize(
-                symbol.Name,
-                expectedDiameterMillimeters,
-                expectedSpacingMillimeters);
+        return IsoFieldArrayFamilyTypeRules.SizeMatches(
+            ReadDoubleParameter(symbol.LookupParameter(DiameterParameter)) * MillimetersPerFoot,
+            ReadDoubleParameter(symbol.LookupParameter(SpacingParameter)) * MillimetersPerFoot,
+            expectedDiameterMillimeters,
+            expectedSpacingMillimeters);
     }
 
-    private static bool TypeNameMatchesSize(
-        string value,
-        double expectedDiameterMillimeters,
-        double expectedSpacingMillimeters)
+    private static bool HasVerifiedSteelGrade(FamilySymbol symbol)
     {
-        string normalized = (value ?? string.Empty)
-            .ToUpperInvariant()
-            .Replace(" ", string.Empty)
-            .Replace(',', '.');
-        string diameter = expectedDiameterMillimeters.ToString("0.###", CultureInfo.InvariantCulture);
-        string spacing = expectedSpacingMillimeters.ToString("0.###", CultureInfo.InvariantCulture);
-        bool diameterMatches = normalized.IndexOf($"⌀{diameter}", StringComparison.Ordinal) >= 0
-            || normalized.IndexOf($"Ø{diameter}", StringComparison.Ordinal) >= 0
-            || normalized.IndexOf($"∅{diameter}", StringComparison.Ordinal) >= 0;
-        bool spacingMatches = normalized.IndexOf($"Ш.{spacing}", StringComparison.Ordinal) >= 0
-            || normalized.IndexOf($"Ш{spacing}", StringComparison.Ordinal) >= 0
-            || normalized.IndexOf($"ШАГ{spacing}", StringComparison.Ordinal) >= 0;
-        return diameterMatches && spacingMatches;
+        return IsoFieldArrayFamilyTypeRules.HasVerifiedSteelGrade(
+            symbol.LookupParameter(ProductNameParameter)?.AsString(),
+            ReadDoubleParameter(symbol.LookupParameter(RollCodeParameter)));
+    }
+
+    private static double? ReadDoubleParameter(Parameter? parameter)
+    {
+        return parameter?.StorageType == StorageType.Double ? parameter.AsDouble() : null;
+    }
+
+    private static string DescribeTypeParameters(FamilySymbol symbol)
+    {
+        return $"Type={RevitElementIds.GetValue(symbol.Id)}:{symbol.Name}; "
+            + $"DiameterFeet={FormatParameterState(symbol.LookupParameter(DiameterParameter))}; "
+            + $"SpacingFeet={FormatParameterState(symbol.LookupParameter(SpacingParameter))}; "
+            + $"Concrete={symbol.LookupParameter(ConcreteClassParameter)?.AsValueString()}; "
+            + $"RollCode={FormatParameterState(symbol.LookupParameter(RollCodeParameter))}; "
+            + $"ProductName={symbol.LookupParameter(ProductNameParameter)?.AsString()}";
     }
 
     private static bool IsArrayFamilyForShape(FamilySymbol symbol, string shapeCode)
@@ -858,6 +948,9 @@ public sealed class IsoFieldRebarCreationService
             location?.Rotation.ToString("0.#########", CultureInfo.InvariantCulture) ?? "<none>",
             FormatParameterState(instance.LookupParameter(StraightArrayLengthParameter)),
             FormatParameterState(instance.LookupParameter(ArrayWidthParameter)),
+            FormatParameterState(instance.LookupParameter(ActualLengthParameter)),
+            FormatParameterState(instance.LookupParameter(ActualWidthParameter)),
+            FormatParameterState(instance.LookupParameter(ActualBarCountParameter)),
             FormatParameterState(instance.get_Parameter(BuiltInParameter.INSTANCE_ELEVATION_PARAM)));
     }
 
@@ -896,7 +989,7 @@ public sealed class IsoFieldRebarCreationService
             return false;
         }
 
-        XYZ plannedOrigin = ToXyz(request.Placement.FirstBarStart);
+        XYZ plannedOrigin = ToXyz(IsoFieldArrayFamilyCoordinates.GetInsertionPoint(request.Placement));
         if (!PointsMatch(location.Point, plannedOrigin))
         {
             mismatchReason = "Origin";
@@ -919,6 +1012,12 @@ public sealed class IsoFieldRebarCreationService
             return false;
         }
 
+        if (!EvaluatedArrayGeometryMatches(instance, request.Placement))
+        {
+            mismatchReason = "EvaluatedGeometry";
+            return false;
+        }
+
         double expectedRotation = ResolveArrayRotation(request.Placement);
         if (!AngleMatchesModuloPi(location.Rotation, expectedRotation))
         {
@@ -937,17 +1036,21 @@ public sealed class IsoFieldRebarCreationService
             + $"Origin={(location is null ? "<none>" : FormatStatePoint(location.Point))}; "
             + $"Rotation={(location is null ? "<none>" : location.Rotation.ToString("0.#########", CultureInfo.InvariantCulture))}; "
             + $"Length={FormatParameterState(instance.LookupParameter(StraightArrayLengthParameter))}; "
-            + $"Width={FormatParameterState(instance.LookupParameter(ArrayWidthParameter))}";
+            + $"Width={FormatParameterState(instance.LookupParameter(ArrayWidthParameter))}; "
+            + $"ActualLength={FormatParameterState(instance.LookupParameter(ActualLengthParameter))}; "
+            + $"ActualWidth={FormatParameterState(instance.LookupParameter(ActualWidthParameter))}; "
+            + $"ActualBars={FormatParameterState(instance.LookupParameter(ActualBarCountParameter))}";
     }
 
     private static string DescribeArrayFamilyRequest(ArrayRebarCreationRequest request)
     {
         return $"Symbol={RevitElementIds.GetValue(request.SymbolResolution.TemplateSymbol.Id)}:{request.SymbolResolution.TemplateSymbol.Name}; "
             + $"RequiresDuplication={request.SymbolResolution.RequiresDuplication}; "
-            + $"Origin={FormatStatePoint(ToXyz(request.Placement.FirstBarStart))}; "
+            + $"Origin={FormatStatePoint(ToXyz(IsoFieldArrayFamilyCoordinates.GetInsertionPoint(request.Placement)))}; "
             + $"Rotation={ResolveArrayRotation(request.Placement).ToString("0.#########", CultureInfo.InvariantCulture)}; "
             + $"Length={request.Placement.BarLengthFeet.ToString("0.#########", CultureInfo.InvariantCulture)}; "
-            + $"Width={request.Placement.ArrayWidthFeet.ToString("0.#########", CultureInfo.InvariantCulture)}";
+            + $"Width={request.Placement.ArrayWidthFeet.ToString("0.#########", CultureInfo.InvariantCulture)}; "
+            + $"Bars={request.Placement.BarCount}";
     }
 
     private static bool ParameterMatchesFeet(Parameter? parameter, double expected)
@@ -1107,7 +1210,7 @@ public sealed class IsoFieldRebarCreationService
         return value.IndexOf(search, StringComparison.Ordinal) >= 0;
     }
 
-    private static FamilyInstance CreateArrayFamily(
+    private FamilyInstance CreateArrayFamily(
         Document document,
         Element host,
         ArrayRebarCreationRequest request)
@@ -1125,9 +1228,9 @@ public sealed class IsoFieldRebarCreationService
             document.Regenerate();
         }
 
+        XYZ origin = ToXyz(IsoFieldArrayFamilyCoordinates.GetInsertionPoint(request.Placement));
         Level level = document.GetElement(host.LevelId) as Level
-            ?? ResolveNearestLevel(document, request.Placement.FirstBarStart.ZFeet);
-        XYZ origin = ToXyz(request.Placement.FirstBarStart);
+            ?? ResolveNearestLevel(document, origin.Z);
         FamilyInstance instance = document.Create.NewFamilyInstance(
             origin,
             symbol,
@@ -1154,7 +1257,37 @@ public sealed class IsoFieldRebarCreationService
             instance,
             ArrayWidthParameter,
             request.Placement.ArrayWidthFeet);
+        document.Regenerate();
+        LogCreatedArrayGeometry(document, instance, request);
+        EnsureCreatedArrayMatchesRequest(instance, request);
         return instance;
+    }
+
+    private static bool EvaluatedArrayGeometryMatches(FamilyInstance instance, IsoFieldArrayRebarPlacement placement)
+    {
+        return IsoFieldArrayFamilyTypeRules.GeometryMatches(
+            ReadDoubleParameter(instance.LookupParameter(ActualLengthParameter)) * MillimetersPerFoot,
+            ReadDoubleParameter(instance.LookupParameter(ActualWidthParameter)) * MillimetersPerFoot,
+            ReadDoubleParameter(instance.LookupParameter(ActualBarCountParameter)),
+            placement.BarLengthFeet * MillimetersPerFoot,
+            placement.ArrayWidthFeet * MillimetersPerFoot,
+            placement.BarCount);
+    }
+
+    private static void EnsureCreatedArrayMatchesRequest(FamilyInstance instance, ArrayRebarCreationRequest request)
+    {
+        if (ArrayFamilyMatchesRequest(instance, request, out string mismatchReason))
+        {
+            return;
+        }
+
+        string nextStep = request.Placement.Rule.ReinforcementMode == IsoFieldReinforcementMode.FullCombination
+            ? "Используйте расчёт массивов дополнительного усиления либо согласованные длины по сортаменту семейства. "
+            : "Проверьте сортамент и формулы загруженного семейства; расчётные размеры должны совпадать с фактическими. ";
+        throw new InvalidOperationException(
+            $"Фактическая геометрия семейства «{instance.Symbol.FamilyName}» отличается от рассчитанного массива ({mismatchReason}). "
+            + nextStep + "Все изменения отменены. "
+            + $"Actual=[{DescribeArrayFamilyState(instance)}]; Planned=[{DescribeArrayFamilyRequest(request)}].");
     }
 
     private static FamilySymbol ResolveOrCreateArrayFamilySymbol(
@@ -1183,6 +1316,7 @@ public sealed class IsoFieldRebarCreationService
             .Duplicate(request.SymbolResolution.RequiredTypeName) as FamilySymbol
             ?? throw new InvalidOperationException(
                 "Revit не смог создать недостающий тип семейства дополнительного армирования. Все изменения отменены.");
+        SetRequiredTypeLengthParameter(symbol, RollCodeParameter, request.SymbolResolution.RollCode);
         SetRequiredTypeLengthParameter(
             symbol,
             DiameterParameter,
@@ -1199,7 +1333,103 @@ public sealed class IsoFieldRebarCreationService
                 request.SymbolResolution.ConcreteClass.Value);
         }
 
+        document.Regenerate();
+        if (!SymbolMatchesPlacement(symbol, request.Placement, request.SymbolResolution.ConcreteClass))
+        {
+            throw new InvalidOperationException(
+                "Таблица выбора семейства не подтверждает A500С для нового диаметра либо не приняла параметры типа. "
+                + "Проверьте сортамент семейства. Все изменения отменены. " + DescribeTypeParameters(symbol));
+        }
+
         return symbol;
+    }
+
+    private void LogCreatedArrayGeometry(
+        Document document,
+        FamilyInstance instance,
+        ArrayRebarCreationRequest request)
+    {
+        try
+        {
+            Transform transform = instance.GetTransform();
+            string[] instanceParameterNames =
+            [
+                StraightArrayLengthParameter, ArrayWidthParameter, "• Количество элементов",
+                "• Габарит • Линейная длина", "Требуемая длина стержня", "ф.Зона • Ширина",
+                "xl", "xu", "• Уровень размещения", "• Уровень размещения. Доп"
+            ];
+            string parameters = string.Join("; ", instanceParameterNames.Select(name =>
+                $"{name}={DescribeDiagnosticParameter(instance.LookupParameter(name))}"));
+            ICollection<ElementId> subComponentIds = instance.GetSubComponentIds();
+            string subComponents = string.Join(", ", subComponentIds.Take(8).Select(id =>
+            {
+                Element? element = document.GetElement(id);
+                return $"{RevitElementIds.GetValue(id)}:{element?.GetType().Name}:{element?.Name}:{element?.Category?.Name}";
+            }));
+            Dictionary<string, int> geometryCounts = new(StringComparer.Ordinal);
+            using Options options = new() { DetailLevel = ViewDetailLevel.Fine, IncludeNonVisibleObjects = false };
+            GeometryElement? geometry = instance.get_Geometry(options);
+            if (geometry is not null)
+            {
+                CountGeometryObjects(geometry, geometryCounts, 0);
+            }
+
+            logger.Info(
+                $"IsoField created array geometry. ElementId={RevitElementIds.GetValue(instance.Id)}; StableId={request.Placement.StableId}; "
+                + $"Family={instance.Symbol.FamilyName}; Category={instance.Category?.Name}; PlacementType={instance.Symbol.Family.FamilyPlacementType}; "
+                + $"LevelId={RevitElementIds.GetValue(instance.LevelId)}; ElevationFeet={FormatParameterState(instance.get_Parameter(BuiltInParameter.INSTANCE_ELEVATION_PARAM))}; "
+                + $"OriginFeet={FormatStatePoint(transform.Origin)}; BasisX={FormatStatePoint(transform.BasisX)}; "
+                + $"BasisY={FormatStatePoint(transform.BasisY)}; BasisZ={FormatStatePoint(transform.BasisZ)}; "
+                + $"ModelBoundsFeet={DescribeBounds(instance.get_BoundingBox(null))}; ViewBoundsFeet={DescribeBounds(instance.get_BoundingBox(document.ActiveView))}; "
+                + $"PlannedBars={request.Placement.BarCount}; {parameters}; {DescribeTypeParameters(instance.Symbol)}; "
+                + $"MultipleLength={DescribeDiagnosticParameter(instance.Symbol.LookupParameter("Кратная длина"))}; "
+                + $"BaseAnchorage={DescribeDiagnosticParameter(instance.Symbol.LookupParameter("Базовая длина анкеровки"))}; "
+                + $"Geometry={string.Join(",", geometryCounts.OrderBy(pair => pair.Key).Select(pair => $"{pair.Key}:{pair.Value}"))}; "
+                + $"SubComponents={subComponentIds.Count}[{subComponents}].");
+        }
+        catch (Exception exception)
+        {
+            logger.Warning($"IsoField created array geometry inspection failed. ElementId={RevitElementIds.GetValue(instance.Id)}; {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    private static void CountGeometryObjects(GeometryElement geometry, Dictionary<string, int> counts, int depth)
+    {
+        foreach (GeometryObject item in geometry)
+        {
+            string kind = item.GetType().Name;
+            counts[kind] = counts.TryGetValue(kind, out int count) ? count + 1 : 1;
+            if (item is GeometryInstance nested && depth < 6)
+            {
+                using GeometryElement nestedGeometry = nested.GetInstanceGeometry();
+                CountGeometryObjects(nestedGeometry, counts, depth + 1);
+            }
+        }
+    }
+
+    private static string DescribeBounds(BoundingBoxXYZ? bounds)
+    {
+        return bounds is null
+            ? "<none>"
+            : $"{FormatStatePoint(bounds.Min)}..{FormatStatePoint(bounds.Max)};BoundsOrigin={FormatStatePoint(bounds.Transform.Origin)}";
+    }
+
+    private static string DescribeDiagnosticParameter(Parameter? parameter)
+    {
+        if (parameter is null)
+        {
+            return "<missing>";
+        }
+
+        string raw = parameter.StorageType switch
+        {
+            StorageType.Double => FormatParameterState(parameter),
+            StorageType.Integer => parameter.AsInteger().ToString(CultureInfo.InvariantCulture),
+            StorageType.String => parameter.AsString() ?? "<null>",
+            StorageType.ElementId => RevitElementIds.GetValue(parameter.AsElementId()).ToString(CultureInfo.InvariantCulture),
+            _ => "<none>"
+        };
+        return $"{raw}[{parameter.StorageType};display={parameter.AsValueString()};readOnly={parameter.IsReadOnly}]";
     }
 
     private static bool SymbolMatchesPlacement(
@@ -1217,6 +1447,7 @@ public sealed class IsoFieldRebarCreationService
             ? "Б/О"
             : "Ц/О";
         return IsArrayFamilyForShape(symbol, StraightArrayFamilyCode)
+            && HasVerifiedSteelGrade(symbol)
             && TypeHasToken(symbol.Name, faceToken)
             && TypeHasToken(symbol.Name, axisToken)
             && SizeMatches(
@@ -1325,7 +1556,8 @@ public sealed class IsoFieldRebarCreationService
         FamilySymbol TemplateSymbol,
         bool RequiresDuplication,
         string RequiredTypeName,
-        int? ConcreteClass);
+        int? ConcreteClass,
+        double RollCode);
 
     private sealed class IsoFieldRebarFailuresPreprocessor : IFailuresPreprocessor
     {

@@ -4,6 +4,12 @@ namespace TrueBIM.App.Modules.BimTools.FamilyManager.Services;
 
 public sealed class FamilySearchMatchService
 {
+    public static bool MatchesText(string searchText, params string?[] fields)
+    {
+        return string.IsNullOrWhiteSpace(searchText)
+            || fields.Any(field => Contains(field, searchText.Trim()));
+    }
+
     public bool Matches(FamilyFileItem family, string searchText)
     {
         return string.IsNullOrWhiteSpace(searchText)

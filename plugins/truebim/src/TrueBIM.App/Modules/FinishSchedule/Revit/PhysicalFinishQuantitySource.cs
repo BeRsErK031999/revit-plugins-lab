@@ -35,6 +35,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         List<FinishGeometryWarning> warnings = [];
         HashSet<string> warningKeys = new(StringComparer.Ordinal);
         FinishBoundingBoxIndex index = new(request.Elements);
+        FinishRoomSearchBounds searchBounds = new(request.Rooms);
+        HashSet<long> consideredElementIds = [];
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedWalls = request.Elements
             .Where(element => element.Category == FinishPreviewCategory.Walls)
             .GroupBy(element => element.Element.ElementId)
@@ -74,7 +76,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 warningKeys);
             IReadOnlyList<FinishClassifiedElement> candidates = room.Bounds is null
                 ? []
-                : QueryCandidates(index, room.Bounds);
+                : QueryCandidates(index, searchBounds, room);
+            consideredElementIds.UnionWith(candidates.Select(candidate => candidate.Element.ElementId));
             CalculateFallbackWalls(
                 room.ElementId,
                 roomGeometry,
@@ -104,11 +107,48 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 accumulator,
                 warnings,
                 warningKeys);
+            new FinishProjectedContactSource().AddContacts(room, roomGeometry, candidates,
+                searchBounds, elementGeometryCache, accumulator, warnings);
         }
 
+        Dictionary<long, double> fullAreas = request.Elements
+            .Select(item => item.Element.ElementId)
+            .Distinct()
+            .ToDictionary(id => id, id =>
+            {
+                Parameter? area = document.GetElement(RevitElementIds.Create(id))
+                    ?.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+                return area?.StorageType == StorageType.Double
+                    ? RevitAreaUnits.ToSquareMeters(area.AsDouble())
+                    : 0;
+            });
+        Dictionary<long, FinishRoomCandidateSnapshot> roomsById = request.Rooms.ToDictionary(room => room.ElementId);
+        Dictionary<long, FinishClassifiedElement> elementsById = request.Elements.ToDictionary(item => item.Element.ElementId);
+        HashSet<long> occupiedLevels = new(request.Rooms.Select(room => room.LevelId));
+        Dictionary<long, long> wallLevels = classifiedWalls.Keys.ToDictionary(id => id,
+            id => RevitElementIds.GetValue(document.GetElement(RevitElementIds.Create(id)).LevelId));
+        FinishOccurrenceAccumulator eligible = new();
+        foreach (FinishOccurrence contact in accumulator.Build())
+        {
+            if (contact.Category == FinishPreviewCategory.Walls && occupiedLevels.Contains(wallLevels[contact.ElementId])
+                && roomsById[contact.RoomId].LevelId != wallLevels[contact.ElementId]) continue;
+            if (elementsById[contact.ElementId].Element.Bounds is { } bounds
+                && searchBounds.Create(roomsById[contact.RoomId], contact.Category).Intersects(bounds))
+                eligible.KeepLargest(contact);
+        }
+        new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
+        FinishOccurrence[] contacts = eligible.Build().ToArray();
+        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas);
+        HashSet<long> contactedElementIds = new(contacts.Select(contact => contact.ElementId));
+        foreach (long unassigned in consideredElementIds.Where(id => !contactedElementIds.Contains(id)))
+        {
+            warnings.Add(new FinishGeometryWarning(FinishGeometryWarningCode.UnassignedElement,
+                $"Элемент отделки {unassigned} попал в область поиска, но контакт с помещением не найден. Проверьте контур и уровень элемента.",
+                ElementId: unassigned, Category: elementsById[unassigned].Category));
+        }
         FinishQuantityResult result = new(
-            accumulator.Build(),
-            warnings,
+            resolved.Occurrences,
+            warnings.Where(warning => !IsRecoveredWarning(warning, contacts)).Concat(resolved.Warnings),
             new FinishGeometryCacheMetrics(
                 roomGeometryCache.RequestCount,
                 roomGeometryCache.EntryCount,
@@ -125,9 +165,20 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return result;
     }
 
+    private static bool IsRecoveredWarning(FinishGeometryWarning warning, IEnumerable<FinishOccurrence> contacts)
+    {
+        return warning.ElementId.HasValue
+            && warning.Code is (FinishGeometryWarningCode.WallFallbackUnresolved
+                or FinishGeometryWarningCode.SlabGeometryUnsupported
+                or FinishGeometryWarningCode.ProjectedAreaUnavailable)
+            && contacts.Any(contact => contact.RoomId == warning.RoomId && contact.ElementId == warning.ElementId
+                && contact.Category == warning.Category && contact.Method == FinishQuantityMethod.ProjectedRoomFootprint);
+    }
+
     private static IReadOnlyList<FinishClassifiedElement> QueryCandidates(
         FinishBoundingBoxIndex index,
-        AxisAlignedBox3D roomBounds)
+        FinishRoomSearchBounds searchBounds,
+        FinishRoomCandidateSnapshot room)
     {
         FinishPreviewCategory[] categories =
         [
@@ -137,7 +188,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         ];
         return categories
             .SelectMany(category => index.Query(
-                    FinishCandidateSearchRules.CreateSearchBounds(roomBounds, category))
+                    searchBounds.Create(room, category))
                 .Where(element => element.Category == category))
             .GroupBy(element => new { element.Element.ElementId, element.Category })
             .Select(group => group.First())

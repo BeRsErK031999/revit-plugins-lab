@@ -62,15 +62,7 @@ public sealed class AppRibbonButtonDefinitionTests
             "Ведомость\nспецификаций",
             $"TrueBIM.App.Commands.{nameof(ScheduleRegisterCommand)}",
             TrueBimIcon.ScheduleRegister,
-            "диспетчере"
-        },
-        {
-            "TrueBIM_ScheduleRegisterSettings",
-            TrueBimRibbon.BimDocumentationPanelName,
-            "Настройки\nведомости",
-            $"TrueBIM.App.Commands.{nameof(ScheduleRegisterSettingsCommand)}",
-            TrueBimIcon.Settings,
-            "фильтр"
+            "галочками"
         },
         {
             "TrueBIM_JoinCut",
@@ -145,6 +137,15 @@ public sealed class AppRibbonButtonDefinitionTests
             "семейств"
         }
     };
+
+    [Fact]
+    public void RibbonButtons_IncludeFamilyReplacementInCoordination()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons, item => item.Name == "TrueBIM_ReplaceFamilies");
+        Assert.Equal(TrueBimRibbon.BimCoordinationPanelName, button.PanelName);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(ReplaceFamiliesCommand)}", button.CommandClassName);
+    }
 
     [Fact]
     public void RibbonButtons_IncludesViewVisibilityOnViewsPanel()
@@ -357,9 +358,9 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         Dictionary<string, int> maxButtonCountByPanel = new(StringComparer.Ordinal)
         {
-            [TrueBimRibbon.BimDocumentationPanelName] = 5,
+            [TrueBimRibbon.BimDocumentationPanelName] = 4,
             [TrueBimRibbon.BimViewsPanelName] = 3,
-            [TrueBimRibbon.BimCoordinationPanelName] = 2,
+            [TrueBimRibbon.BimCoordinationPanelName] = 3,
             [TrueBimRibbon.BimLibraryPanelName] = 2,
             [TrueBimRibbon.ModelReviewPanelName] = 2,
             [TrueBimRibbon.GeometryPanelName] = 2,
@@ -382,6 +383,7 @@ public sealed class AppRibbonButtonDefinitionTests
     [Theory]
     [InlineData("TrueBIM_AutoTags")]
     [InlineData("TrueBIM_TitleBlockFill")]
+    [InlineData("TrueBIM_ScheduleRegisterSettings")]
     public void RibbonButtons_HideDeferredDocumentationTools(string name)
     {
         Assert.DoesNotContain(

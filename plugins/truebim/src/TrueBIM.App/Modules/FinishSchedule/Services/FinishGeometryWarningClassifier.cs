@@ -26,6 +26,7 @@ public static class FinishGeometryWarningClassifier
             or FinishGeometryWarningCode.WallFallbackUnresolved
             or FinishGeometryWarningCode.SlabGeometryUnsupported
             or FinishGeometryWarningCode.ProbeCreationFailed
-            or FinishGeometryWarningCode.ProjectedAreaUnavailable;
+            or FinishGeometryWarningCode.ProjectedAreaUnavailable
+            or FinishGeometryWarningCode.FullElementAreaUnavailable;
     }
 }
