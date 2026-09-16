@@ -1,11 +1,11 @@
-﻿param([ValidateRange(30, 300)][int] $TimeoutSeconds = 120)
+﻿param([ValidateRange(30, 300)][int] $TimeoutSeconds = 120, [switch] $AllowExistingRevit, [switch] $ShowViewer)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
 $harnessRoot = Join-Path $repoRoot 'plugins\truebim\tests\TrueBIM.Revit.ReplacementHarness'
 $reportRoot = Join-Path $repoRoot 'plugins\truebim\test-results\family-replacement'
 $revitPath = 'C:\Program Files\Autodesk\Revit 2022\Revit.exe'
-if (Get-Process -Name Revit -ErrorAction SilentlyContinue) {
+if (-not $AllowExistingRevit -and (Get-Process -Name Revit -ErrorAction SilentlyContinue)) {
     throw 'Close Revit before starting this isolated regression test.'
 }
 . (Join-Path $PSScriptRoot 'resolve-dotnet-sdk.ps1')
@@ -26,7 +26,8 @@ try {
     New-Item -ItemType Directory -Path $manifestDirectory -Force | Out-Null
     [IO.File]::WriteAllText($manifestPath, $manifest, [Text.UTF8Encoding]::new($false))
     $env:TRUEBIM_REPLACEMENT_HARNESS_REPORT = $reportPath
-    $regressionProcess = Start-Process -FilePath $revitPath -ArgumentList '/viewer' -WindowStyle Hidden -PassThru
+    $viewerWindowStyle = if ($ShowViewer) { 'Normal' } else { 'Hidden' }
+    $regressionProcess = Start-Process -FilePath $revitPath -ArgumentList '/viewer' -WindowStyle $viewerWindowStyle -PassThru
     [pscustomobject]@{ProcessId=$regressionProcess.Id;Manifest=$manifestPath;Report=$reportPath;Started=(Get-Date).ToString('o')} |
         ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -40,7 +41,11 @@ try {
     Write-Output "Report: $reportPath"
     $report.Scenarios | Select-Object Scenario,Total,Replaced,Skipped | Format-Table -AutoSize
     if ($report.FatalError) { throw $report.FatalError }
-    $expected = @{ SingleSelected = 0; MultipleSelected = 2; SingleUnselected = 1; SingleSelectionFixed = 1 }
+    $expected = @{
+        SingleSelected = 0; MultipleSelected = 2; SingleUnselected = 1; SingleSelectionFixed = 1
+        RotatedInsertion = 3; MirroredCenter = 3; OverlapStrict = 0; OverlapIgnored = 1
+        CommitMovementRollback = 0; MixedWarningsStrict = 0; MixedWarningsIgnored = 0
+    }
     foreach ($name in $expected.Keys) {
         $scenarioResults = @($report.Scenarios | Where-Object { $_.Scenario -eq $name })
         if ($scenarioResults.Count -ne 1 -or $scenarioResults[0].Replaced -ne $expected[$name]) {

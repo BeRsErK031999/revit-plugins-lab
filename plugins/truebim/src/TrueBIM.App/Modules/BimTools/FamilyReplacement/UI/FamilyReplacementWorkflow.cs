@@ -74,14 +74,17 @@ public static class FamilyReplacementWorkflow
 
             FamilyReplacementResult result = FamilyReplacementSelectionRunner.Replace(
                 uiDocument, selection.SourceIds, targetTypeId, selection.Alignment, selection.TargetTagTypeId,
-                exception => logger.Warning($"Family replacement finished, but canvas selection could not be restored: {exception.Message}"));
+                exception => logger.Warning($"Family replacement finished, but canvas selection could not be restored: {exception.Message}"),
+                selection.IgnoreIntersectionWarnings);
             logger.Info($"Family replacement: {result.Summary}");
             foreach (FamilyReplacementItemResult item in result.Items.Where(item => !item.Replaced))
             {
                 logger.Warning($"Family replacement source {item.SourceId}: {item.Message}");
             }
 
-            RevitModalWindowService.ShowDialog(new FamilyReplacementReportWindow(result), application.MainWindowHandle);
+            FamilyReplacementReportWindow report = new(result);
+            new System.Windows.Interop.WindowInteropHelper(report).Owner = application.MainWindowHandle;
+            report.Show();
             return Result.Succeeded;
         }
         catch (RevitOperationCanceledException)

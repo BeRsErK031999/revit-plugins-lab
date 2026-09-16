@@ -22,6 +22,12 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
     private int scenario;
     private int phase;
     private bool busy;
+    private CommitMovementUpdater? movementUpdater;
+    private static readonly string[] ScenarioNames =
+    {
+        "SingleSelected", "MultipleSelected", "SingleUnselected", "SingleSelectionFixed",
+        "RotatedInsertion", "MirroredCenter", "OverlapStrict", "OverlapIgnored", "CommitMovementRollback"
+    };
 
     public Result OnStartup(UIControlledApplication application)
     {
@@ -30,6 +36,10 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
         {
             File.WriteAllText(reportPath + ".progress.txt", "Harness loaded; waiting for Idling.");
             application.Idling += OnIdling;
+            movementUpdater = new CommitMovementUpdater(application.ActiveAddInId);
+            UpdaterRegistry.RegisterUpdater(movementUpdater, true);
+            UpdaterRegistry.AddTrigger(movementUpdater.GetUpdaterId(),
+                new ElementCategoryFilter(BuiltInCategory.OST_NurseCallDevices), Element.GetChangeTypeAny());
         }
         return Result.Succeeded;
     }
@@ -37,6 +47,8 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         application.Idling -= OnIdling;
+        if (movementUpdater is not null)
+            UpdaterRegistry.UnregisterUpdater(movementUpdater.GetUpdaterId());
         return Result.Succeeded;
     }
 
@@ -61,9 +73,12 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
             {
                 RunScenario();
                 scenario++;
-                phase = scenario < 4 ? 0 : -1;
+                phase = scenario < ScenarioNames.Length ? 0 : -1;
                 if (phase < 0)
+                {
+                    TestFailurePolicy();
                     WriteReport(null);
+                }
             }
             args.SetRaiseWithoutDelay();
         }
@@ -118,7 +133,10 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
         family.OwnerFamily.FamilyCategory = family.Settings.Categories.get_Item(category);
         family.FamilyManager.NewType(typeName);
         CurveArray profile = new();
-        XYZ[] points = { new(-0.5, -0.5, 0), new(0.5, -0.5, 0), new(0.5, 0.5, 0), new(-0.5, 0.5, 0) };
+        // Asymmetric geometry and different origins expose rotation/anchor regressions.
+        double offset = typeName == "Target" ? 1.5 : 0;
+        XYZ[] points = { new(offset - 0.5, -0.25, 0), new(offset + 1, -0.25, 0),
+            new(offset + 1, 0.5, 0), new(offset - 0.5, 0.5, 0) };
         for (int index = 0; index < points.Length; index++)
             profile.Append(Line.CreateBound(points[index], points[(index + 1) % points.Length]));
         CurveArrArray profiles = new();
@@ -138,11 +156,24 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
         {
             transaction.Start();
             if (!sourceType!.IsActive) sourceType.Activate();
-            for (int index = 0; index < (scenario == 1 ? 2 : 1); index++)
+            for (int index = 0; index < (scenario == 1 ? 2 : scenario is 4 or 5 ? 3 : 1); index++)
             {
                 FamilyInstance source = document.Create.NewFamilyInstance(new XYZ(3 + 10 * scenario + 3 * index, 1, level!.Elevation + 1), sourceType, level, StructuralType.NonStructural);
                 source.get_Parameter(BuiltInParameter.ALL_MODEL_MARK).Set($"T{scenario}-{index}");
                 source.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS).Set("Single/multiple selection regression");
+                if (scenario is 4 or 5)
+                {
+                    XYZ point = ((LocationPoint)source.Location).Point;
+                    ElementTransformUtils.RotateElement(document, source.Id, Line.CreateUnbound(point, XYZ.BasisZ), 0.37 + index * 1.71);
+                    if (scenario == 5)
+                        ElementTransformUtils.MirrorElements(document, new[] { source.Id }, Plane.CreateByNormalAndOrigin(XYZ.BasisX, point), false);
+                }
+                if (scenario is 6 or 7)
+                {
+                    if (!targetType!.IsActive) targetType.Activate();
+                    document.Create.NewFamilyInstance(((LocationPoint)source.Location).Point, targetType, level, StructuralType.NonStructural);
+                }
+                if (scenario == 8) source.Pinned = true;
                 ids.Add(source.Id);
             }
             transaction.Commit();
@@ -158,13 +189,27 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
         long[] sourceIds = ids.Select(id => (long)id.IntegerValue).ToArray();
         object[] dependents = ids.SelectMany(id => document.GetElement(id).GetDependentElements(null))
             .Distinct().Select(id => Describe(document, id)).ToArray();
-        FamilyReplacementResult result = scenario == 3
+        FamilyReplacementAlignment alignment = scenario is 4 or 6 or 7 or 8
+            ? FamilyReplacementAlignment.InsertionPoint : FamilyReplacementAlignment.GeometryCenter;
+        FamilyReplacementPlacementService placement = new();
+        FamilyReplacementPlacementSnapshot[] poses = ids.Select(id => placement.Capture(document, (FamilyInstance)document.GetElement(id), alignment)).ToArray();
+        movementUpdater!.Enabled = scenario == 8;
+        FamilyReplacementResult result = scenario >= 3
             ? FamilyReplacementSelectionRunner.Replace(uiDocument, sourceIds, targetType!.Id.IntegerValue,
-                FamilyReplacementAlignment.GeometryCenter, null, exception => throw exception)
-            : new FamilyReplacementService().Replace(document, sourceIds, targetType!.Id.IntegerValue, FamilyReplacementAlignment.GeometryCenter);
+                alignment, null, exception => throw exception, ignoreIntersectionWarnings: scenario == 7)
+            : new FamilyReplacementService().Replace(document, sourceIds, targetType!.Id.IntegerValue, alignment);
+        movementUpdater.Enabled = false;
+        for (int index = 0; index < sourceIds.Length; index++)
+        {
+            FamilyReplacementItemResult item = result.Items.Single(row => row.SourceId == sourceIds[index]);
+            FamilyInstance remaining = (FamilyInstance)document.GetElement(new ElementId((int)(item.NewId ?? item.SourceId)));
+            placement.Validate(document, poses[index], remaining);
+            if (scenario == 8 && (!remaining.Pinned || !movementUpdater.Moved))
+                throw new InvalidOperationException("Post-commit movement was not exercised or pinned source was not restored.");
+        }
         // Inspect rolled-back failures only after testing the original selection state.
         List<object> deletedDetails = new();
-        if (result.Skipped > 0)
+        if (scenario == 0 && result.Skipped > 0)
         {
             using Transaction probe = new(document, "Replacement deletion probe");
             probe.Start();
@@ -174,9 +219,30 @@ public sealed class ReplacementHarnessApplication : IExternalApplication
         }
         results.Add(new
         {
-            Scenario = scenario == 0 ? "SingleSelected" : scenario == 1 ? "MultipleSelected" : scenario == 2 ? "SingleUnselected" : "SingleSelectionFixed",
+            Scenario = ScenarioNames[scenario],
             result.Total, result.Replaced, result.Skipped, result.Items, Dependents = dependents, DeletedByProbe = deletedDetails
         });
+    }
+
+    private void TestFailurePolicy()
+    {
+        Document document = uiDocument!.Document;
+        foreach (bool ignore in new[] { false, true })
+        {
+            using Transaction transaction = new(document, "Failure policy regression");
+            transaction.Start();
+            FamilyReplacementFailureHandler handler = new(ignore);
+            transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions().SetFailuresPreprocessor(handler).SetClearAfterRollback(true));
+            FailureMessage overlap = new(BuiltInFailures.OverlapFailures.DuplicateInstances);
+            overlap.SetFailingElement(ids[0]);
+            document.PostFailure(overlap);
+            FailureMessage unrelated = new(BuiltInFailures.InaccurateFailures.InaccurateLine);
+            unrelated.SetFailingElement(ids[0]);
+            document.PostFailure(unrelated);
+            if (transaction.Commit() != TransactionStatus.RolledBack)
+                throw new InvalidOperationException("Unrelated warning incorrectly ignored.");
+            results.Add(new { Scenario = ignore ? "MixedWarningsIgnored" : "MixedWarningsStrict", Total = 1, Replaced = 0, Skipped = 1 });
+        }
     }
 
     private static object Describe(Document document, ElementId id)

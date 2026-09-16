@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.BimTools.FamilyReplacement.Revit;
 public sealed class FamilyReplacementService
 {
     public FamilyReplacementResult Replace(Document document, IReadOnlyList<long> sourceIds, long targetTypeId,
-        FamilyReplacementAlignment alignment, long? targetTagTypeId = null)
+        FamilyReplacementAlignment alignment, long? targetTagTypeId = null, bool ignoreIntersectionWarnings = false)
     {
         if (document.IsFamilyDocument || document.IsReadOnly || document.IsModifiable)
             throw new InvalidOperationException("Замена выполняется в доступном для редактирования проекте без открытой транзакции.");
@@ -20,13 +20,32 @@ public sealed class FamilyReplacementService
         FamilyReplacementPlacementService placement = new();
         FamilyReplacementParameterService parameters = new();
         FamilyReplacementAnnotationService annotations = new(targetTagTypeId.HasValue ? RevitElementIds.Create(targetTagTypeId.Value) : null);
+        Dictionary<long, FamilyReplacementPlacementSnapshot> originalPlacements = new();
+        // Freeze positions before any replacement can trigger joins or dependent updates.
+        foreach (long id in sourceIds.Distinct())
+        {
+            try
+            {
+                if (document.GetElement(RevitElementIds.Create(id)) is not FamilyInstance source)
+                    throw new InvalidOperationException("Исходный экземпляр больше не существует.");
+                originalPlacements.Add(id, placement.Capture(document, source, alignment));
+            }
+            catch (Exception exception) when (exception is not Autodesk.Revit.Exceptions.RegenerationFailedException)
+            {
+                results.Add(new FamilyReplacementItemResult(id, null, false, exception.Message));
+            }
+        }
+        Dictionary<long, FamilyReplacementPlacementSnapshot> completedPlacements = new();
         using TransactionGroup group = new(document, "TrueBIM: замена семейств");
         if (group.Start() != TransactionStatus.Started)
             throw new InvalidOperationException("Не удалось начать замену семейств.");
         foreach (long sourceId in sourceIds.Distinct())
         {
+            if (!originalPlacements.TryGetValue(sourceId, out FamilyReplacementPlacementSnapshot? originalPlacement))
+                continue;
+            using TransactionGroup itemGroup = new(document, $"Проверка замены {sourceId}");
             using Transaction transaction = new(document, $"Замена экземпляра {sourceId}");
-            ReplacementFailureHandler failures = new();
+            FamilyReplacementFailureHandler failures = new(ignoreIntersectionWarnings);
             try
             {
                 if (document.GetElement(RevitElementIds.Create(sourceId)) is not FamilyInstance source)
@@ -35,6 +54,8 @@ public sealed class FamilyReplacementService
                 FamilyReplacementParameterSnapshot values = parameters.Capture(source);
                 FamilyReplacementAnnotationSnapshot annotationSnapshot = annotations.Capture(document, source);
                 HashSet<long> allowedDeleted = CollectOwnedInstances(document, source);
+                if (itemGroup.Start() != TransactionStatus.Started)
+                    throw new InvalidOperationException("Не удалось начать проверяемую замену экземпляра.");
                 if (transaction.Start() != TransactionStatus.Started)
                     throw new InvalidOperationException("Не удалось начать транзакцию замены.");
                 transaction.SetFailureHandlingOptions(transaction.GetFailureHandlingOptions()
@@ -49,15 +70,12 @@ public sealed class FamilyReplacementService
                 CopyContext(source, target);
                 parameters.Apply(target, values);
                 document.Regenerate();
-                placement.Align(document, source, target, alignment);
+                placement.Align(document, originalPlacement, target);
                 parameters.Validate(target, values);
                 IReadOnlyCollection<ElementId> oldAnnotations = annotations.Restore(document, source, target, annotationSnapshot);
                 foreach (ElementId id in oldAnnotations)
                     allowedDeleted.Add(RevitElementIds.GetValue(id));
 
-                Transform expectedTransform = target.GetTransform();
-                XYZ expectedAnchor = FamilyReplacementPlacementService.Anchor(target, alignment);
-                ElementId expectedLevel = FamilyReplacementPlacementService.ResolveLevel(document, target)?.Id ?? ElementId.InvalidElementId;
                 bool wasPinned = source.Pinned;
                 long newId = RevitElementIds.GetValue(target.Id);
                 List<ElementId> toDelete = oldAnnotations.Concat(new[] { source.Id }).Distinct().ToList();
@@ -71,25 +89,38 @@ public sealed class FamilyReplacementService
                     throw new InvalidOperationException("Revit удалил новый экземпляр вместе с исходным.");
                 parameters.Validate(target, values);
                 annotations.ValidateRestored(document, annotationSnapshot);
-                Transform finalTransform = target.GetTransform();
-                if (FamilyReplacementPlacementService.Anchor(target, alignment).DistanceTo(expectedAnchor) > FamilyReplacementPlacementService.PositionTolerance ||
-                    !finalTransform.BasisX.IsAlmostEqualTo(expectedTransform.BasisX) ||
-                    !finalTransform.BasisY.IsAlmostEqualTo(expectedTransform.BasisY) ||
-                    !finalTransform.BasisZ.IsAlmostEqualTo(expectedTransform.BasisZ) ||
-                    (FamilyReplacementPlacementService.ResolveLevel(document, target)?.Id ?? ElementId.InvalidElementId) != expectedLevel)
-                    throw new InvalidOperationException("После удаления исходного элемента изменились положение или привязка нового экземпляра.");
+                placement.Validate(document, originalPlacement, target);
                 target.Pinned = wasPinned;
 
                 TransactionStatus status = transaction.Commit();
                 if (status != TransactionStatus.Committed)
                     throw new InvalidOperationException(failures.Description.Length > 0 ? failures.Description : "Revit отменил замену экземпляра.");
-                results.Add(new FamilyReplacementItemResult(sourceId, newId, true, "Заменён; положение, параметры и поддерживаемые аннотации сохранены."));
+                // Commit runs auto-join and updaters after the last explicit Regenerate.
+                // Keep a group open so a failed final validation can undo that commit.
+                placement.Validate(document, originalPlacement, target);
+                parameters.Validate(target, values);
+                annotations.ValidateRestored(document, annotationSnapshot);
+                foreach (KeyValuePair<long, FamilyReplacementPlacementSnapshot> completed in completedPlacements)
+                {
+                    if (document.GetElement(RevitElementIds.Create(completed.Key)) is not FamilyInstance previous)
+                        throw new InvalidOperationException("Пересчёт удалил ранее заменённый экземпляр.");
+                    placement.Validate(document, completed.Value, previous);
+                }
+                if (itemGroup.Assimilate() != TransactionStatus.Committed)
+                    throw new InvalidOperationException("Не удалось завершить проверенную замену экземпляра.");
+                completedPlacements.Add(newId, originalPlacement);
+                string message = "Заменён; положение, параметры и поддерживаемые аннотации сохранены.";
+                if (failures.IgnoredDescription.Length > 0)
+                    message += " Игнорированы предупреждения о пересечениях: " + failures.IgnoredDescription;
+                results.Add(new FamilyReplacementItemResult(sourceId, newId, true, message));
             }
             catch (Autodesk.Revit.Exceptions.RegenerationFailedException)
             {
                 // The document is unusable until rollback; do not continue with another source.
                 if (transaction.GetStatus() == TransactionStatus.Started)
                     transaction.RollBack();
+                if (itemGroup.GetStatus() == TransactionStatus.Started)
+                    itemGroup.RollBack();
                 group.RollBack();
                 throw;
             }
@@ -97,6 +128,8 @@ public sealed class FamilyReplacementService
             {
                 if (transaction.GetStatus() == TransactionStatus.Started)
                     transaction.RollBack();
+                if (itemGroup.GetStatus() == TransactionStatus.Started)
+                    itemGroup.RollBack();
                 results.Add(new FamilyReplacementItemResult(sourceId, null, false, exception.Message));
             }
         }
@@ -164,18 +197,4 @@ public sealed class FamilyReplacementService
         return ids;
     }
 
-    private sealed class ReplacementFailureHandler : IFailuresPreprocessor
-    {
-        public string Description { get; private set; } = string.Empty;
-
-        public FailureProcessingResult PreprocessFailures(FailuresAccessor failuresAccessor)
-        {
-            IList<FailureMessageAccessor> messages = failuresAccessor.GetFailureMessages();
-            if (messages.Count == 0)
-                return FailureProcessingResult.Continue;
-            // Never accept Revit's automatic deletion of constraints or other dependants.
-            Description = "Revit отменил замену: " + string.Join("; ", messages.Select(item => item.GetDescriptionText()).Distinct());
-            return FailureProcessingResult.ProceedWithRollBack;
-        }
-    }
 }

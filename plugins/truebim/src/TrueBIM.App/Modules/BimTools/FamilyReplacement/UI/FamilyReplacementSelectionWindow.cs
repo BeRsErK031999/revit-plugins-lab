@@ -23,6 +23,12 @@ public sealed class FamilyReplacementSelectionWindow : TrueBimWindow
     private readonly ComboBox targetType = new();
     private readonly ComboBox tagType = new();
     private readonly ComboBox alignmentBox = new();
+    private readonly CheckBox ignoreIntersections = new()
+    {
+        Content = "Игнорировать предупреждения о пересечениях",
+        ToolTip = "Пропускать предупреждения Revit о наложениях и пересечениях. Ошибки, требующие удаления элементов или потери привязок, по-прежнему отменяют замену.",
+        Margin = new Thickness(0, 6, 0, 6)
+    };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     private readonly Button apply;
     private bool updatingSelection;
@@ -81,6 +87,7 @@ public sealed class FamilyReplacementSelectionWindow : TrueBimWindow
         .Select(row => row.Item.Id).ToList();
 
     public long? TargetTypeId => (targetType.SelectedItem as FamilyReplacementTypeOption)?.Id;
+    public bool IgnoreIntersectionWarnings => ignoreIntersections.IsChecked == true;
     public long? TargetTagTypeId => (tagType.SelectedItem as ComboBoxItem)?.Tag as long?;
     public FamilyReplacementAlignment Alignment => alignmentBox.SelectedIndex == 1
         ? FamilyReplacementAlignment.InsertionPoint : FamilyReplacementAlignment.GeometryCenter;
@@ -150,7 +157,7 @@ public sealed class FamilyReplacementSelectionWindow : TrueBimWindow
         Grid panel = new() { Margin = new Thickness(0, 14, 0, 0) };
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.7, GridUnitType.Star) });
-        for (int index = 0; index < 4; index++)
+        for (int index = 0; index < 5; index++)
         {
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         }
@@ -182,13 +189,16 @@ public sealed class FamilyReplacementSelectionWindow : TrueBimWindow
         Grid.SetRow(tags, 2);
         Grid.SetColumnSpan(tags, 2);
         panel.Children.Add(tags);
+        Grid.SetRow(ignoreIntersections, 3);
+        Grid.SetColumnSpan(ignoreIntersections, 2);
+        panel.Children.Add(ignoreIntersections);
         TextBlock note = new()
         {
             Text = "Переносятся положение, ориентация и совместимые параметры экземпляра. Если размещение, марки или размеры нельзя сохранить, экземпляр останется исходным; причина будет в отчёте.",
             TextWrapping = TextWrapping.Wrap, Foreground = TrueBimBrushes.TextSecondary,
             Margin = new Thickness(0, 6, 0, 0)
         };
-        Grid.SetRow(note, 3);
+        Grid.SetRow(note, 4);
         Grid.SetColumnSpan(note, 2);
         panel.Children.Add(note);
         return panel;

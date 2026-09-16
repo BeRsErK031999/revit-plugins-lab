@@ -10,11 +10,12 @@ public static class FamilyReplacementSelectionRunner
 {
     public static FamilyReplacementResult Replace(
         UIDocument uiDocument, IReadOnlyList<long> sourceIds, long targetTypeId,
-        FamilyReplacementAlignment alignment, long? targetTagTypeId, Action<Exception> onSelectionRestoreFailure)
+        FamilyReplacementAlignment alignment, long? targetTagTypeId, Action<Exception> onSelectionRestoreFailure,
+        bool ignoreIntersectionWarnings = false)
     {
         long[] capturedSources = sourceIds.Distinct().ToArray();
         return FamilyReplacementSelectionCoordinator.Execute(new SelectionContext(uiDocument),
-            () => new FamilyReplacementService().Replace(uiDocument.Document, capturedSources, targetTypeId, alignment, targetTagTypeId),
+            () => new FamilyReplacementService().Replace(uiDocument.Document, capturedSources, targetTypeId, alignment, targetTagTypeId, ignoreIntersectionWarnings),
             onSelectionRestoreFailure);
     }
 

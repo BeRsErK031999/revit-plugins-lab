@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using TrueBIM.App.Modules.BimTools.FamilyReplacement.Models;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
@@ -18,10 +20,14 @@ public sealed class FamilyReplacementReportWindow : TrueBimWindow
         MinWidth = 740;
         MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ShowInTaskbar = false;
         DataGrid table = new()
         {
             AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false,
             CanUserDeleteRows = false, Style = TrueBimStyles.CreateDataGridStyle(),
+            SelectionUnit = DataGridSelectionUnit.CellOrRowHeader,
+            SelectionMode = DataGridSelectionMode.Extended,
+            ClipboardCopyMode = DataGridClipboardCopyMode.ExcludeHeader,
             ItemsSource = result.Items.Select(item => new
             {
                 item.SourceId, item.NewId,
@@ -38,17 +44,40 @@ public sealed class FamilyReplacementReportWindow : TrueBimWindow
             Header = "Подробности", Binding = new Binding("Message"),
             Width = new DataGridLength(1, DataGridLengthUnitType.Star), ElementStyle = wrapping
         });
-        Button close = TrueBimUi.CreatePrimaryButton("Закрыть", TrueBimIcon.Close, (_, _) => DialogResult = true);
+        TextBlock hint = new()
+        {
+            Text = "Окно можно оставить открытым и работать в Revit. Выделите ячейку ID и нажмите Ctrl+C; поиск в Revit — «Выбрать по коду». Для нескольких ячеек используйте Ctrl или Shift.",
+            Foreground = TrueBimBrushes.TextSecondary, TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        void CopyText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+            try { Clipboard.SetText(text); }
+            catch (ExternalException) { hint.Text = "Буфер обмена занят другим приложением. Повторите копирование."; }
+        }
+        Button copyId = TrueBimUi.CreateSecondaryButton("Копировать ID", TrueBimIcon.Apply, (_, _) =>
+        {
+            DataGridCellInfo cell = table.CurrentCell;
+            string? property = ((cell.Column as DataGridBoundColumn)?.Binding as Binding)?.Path.Path;
+            if (!cell.IsValid || property is not ("SourceId" or "NewId"))
+            {
+                hint.Text = "Выберите ячейку в столбце «Исходный ID» или «Новый ID».";
+                return;
+            }
+            CopyText(Convert.ToString(cell.Item.GetType().GetProperty(property)?.GetValue(cell.Item), CultureInfo.InvariantCulture) ?? string.Empty);
+        });
+        Button copySkipped = TrueBimUi.CreateSecondaryButton("ID всех пропущенных", TrueBimIcon.Apply, (_, _) =>
+            CopyText(string.Join("; ", result.Items.Where(item => !item.Replaced).Select(item => item.SourceId))));
+        copySkipped.IsEnabled = result.Skipped > 0;
+        Button close = TrueBimUi.CreatePrimaryButton("Закрыть", TrueBimIcon.Close, (_, _) => Close());
+        PreviewKeyDown += (_, args) => { if (args.Key == System.Windows.Input.Key.Escape) Close(); };
         close.IsCancel = true;
         ApplyTrueBimShell(
             TrueBimUi.CreateHeader("Результат замены", result.Summary, TrueBimIcon.FamilyManager),
             null, table,
-            new TextBlock
-            {
-                Text = "Пропущенные экземпляры сохранены. Отчёт можно выделить и скопировать сочетанием Ctrl+C.",
-                Foreground = TrueBimBrushes.TextSecondary, TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 10, 0, 0)
-            },
-            TrueBimUi.CreateFooter(null, close));
+            hint,
+            TrueBimUi.CreateFooter(null, copyId, copySkipped, close));
     }
 }

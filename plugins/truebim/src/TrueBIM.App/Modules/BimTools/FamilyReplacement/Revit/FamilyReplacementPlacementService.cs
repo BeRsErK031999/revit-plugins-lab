@@ -37,9 +37,22 @@ internal sealed class FamilyReplacementPlacementService
         }
     }
 
-    public void Align(Document document, FamilyInstance source, FamilyInstance target, FamilyReplacementAlignment alignment)
+    public FamilyReplacementPlacementSnapshot Capture(Document document, FamilyInstance source, FamilyReplacementAlignment alignment)
     {
-        Transform expected = source.GetTransform();
+        return new(source.GetTransform(), Anchor(source, alignment), alignment,
+            ResolveLevel(document, source)?.Id ?? ElementId.InvalidElementId,
+            source.Host?.Id ?? ElementId.InvalidElementId, source.HandFlipped, source.FacingFlipped);
+    }
+
+    public void Align(Document document, FamilyReplacementPlacementSnapshot snapshot, FamilyInstance target)
+    {
+        // Flip states can affect family geometry independently of its placement frame.
+        if (target.CanFlipHand && target.HandFlipped != snapshot.HandFlipped)
+            target.flipHand();
+        if (target.CanFlipFacing && target.FacingFlipped != snapshot.FacingFlipped)
+            target.flipFacing();
+        document.Regenerate();
+        Transform expected = snapshot.Transform;
         Transform actual = target.GetTransform();
         if (actual.HasReflection != expected.HasReflection)
         {
@@ -57,30 +70,31 @@ internal sealed class FamilyReplacementPlacementService
             actual.BasisX.DotProduct(expected.BasisX));
         Rotate(document, target, normal, angle);
 
-        XYZ delta = Anchor(source, alignment) - Anchor(target, alignment);
+        XYZ delta = snapshot.Anchor - Anchor(target, snapshot.Alignment);
         if (delta.GetLength() > 1e-9)
         {
             ElementTransformUtils.MoveElement(document, target.Id, delta);
             document.Regenerate();
         }
-        Validate(document, source, target, alignment);
+        Validate(document, snapshot, target);
     }
 
-    public void Validate(Document document, FamilyInstance source, FamilyInstance target, FamilyReplacementAlignment alignment)
+    public void Validate(Document document, FamilyReplacementPlacementSnapshot snapshot, FamilyInstance target)
     {
-        Transform expected = source.GetTransform();
+        if (!target.IsValidObject)
+            throw new InvalidOperationException("Новый экземпляр удалён при пересчёте Revit.");
+        Transform expected = snapshot.Transform;
         Transform actual = target.GetTransform();
         if ((actual.BasisX - expected.BasisX).GetLength() > DirectionTolerance ||
             (actual.BasisY - expected.BasisY).GetLength() > DirectionTolerance ||
             (actual.BasisZ - expected.BasisZ).GetLength() > DirectionTolerance)
             throw new InvalidOperationException("Не удалось сохранить пространственную ориентацию семейства.");
-        if (Anchor(source, alignment).DistanceTo(Anchor(target, alignment)) > PositionTolerance)
+        if (snapshot.Anchor.DistanceTo(Anchor(target, snapshot.Alignment)) > PositionTolerance)
             throw new InvalidOperationException("Новое семейство смещено относительно выбранной точки совмещения.");
 
-        Level? originalLevel = ResolveLevel(document, source);
-        if (originalLevel is not null && ResolveLevel(document, target)?.Id != originalLevel.Id)
+        if ((ResolveLevel(document, target)?.Id ?? ElementId.InvalidElementId) != snapshot.LevelId)
             throw new InvalidOperationException("Не удалось сохранить привязку к исходному уровню.");
-        if (source.Host?.Id != target.Host?.Id)
+        if ((target.Host?.Id ?? ElementId.InvalidElementId) != snapshot.HostId)
             throw new InvalidOperationException("Основа размещения нового семейства отличается от исходной.");
     }
 
@@ -148,3 +162,7 @@ internal sealed class FamilyReplacementPlacementService
         document.Regenerate();
     }
 }
+
+internal sealed record FamilyReplacementPlacementSnapshot(
+    Transform Transform, XYZ Anchor, FamilyReplacementAlignment Alignment,
+    ElementId LevelId, ElementId HostId, bool HandFlipped, bool FacingFlipped);
