@@ -66,12 +66,12 @@ public sealed class FinishOwnershipWriter
                 {
                     Parameter parameter = RevitFinishParameterAccess.ResolveWritableParameter(document, change);
                     string currentValue = parameter.AsString() ?? string.Empty;
-                    if (string.Equals(currentValue, change.NewValue, StringComparison.Ordinal))
+                    if (FinishParameterValueComparison.AreEqual(currentValue, change.NewValue))
                     {
                         continue;
                     }
 
-                    if (!string.Equals(currentValue, change.PreviousValue, StringComparison.Ordinal))
+                    if (!FinishParameterValueComparison.AreEqual(currentValue, change.PreviousValue))
                     {
                         skippedCount++;
                         warnings.Add(

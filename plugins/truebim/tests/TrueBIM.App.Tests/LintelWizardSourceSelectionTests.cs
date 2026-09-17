@@ -31,7 +31,7 @@ public sealed class LintelWizardSourceSelectionTests
     }
 
     [Fact]
-    public void TrySelect_RejectsEntireProjectModePlannedForLater()
+    public void TrySelect_AllowsEntireProjectMode()
     {
         LintelWizardSourceSelection selection = new(
             hasCurrentSelection: true,
@@ -39,9 +39,9 @@ public sealed class LintelWizardSourceSelectionTests
 
         bool selected = selection.TrySelect(LintelWizardSourceMode.EntireProject);
 
-        Assert.False(selected);
-        Assert.Equal(LintelWizardSourceMode.CurrentSelection, selection.SelectedMode);
-        Assert.False(selection.Options.Single(
+        Assert.True(selected);
+        Assert.Equal(LintelWizardSourceMode.EntireProject, selection.SelectedMode);
+        Assert.True(selection.Options.Single(
             option => option.Mode == LintelWizardSourceMode.EntireProject).IsAvailable);
     }
 

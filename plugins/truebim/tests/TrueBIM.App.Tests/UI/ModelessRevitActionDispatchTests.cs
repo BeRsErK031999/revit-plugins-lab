@@ -4,6 +4,7 @@ using TrueBIM.App.Modules.BimTools.ClashReport.UI;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.UI;
 using TrueBIM.App.Modules.BimTools.DatumExtents.UI;
 using TrueBIM.App.Modules.BimTools.OpeningViews.UI;
+using TrueBIM.App.Modules.BimTools.ParameterAudit.UI;
 using TrueBIM.App.Modules.BimTools.TitleBlockFill.UI;
 using TrueBIM.App.Modules.BimTools.Worksets.UI;
 using TrueBIM.App.Modules.IsoFieldRebar.UI;
@@ -20,6 +21,7 @@ public sealed class ModelessRevitActionDispatchTests
     public static TheoryData<Type> ModelessWindowsWithRevitActions => new()
     {
         typeof(ColorByParameterWindow),
+        typeof(ParameterAuditWindow),
         typeof(CreateWorksetsWindow),
         typeof(ClashReportWindow),
         typeof(AutoTagWindow),

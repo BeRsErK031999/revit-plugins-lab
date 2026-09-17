@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Services;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Revit;
@@ -95,7 +96,11 @@ public sealed class FinishScheduleWriteWorkflow
             ownershipPlan,
             calculation.Preview.Warnings,
             schedulePreflight,
-            calculation.Preview);
+            calculation.Preview,
+            roomPlan.Changes.Concat(ownershipPlan.Changes)
+                .Select(change => change.ElementId)
+                .Distinct()
+                .ToDictionary(id => id, id => DescribeElement(document, id)));
         logger.Info(
             $"Finish Schedule write plan prepared. Rooms={preview.RoomCount}; Groups={preview.GroupCount}; "
             + $"RoomChanges={roomPlan.Changes.Count}; OwnershipChanges={ownershipPlan.Changes.Count}; "
@@ -107,7 +112,8 @@ public sealed class FinishScheduleWriteWorkflow
 
     public FinishScheduleWriteResult Apply(
         Document document,
-        FinishScheduleWritePreview preview)
+        FinishScheduleWritePreview preview,
+        FinishScheduleHeaderMode headerMode = FinishScheduleHeaderMode.Custom)
     {
         Stopwatch totalTimer = Stopwatch.StartNew();
         if (document is null)
@@ -118,6 +124,11 @@ public sealed class FinishScheduleWriteWorkflow
         if (preview is null)
         {
             throw new ArgumentNullException(nameof(preview));
+        }
+
+        if (!Enum.IsDefined(typeof(FinishScheduleHeaderMode), headerMode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(headerMode), headerMode, null);
         }
 
         string[] preflightWarnings = preview.CalculationWarnings
@@ -182,6 +193,7 @@ public sealed class FinishScheduleWriteWorkflow
         {
             FinishTransactionStatus.EnsureStarted(group);
             groupStarted = true;
+            scheduleBuilder.PreservePreviousVersions(document, preview.Schedule);
             stageTimer.Restart();
             FinishOwnershipApplyResult ownershipResult = ownershipWriter.Apply(
                 document,
@@ -195,7 +207,8 @@ public sealed class FinishScheduleWriteWorkflow
             stageTimer.Restart();
             FinishRoomScheduleApplyResult scheduleResult = scheduleBuilder.Apply(
                 document,
-                preview.Schedule);
+                preview.Schedule,
+                headerMode);
             timings.Add(StopStage(FinishScheduleStageNames.ScheduleWrite, stageTimer));
             FinishTransactionStatus.EnsureAssimilated(group);
             groupStarted = false;
@@ -203,6 +216,7 @@ public sealed class FinishScheduleWriteWorkflow
 
             string[] warnings = preflightWarnings
                 .Concat(ownershipResult.Warnings)
+                .Concat(GetHeaderModeWarnings(headerMode))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
             logger.Info(
@@ -210,6 +224,7 @@ public sealed class FinishScheduleWriteWorkflow
                 + $"OwnershipValues={ownershipResult.AppliedCount}; "
                 + $"OwnershipSkipped={preflightSkippedOwnership + ownershipResult.SkippedCount}; "
                 + $"ScheduleAction={scheduleResult.Action}; ScheduleId={scheduleResult.ScheduleId}; "
+                + $"HeaderMode={headerMode}; "
                 + $"Warnings={warnings.Length}; ElapsedMs={totalTimer.ElapsedMilliseconds}.");
             return new FinishScheduleWriteResult(
                 FinishScheduleWriteStatus.Applied,
@@ -217,9 +232,7 @@ public sealed class FinishScheduleWriteWorkflow
                 ownershipResult.AppliedCount,
                 preflightSkippedOwnership + ownershipResult.SkippedCount,
                 warnings,
-                scheduleResult.Action == FinishRoomScheduleAction.Create
-                    ? "Параметры обновлены, ведомость отделки создана атомарно."
-                    : "Параметры и ведомость отделки обновлены атомарно.",
+                BuildSuccessMessage(scheduleResult, headerMode, appliedRoomValues, ownershipResult.AppliedCount),
                 scheduleResult,
                 performance);
         }
@@ -237,16 +250,69 @@ public sealed class FinishScheduleWriteWorkflow
                 }
             }
 
-            logger.Error("Failed to build Finish Schedule.", exception);
+            bool headerFormattingFailed = exception is FinishScheduleHeaderFormattingException;
+            logger.Error(
+                headerFormattingFailed
+                    ? "Failed to format Finish Schedule custom header."
+                    : "Failed to build Finish Schedule.",
+                exception);
             return new FinishScheduleWriteResult(
                 FinishScheduleWriteStatus.Failed,
                 0,
                 0,
                 preflightSkippedOwnership,
                 preflightWarnings,
-                "Формирование отменено целиком; параметры и спецификация не оставлены в частично обновлённом состоянии.",
-                Performance: CompleteApplyPerformance(timings, totalTimer));
+                headerFormattingFailed
+                    ? "Revit не смог оформить составную шапку. Изменения отменены; можно повторить формирование с простой шапкой или без неё."
+                    : "Формирование отменено целиком; параметры и спецификация не оставлены в частично обновлённом состоянии.",
+                Performance: CompleteApplyPerformance(timings, totalTimer),
+                FailureKind: headerFormattingFailed
+                    ? FinishScheduleWriteFailureKind.HeaderFormatting
+                    : FinishScheduleWriteFailureKind.None);
         }
+    }
+
+    private static IEnumerable<string> GetHeaderModeWarnings(FinishScheduleHeaderMode headerMode)
+    {
+        return headerMode switch
+        {
+            FinishScheduleHeaderMode.Standard =>
+            ["Ведомость сформирована с простой шапкой Revit без объединённых ячеек."],
+            FinishScheduleHeaderMode.None =>
+            ["Ведомость сформирована без названия и заголовков столбцов."],
+            _ => []
+        };
+    }
+
+    private static string BuildSuccessMessage(
+        FinishRoomScheduleApplyResult schedule,
+        FinishScheduleHeaderMode headerMode,
+        int roomValues,
+        int ownershipValues)
+    {
+        string operation = $"Создана «{schedule.ScheduleName}»";
+        string header = headerMode switch
+        {
+            FinishScheduleHeaderMode.Standard => " с простой шапкой Revit",
+            FinishScheduleHeaderMode.None => " без шапки",
+            _ => string.Empty
+        };
+        string parameterMessage = roomValues + ownershipValues == 0
+            ? " Параметры уже совпадают с расчётом и не перезаписывались."
+            : $" Обновлено значений параметров: {roomValues + ownershipValues}.";
+        return $"{operation}{header}. Прежние версии сохранены.{parameterMessage}";
+    }
+
+    private static string DescribeElement(Document document, long id)
+    {
+        Element? element = document.GetElement(RevitElementIds.Create(id));
+        if (element is Autodesk.Revit.DB.Architecture.Room room)
+        {
+            string name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? string.Empty;
+            return $"Помещение {room.Number} «{name}»";
+        }
+
+        return $"{element?.Category?.Name ?? "Элемент"} (ID {id})";
     }
 
     private static FinishScheduleStageTiming StopStage(string stage, Stopwatch timer)

@@ -19,7 +19,7 @@ public sealed class IsoFieldSlabOverlayLayoutService
 
         if (width <= 0 || height <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(width), "Preview size must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(width), "Размер схемы совмещения должен быть больше нуля.");
         }
 
         HashSet<string> removedZoneIds = new(analysis.RemovedZoneIds, StringComparer.Ordinal);

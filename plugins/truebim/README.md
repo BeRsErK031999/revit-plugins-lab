@@ -19,12 +19,22 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 ## Initial modules
 
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
-- `schedule-column-collapse` - copies a schedule and hides zero-only numeric columns (`Свернуть ВРС`).
+- `schedule-column-collapse` - normalizes a schedule by showing non-zero columns and hiding zero-only numeric columns (`Свернуть ВРС`).
 - `print` - sheet batch print/export module (`Печать`) for PDF, DWG, and DXF export with filename templates, CAD export setups, multi-document sheet sources, saved settings, and Revit 2022/2025 preflight coverage.
 
 ## Core ribbon commands
 
+- `Ведомость отделки` — каждый выпуск создаёт отдельную версию с зафиксированными данными; прежние версии сохраняют содержимое и размещение на листах. Подробности и проверки: [docs/finish-schedule-feedback-2026-09-15.md](docs/finish-schedule-feedback-2026-09-15.md).
+- `Ведомость отделки` — полная площадь элементов, единая принадлежность, поиск откосов и потолков: [результаты проверки в Revit 2023 на модели D085](docs/finish-schedule-feedback-2026-09-16.md).
+- `Ведомость отделки` — [сравнение эталона и версии плагина, общие пропуски полов и исправление обрезанного текста](docs/finish-schedule-comparison-2026-09-16.md).
+- `Ведомость отделки` — [восстановление выбора помещений при сохранении значений каждого выпуска](docs/finish-schedule-native-versions-2026-09-17.md), версия 0.2.19.
+- `Ведомость отделки` — [перенос настройки пустой строки из шаблона вида](docs/finish-schedule-appearance-template-2026-09-17.md), версия 0.2.20. Перед первым выпуском требуется один раз подготовить шаблон в проекте; проверку в Revit выполняет пользователь.
+- `Ведомость отделки` — [состав отделки вместо имени типа](docs/finish-schedule-composition-source-2026-09-17.md), версия 0.2.21. Сохранённый источник «Имя типа» заменяется на доступный «• Состав» или «Состав»; результат появляется в новом выпуске.
+- `Ведомость отделки` — [ручной аудит и исправление поиска полов со смещением](docs/finish-schedule-manual-audit-2026-09-17.md), версия 0.2.22. Установка и 1078 тестов выполнены; повторная проверка установленной DLL в модели ещё ожидается.
+- `Координация > Замена семейств` — замена экземпляров между категориями с фильтром по видам/проекту, сохранением положения и проверкой параметров/аннотаций. Тот же инструмент открывается из диспетчера семейств. См. [docs/family-replacement.md](docs/family-replacement.md).
 - `БИМ > Видимость` - active-view category visibility control. It lets users turn controllable Revit categories on and off in the current view, with grouping, search, status text, logging, manual QA notes, and automated ribbon metadata smoke tests.
+- `Проверка модели > Проверка параметров` - read-only validation of instance/type parameters against a manually selected CSV/XLSX requirements table, with optional loaded-link scope and CSV error export. See [docs/parameter-audit.md](docs/parameter-audit.md).
+- `Оформление > Ведомость спецификаций` - builds a new manual register from sheets checked in a searchable project sheet list, with bulk selection of sheets containing schedules, segment aggregation, duplicate diagnostics, optional parameter filtering, self-repair of filled template rows, and safe structural recovery. Filter and template settings open from the creation window. See [docs/schedule-register.md](docs/schedule-register.md).
 
 ## Current completion status
 

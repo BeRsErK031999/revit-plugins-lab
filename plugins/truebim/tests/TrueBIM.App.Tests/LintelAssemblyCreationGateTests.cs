@@ -22,7 +22,7 @@ public sealed class LintelAssemblyCreationGateTests
     }
 
     [Fact]
-    public void CanCreateOrFormatViews_AllowsBatchWhenEveryTypeHasExistingAssembly()
+    public void CanCreateOrFormatViews_AllowsReadyPartOfMixedBatch()
     {
         LintelTypeDiagnostic existing = CreateType(100) with
         {
@@ -39,7 +39,7 @@ public sealed class LintelAssemblyCreationGateTests
         Assert.True(LintelAssemblyCreationGate.CanCreateOrFormatViews([existing, secondExisting]));
         Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatViews([]));
         Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatViews([newType]));
-        Assert.False(LintelAssemblyCreationGate.CanCreateOrFormatViews([existing, newType]));
+        Assert.True(LintelAssemblyCreationGate.CanCreateOrFormatViews([existing, newType]));
     }
 
     private static LintelTypeDiagnostic CreateType(long typeId)

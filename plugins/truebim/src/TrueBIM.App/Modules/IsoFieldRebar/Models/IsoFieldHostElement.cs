@@ -9,8 +9,8 @@ public sealed record IsoFieldHostElement(
     IsoFieldHostGeometryProfile GeometryProfile = IsoFieldHostGeometryProfile.Unknown)
 {
     public string DisplayName => string.IsNullOrWhiteSpace(Name)
-        ? $"{HostKindDisplayName} (ID {ElementId})"
-        : $"{HostKindDisplayName}: {Name} (ID {ElementId})";
+        ? $"{HostKindDisplayName} (элемент № {ElementId})"
+        : $"{HostKindDisplayName}: {Name} (элемент № {ElementId})";
 
     public bool IsSlab => string.Equals(HostKind, "Slab", StringComparison.Ordinal);
 

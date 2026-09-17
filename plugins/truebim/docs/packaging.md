@@ -31,6 +31,12 @@ The script:
 - uses solid `lzma2/ultra64` compression so repeated multi-version dependencies are stored compactly;
 - compiles `plugins/truebim/installer/TrueBIM.iss` with Inno Setup.
 
+For release builds, run without extra switches so every supported year is required. For a local installer on a workstation where some Revit API versions are unavailable, pass `-AllowMissingRevitApi`; missing years are then omitted from the setup UI and payload:
+
+```powershell
+.\plugins\truebim\scripts\build-installer.ps1 -AllowMissingRevitApi
+```
+
 By default, the Revit 2026 build uses API assemblies from `C:\Program Files\Autodesk\Revit 2026`. A CI or reference-only API location can be supplied explicitly:
 
 ```powershell
@@ -117,4 +123,4 @@ Runtime smoke-tests are not automated by this script. Pass `-SmokeTestedYears 20
 
 ## Local Development Deploy
 
-The `deploy-local-2022.ps1`, `deploy-local-2025.ps1`, and `deploy-local-2026.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the release installer. The Revit 2026 helper accepts `-RevitApiRoot` when the API reference assemblies are outside the default Revit installation directory.
+The `deploy-local-2022.ps1`, `deploy-local-2023.ps1`, `deploy-local-2025.ps1`, and `deploy-local-2026.ps1` scripts remain current-user development helpers. They install under `%APPDATA%` and are separate from the release installer. The Revit 2026 helper accepts `-RevitApiRoot` when the API reference assemblies are outside the default Revit installation directory.

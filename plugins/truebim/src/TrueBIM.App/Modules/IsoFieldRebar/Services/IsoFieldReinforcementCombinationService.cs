@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.IsoFieldRebar.Services;
 public sealed class IsoFieldReinforcementCombinationService
 {
     private static readonly Regex ComponentPattern = new(
-        @"^(?:d|ø|ф)?(?<diameter>\d+(?:[\.,]\d+)?)s(?<spacing>\d+(?:[\.,]\d+)?)$",
+        @"^(?:d|ø|ф|диаметр)?(?<diameter>\d+(?:[\.,]\d+)?)(?:s|,?шаг)(?<spacing>\d+(?:[\.,]\d+)?)(?:мм)?$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public bool TryParse(
@@ -18,7 +18,7 @@ public sealed class IsoFieldReinforcementCombinationService
         combination = null;
         if (string.IsNullOrWhiteSpace(label))
         {
-            diagnostic = "Подпись сочетания диаметр/шаг не распознана.";
+            diagnostic = "Укажите диаметр стержней и шаг между ними.";
             return false;
         }
 
@@ -28,7 +28,7 @@ public sealed class IsoFieldReinforcementCombinationService
             .Split(new[] { '+' }, StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length == 0)
         {
-            diagnostic = $"Подпись '{label}' не содержит сочетаний вида d10s200.";
+            diagnostic = $"Не удалось прочитать «{label}». Укажите, например: Ø12, шаг 200 мм.";
             return false;
         }
 
@@ -40,7 +40,7 @@ public sealed class IsoFieldReinforcementCombinationService
                 || !TryParseNumber(match.Groups["diameter"].Value, out double diameter)
                 || !TryParseNumber(match.Groups["spacing"].Value, out double spacing))
             {
-                diagnostic = $"Сочетание '{token}' должно иметь формат d10s200.";
+                diagnostic = $"Не удалось прочитать «{token}». Укажите, например: Ø12, шаг 200 мм.";
                 return false;
             }
 
@@ -66,9 +66,19 @@ public sealed class IsoFieldReinforcementCombinationService
                 index,
                 parsed.Count))
             .ToArray();
-        combination = new IsoFieldReinforcementCombination(normalizedLabel.Trim(), components);
+        string sourceLabel = string.Join("+", components.Select(component => component.DisplayName));
+        combination = new IsoFieldReinforcementCombination(sourceLabel, components);
         diagnostic = string.Empty;
         return true;
+    }
+
+    public string FormatForDisplay(string? label)
+    {
+        return TryParse(label, out IsoFieldReinforcementCombination? combination, out _)
+            ? string.Join(" + ", combination!.Components.Select(component => component.UserDisplayName))
+            : string.IsNullOrWhiteSpace(label)
+                ? "—"
+                : label!;
     }
 
     private static bool TryParseNumber(string value, out double result)

@@ -15,6 +15,7 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
     private readonly RebarRulePreviewItem item;
     private readonly IsoFieldEngineeringSettings settings;
     private readonly IsoFieldRebarRuleOverrideService overrideService = new();
+    private readonly IsoFieldReinforcementCombinationService combinationService = new();
     private readonly CheckBox includedInput;
     private readonly WpfComboBox reinforcementInput;
     private readonly ContentControl statusHost = new();
@@ -39,17 +40,17 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
         {
             ItemsSource = reinforcementOptions
                 .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(combinationService.FormatForDisplay)
                 .Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .ToArray(),
             IsEditable = true,
             IsTextSearchEnabled = true,
-            Text = currentOverride?.ReinforcementLabel
-                ?? item.Rule.ReinforcementLabel
-                ?? string.Empty,
+            Text = combinationService.FormatForDisplay(
+                currentOverride?.ReinforcementLabel ?? item.Rule.ReinforcementLabel),
             MinWidth = 300,
             MinHeight = TrueBimTheme.ControlHeight32,
             Style = TrueBimStyles.CreateComboBoxStyle(),
-            ToolTip = "Выберите распознанное сочетание или введите значение вида d12s200+d16s200."
+            ToolTip = "Выберите найденное сочетание или укажите диаметр стержней и шаг между ними."
         };
         applyButton = TrueBimUi.CreatePrimaryButton(
             "Применить настройку",
@@ -67,9 +68,9 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
 
         Title = "Настройка зоны армирования";
         Icon = IconFactory.CreateImage(TrueBimIcon.IsoFieldRebar, 32);
-        Width = 620;
+        Width = 700;
         Height = 470;
-        MinWidth = 540;
+        MinWidth = 620;
         MinHeight = 430;
         ResizeMode = ResizeMode.CanResize;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -77,7 +78,7 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
         ApplyTrueBimShell(
             header: TrueBimUi.CreateHeader(
                 Title,
-                "Изменение действует только на текущую рассчитанную раскладку и сбрасывает ранее выполненное сравнение с моделью.",
+            "Изменение относится только к текущему расчёту. После сохранения нужно снова сравнить раскладку с моделью.",
                 TrueBimIcon.Settings),
             commandBar: null,
             body: CreateBody(),
@@ -95,22 +96,22 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
         StackPanel content = new();
         content.Children.Add(CreateValueRow("Зона", item.ZoneName));
         content.Children.Add(CreateValueRow(
-            "Слой",
-            $"{item.Rule.LayerRole?.ToString() ?? "—"} · {item.Rule.PlacementDirection} · {FormatFace(item.Rule.Face)}"));
+            "Карта",
+            $"{FormatLayer(item.Rule.LayerRole)} · направление {FormatDirection(item.Rule.PlacementDirection)} · {FormatFace(item.Rule.Face)}"));
         content.Children.Add(CreateValueRow(
             "Требуется",
             item.Rule.RequiredAreaSquareCentimetersPerMeter.HasValue
                 ? $"{FormatNumber(item.Rule.RequiredAreaSquareCentimetersPerMeter.Value)} см²/м"
                 : "—"));
         content.Children.Add(CreateValueRow(
-            "Расчётное правило",
-            item.Rule.ReinforcementLabel ?? "—"));
+            "Рассчитанное сочетание",
+            combinationService.FormatForDisplay(item.Rule.ReinforcementLabel)));
 
         includedInput.Margin = new Thickness(0, TrueBimTheme.Spacing16, 0, TrueBimTheme.Spacing12);
         content.Children.Add(includedInput);
         content.Children.Add(new TextBlock
         {
-            Text = "Сочетание диаметр/шаг",
+            Text = "Диаметр стержней и шаг",
             Foreground = TrueBimBrushes.TextSecondary,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing4)
@@ -118,7 +119,7 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
         content.Children.Add(reinforcementInput);
         TextBlock hint = new()
         {
-            Text = "Допустимый формат: d12s200 или d12s200+d16s200. Принятая площадь должна быть не меньше требуемой.",
+            Text = "Пример: Ø12, шаг 200 мм. Если нужны два набора стержней, соедините их знаком «+»: Ø12, шаг 200 мм + Ø16, шаг 200 мм. Полученной площади должно хватать по расчёту.",
             Foreground = TrueBimBrushes.TextMuted,
             FontSize = TrueBimTheme.CaptionFontSize,
             TextWrapping = TextWrapping.Wrap,
@@ -179,7 +180,7 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
 
         RebarRule rule = validation.Rule!;
         statusHost.Content = TrueBimUi.CreateInfoBanner(
-            $"Принято {FormatNumber(rule.ProvidedAreaSquareCentimetersPerMeter!.Value)} см²/м · {rule.EffectiveComponents.Count} компонент(а).",
+            $"Принято {FormatNumber(rule.ProvidedAreaSquareCentimetersPerMeter!.Value)} см²/м · наборов стержней: {rule.EffectiveComponents.Count}.",
             TrueBimUiSeverity.Success);
     }
 
@@ -218,7 +219,7 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
         {
             Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
         };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(188) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.Children.Add(new TextBlock
         {
@@ -230,7 +231,8 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
             Text = value,
             Foreground = TrueBimBrushes.TextPrimary,
             FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(TrueBimTheme.Spacing12, 0, 0, 0)
         };
         Grid.SetColumn(valueText, 1);
         row.Children.Add(valueText);
@@ -240,6 +242,30 @@ public sealed class IsoFieldRebarRuleOverrideWindow : TrueBimWindow
     private static string FormatFace(IsoFieldRebarFace? face)
     {
         return face == IsoFieldRebarFace.Bottom ? "низ" : "верх";
+    }
+
+    private static string FormatLayer(IsoFieldLayerRole? role)
+    {
+        return role switch
+        {
+            IsoFieldLayerRole.As1X => "направление X, карта 1",
+            IsoFieldLayerRole.As2X => "направление X, карта 2",
+            IsoFieldLayerRole.As3Y => "направление Y, карта 1",
+            IsoFieldLayerRole.As4Y => "направление Y, карта 2",
+            _ => "карта не определена"
+        };
+    }
+
+    private static string FormatDirection(string direction)
+    {
+        return direction switch
+        {
+            "X" => "X",
+            "Y" => "Y",
+            "AlongHost" => "вдоль конструкции",
+            "Vertical" => "по вертикали",
+            _ => direction
+        };
     }
 
     private static string FormatNumber(double value)

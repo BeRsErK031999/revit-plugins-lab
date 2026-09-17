@@ -22,7 +22,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly FinishScheduleProfileStorage profileStorage;
     private readonly Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory;
     private readonly Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory;
-    private readonly Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory;
+    private readonly Func<
+        FinishScheduleWritePreview,
+        FinishScheduleHeaderMode,
+        FinishScheduleWriteResult>? writeApplyFactory;
     private readonly Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory;
     private readonly ITrueBimLogger logger;
     private readonly FinishScheduleSettingsValidator validator;
@@ -126,7 +129,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         FinishScheduleProfileStorage profileStorage,
         Func<FinishScheduleSettings, FinishSchedulePreviewResult>? previewFactory,
         Func<FinishScheduleSettings, FinishScheduleWritePreview>? writePreviewFactory,
-        Func<FinishScheduleWritePreview, FinishScheduleWriteResult>? writeApplyFactory,
+        Func<
+            FinishScheduleWritePreview,
+            FinishScheduleHeaderMode,
+            FinishScheduleWriteResult>? writeApplyFactory,
         Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory,
         ITrueBimLogger logger)
     {
@@ -482,7 +488,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     {
         StackPanel panel = new();
         panel.Children.Add(CreateDescription(
-            "Показываются только текстовые параметры типа, доступные у всех включённых физических категорий."));
+            "В ведомость выводится состав отделки из текстового параметра типа «• Состав», «Состав» или проектного аналога. Параметр должен быть доступен у всех включённых физических категорий."));
         panel.Children.Add(CreateFieldRow("Источник описания", descriptionInput, isLast: true));
         return panel;
     }
@@ -1029,12 +1035,13 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
             if (writePreview.RequiresTransaction)
             {
+                FinishScheduleWriteConfirmation notice = new FinishScheduleWriteConfirmationBuilder().Build(writePreview);
                 MessageBoxResult confirmation = MessageBox.Show(
                     this,
-                    CreateWriteConfirmation(writePreview),
-                    "Ведомость отделки — подтверждение записи",
+                    notice.Message,
+                    "Ведомость отделки — новая версия",
                     MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning,
+                    notice.ReplacesExistingValues ? MessageBoxImage.Warning : MessageBoxImage.Question,
                     MessageBoxResult.No);
                 if (confirmation != MessageBoxResult.Yes)
                 {
@@ -1044,7 +1051,25 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 }
             }
 
-            FinishScheduleWriteResult result = writeApplyFactory(writePreview);
+            FinishScheduleWriteResult result = writeApplyFactory(
+                writePreview,
+                FinishScheduleHeaderMode.Custom);
+            if (result.CanRetryWithSimplifiedHeader)
+            {
+                FinishScheduleHeaderMode? recoveryMode = ShowHeaderRecoveryDialog();
+                if (recoveryMode.HasValue)
+                {
+                    logger.Warning(
+                        $"Finish Schedule custom header failed; user selected retry with "
+                            + $"HeaderMode={recoveryMode.Value}.");
+                    result = writeApplyFactory(writePreview, recoveryMode.Value);
+                }
+                else
+                {
+                    logger.Info("Finish Schedule header recovery cancelled by user.");
+                }
+            }
+
             bool incompleteCalculation = writePreview.Calculation is not null
                 && FinishGeometryWarningClassifier.HasIncompleteScheduleValues(writePreview.Calculation);
             SetUserNotice(userNoticeBuilder.BuildResult(writePreview, result, settings));
@@ -1071,6 +1096,33 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             footerStatus.Text = "Модель не оставлена в частично обновлённом состоянии.";
             footerStatus.Foreground = TrueBimBrushes.Danger;
         }
+    }
+
+    private static FinishScheduleHeaderMode? ShowHeaderRecoveryDialog()
+    {
+        Autodesk.Revit.UI.TaskDialog dialog = new("Ведомость отделки — оформление шапки")
+        {
+            TitleAutoPrefix = false,
+            MainInstruction = "Revit не смог создать составную шапку спецификации.",
+            MainContent = "Расчёт выполнен, но изменения безопасно отменены. Выберите вариант повторного формирования:",
+            CommonButtons = Autodesk.Revit.UI.TaskDialogCommonButtons.Cancel,
+            FooterText = "Технические подробности сохранены в журнале TrueBIM."
+        };
+        dialog.AddCommandLink(
+            Autodesk.Revit.UI.TaskDialogCommandLinkId.CommandLink1,
+            "Сформировать с простой шапкой (рекомендуется)",
+            "Сохранить название спецификации и стандартные заголовки столбцов Revit без объединённых ячеек.");
+        dialog.AddCommandLink(
+            Autodesk.Revit.UI.TaskDialogCommandLinkId.CommandLink2,
+            "Сформировать без шапки",
+            "Создать спецификацию только с данными: без названия и заголовков столбцов.");
+
+        return dialog.Show() switch
+        {
+            Autodesk.Revit.UI.TaskDialogResult.CommandLink1 => FinishScheduleHeaderMode.Standard,
+            Autodesk.Revit.UI.TaskDialogResult.CommandLink2 => FinishScheduleHeaderMode.None,
+            _ => null
+        };
     }
 
     private void CopyCurrentReport()
@@ -1206,50 +1258,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     {
         lastScheduleId = scheduleId;
         openScheduleButton.IsEnabled = scheduleId.HasValue;
-    }
-
-    private static string CreateWriteConfirmation(FinishScheduleWritePreview preview)
-    {
-        string[] samples = preview.RoomPlan.Changes
-            .Concat(preview.OwnershipPlan.Changes)
-            .Take(3)
-            .Select(change =>
-                $"• {change.Role}, id {change.ElementId}: «{CompactValue(change.PreviousValue)}» → «{CompactValue(change.NewValue)}»")
-            .ToArray();
-        string sampleText = samples.Length == 0
-            ? string.Empty
-            : $"\n\nПримеры изменений:\n{string.Join("\n", samples)}";
-        return "Выбранные параметры помещений будут обновлены. Один комплект параметров поддерживает "
-            + "один активный вариант агрегации.\n\n"
-            + $"Параметры помещений: {preview.RoomPlan.Changes.Count} изменений.\n"
-            + $"Ownership физических элементов: {preview.OwnershipPlan.Changes.Count} изменений.\n\n"
-            + $"Спецификация: {FormatScheduleAction(preview.Schedule.Action)}.\n\n"
-            + "Параметры и управляемая спецификация создаются или обновляются атомарно."
-            + sampleText
-            + "\n\n"
-            + "Продолжить?";
-    }
-
-    private static string FormatScheduleAction(FinishRoomScheduleAction action)
-    {
-        return action switch
-        {
-            FinishRoomScheduleAction.Create => "будет создана",
-            FinishRoomScheduleAction.Update => "будет обновлена",
-            FinishRoomScheduleAction.NoChanges => "уже актуальна",
-            FinishRoomScheduleAction.Blocked => "заблокирована",
-            _ => action.ToString()
-        };
-    }
-
-    private static string CompactValue(string value)
-    {
-        string compact = string.IsNullOrEmpty(value)
-            ? "пусто"
-            : value.Replace("\r\n", " / ").Replace("\n", " / ").Trim();
-        return compact.Length <= 80
-            ? compact
-            : $"{compact.Substring(0, 77)}…";
     }
 
     private void SaveProfile(bool showFeedback)

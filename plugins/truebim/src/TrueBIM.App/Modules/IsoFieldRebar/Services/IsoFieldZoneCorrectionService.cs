@@ -67,7 +67,7 @@ public sealed class IsoFieldZoneCorrectionService
             merge => merge?.PolylineIds?.Distinct(StringComparer.Ordinal).Count() ?? 0);
         List<string> diagnostics = source.Diagnostics.ToList();
         diagnostics.Add(
-            $"Ручная коррекция зон: исключено {excludedCount}; изменён класс у {reclassifiedCount}; "
+            $"Ручное исправление зон: исключено {excludedCount}; изменён диапазон площади у {reclassifiedCount}; "
             + $"объединено групп {merges.Count} (исходных зон {mergedSourceCount}); итоговых зон {merged.Count}.");
 
         return new IsoFieldRecognitionResult(merged, diagnostics, source.EffectiveLegends);
@@ -81,8 +81,8 @@ public sealed class IsoFieldZoneCorrectionService
         }
 
         return band.MinimumValue.HasValue && band.MaximumValue.HasValue
-            ? $"{FormatValue(band.MinimumValue.Value)}–{FormatValue(band.MaximumValue.Value)} см²/м · {band.HexColor}"
-            : $"Макс. уровень {band.Index + 1} · {band.HexColor}";
+            ? $"{FormatValue(band.MinimumValue.Value)}–{FormatValue(band.MaximumValue.Value)} см²/м"
+            : $"Диапазон {band.Index + 1}";
     }
 
     private static Dictionary<string, IsoFieldPolyline> BuildSourceIndex(
@@ -94,7 +94,7 @@ public sealed class IsoFieldZoneCorrectionService
             if (result.ContainsKey(polyline.Id))
             {
                 throw new InvalidOperationException(
-                    $"Нельзя корректировать зоны: идентификатор '{polyline.Id}' встречается несколько раз.");
+                    $"Нельзя исправить зоны: номер «{polyline.Id}» встречается несколько раз.");
             }
 
             result.Add(polyline.Id, polyline);
@@ -112,7 +112,7 @@ public sealed class IsoFieldZoneCorrectionService
         {
             if (correction is null || string.IsNullOrWhiteSpace(correction.PolylineId))
             {
-                throw new InvalidOperationException("Коррекция зоны должна содержать идентификатор.");
+                throw new InvalidOperationException("Не удалось определить, какую зону нужно исправить.");
             }
 
             if (!sourceById.ContainsKey(correction.PolylineId))
@@ -124,7 +124,7 @@ public sealed class IsoFieldZoneCorrectionService
             if (result.ContainsKey(correction.PolylineId))
             {
                 throw new InvalidOperationException(
-                    $"Для зоны '{correction.PolylineId}' задано несколько коррекций.");
+                    $"Для зоны «{correction.PolylineId}» задано несколько разных исправлений.");
             }
 
             result.Add(correction.PolylineId, correction);
@@ -149,7 +149,7 @@ public sealed class IsoFieldZoneCorrectionService
         if (band is null)
         {
             throw new InvalidOperationException(
-                $"Для зоны '{polyline.Id}' не найден класс шкалы {requestedBandIndex.Value + 1}.");
+                $"Для зоны «{polyline.Id}» не найден диапазон площади № {requestedBandIndex.Value + 1}.");
         }
 
         return polyline with
@@ -268,7 +268,7 @@ public sealed class IsoFieldZoneCorrectionService
         if (members.Any(member => member.LayerRole != first.LayerRole))
         {
             throw new InvalidOperationException(
-                "Объединять можно только зоны одного расчётного слоя.");
+                "Объединять можно только зоны с одной расчётной карты.");
         }
 
         bool sameClass = members.All(member => member.LegendBandIndex == first.LegendBandIndex)
@@ -280,7 +280,7 @@ public sealed class IsoFieldZoneCorrectionService
         if (!sameClass)
         {
             throw new InvalidOperationException(
-                "Перед объединением назначьте выбранным зонам одинаковый класс.");
+                "Перед объединением назначьте выбранным зонам одинаковый диапазон площади.");
         }
     }
 

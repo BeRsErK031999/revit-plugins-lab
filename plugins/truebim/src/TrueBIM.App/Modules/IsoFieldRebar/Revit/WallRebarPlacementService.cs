@@ -30,13 +30,13 @@ public sealed class WallRebarPlacementService
 
         if (!preview.IsEngineeringPreview || preview.EngineeringSettings is null)
         {
-            throw new InvalidOperationException("Для раскладки стены нужен валидный инженерный preview.");
+            throw new InvalidOperationException("Сначала рассчитайте раскладку арматуры для стены без ошибок.");
         }
 
         if (preview.ActiveItems.Any(item =>
             !string.Equals(item.Rule.HostKind, WallHostKind, StringComparison.Ordinal)))
         {
-            throw new InvalidOperationException("Инженерная раскладка стены содержит правило другого типа host.");
+            throw new InvalidOperationException("В раскладке стены найдено правило для другого типа конструкции. Повторите расчёт.");
         }
 
         if (!IsFinite(wallThicknessFeet) || wallThicknessFeet <= 0)
@@ -78,7 +78,7 @@ public sealed class WallRebarPlacementService
         if ((wallThicknessFeet * MillimetersPerFoot) <= requiredThicknessMillimeters)
         {
             throw new InvalidOperationException(
-                $"Толщины стены недостаточно для защитного слоя и разнесения четырёх слоёв. Нужно больше {requiredThicknessMillimeters:0.#} мм.");
+                $"Толщины стены недостаточно для заданных отступов и четырёх рядов арматуры. Нужно больше {requiredThicknessMillimeters:0.#} мм.");
         }
 
         Dictionary<string, RebarRulePreviewItem> itemsByZone = preview.Items
@@ -122,7 +122,7 @@ public sealed class WallRebarPlacementService
             .ToArray();
         if (wallItems.Length == 0)
         {
-            throw new InvalidOperationException("Для стены нет валидных правил армирования.");
+            throw new InvalidOperationException("Для стены нет зон с рассчитанной раскладкой без ошибок.");
         }
 
         bool vertical = IsVertical(wallItems[0].Rule.PlacementDirection);
@@ -169,7 +169,7 @@ public sealed class WallRebarPlacementService
 
         if (frame.Center is null || frame.Axis is null || frame.Normal is null)
         {
-            throw new InvalidOperationException("Геометрия стены должна содержать центр, ось и нормаль.");
+            throw new InvalidOperationException("Не удалось полностью определить положение стены. Выберите её заново.");
         }
 
         double[] values =
@@ -188,7 +188,7 @@ public sealed class WallRebarPlacementService
         ];
         if (values.Any(value => double.IsNaN(value) || double.IsInfinity(value)))
         {
-            throw new InvalidOperationException("Геометрия стены должна содержать конечные числа.");
+            throw new InvalidOperationException("Положение стены определено неверно. Выберите её заново.");
         }
 
         if (Length(frame.Axis) < 1e-9 || Length(frame.Normal) < 1e-9)
@@ -198,7 +198,7 @@ public sealed class WallRebarPlacementService
 
         if (frame.LengthFeet < MinimumTestLengthFeet || frame.HeightFeet < MinimumTestLengthFeet)
         {
-            throw new InvalidOperationException("Геометрия стены слишком мала для пробного армирования.");
+            throw new InvalidOperationException("Размер стены слишком мал для пробного армирования.");
         }
     }
 

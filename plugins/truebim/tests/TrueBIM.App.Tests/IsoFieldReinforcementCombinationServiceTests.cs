@@ -24,6 +24,22 @@ public sealed class IsoFieldReinforcementCombinationServiceTests
         Assert.False(combination.Components[1].IsBase);
     }
 
+    [Fact]
+    public void TryParse_AcceptsHumanReadableCombination()
+    {
+        bool parsed = service.TryParse(
+            "Ø12, шаг 200 мм + Ø16, шаг 200 мм",
+            out IsoFieldReinforcementCombination? combination,
+            out string diagnostic);
+
+        Assert.True(parsed, diagnostic);
+        Assert.NotNull(combination);
+        Assert.Equal("d12s200+d16s200", combination.SourceLabel);
+        Assert.Equal(
+            "Ø12, шаг 200 мм + Ø16, шаг 200 мм",
+            service.FormatForDisplay(combination.SourceLabel));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

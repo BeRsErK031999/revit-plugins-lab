@@ -155,7 +155,10 @@ public sealed record FinishElementCandidateSnapshot(
     long ElementId,
     long TypeId,
     FinishPhysicalCategory PhysicalCategory,
-    AxisAlignedBox3D? Bounds);
+    AxisAlignedBox3D? Bounds)
+{
+    public long? LevelId { get; init; }
+}
 
 public sealed record FinishTypeSnapshot(
     long TypeId,

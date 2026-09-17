@@ -36,7 +36,7 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
                 "Откуда взять перемычки",
                 "Шаг 1 из 4. Выберите, где искать исходные перемычки. Следующие действия показаны ниже.",
                 TrueBimIcon.Lintels),
-            commandBar: null,
+            commandBar: CreateCommandBar(),
             body: CreateBody(),
             status: null,
             footer: CreateFooter());
@@ -45,6 +45,28 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
     }
 
     public LintelWizardSourceMode SelectedMode => selection.SelectedMode;
+
+    private UIElement CreateCommandBar()
+    {
+        Button guideButton = TrueBimUi.CreateSecondaryButton(
+            "Методичка",
+            TrueBimIcon.Help,
+            (_, _) => ShowGuide(),
+            minWidth: 135);
+        guideButton.ToolTip = "Открыть простую пошаговую методичку: источники, типоразмеры, сборки, загружаемые .rfa, виды и PNG.";
+        AutomationProperties.SetName(guideButton, "Открыть методичку по перемычкам");
+        AutomationProperties.SetHelpText(guideButton, "Полный пошаговый сценарий работы с модулем «Перемычки».");
+        return TrueBimUi.CreateCommandBar(guideButton);
+    }
+
+    private void ShowGuide()
+    {
+        LintelGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
+    }
 
     private UIElement CreateBody()
     {
@@ -55,7 +77,7 @@ public sealed class LintelSourceModeWindow : TrueBimWindow
         content.Children.Add(banner);
 
         Border nextSteps = TrueBimUi.CreateInfoBanner(
-            "Дальше: шаг 2 — отметьте один или несколько типоразмеров; шаг 3 — создайте для них сборки; шаг 4 — выберите файл семейства рамки .rfa и создайте оформленные виды 1:10.");
+            "Дальше: шаг 2 — отметьте один или несколько типоразмеров; шаг 3 — создайте для них сборки; шаг 4 — выберите файлы семейств рамки и высотной аннотации .rfa и создайте оформленные виды 1:10.");
         nextSteps.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing16);
         content.Children.Add(nextSteps);
 

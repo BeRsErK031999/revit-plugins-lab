@@ -229,7 +229,7 @@ internal static class TrueBimCommandActions
             TaskDialog.Show(
                 "Свернуть ВРС",
                 result.Succeeded
-                    ? $"Обновлена спецификация: {result.ScheduleName}\nСкрыто столбцов: {result.HiddenColumnCount}\nОставлено видимыми: {result.VisibleColumnCount}"
+                    ? $"Обновлена спецификация: {result.ScheduleName}\nСкрыто столбцов: {result.HiddenColumnCount}\nПоказано столбцов: {result.VisibleColumnCount}\nБез изменения: {result.UnchangedColumnCount}"
                     : result.Message);
         }
         catch (Exception exception)

@@ -41,7 +41,6 @@ public static class LintelAssemblyCreationGate
             throw new ArgumentNullException(nameof(selectedTypes));
         }
 
-        return selectedTypes.Count > 0
-            && selectedTypes.All(type => type.HasExistingAssembly);
+        return selectedTypes.Any(type => type.HasExistingAssembly);
     }
 }

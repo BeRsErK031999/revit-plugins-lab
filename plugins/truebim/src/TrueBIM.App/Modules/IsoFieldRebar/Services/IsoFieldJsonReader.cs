@@ -20,31 +20,31 @@ public sealed class IsoFieldJsonReader : IIsoFieldJsonReader
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            throw new ArgumentException("JSON file path is required.", nameof(filePath));
+            throw new ArgumentException("Не указан путь к файлу с готовыми зонами.", nameof(filePath));
         }
 
         string json = File.ReadAllText(filePath, Encoding.UTF8);
         if (string.IsNullOrWhiteSpace(json))
         {
-            throw new InvalidDataException("IsoField recognition JSON is empty.");
+            throw new InvalidDataException("Файл с готовыми зонами пуст.");
         }
 
         RecognitionContract contract;
         try
         {
             contract = JsonSerializer.Deserialize<RecognitionContract>(json, JsonOptions)
-                ?? throw new InvalidDataException("IsoField recognition JSON root object is missing.");
+                ?? throw new InvalidDataException("В файле не найдены данные о готовых зонах.");
         }
         catch (JsonException exception)
         {
-            throw new InvalidDataException("IsoField recognition JSON is not valid.", exception);
+            throw new InvalidDataException("Не удалось прочитать файл с готовыми зонами. Проверьте, что выбран правильный файл.", exception);
         }
 
         ValidateSchemaVersion(contract.SchemaVersion);
 
         if (contract.Polylines is null)
         {
-            throw new InvalidDataException("IsoField recognition JSON must contain a polylines array.");
+            throw new InvalidDataException("В файле отсутствует список границ зон.");
         }
 
         List<IsoFieldPolyline> polylines = new();
@@ -65,7 +65,7 @@ public sealed class IsoFieldJsonReader : IIsoFieldJsonReader
     {
         if (!string.Equals(schemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
         {
-            throw new InvalidDataException($"Unsupported IsoField recognition schemaVersion '{schemaVersion ?? "<missing>"}'. Expected '{SupportedSchemaVersion}'.");
+            throw new InvalidDataException($"Версия файла с готовыми зонами не поддерживается. Нужна версия {SupportedSchemaVersion}.");
         }
     }
 
@@ -74,14 +74,14 @@ public sealed class IsoFieldJsonReader : IIsoFieldJsonReader
         string polylineId = (polyline.Id ?? string.Empty).Trim();
         if (polylineId.Length == 0)
         {
-            throw new InvalidDataException($"IsoField polyline at index {index} must contain a non-empty id.");
+            throw new InvalidDataException($"У зоны № {index + 1} нет обозначения.");
         }
 
         List<PointContract>? pointContracts = polyline.Points;
 
         if (pointContracts is null || pointContracts.Count < 2)
         {
-            throw new InvalidDataException($"IsoField polyline '{polylineId}' must contain at least two points.");
+            throw new InvalidDataException($"Граница зоны «{polylineId}» должна содержать не менее двух точек.");
         }
 
         List<IsoFieldPoint> points = new();
@@ -115,19 +115,19 @@ public sealed class IsoFieldJsonReader : IIsoFieldJsonReader
         }
 
         throw new InvalidDataException(
-            $"IsoField polyline '{polylineId}' contains unsupported layerRole '{layerRole}'.");
+            $"Для зоны «{polylineId}» указано неизвестное назначение карты «{layerRole}».");
     }
 
     private static IsoFieldPoint MapPoint(string polylineId, PointContract point, int pointIndex)
     {
         if (!point.X.HasValue || !point.Y.HasValue)
         {
-            throw new InvalidDataException($"IsoField point {pointIndex} in polyline '{polylineId}' must contain x and y.");
+            throw new InvalidDataException($"Точка № {pointIndex + 1} границы зоны «{polylineId}» задана не полностью.");
         }
 
         if (!IsFinite(point.X.Value) || !IsFinite(point.Y.Value))
         {
-            throw new InvalidDataException($"IsoField point {pointIndex} in polyline '{polylineId}' must contain finite coordinates.");
+            throw new InvalidDataException($"Точка № {pointIndex + 1} границы зоны «{polylineId}» задана неверно.");
         }
 
         return new IsoFieldPoint(point.X.Value, point.Y.Value);

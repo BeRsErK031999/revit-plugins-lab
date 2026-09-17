@@ -65,7 +65,7 @@ public sealed class IsoFieldSourceSetService
 
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            throw new ArgumentException("Source file path is required.", nameof(filePath));
+            throw new ArgumentException("Не указан путь к выбранному файлу.", nameof(filePath));
         }
 
         bool found = false;
@@ -92,7 +92,7 @@ public sealed class IsoFieldSourceSetService
 
         if (!found)
         {
-            throw new ArgumentException("Source file is not part of the selected set.", nameof(filePath));
+            throw new ArgumentException("Этот файл не входит в выбранный комплект карт.", nameof(filePath));
         }
 
         return new IsoFieldSourceSet(files, sourceSet.LayerMappings);

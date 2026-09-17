@@ -1,9 +1,9 @@
-using System.Windows.Interop;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.OpeningViews.UI;
 using TrueBIM.App.Services.Logging;
+using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
 
@@ -18,12 +18,10 @@ public sealed class OpeningViewsGuideCommand : IExternalCommand
         try
         {
             OpeningViewsGuideWindow window = new();
-            new WindowInteropHelper(window)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
             logger.Info("Opening Views guide requested from the ribbon.");
-            window.ShowDialog();
+            RevitModalWindowService.ShowDialog(
+                window,
+                commandData.Application.MainWindowHandle);
             return Result.Succeeded;
         }
         catch (Exception exception)

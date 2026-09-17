@@ -69,6 +69,16 @@ public sealed class LintelDiagnosticReportBuilderTests
         Assert.Contains("не является", result.BuildDetails(), StringComparison.CurrentCultureIgnoreCase);
     }
 
+    [Fact]
+    public void BuildSummary_NamesEntireProjectSource()
+    {
+        LintelDiagnosticResult result = builder.Build(
+            LintelDiagnosticSource.EntireProject,
+            [CreateInstance(60, 400, false, [])]);
+
+        Assert.Contains("Источник: весь проект", result.BuildSummary(), StringComparison.Ordinal);
+    }
+
     private static LintelInstanceSnapshot CreateInstance(
         long elementId,
         long typeId,

@@ -14,7 +14,7 @@ public sealed class IsoFieldHostElementTests
             "Стена",
             "Basic Wall 200");
 
-        Assert.Equal("Стена: Basic Wall 200 (ID 12345)", host.DisplayName);
+        Assert.Equal("Стена: Basic Wall 200 (элемент № 12345)", host.DisplayName);
     }
 
     [Fact]
@@ -26,6 +26,6 @@ public sealed class IsoFieldHostElementTests
             "Плита",
             string.Empty);
 
-        Assert.Equal("Плита (ID 67890)", host.DisplayName);
+        Assert.Equal("Плита (элемент № 67890)", host.DisplayName);
     }
 }

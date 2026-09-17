@@ -20,7 +20,7 @@ public sealed record IsoFieldLayerMapping(
 {
     public static IsoFieldLayerMapping CreateDefault(IsoFieldLayerRole role)
     {
-        return new IsoFieldLayerMapping(role, ResolveDirection(role), IsoFieldRebarFace.Unconfirmed);
+        return new IsoFieldLayerMapping(role, ResolveDirection(role), ResolveDefaultFace(role));
     }
 
     public static IsoFieldRebarDirection ResolveDirection(IsoFieldLayerRole role)
@@ -28,5 +28,12 @@ public sealed record IsoFieldLayerMapping(
         return role is IsoFieldLayerRole.As1X or IsoFieldLayerRole.As2X
             ? IsoFieldRebarDirection.X
             : IsoFieldRebarDirection.Y;
+    }
+
+    public static IsoFieldRebarFace ResolveDefaultFace(IsoFieldLayerRole role)
+    {
+        return role is IsoFieldLayerRole.As1X or IsoFieldLayerRole.As3Y
+            ? IsoFieldRebarFace.Bottom
+            : IsoFieldRebarFace.Top;
     }
 }

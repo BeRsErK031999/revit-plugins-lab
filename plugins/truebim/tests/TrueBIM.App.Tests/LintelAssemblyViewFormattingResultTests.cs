@@ -19,6 +19,7 @@ public sealed class LintelAssemblyViewFormattingResultTests
         Assert.True(result.ModelChanged);
         Assert.Equal(2, result.CreatedAnnotationCount);
         Assert.Contains("создано аннотаций — 2", result.BuildSummary());
+        Assert.Contains("аннотация высотной отметки — не создан", result.BuildSummary());
         Assert.Contains("Высотная отметка недоступна", result.BuildSummary());
     }
 

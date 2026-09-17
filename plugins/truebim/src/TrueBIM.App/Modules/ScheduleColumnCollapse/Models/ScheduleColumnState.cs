@@ -5,4 +5,6 @@ public sealed record ScheduleColumnState(
     string ColumnHeading,
     bool IsHidden,
     bool CanHide,
-    IReadOnlyList<string> CellTexts);
+    IReadOnlyList<string> CellTexts,
+    bool IsNumeric = false,
+    IReadOnlyList<double?>? ParsedNumericValues = null);

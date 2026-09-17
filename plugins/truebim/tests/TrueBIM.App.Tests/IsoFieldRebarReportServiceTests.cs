@@ -65,12 +65,12 @@ public sealed class IsoFieldRebarReportServiceTests
         byte[] csvBytes = File.ReadAllBytes(result.CsvPath);
         Assert.Equal([0xEF, 0xBB, 0xBF], csvBytes.Take(3).ToArray());
         string csv = Encoding.UTF8.GetString(csvBytes, 3, csvBytes.Length - 3);
-        Assert.Contains("МЕТАДАННЫЕ", csv, StringComparison.Ordinal);
+        Assert.Contains("ОБЩИЕ СВЕДЕНИЯ", csv, StringComparison.Ordinal);
         Assert.Contains("ИСТОЧНИКИ", csv, StringComparison.Ordinal);
         Assert.Contains("ЗОНЫ", csv, StringComparison.Ordinal);
-        Assert.Contains("ИТОГИ ПО СЛОЯМ", csv, StringComparison.Ordinal);
-        Assert.Contains("КОНТРОЛЬ КАЧЕСТВА", csv, StringComparison.Ordinal);
-        Assert.Contains("ПОКРЫТИЕ СЛОЁВ", csv, StringComparison.Ordinal);
+        Assert.Contains("ИТОГИ ПО КАРТАМ", csv, StringComparison.Ordinal);
+        Assert.Contains("ПРОВЕРКА ЗОН И АРМАТУРЫ", csv, StringComparison.Ordinal);
+        Assert.Contains("ПОКРЫТИЕ ПО КАРТАМ", csv, StringComparison.Ordinal);
         Assert.Contains("zone-a", csv, StringComparison.Ordinal);
     }
 
@@ -150,8 +150,8 @@ public sealed class IsoFieldRebarReportServiceTests
         Assert.Equal([101, 102, 103], report.ApplicationSummary.CreatedElementIds);
         Assert.Equal([201, 202], report.ApplicationSummary.DeletedElementIds);
         string csv = service.FormatCsv(report);
-        Assert.Contains("applicationApplied;Да", csv, StringComparison.Ordinal);
-        Assert.Contains("applicationCreatedElementIds;101,102,103", csv, StringComparison.Ordinal);
+        Assert.Contains("Изменения применены;Да", csv, StringComparison.Ordinal);
+        Assert.Contains("Номера созданных элементов;101,102,103", csv, StringComparison.Ordinal);
     }
 
     [Fact]

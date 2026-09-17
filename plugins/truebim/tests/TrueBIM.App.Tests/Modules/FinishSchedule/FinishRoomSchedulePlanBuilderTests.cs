@@ -7,6 +7,18 @@ namespace TrueBIM.App.Tests.Modules.FinishSchedule;
 public sealed class FinishRoomSchedulePlanBuilderTests
 {
     [Fact]
+    public void Build_SelectedRooms_RemainTheVersionMembershipAfterRenaming()
+    {
+        FinishRoomCandidateSnapshot second = new(200, 10, 20, true,
+            new AxisAlignedBox3D(0, 0, 0, 1, 1, 1), null);
+        FinishRoomSchedulePlan plan = new FinishRoomSchedulePlanBuilder().Build(
+            Settings(), [second, Room()]);
+
+        Assert.Equal(new long[] { 100, 200 }, plan.RoomIds);
+        Assert.Equal(new long[] { 100, 200 }, plan.WithName("Следующий выпуск").RoomIds);
+    }
+
+    [Fact]
     public void Build_AllCategories_UsesSpecificationOrderHeadingsAndWidths()
     {
         FinishRoomSchedulePlan plan = new FinishRoomSchedulePlanBuilder().Build(

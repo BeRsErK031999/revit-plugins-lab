@@ -21,8 +21,8 @@ public sealed class FinishScheduleDiagnosticGuidanceBuilderTests
         Assert.Contains(guidance, item => item.Contains(
             "проблемных элементов — 2; затронуто помещений — 2",
             StringComparison.Ordinal));
-        Assert.Contains(guidance, item => item.Contains("верхнюю границу помещений", StringComparison.Ordinal));
-        Assert.Contains(guidance, item => item.Contains("делить его по помещениям не требуется", StringComparison.Ordinal));
+        Assert.Contains(guidance, item => item.Contains("расположение над помещением", StringComparison.Ordinal));
+        Assert.Contains(guidance, item => item.Contains("Полная площадь элемента учитывается один раз", StringComparison.Ordinal));
     }
 
     [Fact]

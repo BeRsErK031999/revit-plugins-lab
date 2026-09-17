@@ -114,7 +114,10 @@ public sealed class FinishElementCollector
                     RevitElementIds.GetValue(element.Id),
                     RevitElementIds.GetValue(element.GetTypeId()),
                     physicalCategory,
-                    ReadBounds(element)));
+                    ReadBounds(element))
+                {
+                    LevelId = RevitElementIds.GetValue(element.LevelId)
+                });
             }
             catch (Exception exception)
             {

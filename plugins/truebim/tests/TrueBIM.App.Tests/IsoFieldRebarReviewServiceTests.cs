@@ -17,10 +17,10 @@ public sealed class IsoFieldRebarReviewServiceTests
 
         IsoFieldRebarReviewRow row = Assert.Single(rows);
         Assert.Equal(IsoFieldRebarReviewStatus.NotCompared, row.Status);
-        Assert.Equal("As1X", row.LayerText);
+        Assert.Equal("X, карта 1", row.LayerText);
         Assert.Equal("91%", row.ConfidenceText);
         Assert.Equal("12", row.EstimatedBarCountText);
-        Assert.Contains("Ø12/200", row.ReinforcementText, StringComparison.Ordinal);
+        Assert.Contains("Ø12, шаг 200 мм", row.ReinforcementText, StringComparison.Ordinal);
         Assert.Contains("8 → 9", row.AreaText, StringComparison.Ordinal);
     }
 
@@ -46,7 +46,7 @@ public sealed class IsoFieldRebarReviewServiceTests
         Assert.Equal(1, row.UpdateCount);
         Assert.Equal(2, row.DeleteCount);
         Assert.Equal(1, row.UnchangedCount);
-        Assert.Equal("+1 · ~1 · −2 · =1", row.ChangeSummary);
+        Assert.Equal("добавить 1 · изменить 1 · удалить 2 · оставить 1", row.ChangeSummary);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public sealed class IsoFieldRebarReviewServiceTests
             IsoFieldLayerRole.As1X,
             IsoFieldRebarReviewStatus.Update,
             "X · низ",
-            "Ø12/200",
+            "Ø12, шаг 200 мм",
             "8 → 9 см²/м",
             12,
             0.9,

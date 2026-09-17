@@ -73,10 +73,9 @@ public static class LintelWizardSourceCatalog
             new LintelWizardSourceOption(
                 LintelWizardSourceMode.EntireProject,
                 "Весь проект",
-                "Найти семейства перемычек во всём открытом проекте.",
-                false,
-                "Поиск по всему проекту пока не подключён.",
-                "Пока недоступно"),
+                "Найти семейства перемычек во всём открытом проекте по имени семейства, типоразмера или экземпляра.",
+                true,
+                null),
             new LintelWizardSourceOption(
                 LintelWizardSourceMode.ExistingItems,
                 "Результаты, созданные TrueBIM",
