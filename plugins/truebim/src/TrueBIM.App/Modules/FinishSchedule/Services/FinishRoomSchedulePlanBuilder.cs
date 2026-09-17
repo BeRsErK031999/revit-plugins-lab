@@ -59,7 +59,8 @@ public sealed class FinishRoomSchedulePlanBuilder
             columns,
             scopeFilter,
             settingsHash,
-            parameterIdentities);
+            parameterIdentities,
+            selectedRooms.Select(room => room.ElementId));
     }
 
     private static void AddCategory(

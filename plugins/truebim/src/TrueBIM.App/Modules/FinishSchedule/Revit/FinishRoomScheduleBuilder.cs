@@ -39,15 +39,21 @@ public sealed class FinishRoomScheduleBuilder
             throw new ArgumentNullException(nameof(plan));
         }
 
+        string? appearanceIssue = FinishScheduleAppearanceTemplateService.Validate(document);
+        if (appearanceIssue is not null)
+        {
+            return Conflict(plan, appearanceIssue, FinishWriteIssueCode.AppearanceTemplateInvalid);
+        }
+
         List<ViewSchedule> schedules = CollectSchedules(document);
         List<ViewSchedule> legacy = schedules
             .Where(IsRoomSchedule)
             .Where(metadataService.IsManaged)
-            .Where(schedule => !metadataService.IsSnapshot(schedule))
+            .Where(schedule => !metadataService.IsRoomBackedVersion(schedule))
             .ToList();
         foreach (ViewSchedule schedule in legacy)
         {
-            string? issue = FinishScheduleSnapshotService.Validate(schedule);
+            string? issue = FinishRoomVersionService.Validate(schedule, metadataService.IsTextSnapshot(schedule));
             if (issue is not null)
             {
                 return Conflict(plan, issue);
@@ -70,7 +76,7 @@ public sealed class FinishRoomScheduleBuilder
         long[] currentIds = CollectSchedules(document)
             .Where(IsRoomSchedule)
             .Where(metadataService.IsManaged)
-            .Where(schedule => !metadataService.IsSnapshot(schedule))
+            .Where(schedule => !metadataService.IsRoomBackedVersion(schedule))
             .Select(schedule => RevitElementIds.GetValue(schedule.Id))
             .OrderBy(id => id)
             .ToArray();
@@ -91,7 +97,7 @@ public sealed class FinishRoomScheduleBuilder
             foreach (long id in currentIds)
             {
                 ViewSchedule schedule = GetManagedSchedule(document, id);
-                new FinishScheduleSnapshotService().Freeze(schedule);
+                new FinishRoomVersionService().Preserve(schedule, metadataService.IsTextSnapshot(schedule));
                 metadataService.MarkAsSnapshot(schedule);
             }
 
@@ -195,8 +201,11 @@ public sealed class FinishRoomScheduleBuilder
                 ? CreateSchedule(document)
                 : GetManagedSchedule(document, preflight.ScheduleId!.Value);
             schedule.Name = plan.ScheduleName;
+            FinishScheduleAppearanceTemplateService.Apply(schedule);
             ConfigureDefinition(document, schedule, plan, headerMode);
             document.Regenerate();
+            schedule.RefreshData();
+            new FinishRoomVersionService().Preserve(schedule, textSnapshot: false, plan.RoomIds);
             FinishTransactionStatus.EnsureCommitted(transaction);
             return schedule;
         }
@@ -221,7 +230,6 @@ public sealed class FinishRoomScheduleBuilder
                 ?? throw new InvalidOperationException(
                     "Созданная ведомость отделки недоступна для оформления.");
             ConfigureTable(document, schedule, plan, headerMode);
-            new FinishScheduleSnapshotService().Freeze(schedule);
             metadataService.Write(schedule, plan);
             FinishTransactionStatus.EnsureCommitted(transaction);
             ViewSchedule committedSchedule = document.GetElement(
@@ -1219,7 +1227,10 @@ public sealed class FinishRoomScheduleBuilder
         throw new FormatException($"«{value}» не является числовым значением фильтра.");
     }
 
-    private static FinishRoomSchedulePreflight Conflict(FinishRoomSchedulePlan plan, string message)
+    private static FinishRoomSchedulePreflight Conflict(
+        FinishRoomSchedulePlan plan,
+        string message,
+        FinishWriteIssueCode code = FinishWriteIssueCode.ScheduleNameConflict)
     {
         return new FinishRoomSchedulePreflight(
             plan,
@@ -1227,7 +1238,7 @@ public sealed class FinishRoomScheduleBuilder
             null,
             [
                 new FinishWriteIssue(
-                    FinishWriteIssueCode.ScheduleNameConflict,
+                    code,
                     FinishWriteIssueSeverity.Critical,
                     message)
             ]);

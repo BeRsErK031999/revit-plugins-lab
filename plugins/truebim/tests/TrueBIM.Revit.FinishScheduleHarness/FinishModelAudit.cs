@@ -217,10 +217,10 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
     private static bool HasCeilingRow(ViewSchedule schedule, FinishAggregatedGroup group)
     {
         using TableData table = schedule.GetTableData();
-        using TableSectionData section = table.GetSectionData(SectionType.Header);
+        using TableSectionData section = table.GetSectionData(SectionType.Body);
         for (int row = section.FirstRowNumber; row <= section.LastRowNumber; row++)
-            if (schedule.GetCellText(SectionType.Header, row, 0) == group.Output.RoomList
-                && Normalize(schedule.GetCellText(SectionType.Header, row, 4)) == Normalize(group.Output.Ceilings!.AreaText))
+            if (schedule.GetCellText(SectionType.Body, row, 0) == group.Output.RoomList
+                && Normalize(schedule.GetCellText(SectionType.Body, row, 4)) == Normalize(group.Output.Ceilings!.AreaText))
                 return true;
         return false;
     }

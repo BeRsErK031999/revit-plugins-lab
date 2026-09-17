@@ -52,7 +52,8 @@ public sealed class FinishRoomSchedulePlan
         IEnumerable<FinishRoomScheduleColumn> columns,
         FinishRoomScheduleScopeFilter scopeFilter,
         string settingsHash,
-        IEnumerable<string> parameterIdentities)
+        IEnumerable<string> parameterIdentities,
+        IEnumerable<long>? roomIds = null)
     {
         if (string.IsNullOrWhiteSpace(scheduleName))
         {
@@ -68,6 +69,7 @@ public sealed class FinishRoomSchedulePlan
         Columns = (columns ?? throw new ArgumentNullException(nameof(columns))).ToArray();
         ScopeFilter = scopeFilter ?? throw new ArgumentNullException(nameof(scopeFilter));
         SettingsHash = settingsHash;
+        RoomIds = roomIds?.Distinct().OrderBy(id => id).ToArray();
         ParameterIdentities = (parameterIdentities ?? throw new ArgumentNullException(nameof(parameterIdentities)))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(identity => identity, StringComparer.Ordinal)
@@ -89,9 +91,11 @@ public sealed class FinishRoomSchedulePlan
 
     public IReadOnlyList<string> ParameterIdentities { get; }
 
+    public IReadOnlyList<long>? RoomIds { get; }
+
     public FinishRoomSchedulePlan WithName(string name)
     {
-        return new FinishRoomSchedulePlan(name, Columns, ScopeFilter, SettingsHash, ParameterIdentities);
+        return new FinishRoomSchedulePlan(name, Columns, ScopeFilter, SettingsHash, ParameterIdentities, RoomIds);
     }
 }
 

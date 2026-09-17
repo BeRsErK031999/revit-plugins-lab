@@ -3,7 +3,7 @@ using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 
-/// <summary>Фиксирует отображаемую таблицу в текстовых ячейках того же вида.</summary>
+/// <summary>Читает оформление прежних текстовых архивов. Freeze оставлен для регрессионных фикстур.</summary>
 public sealed class FinishScheduleSnapshotService
 {
     public static string? Validate(ViewSchedule schedule)
@@ -81,14 +81,32 @@ public sealed class FinishScheduleSnapshotService
         }
     }
 
+    internal static TableSnapshot CaptureHeader(ViewSchedule schedule, int rowCount)
+    {
+        TableSnapshot snapshot = new();
+        try
+        {
+            using TableData table = schedule.GetTableData();
+            using TableSectionData body = table.GetSectionData(SectionType.Body);
+            using TableSectionData header = table.GetSectionData(SectionType.Header);
+            snapshot.Widths = Enumerable.Range(body.FirstColumnNumber, body.NumberOfColumns)
+                .Select(body.GetColumnWidth).ToArray();
+            CaptureSection(schedule, header, SectionType.Header, snapshot, body.NumberOfColumns, rowCount);
+            return snapshot;
+        }
+        catch { snapshot.Dispose(); throw; }
+    }
+
     private static void CaptureSection(
         ViewSchedule schedule,
         TableSectionData section,
         SectionType type,
         TableSnapshot snapshot,
-        int columnCount)
+        int columnCount,
+        int? rowCount = null)
     {
-        for (int row = section.FirstRowNumber; row <= section.LastRowNumber; row++)
+        int lastRow = rowCount.HasValue ? section.FirstRowNumber + rowCount.Value - 1 : section.LastRowNumber;
+        for (int row = section.FirstRowNumber; row <= lastRow; row++)
         {
             if (type == SectionType.Body && Enumerable.Range(section.FirstColumnNumber, section.NumberOfColumns)
                     .All(column => string.IsNullOrWhiteSpace(schedule.GetCellText(type, row, column))
@@ -218,7 +236,7 @@ public sealed class FinishScheduleSnapshotService
         definition.ShowGrandTotal = false;
     }
 
-    private static void WriteSnapshot(ViewSchedule schedule, TableSnapshot snapshot)
+    internal static void WriteSnapshot(ViewSchedule schedule, TableSnapshot snapshot)
     {
         using TableData table = schedule.GetTableData();
         using TableSectionData header = table.GetSectionData(SectionType.Header);
@@ -303,10 +321,10 @@ public sealed class FinishScheduleSnapshotService
 
     private static string NormalizeLineEndings(string value) => value.Replace("\r\n", "\n").Replace('\r', '\n');
 
-    private sealed record CellSnapshot(int Top, int Left, int Bottom, int Right, string Text, TableCellStyle Style);
-    private sealed record RowSnapshot(double Height, List<CellSnapshot> Cells);
+    internal sealed record CellSnapshot(int Top, int Left, int Bottom, int Right, string Text, TableCellStyle Style);
+    internal sealed record RowSnapshot(double Height, List<CellSnapshot> Cells);
 
-    private sealed class TableSnapshot : IDisposable
+    internal sealed class TableSnapshot : IDisposable
     {
         public double[] Widths { get; set; } = [];
         public List<RowSnapshot> Rows { get; } = [];

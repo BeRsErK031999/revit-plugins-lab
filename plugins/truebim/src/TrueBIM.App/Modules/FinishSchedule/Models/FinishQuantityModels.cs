@@ -106,7 +106,8 @@ public sealed class FinishQuantityResult
     public FinishQuantityResult(
         IEnumerable<FinishOccurrence> occurrences,
         IEnumerable<FinishGeometryWarning> warnings,
-        FinishGeometryCacheMetrics? cacheMetrics = null)
+        FinishGeometryCacheMetrics? cacheMetrics = null,
+        IEnumerable<FinishOccurrence>? contacts = null)
     {
         Occurrences = (occurrences ?? throw new ArgumentNullException(nameof(occurrences)))
             .OrderBy(occurrence => occurrence.RoomId)
@@ -120,6 +121,7 @@ public sealed class FinishQuantityResult
             .ToArray();
         Summary = FinishQuantityPreviewSummary.Create(Occurrences);
         CacheMetrics = cacheMetrics ?? FinishGeometryCacheMetrics.Empty;
+        Contacts = contacts?.OrderBy(contact => contact.ElementId).ThenBy(contact => contact.RoomId).ToArray() ?? [];
     }
 
     public IReadOnlyList<FinishOccurrence> Occurrences { get; }
@@ -129,6 +131,9 @@ public sealed class FinishQuantityResult
     public FinishQuantityPreviewSummary Summary { get; }
 
     public FinishGeometryCacheMetrics CacheMetrics { get; }
+
+    /// <summary>Диагностические оценки контакта до выбора владельца, не публикуемые площади элементов.</summary>
+    public IReadOnlyList<FinishOccurrence> Contacts { get; }
 }
 
 public sealed record FinishQuantityCategorySummary(

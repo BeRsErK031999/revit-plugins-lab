@@ -106,6 +106,29 @@ public sealed class FinishSchedulePreviewTests
     }
 
     [Fact]
+    public void LevelScopeFindsRaisedFloorButDoesNotTakeFloorFromOtherLevel()
+    {
+        FinishElementCollection collection = new(
+            [new FinishRoomCandidateSnapshot(1, 10, 20, true, new AxisAlignedBox3D(0, 0, 0, 10, 10, 8))],
+            [],
+            [
+                Element(101, 201, FinishPhysicalCategory.Floor, new AxisAlignedBox3D(1, 1, 3.5, 9, 9, 3.8)) with { LevelId = 10 },
+                Element(102, 201, FinishPhysicalCategory.Floor, new AxisAlignedBox3D(1, 1, 3.5, 9, 9, 3.8)) with { LevelId = 20 }
+            ],
+            [new FinishTypeSnapshot(201, "Пол", true)]);
+        FinishScheduleSettings settings = FinishScheduleSettings.CreateDefault() with
+        {
+            Scope = new ReportScopeSettings(ReportScopeKind.Level, 10, null, string.Empty)
+        };
+
+        FinishSchedulePreviewBuild result = new FinishSchedulePreviewBuilder(new RoomScopeService(),
+            new FinishClassificationService()).BuildDetailed(collection, settings);
+
+        Assert.Equal(101L, Assert.Single(result.InScopeElements).Element.ElementId);
+        Assert.Equal(new FinishPreviewCategoryCounts(2, 2, 1), result.Preview.Floors);
+    }
+
+    [Fact]
     public void Build_LargeCandidateSet_ReportsOnlySpatialIndexPairs()
     {
         FinishElementCandidateSnapshot[] walls = Enumerable.Range(0, 1000)

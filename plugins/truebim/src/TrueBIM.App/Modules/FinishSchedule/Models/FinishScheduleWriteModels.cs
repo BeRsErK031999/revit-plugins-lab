@@ -23,7 +23,8 @@ public enum FinishWriteIssueCode
     ValueChangedAfterPreview,
     ScheduleNameConflict,
     WriteRejected,
-    WriteFailed
+    WriteFailed,
+    AppearanceTemplateInvalid
 }
 
 public sealed record FinishWriteIssue(

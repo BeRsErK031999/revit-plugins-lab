@@ -65,10 +65,12 @@ public sealed class FinishSchedulePreviewService
         HashSet<long> scopeElementIds = new(build.InScopeElements.Select(item => item.Element.ElementId));
         FinishQuantityResult quantities = new(
             allQuantities.Occurrences.Where(item => selectedRoomIds.Contains(item.RoomId)),
-            allQuantities.Warnings.Where(warning => warning.RoomId.HasValue
-                ? selectedRoomIds.Contains(warning.RoomId.Value)
-                : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value)),
-            allQuantities.CacheMetrics);
+            allQuantities.Warnings.Where(warning => settings.Scope.Kind == ReportScopeKind.EntireProject
+                || (warning.RoomId.HasValue
+                    ? selectedRoomIds.Contains(warning.RoomId.Value)
+                    : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))),
+            allQuantities.CacheMetrics,
+            allQuantities.Contacts);
         timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
         FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
         RoomFinishSnapshotBuildResult? roomSnapshots = null;

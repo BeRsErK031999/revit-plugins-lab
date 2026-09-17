@@ -35,7 +35,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         List<FinishGeometryWarning> warnings = [];
         HashSet<string> warningKeys = new(StringComparer.Ordinal);
         FinishBoundingBoxIndex index = new(request.Elements);
-        FinishRoomSearchBounds searchBounds = new(request.Rooms);
+        FinishRoomSearchBounds searchBounds = new(request.Rooms, request.Elements);
         HashSet<long> consideredElementIds = [];
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedWalls = request.Elements
             .Where(element => element.Category == FinishPreviewCategory.Walls)
@@ -132,20 +132,13 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         {
             if (contact.Category == FinishPreviewCategory.Walls && occupiedLevels.Contains(wallLevels[contact.ElementId])
                 && roomsById[contact.RoomId].LevelId != wallLevels[contact.ElementId]) continue;
-            if (elementsById[contact.ElementId].Element.Bounds is { } bounds
-                && searchBounds.Create(roomsById[contact.RoomId], contact.Category).Intersects(bounds))
+            if (searchBounds.Includes(roomsById[contact.RoomId], elementsById[contact.ElementId]))
                 eligible.KeepLargest(contact);
         }
         new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
         FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas);
-        HashSet<long> contactedElementIds = new(contacts.Select(contact => contact.ElementId));
-        foreach (long unassigned in consideredElementIds.Where(id => !contactedElementIds.Contains(id)))
-        {
-            warnings.Add(new FinishGeometryWarning(FinishGeometryWarningCode.UnassignedElement,
-                $"Элемент отделки {unassigned} попал в область поиска, но контакт с помещением не найден. Проверьте контур и уровень элемента.",
-                ElementId: unassigned, Category: elementsById[unassigned].Category));
-        }
+        warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements, contacts, consideredElementIds));
         FinishQuantityResult result = new(
             resolved.Occurrences,
             warnings.Where(warning => !IsRecoveredWarning(warning, contacts)).Concat(resolved.Warnings),
@@ -155,7 +148,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 roomGeometryCache.HitCount,
                 elementGeometryCache.RequestCount,
                 elementGeometryCache.EntryCount,
-                elementGeometryCache.HitCount));
+                elementGeometryCache.HitCount),
+            contacts);
         logger.Info(
             $"Finish Schedule physical quantities calculated. Rooms={request.Rooms.Count}; "
             + $"Occurrences={result.Occurrences.Count}; Warnings={result.Warnings.Count}; "
@@ -189,7 +183,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return categories
             .SelectMany(category => index.Query(
                     searchBounds.Create(room, category))
-                .Where(element => element.Category == category))
+                .Where(element => element.Category == category && searchBounds.Includes(room, element)))
             .GroupBy(element => new { element.Element.ElementId, element.Category })
             .Select(group => group.First())
             .OrderBy(element => element.Element.ElementId)

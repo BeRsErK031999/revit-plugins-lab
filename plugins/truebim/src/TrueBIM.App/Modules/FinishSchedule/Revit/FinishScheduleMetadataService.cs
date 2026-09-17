@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 public sealed class FinishScheduleMetadataService
 {
     public const string FeatureId = "TrueBIM.FinishSchedule";
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     private static readonly Guid SchemaGuid = new("C72569A6-4C99-4CD0-92D0-0198730E4551");
     private const string SchemaName = "TrueBIMFinishSchedule";
@@ -63,8 +63,12 @@ public sealed class FinishScheduleMetadataService
 
     public bool IsSnapshot(ViewSchedule schedule)
     {
-        return IsManaged(schedule) && Read(schedule)!.SchemaVersion == CurrentSchemaVersion;
+        return IsManaged(schedule) && Read(schedule)!.SchemaVersion >= 2;
     }
+
+    public bool IsTextSnapshot(ViewSchedule schedule) => IsManaged(schedule) && Read(schedule)!.SchemaVersion == 2;
+
+    public bool IsRoomBackedVersion(ViewSchedule schedule) => IsManaged(schedule) && Read(schedule)!.SchemaVersion == 3;
 
     public void MarkAsSnapshot(ViewSchedule schedule)
     {

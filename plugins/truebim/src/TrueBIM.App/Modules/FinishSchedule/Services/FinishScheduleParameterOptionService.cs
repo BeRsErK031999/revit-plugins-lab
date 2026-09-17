@@ -55,7 +55,9 @@ public sealed class FinishScheduleParameterOptionService
                 ParameterBindingKind.Type,
                 TextStorage,
                 requiredCategories,
-                requireWritable: false));
+                requireWritable: false))
+            .Where(option => !FinishDescriptionSourceRules.IsTypeName(option.Reference))
+            .ToArray();
     }
 
     public IReadOnlyList<FinishScheduleParameterOption> GetRoomIdentifierOptions(

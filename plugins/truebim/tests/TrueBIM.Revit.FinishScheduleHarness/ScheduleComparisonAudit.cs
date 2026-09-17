@@ -189,7 +189,7 @@ public static class ScheduleComparisonAudit
 
     private static double[] Point(XYZ point) => [point.X, point.Y, point.Z];
 
-    private static FinishScheduleSettings ReadSettings(Dictionary<string, object> profile) => new(
+    internal static FinishScheduleSettings ReadSettings(Dictionary<string, object> profile) => new(
         Reference(profile, "DescriptionParameter"),
         new RoomIdentifierSettings(ParseEnum<RoomIdentifierMode>(profile, "RoomIdentifierMode"), Reference(profile, "RoomIdentifierParameter")),
         Convert.ToBoolean(profile["WriteOwnership"]),
