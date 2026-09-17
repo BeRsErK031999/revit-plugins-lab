@@ -38,7 +38,7 @@ public sealed record FinishScheduleHeaderNormalizationPlan(
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v20";
+    public const string LayoutRevision = "v21";
     public const int HeaderRowCount = 3;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";
