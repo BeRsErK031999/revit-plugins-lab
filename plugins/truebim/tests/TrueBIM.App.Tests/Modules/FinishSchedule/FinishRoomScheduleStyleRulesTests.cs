@@ -9,7 +9,7 @@ public sealed class FinishRoomScheduleStyleRulesTests
     [Fact]
     public void HeaderDimensions_MatchFinishScheduleRequirement()
     {
-        Assert.Equal("v23", FinishRoomScheduleStyleRules.LayoutRevision);
+        Assert.Equal("v24", FinishRoomScheduleStyleRules.LayoutRevision);
         Assert.Equal(3, FinishRoomScheduleStyleRules.HeaderRowCount);
         Assert.Equal(12, FinishRoomScheduleStyleRules.TitleRowHeightMillimeters);
         Assert.Equal(8, FinishRoomScheduleStyleRules.GroupHeaderRowHeightMillimeters);

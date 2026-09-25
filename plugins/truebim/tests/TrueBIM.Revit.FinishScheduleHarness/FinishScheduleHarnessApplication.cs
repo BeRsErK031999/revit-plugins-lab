@@ -91,8 +91,15 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
         }
         FinishRoomScheduleBuilder builder = new(metadata, new TestLogger(Progress));
         FinishRoomSchedulePlan plan = Plan("Finish regression");
+        Check(!new FilteredElementCollector(document).OfClass(typeof(ViewSchedule))
+                .Cast<ViewSchedule>().Any(schedule => schedule.IsTemplate),
+            "Fixture has no schedule view templates");
+        Check(builder.Preflight(document, plan).Action == FinishRoomScheduleAction.Create,
+            "Preflight allows a new finish schedule without view templates");
         Progress("Creating first version.");
         ViewSchedule first = Create(builder, document, plan);
+        Check(first.ViewTemplateId == ElementId.InvalidElementId,
+            "New finish schedule is created without a view template");
         Check(metadata.IsSnapshot(first), "New version marked as snapshot");
         string original = Text(first);
         File.WriteAllText(reportPath + ".first.txt", original);

@@ -38,8 +38,7 @@ public sealed record FinishScheduleHeaderNormalizationPlan(
 
 public static class FinishRoomScheduleStyleRules
 {
-    public const string LayoutRevision = "v23";
-    public const string AppearanceTemplateName = "TrueBIM • Отделка • Без пустой строки";
+    public const string LayoutRevision = "v24";
     public const int HeaderRowCount = 3;
     public const string ScheduleTitleText = "Ведомость отделки помещений";
     public const string FinishGroupHeaderText = "Вид отделки элементов интерьера";

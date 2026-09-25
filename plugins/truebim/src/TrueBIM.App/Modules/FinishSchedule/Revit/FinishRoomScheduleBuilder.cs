@@ -39,12 +39,6 @@ public sealed class FinishRoomScheduleBuilder
             throw new ArgumentNullException(nameof(plan));
         }
 
-        string? appearanceIssue = FinishScheduleAppearanceTemplateService.Validate(document);
-        if (appearanceIssue is not null)
-        {
-            return Conflict(plan, appearanceIssue, FinishWriteIssueCode.AppearanceTemplateInvalid);
-        }
-
         List<ViewSchedule> schedules = CollectSchedules(document);
         List<ViewSchedule> legacy = schedules
             .Where(IsRoomSchedule)
@@ -201,7 +195,6 @@ public sealed class FinishRoomScheduleBuilder
                 ? CreateSchedule(document)
                 : GetManagedSchedule(document, preflight.ScheduleId!.Value);
             schedule.Name = plan.ScheduleName;
-            FinishScheduleAppearanceTemplateService.Apply(schedule);
             ConfigureDefinition(document, schedule, plan, headerMode);
             document.Regenerate();
             schedule.RefreshData();
