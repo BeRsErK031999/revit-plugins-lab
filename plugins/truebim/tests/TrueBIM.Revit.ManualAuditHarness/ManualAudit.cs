@@ -83,6 +83,7 @@ public static class ManualAudit
                 "SaveCopy" => SaveCopy(document, (string)request["Path"]),
                 "Inspect" => Inspect(uiDocument, request),
                 "Geometry" => CaptureGeometry(document, request),
+                "PlaceSchedule" => PlaceSchedule(uiDocument, request),
                 _ => throw new ArgumentException("Unknown manual audit operation: " + operation)
             };
             File.WriteAllText(path, Json.Serialize(result));
@@ -140,7 +141,15 @@ public static class ManualAudit
             Schedules = new FilteredElementCollector(document).OfClass(typeof(ViewSchedule)).Cast<ViewSchedule>()
                 .Where(view => !view.IsTemplate && (view.Name == "Спецификация стен" || view.Name == "Спецификация перекрытий"
                     || view.Name == "Спецификация потолков" || view.Name.Contains("Ведомость отделки помещений")))
-                .Select(CaptureSchedule).ToArray()
+                .Select(CaptureSchedule).ToArray(),
+            ScheduleTemplates = new FilteredElementCollector(document).OfClass(typeof(ViewSchedule)).Cast<ViewSchedule>()
+                .Where(view => view.IsTemplate).Select(view => new { Id = view.Id.IntegerValue, view.Name }).ToArray(),
+            SchedulePlacements = new FilteredElementCollector(document).OfClass(typeof(ScheduleSheetInstance))
+                .Cast<ScheduleSheetInstance>().Select(instance => new
+                {
+                    Id = instance.Id.IntegerValue, ScheduleId = instance.ScheduleId.IntegerValue,
+                    SheetId = instance.OwnerViewId.IntegerValue, Point = Point(instance.Point)
+                }).ToArray()
         };
     }
 
@@ -220,11 +229,17 @@ public static class ManualAudit
         uiDocument.Selection.SetElementIds(selection);
         if (request.ContainsKey("ZoomOnly") || request.ContainsKey("CutOffset"))
         {
-            BoundingBoxXYZ[] bounds = ids.Select(id => document.GetElement(new ElementId(id)).get_BoundingBox(null))
+            BoundingBoxXYZ[] bounds = ids.Select(id => document.GetElement(new ElementId(id)))
+                .Select(element => element.get_BoundingBox(uiDocument.ActiveView) ?? element.get_BoundingBox(null))
                 .Where(bounds => bounds is not null).ToArray();
-            XYZ low = new(bounds.Min(box => box.Min.X) - 2, bounds.Min(box => box.Min.Y) - 2, bounds.Min(box => box.Min.Z));
-            XYZ high = new(bounds.Max(box => box.Max.X) + 2, bounds.Max(box => box.Max.Y) + 2, bounds.Max(box => box.Max.Z));
-            uiDocument.GetOpenUIViews().First(view => view.ViewId == uiDocument.ActiveView.Id).ZoomAndCenterRectangle(low, high);
+            UIView uiView = uiDocument.GetOpenUIViews().First(view => view.ViewId == uiDocument.ActiveView.Id);
+            if (bounds.Length == 0) uiView.ZoomToFit();
+            else
+            {
+                XYZ low = new(bounds.Min(box => box.Min.X) - 2, bounds.Min(box => box.Min.Y) - 2, bounds.Min(box => box.Min.Z));
+                XYZ high = new(bounds.Max(box => box.Max.X) + 2, bounds.Max(box => box.Max.Y) + 2, bounds.Max(box => box.Max.Z));
+                uiView.ZoomAndCenterRectangle(low, high);
+            }
         }
         else uiDocument.ShowElements(selection);
         uiDocument.RefreshActiveView();
@@ -254,6 +269,36 @@ public static class ManualAudit
                 }).ToArray()
             };
         }).ToArray();
+    }
+
+    private static object PlaceSchedule(UIDocument uiDocument, Dictionary<string, object> request)
+    {
+        Document document = uiDocument.Document;
+        if (!Path.GetFileName(document.PathName).StartsWith("FinishSchedule_ManualAudit_", StringComparison.Ordinal))
+            throw new InvalidOperationException("A diagnostic sheet may only be created in the explicit audit copy.");
+        ViewSchedule schedule = (ViewSchedule)document.GetElement(new ElementId(Convert.ToInt32(request["ScheduleId"])));
+        if (!schedule.Name.Contains("Audit"))
+            throw new InvalidOperationException("Only an explicitly named audit schedule may be placed.");
+        ViewSheet sheet;
+        ScheduleSheetInstance placement;
+        using (Transaction transaction = new(document, "TrueBIM audit schedule sheet"))
+        {
+            transaction.Start();
+            sheet = ViewSheet.Create(document, ElementId.InvalidElementId);
+            sheet.Name = "Audit finish schedule " + request["Name"];
+            sheet.SheetNumber = "AUDIT-" + request["Name"];
+            placement = ScheduleSheetInstance.Create(document, sheet.Id, schedule.Id, new XYZ(0, 0, 0));
+            transaction.Commit();
+        }
+        uiDocument.ActiveView = sheet;
+        uiDocument.GetOpenUIViews().First(view => view.ViewId == sheet.Id).ZoomToFit();
+        uiDocument.RefreshActiveView();
+        BoundingBoxXYZ bounds = placement.get_BoundingBox(sheet);
+        return new
+        {
+            SheetId = sheet.Id.IntegerValue, PlacementId = placement.Id.IntegerValue,
+            Bounds = new { Min = Point(bounds.Min), Max = Point(bounds.Max) }, Schedule = CaptureSchedule(schedule)
+        };
     }
 
     private static IEnumerable<Solid> Solids(GeometryElement geometry)
@@ -315,12 +360,16 @@ public static class ManualAudit
 
     private static object CaptureSchedule(ViewSchedule schedule)
     {
+        FinishScheduleMetadataService metadata = new();
         ScheduleDefinition definition = schedule.Definition;
         using TableData table = schedule.GetTableData();
         using TableSectionData body = table.GetSectionData(SectionType.Body);
         return new
         {
             Id = schedule.Id.IntegerValue, schedule.Name, CategoryId = definition.CategoryId.IntegerValue,
+            ViewTemplateId = schedule.ViewTemplateId.IntegerValue,
+            IsManaged = metadata.IsManaged(schedule), IsSnapshot = metadata.IsSnapshot(schedule),
+            IsRoomBackedVersion = metadata.IsRoomBackedVersion(schedule),
             definition.IsItemized, definition.IncludeLinkedFiles, definition.ShowGrandTotal,
             Fields = definition.GetFieldOrder().Select(id =>
             {
