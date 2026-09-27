@@ -15,6 +15,7 @@ public sealed class IsoFieldRebarReportService
     private const double SquareFeetToSquareMeters = 0.09290304;
 
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly CultureInfo RussianCulture = CultureInfo.GetCultureInfo("ru-RU");
     private static readonly Encoding Utf8WithoutBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly Encoding Utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
     private readonly IsoFieldRebarReviewService reviewService = new();
@@ -29,7 +30,7 @@ public sealed class IsoFieldRebarReportService
         if (request.Preview.EngineeringSettings is null || !request.Preview.IsEngineeringPreview)
         {
             throw new InvalidOperationException(
-                "Отчёт доступен только для рассчитанной инженерной раскладки host.");
+                "Отчёт доступен после расчёта раскладки для выбранной стены или плиты.");
         }
 
         IsoFieldRebarReportSourceFile[] sourceFiles = request.SourceFiles
@@ -102,13 +103,13 @@ public sealed class IsoFieldRebarReportService
 
         if (string.IsNullOrWhiteSpace(jsonPath))
         {
-            throw new ArgumentException("Report path is required.", nameof(jsonPath));
+            throw new ArgumentException("Не указан путь для сохранения отчёта.", nameof(jsonPath));
         }
 
         string fullJsonPath = Path.ChangeExtension(Path.GetFullPath(jsonPath), ".json");
         string fullCsvPath = Path.ChangeExtension(fullJsonPath, ".csv");
         string directory = Path.GetDirectoryName(fullJsonPath)
-            ?? throw new InvalidOperationException("Report directory could not be resolved.");
+            ?? throw new InvalidOperationException("Не удалось определить папку для сохранения отчёта.");
         Directory.CreateDirectory(directory);
 
         string json = JsonSerializer.Serialize(report, JsonOptions) + Environment.NewLine;
@@ -125,50 +126,50 @@ public sealed class IsoFieldRebarReportService
         }
 
         StringBuilder builder = new();
-        AppendCsvRow(builder, ["МЕТАДАННЫЕ"]);
-        AppendCsvRow(builder, ["Ключ", "Значение"]);
-        AppendCsvRow(builder, ["schemaVersion", report.SchemaVersion]);
-        AppendCsvRow(builder, ["generatedAtUtc", report.GeneratedAtUtc.ToString("O", CultureInfo.InvariantCulture)]);
-        AppendCsvRow(builder, ["documentTitle", report.DocumentTitle]);
-        AppendCsvRow(builder, ["documentKey", report.DocumentKey]);
-        AppendCsvRow(builder, ["hostElementId", FormatInteger(report.Host.ElementId)]);
-        AppendCsvRow(builder, ["hostKind", report.Host.HostKind]);
-        AppendCsvRow(builder, ["hostName", report.Host.HostName]);
-        AppendCsvRow(builder, ["sourceKind", report.Provenance.SourceKind]);
-        AppendCsvRow(builder, ["recognitionRunner", report.Provenance.RecognitionRunner]);
-        AppendCsvRow(builder, ["recognitionRunnerVersion", report.Provenance.RecognitionRunnerVersion]);
-        AppendCsvRow(builder, ["pluginVersion", report.Provenance.PluginVersion]);
-        AppendCsvRow(builder, ["sourceSetManifestPath", report.Provenance.SourceSetManifestPath]);
-        AppendCsvRow(builder, ["ruleProfileSha256", report.RuleProfileSha256]);
-        AppendCsvRow(builder, ["bindingKind", report.Binding.Kind]);
-        AppendCsvRow(builder, ["millimetersPerPixel", FormatDouble(report.Binding.MillimetersPerPixel)]);
-        AppendCsvRow(builder, ["rotationDegrees", FormatDouble(report.Binding.RotationDegrees)]);
-        AppendCsvRow(builder, ["mirrorImageY", FormatBoolean(report.Binding.MirrorImageY)]);
-        AppendCsvRow(builder, ["reinforcementMode", report.EngineeringSettings.Mode.ToString()]);
-        AppendCsvRow(builder, ["concreteCoverMillimeters", FormatDouble(report.EngineeringSettings.ConcreteCoverMillimeters)]);
-        AppendCsvRow(builder, ["boundaryOffsetMillimeters", FormatDouble(report.EngineeringSettings.BoundaryOffsetMillimeters)]);
-        AppendCsvRow(builder, ["minimumBarLengthMillimeters", FormatDouble(report.EngineeringSettings.MinimumBarLengthMillimeters)]);
-        AppendCsvRow(builder, ["qualityEvaluated", FormatBoolean(report.QualityCheck.Evaluated)]);
-        AppendCsvRow(builder, ["qualityBlockingErrorCount", FormatInteger(report.QualityCheck.BlockingErrorCount)]);
-        AppendCsvRow(builder, ["qualityWarningCount", FormatInteger(report.QualityCheck.WarningCount)]);
-        AppendCsvRow(builder, ["qualityWarningsAccepted", FormatBoolean(report.QualityCheck.WarningsAccepted)]);
-        AppendCsvRow(builder, ["qualityFingerprint", report.QualityCheck.Fingerprint]);
-        AppendCsvRow(builder, ["compared", FormatBoolean(report.ChangeSummary.Compared)]);
-        AppendCsvRow(builder, ["applicationApplied", FormatBoolean(report.ApplicationSummary.Applied)]);
-        AppendCsvRow(builder, ["applicationCompletedAtUtc", report.ApplicationSummary.CompletedAtUtc?.ToString("O", CultureInfo.InvariantCulture)]);
-        AppendCsvRow(builder, ["applicationAddedCount", FormatInteger(report.ApplicationSummary.AddedCount)]);
-        AppendCsvRow(builder, ["applicationUpdatedCount", FormatInteger(report.ApplicationSummary.UpdatedCount)]);
-        AppendCsvRow(builder, ["applicationDeletedCount", FormatInteger(report.ApplicationSummary.DeletedCount)]);
-        AppendCsvRow(builder, ["applicationUnchangedCount", FormatInteger(report.ApplicationSummary.UnchangedCount)]);
-        AppendCsvRow(builder, ["applicationCreatedElementIds", string.Join(",", report.ApplicationSummary.CreatedElementIds)]);
-        AppendCsvRow(builder, ["applicationDeletedElementIds", string.Join(",", report.ApplicationSummary.DeletedElementIds)]);
+        AppendCsvRow(builder, ["ОБЩИЕ СВЕДЕНИЯ"]);
+        AppendCsvRow(builder, ["Показатель", "Значение"]);
+        AppendCsvRow(builder, ["Версия отчёта", report.SchemaVersion]);
+        AppendCsvRow(builder, ["Создан", FormatDateTime(report.GeneratedAtUtc)]);
+        AppendCsvRow(builder, ["Документ", report.DocumentTitle]);
+        AppendCsvRow(builder, ["Файл проекта", report.DocumentKey]);
+        AppendCsvRow(builder, ["Номер конструкции", FormatInteger(report.Host.ElementId)]);
+        AppendCsvRow(builder, ["Тип конструкции", FormatHostKind(report.Host.HostKind)]);
+        AppendCsvRow(builder, ["Название конструкции", report.Host.HostName]);
+        AppendCsvRow(builder, ["Источник зон", FormatSourceKind(report.Provenance.SourceKind)]);
+        AppendCsvRow(builder, ["Способ поиска зон", report.Provenance.RecognitionRunner]);
+        AppendCsvRow(builder, ["Версия средства поиска", FormatUnknown(report.Provenance.RecognitionRunnerVersion)]);
+        AppendCsvRow(builder, ["Версия TrueBIM", FormatUnknown(report.Provenance.PluginVersion)]);
+        AppendCsvRow(builder, ["Сохранённый комплект карт", report.Provenance.SourceSetManifestPath]);
+        AppendCsvRow(builder, ["Контрольные данные правил", report.RuleProfileSha256]);
+        AppendCsvRow(builder, ["Способ привязки", FormatBindingKind(report.Binding.Kind)]);
+        AppendCsvRow(builder, ["Масштаб, мм на точку изображения", FormatDouble(report.Binding.MillimetersPerPixel)]);
+        AppendCsvRow(builder, ["Поворот, градусы", FormatDouble(report.Binding.RotationDegrees)]);
+        AppendCsvRow(builder, ["Вертикаль карты перевёрнута", FormatBoolean(report.Binding.MirrorImageY)]);
+        AppendCsvRow(builder, ["Режим армирования", FormatReinforcementMode(report.EngineeringSettings.Mode)]);
+        AppendCsvRow(builder, ["Отступ арматуры от поверхности, мм", FormatDouble(report.EngineeringSettings.ConcreteCoverMillimeters)]);
+        AppendCsvRow(builder, ["Отступ от границ и отверстий, мм", FormatDouble(report.EngineeringSettings.BoundaryOffsetMillimeters)]);
+        AppendCsvRow(builder, ["Минимальная длина стержня, мм", FormatDouble(report.EngineeringSettings.MinimumBarLengthMillimeters)]);
+        AppendCsvRow(builder, ["Проверка выполнена", FormatBoolean(report.QualityCheck.Evaluated)]);
+        AppendCsvRow(builder, ["Ошибок", FormatInteger(report.QualityCheck.BlockingErrorCount)]);
+        AppendCsvRow(builder, ["Предупреждений", FormatInteger(report.QualityCheck.WarningCount)]);
+        AppendCsvRow(builder, ["Предупреждения приняты", FormatBoolean(report.QualityCheck.WarningsAccepted)]);
+        AppendCsvRow(builder, ["Контрольные данные проверки", report.QualityCheck.Fingerprint]);
+        AppendCsvRow(builder, ["Сравнение с моделью выполнено", FormatBoolean(report.ChangeSummary.Compared)]);
+        AppendCsvRow(builder, ["Изменения применены", FormatBoolean(report.ApplicationSummary.Applied)]);
+        AppendCsvRow(builder, ["Изменения завершены", FormatNullableDateTime(report.ApplicationSummary.CompletedAtUtc)]);
+        AppendCsvRow(builder, ["Экземпляров семейств добавлено", FormatInteger(report.ApplicationSummary.AddedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств изменено", FormatInteger(report.ApplicationSummary.UpdatedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств удалено", FormatInteger(report.ApplicationSummary.DeletedCount)]);
+        AppendCsvRow(builder, ["Экземпляров семейств без изменений", FormatInteger(report.ApplicationSummary.UnchangedCount)]);
+        AppendCsvRow(builder, ["Номера созданных элементов", string.Join(",", report.ApplicationSummary.CreatedElementIds)]);
+        AppendCsvRow(builder, ["Номера удалённых элементов", string.Join(",", report.ApplicationSummary.DeletedElementIds)]);
         AppendCsvRow(builder, Array.Empty<string?>());
 
         AppendCsvRow(builder, ["ИСТОЧНИКИ"]);
         AppendCsvRow(builder,
         [
-            "Файл", "Полный путь", "Слой", "Ширина, px", "Высота, px",
-            "Размер, байт", "Изменён UTC", "SHA-256", "Статус"
+            "Файл", "Полный путь", "Карта", "Ширина изображения", "Высота изображения",
+            "Размер файла, байт", "Время изменения", "Контрольная сумма", "Состояние"
         ]);
         foreach (IsoFieldRebarReportSourceFile file in report.Provenance.SourceFiles)
         {
@@ -176,7 +177,7 @@ public sealed class IsoFieldRebarReportService
             [
                 file.FileName,
                 file.FilePath,
-                file.LayerRole?.ToString(),
+                file.LayerRole.HasValue ? FormatLayer(file.LayerRole.Value) : null,
                 FormatNullableInteger(file.PixelWidth),
                 FormatNullableInteger(file.PixelHeight),
                 FormatNullableInteger(file.SizeBytes),
@@ -190,11 +191,11 @@ public sealed class IsoFieldRebarReportService
         AppendCsvRow(builder, ["ЗОНЫ"]);
         AppendCsvRow(builder,
         [
-            "ID зоны", "Имя", "Исходные ID", "Слой", "Грань", "Направление",
-            "Режим", "Включена", "Ручное правило", "Объединена", "Армирование",
+            "Номер зоны", "Название", "Исходные номера", "Карта", "Сторона", "Направление",
+            "Режим", "Учитывается", "Настроена вручную", "Объединена", "Армирование",
             "Требуется, см2/м", "Принято, см2/м", "Площадь, м2", "Стержни",
-            "Confidence", "Статус", "Добавить", "Обновить", "Удалить",
-            "Без изменений", "Компоненты", "Диагностика"
+            "Распознано", "Состояние", "Семейств добавить", "Семейств изменить", "Семейств удалить",
+            "Семейств без изменений", "Наборы стержней", "Замечания"
         ]);
         foreach (IsoFieldRebarReportZone zone in report.Zones)
         {
@@ -203,44 +204,44 @@ public sealed class IsoFieldRebarReportService
                 zone.ZoneId,
                 zone.ZoneName,
                 string.Join(",", zone.SourceZoneIds),
-                zone.LayerRole?.ToString(),
-                zone.Face?.ToString(),
-                zone.Direction,
-                zone.ReinforcementMode?.ToString(),
+                zone.LayerRole.HasValue ? FormatLayer(zone.LayerRole.Value) : null,
+                FormatFace(report.Host.HostKind, zone.Face),
+                FormatDirection(zone.Direction),
+                FormatNullableReinforcementMode(zone.ReinforcementMode),
                 FormatBoolean(zone.IsIncluded),
                 FormatBoolean(zone.IsManuallyOverridden),
                 FormatBoolean(zone.IsMerged),
-                zone.ReinforcementLabel,
+                FormatReinforcementLabel(zone.ReinforcementLabel),
                 FormatNullableDouble(zone.RequiredAreaSquareCentimetersPerMeter),
                 FormatNullableDouble(zone.ProvidedAreaSquareCentimetersPerMeter),
                 FormatDouble(zone.GeometryAreaSquareMeters),
                 FormatInteger(zone.EstimatedBarCount),
-                FormatNullableDouble(zone.Confidence),
-                zone.ReviewStatus.ToString(),
+                FormatPercentage(zone.Confidence),
+                FormatReviewStatus(zone.ReviewStatus),
                 FormatInteger(zone.AddCount),
                 FormatInteger(zone.UpdateCount),
                 FormatInteger(zone.DeleteCount),
                 FormatInteger(zone.UnchangedCount),
                 string.Join(" + ", zone.Components.Select(component =>
-                    $"d{FormatDouble(component.DiameterMillimeters)}s{FormatDouble(component.SpacingMillimeters)}")),
+                    $"Ø{FormatDouble(component.DiameterMillimeters)}, шаг {FormatDouble(component.SpacingMillimeters)} мм")),
                 string.Join(" | ", zone.Diagnostics)
             ]);
         }
 
         AppendCsvRow(builder, Array.Empty<string?>());
-        AppendCsvRow(builder, ["ИТОГИ ПО СЛОЯМ"]);
+        AppendCsvRow(builder, ["ИТОГИ ПО КАРТАМ"]);
         AppendCsvRow(builder,
         [
-            "Слой", "Зон", "Включено", "Исключено", "Объединено", "Площадь включённых зон, м2",
+            "Карта", "Зон", "Включено", "Исключено", "Объединено", "Площадь включённых зон, м2",
             "Стержни", "Мин. требуется, см2/м", "Макс. требуется, см2/м",
             "Мин. принято, см2/м", "Добавить", "Обновить", "Удалить",
-            "Без изменений", "Диагностик"
+            "Без изменений", "Замечаний"
         ]);
         foreach (IsoFieldRebarReportLayerTotal total in report.LayerTotals)
         {
             AppendCsvRow(builder,
             [
-                total.LayerRole.ToString(),
+                FormatLayer(total.LayerRole),
                 FormatInteger(total.ZoneCount),
                 FormatInteger(total.IncludedZoneCount),
                 FormatInteger(total.ExcludedZoneCount),
@@ -259,18 +260,18 @@ public sealed class IsoFieldRebarReportService
         }
 
         AppendCsvRow(builder, Array.Empty<string?>());
-        AppendCsvRow(builder, ["КОНТРОЛЬ КАЧЕСТВА"]);
+        AppendCsvRow(builder, ["ПРОВЕРКА ЗОН И АРМАТУРЫ"]);
         AppendCsvRow(builder,
         [
-            "Тип", "Код", "Слой", "Зоны", "Измерено", "Предел", "Сообщение"
+            "Важность", "Проверка", "Карта", "Зоны", "Измерено", "Предел", "Сообщение"
         ]);
         foreach (IsoFieldRebarReportQualityIssue issue in report.QualityCheck.Issues)
         {
             AppendCsvRow(builder,
             [
-                issue.Severity.ToString(),
-                issue.Code.ToString(),
-                issue.LayerRole?.ToString(),
+                FormatQualitySeverity(issue.Severity),
+                FormatQualityCode(issue.Code),
+                issue.LayerRole.HasValue ? FormatLayer(issue.LayerRole.Value) : null,
                 string.Join(",", issue.ZoneIds),
                 FormatNullableDouble(issue.MeasuredValue),
                 FormatNullableDouble(issue.LimitValue),
@@ -279,20 +280,20 @@ public sealed class IsoFieldRebarReportService
         }
 
         AppendCsvRow(builder, Array.Empty<string?>());
-        AppendCsvRow(builder, ["ПОКРЫТИЕ СЛОЁВ"]);
+        AppendCsvRow(builder, ["ПОКРЫТИЕ ПО КАРТАМ"]);
         AppendCsvRow(builder,
         [
-            "Слой", "Включено зон", "Покрыто, м2", "Площадь host, м2", "Доля покрытия"
+            "Карта", "Учитывается зон", "Покрыто, м²", "Площадь конструкции, м²", "Доля покрытия"
         ]);
         foreach (IsoFieldRebarReportQualityCoverage coverage in report.QualityCheck.LayerCoverage)
         {
             AppendCsvRow(builder,
             [
-                coverage.LayerRole.ToString(),
+                FormatLayer(coverage.LayerRole),
                 FormatInteger(coverage.IncludedZoneCount),
                 FormatDouble(coverage.CoveredAreaSquareMeters),
                 FormatDouble(coverage.HostAreaSquareMeters),
-                FormatDouble(coverage.CoverageRatio)
+                FormatPercentage(coverage.CoverageRatio)
             ]);
         }
 
@@ -546,7 +547,7 @@ public sealed class IsoFieldRebarReportService
     private static string BuildRuleProfileSha256(RebarRulePreviewResult preview)
     {
         IsoFieldEngineeringSettings settings = preview.EngineeringSettings
-            ?? throw new InvalidOperationException("Engineering settings are missing.");
+            ?? throw new InvalidOperationException("Не найдены настройки рассчитанной раскладки. Повторите расчёт.");
         StringBuilder canonical = new();
         canonical.Append(settings.Mode).Append('|')
             .Append(FormatDouble(settings.ConcreteCoverMillimeters)).Append('|')
@@ -641,6 +642,145 @@ public sealed class IsoFieldRebarReportService
         return value.IndexOfAny([';', '"', '\r', '\n']) < 0
             ? value
             : $"\"{value.Replace("\"", "\"\"")}\"";
+    }
+
+    private static string FormatHostKind(string hostKind)
+    {
+        return hostKind switch
+        {
+            "Wall" => "Стена",
+            "Slab" => "Плита",
+            _ => "Неизвестная конструкция"
+        };
+    }
+
+    private static string FormatSourceKind(string sourceKind)
+    {
+        return sourceKind switch
+        {
+            "RecognitionJson" => "Готовые зоны",
+            "ImageSourceSet" => "Четыре карты изополей",
+            _ => "Неизвестный источник"
+        };
+    }
+
+    private static string FormatBindingKind(string bindingKind)
+    {
+        return bindingKind switch
+        {
+            "WallThreePoint" => "Стена, по трём точкам",
+            "SlabThreePoint" => "Плита, по трём точкам",
+            "LegacyCalibration" => "Начало и масштаб изображения",
+            _ => "Неизвестный способ"
+        };
+    }
+
+    private static string FormatReinforcementMode(IsoFieldReinforcementMode mode)
+    {
+        return mode switch
+        {
+            IsoFieldReinforcementMode.AdditionalOverBase => "Только усиление поверх базовой сетки",
+            IsoFieldReinforcementMode.FullCombination => "Полное сочетание внутри зон",
+            _ => "Неизвестный режим"
+        };
+    }
+
+    private static string? FormatNullableReinforcementMode(IsoFieldReinforcementMode? mode) =>
+        mode.HasValue ? FormatReinforcementMode(mode.Value) : null;
+
+    private static string? FormatFace(string hostKind, IsoFieldRebarFace? face)
+    {
+        if (!face.HasValue || face == IsoFieldRebarFace.Unconfirmed)
+        {
+            return null;
+        }
+
+        if (string.Equals(hostKind, "Wall", StringComparison.Ordinal))
+        {
+            return face == IsoFieldRebarFace.Bottom ? "Внутренняя" : "Наружная";
+        }
+
+        return face == IsoFieldRebarFace.Bottom ? "Низ" : "Верх";
+    }
+
+    private static string FormatDirection(string direction)
+    {
+        return direction switch
+        {
+            "X" => "X",
+            "Y" => "Y",
+            "AlongHost" => "Вдоль конструкции",
+            _ => "Определено автоматически"
+        };
+    }
+
+    private static string FormatReviewStatus(IsoFieldRebarReviewStatus status)
+    {
+        return status switch
+        {
+            IsoFieldRebarReviewStatus.NotCompared => "Не сравнено",
+            IsoFieldRebarReviewStatus.Add => "Добавить",
+            IsoFieldRebarReviewStatus.Update => "Изменить",
+            IsoFieldRebarReviewStatus.Delete => "Удалить",
+            IsoFieldRebarReviewStatus.Unchanged => "Без изменений",
+            IsoFieldRebarReviewStatus.Mixed => "Несколько видов изменений",
+            IsoFieldRebarReviewStatus.Invalid => "Ошибка",
+            IsoFieldRebarReviewStatus.Excluded => "Исключена",
+            _ => "Неизвестно"
+        };
+    }
+
+    private static string FormatQualitySeverity(IsoFieldRebarQualitySeverity severity) =>
+        severity == IsoFieldRebarQualitySeverity.Blocking ? "Ошибка" : "Предупреждение";
+
+    private static string FormatQualityCode(IsoFieldRebarQualityCode code)
+    {
+        return code switch
+        {
+            IsoFieldRebarQualityCode.GeometryAnalysisFailed => "Не удалось проверить раскладку",
+            IsoFieldRebarQualityCode.RequiredAreaDeficit => "Недостаточно арматуры",
+            IsoFieldRebarQualityCode.SameLayerOverlap => "Пересечение зон одной карты",
+            IsoFieldRebarQualityCode.FinalGeometryOutsideHost => "Зона выходит за границу конструкции",
+            IsoFieldRebarQualityCode.MissingLayerCoverage => "Карта не покрывает конструкцию",
+            IsoFieldRebarQualityCode.PartialLayerCoverage => "Карта покрывает конструкцию не полностью",
+            IsoFieldRebarQualityCode.ZoneClippedByHost => "Зона обрезана по границе конструкции",
+            IsoFieldRebarQualityCode.SourceZoneOutsideHost => "Зона за границами конструкции",
+            _ => "Неизвестная проверка"
+        };
+    }
+
+    private static string FormatDateTime(DateTimeOffset value) =>
+        value.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", RussianCulture);
+
+    private static string? FormatNullableDateTime(DateTimeOffset? value) =>
+        value.HasValue ? FormatDateTime(value.Value) : null;
+
+    private static string? FormatPercentage(double? value) =>
+        value.HasValue
+            ? (value.Value * 100).ToString("0.#", RussianCulture) + "%"
+            : null;
+
+    private static string FormatPercentage(double value) =>
+        (value * 100).ToString("0.#", RussianCulture) + "%";
+
+    private static string FormatReinforcementLabel(string? label) =>
+        new IsoFieldReinforcementCombinationService().FormatForDisplay(label);
+
+    private static string FormatUnknown(string value) =>
+        string.IsNullOrWhiteSpace(value) || string.Equals(value, "unknown", StringComparison.OrdinalIgnoreCase)
+            ? "Неизвестно"
+            : value;
+
+    private static string FormatLayer(IsoFieldLayerRole role)
+    {
+        return role switch
+        {
+            IsoFieldLayerRole.As1X => "X, карта 1",
+            IsoFieldLayerRole.As2X => "X, карта 2",
+            IsoFieldLayerRole.As3Y => "Y, карта 1",
+            IsoFieldLayerRole.As4Y => "Y, карта 2",
+            _ => "неизвестная карта"
+        };
     }
 
     private static string FormatBoolean(bool value) => value ? "Да" : "Нет";

@@ -44,6 +44,15 @@ public sealed class IsoFieldSlabRebarLayoutService
                 IsoFieldPolygonRegion region = item.EffectiveRegions[regionIndex];
                 foreach (IsoFieldRebarComponent component in item.Rule.EffectiveComponents)
                 {
+                    if (item.IsArrayEnvelope)
+                    {
+                        AppendArrayEnvelopeSegments(segments, item, direction, component, region, regionIndex);
+                        if (segments.Count > settings.MaximumBarCount)
+                        {
+                            throw new InvalidOperationException($"Раскладка содержит больше {settings.MaximumBarCount} стержней.");
+                        }
+                        continue;
+                    }
                     AppendRegionSegments(
                         segments,
                         item.ZoneId,
@@ -82,6 +91,41 @@ public sealed class IsoFieldSlabRebarLayoutService
         return segments;
     }
 
+    private static void AppendArrayEnvelopeSegments(
+        List<IsoFieldSlabRebarSegment> result,
+        RebarRulePreviewItem item,
+        IsoFieldRebarDirection direction,
+        IsoFieldRebarComponent component,
+        IsoFieldPolygonRegion region,
+        int regionIndex)
+    {
+        bool alongX = direction == IsoFieldRebarDirection.X;
+        double minimumAlong = region.OuterBoundaryFeet.Min(p => alongX ? p.X : p.Y);
+        double maximumAlong = region.OuterBoundaryFeet.Max(p => alongX ? p.X : p.Y);
+        double minimumCross = region.OuterBoundaryFeet.Min(p => alongX ? p.Y : p.X);
+        double maximumCross = region.OuterBoundaryFeet.Max(p => alongX ? p.Y : p.X);
+        if (region.HoleBoundariesFeet.Count > 0
+            || Math.Abs(region.AreaSquareFeet - (maximumAlong - minimumAlong) * (maximumCross - minimumCross)) > 1e-6)
+        {
+            throw new InvalidOperationException($"Пятно {item.ZoneName} не является проверенным прямоугольным массивом.");
+        }
+        double spacing = component.SpacingMillimeters / MillimetersPerFoot;
+        int intervalCount = checked((int)Math.Round((maximumCross - minimumCross) / spacing));
+        if (intervalCount < 1 || Math.Abs(intervalCount * spacing - maximumCross + minimumCross) > GeometryToleranceFeet)
+        {
+            throw new InvalidOperationException($"Ширина пятна {item.ZoneName} не кратна шагу массива.");
+        }
+        for (int index = 0; index <= intervalCount; index++)
+        {
+            double cross = minimumCross + index * spacing;
+            IsoFieldPoint start = alongX ? new(minimumAlong, cross) : new(cross, minimumAlong);
+            IsoFieldPoint end = alongX ? new(maximumAlong, cross) : new(cross, maximumAlong);
+            result.Add(new IsoFieldSlabRebarSegment(item.ZoneId, item.Rule.LayerRole!.Value,
+                item.Rule.Face!.Value, direction, component, start, end,
+                $"{item.Rule.LayerRole}:{item.ZoneId}:c{component.CombinationIndex}:r{regionIndex}:b{index}"));
+        }
+    }
+
     public IReadOnlyList<string> ValidateSettings(IsoFieldEngineeringSettings? settings)
     {
         if (settings is null)
@@ -94,7 +138,7 @@ public sealed class IsoFieldSlabRebarLayoutService
             || settings.ConcreteCoverMillimeters < 10
             || settings.ConcreteCoverMillimeters > 100)
         {
-            diagnostics.Add("Защитный слой должен быть в диапазоне 10–100 мм.");
+            diagnostics.Add("Отступ арматуры от поверхности должен быть от 10 до 100 мм.");
         }
 
         if (!IsFinite(settings.BoundaryOffsetMillimeters)

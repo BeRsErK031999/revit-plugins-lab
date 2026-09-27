@@ -52,6 +52,16 @@ public sealed class FinishOccurrenceAccumulator
             .ToArray();
     }
 
+    public void KeepLargest(FinishOccurrence occurrence)
+    {
+        OccurrenceKey key = new(occurrence.RoomId, occurrence.ElementId, occurrence.Category);
+        if (!occurrences.TryGetValue(key, out AccumulatedOccurrence? existing)
+            || occurrence.AreaSquareMeters > existing.AreaSquareMeters)
+        {
+            occurrences[key] = new AccumulatedOccurrence(occurrence.AreaSquareMeters, occurrence.Method);
+        }
+    }
+
     private sealed record OccurrenceKey(
         long RoomId,
         long ElementId,

@@ -26,6 +26,7 @@ public sealed class LintelAssemblyViewCreationService
         string assemblyName,
         string viewName,
         string frameFamilyFilePath,
+        string elevationAnnotationFamilyFilePath,
         long? lintelTypeId = null)
     {
         if (document is null)
@@ -46,6 +47,13 @@ public sealed class LintelAssemblyViewCreationService
         if (string.IsNullOrWhiteSpace(frameFamilyFilePath))
         {
             throw new ArgumentException("Frame family file path is required.", nameof(frameFamilyFilePath));
+        }
+
+        if (string.IsNullOrWhiteSpace(elevationAnnotationFamilyFilePath))
+        {
+            throw new ArgumentException(
+                "Elevation annotation family file path is required.",
+                nameof(elevationAnnotationFamilyFilePath));
         }
 
         AssemblyInstance? assembly = FindAssembly(document, assemblyName);
@@ -70,7 +78,8 @@ public sealed class LintelAssemblyViewCreationService
                     document,
                     existingView,
                     assembly,
-                    frameFamilyFilePath);
+                    frameFamilyFilePath,
+                    elevationAnnotationFamilyFilePath);
                 LintelTypeImageResult typeImage = TryExportAndAssignTypeImage(
                     document,
                     existingView,
@@ -148,7 +157,8 @@ public sealed class LintelAssemblyViewCreationService
                 document,
                 view,
                 assembly,
-                frameFamilyFilePath);
+                frameFamilyFilePath,
+                elevationAnnotationFamilyFilePath);
             LintelTypeImageResult typeImage = TryExportAndAssignTypeImage(
                 document,
                 view,
@@ -242,7 +252,8 @@ public sealed class LintelAssemblyViewCreationService
         Document document,
         ViewSection view,
         AssemblyInstance assembly,
-        string frameFamilyFilePath)
+        string frameFamilyFilePath,
+        string elevationAnnotationFamilyFilePath)
     {
         try
         {
@@ -250,7 +261,8 @@ public sealed class LintelAssemblyViewCreationService
                 document,
                 view,
                 assembly,
-                frameFamilyFilePath);
+                frameFamilyFilePath,
+                elevationAnnotationFamilyFilePath);
         }
         catch (Exception exception)
         {

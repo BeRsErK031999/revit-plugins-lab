@@ -59,4 +59,19 @@ public sealed class LintelAssemblyViewAnnotationLayoutTests
             layout.FrameCenterVertical,
             8);
     }
+
+    [Fact]
+    public void Create_PlacesElevationAnnotationAtBottomCenterOfLintelBounds()
+    {
+        LintelViewProjectedBounds bounds = new(
+            -600 * FeetPerMillimeter,
+            400 * FeetPerMillimeter,
+            120 * FeetPerMillimeter,
+            300 * FeetPerMillimeter);
+
+        LintelAssemblyViewAnnotationLayout layout = LintelAssemblyViewAnnotationLayout.Create(bounds, 10);
+
+        Assert.Equal(bounds.CenterHorizontal, layout.ElevationHorizontal, 8);
+        Assert.Equal(bounds.MinVertical, layout.ElevationVertical, 8);
+    }
 }

@@ -2,8 +2,10 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
 using System.Xml;
 using Autodesk.Revit.DB;
 using Microsoft.Win32;
@@ -175,6 +177,8 @@ public sealed class ClashReportWindow : TrueBimWindow
         saveStateButton.Click += (_, _) => SaveState(showDialog: true);
         actions.Children.Add(saveStateButton);
 
+        actions.Children.Add(CreateGuideButton());
+
         Button closeButton = CreateButton("Закрыть", TrueBimIcon.Close, 110);
         closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
@@ -207,6 +211,64 @@ public sealed class ClashReportWindow : TrueBimWindow
         root.Children.Add(options);
 
         return root;
+    }
+
+    private Button CreateGuideButton()
+    {
+        Button guideButton = new()
+        {
+            Content = new Image
+            {
+                Source = IconFactory.CreateImage(TrueBimIcon.Help, 18),
+                Width = 18,
+                Height = 18,
+                Stretch = Stretch.Uniform
+            },
+            Width = 34,
+            Height = 32,
+            Padding = new Thickness(4),
+            Margin = new Thickness(6, 0, 0, 8),
+            ToolTip = CreateGuideToolTip()
+        };
+        AutomationProperties.SetName(guideButton, "Открыть методичку по отчёту коллизий");
+        AutomationProperties.SetHelpText(guideButton, "Простой пошаговый сценарий импорта и проверки коллизий.");
+        guideButton.Click += (_, _) => ShowGuide();
+        return guideButton;
+    }
+
+    private static ToolTip CreateGuideToolTip()
+    {
+        StackPanel content = new()
+        {
+            Width = 320,
+            Margin = new Thickness(2)
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Методичка по отчёту коллизий",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "Нажмите, чтобы открыть понятную инструкцию: какой файл выбрать, где нажать и как перейти к коллизии в 3D.",
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        return new ToolTip
+        {
+            Content = content
+        };
+    }
+
+    private void ShowGuide()
+    {
+        logger.Info("Clash Report guide requested from the window header.");
+        ClashReportGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
     }
 
     private UIElement CreateClashPanel()

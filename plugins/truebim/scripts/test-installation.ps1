@@ -76,13 +76,21 @@ $report = foreach ($year in $Years) {
     $isoFieldGuideIconPath = Join-Path $versionInstallRoot "Docs\assets\isofield-rebar-workflow-card.svg"
     $isoFieldWindowGuidePath = Join-Path $versionInstallRoot "Docs\assets\isofield-rebar-window-guide.svg"
     $isoFieldExampleFlowPath = Join-Path $versionInstallRoot "Docs\assets\isofield-rebar-example-flow.svg"
+    $isoFieldProjectMapsPath = Join-Path $versionInstallRoot "Docs\assets\isofield-rebar-project-maps.svg"
+    $isoFieldThreePointsPath = Join-Path $versionInstallRoot "Docs\assets\isofield-rebar-three-points.svg"
     $depsFound = Test-Path -LiteralPath $depsPath
     $runtimeConfigFound = Test-Path -LiteralPath $runtimeConfigPath
     $isoFieldGuideFound = Test-Path -LiteralPath $isoFieldGuidePath
     $isoFieldGuideIconFound = Test-Path -LiteralPath $isoFieldGuideIconPath
     $isoFieldWindowGuideFound = Test-Path -LiteralPath $isoFieldWindowGuidePath
     $isoFieldExampleFlowFound = Test-Path -LiteralPath $isoFieldExampleFlowPath
-    $isoFieldGuideAssetsFound = $isoFieldGuideIconFound -and $isoFieldWindowGuideFound -and $isoFieldExampleFlowFound
+    $isoFieldProjectMapsFound = Test-Path -LiteralPath $isoFieldProjectMapsPath
+    $isoFieldThreePointsFound = Test-Path -LiteralPath $isoFieldThreePointsPath
+    $isoFieldGuideAssetsFound = $isoFieldGuideIconFound `
+        -and $isoFieldWindowGuideFound `
+        -and $isoFieldExampleFlowFound `
+        -and $isoFieldProjectMapsFound `
+        -and $isoFieldThreePointsFound
     $net8PayloadOk = $year -notin @("2025", "2026") -or $depsFound
     $smokeTested = $SmokeTestedYears -contains $year
     $successful = $manifestInstalled -and $xmlValid -and $assemblyFound -and $payloadDllFound -and $net8PayloadOk -and $isoFieldGuideFound -and $isoFieldGuideAssetsFound
@@ -104,6 +112,8 @@ $report = foreach ($year in $Years) {
         IsoFieldGuideIconFound = $isoFieldGuideIconFound
         IsoFieldWindowGuideFound = $isoFieldWindowGuideFound
         IsoFieldExampleFlowFound = $isoFieldExampleFlowFound
+        IsoFieldProjectMapsFound = $isoFieldProjectMapsFound
+        IsoFieldThreePointsFound = $isoFieldThreePointsFound
         IsoFieldGuideAssetsFound = $isoFieldGuideAssetsFound
         RuntimeSmokeTested = $smokeTested
         SuccessfulFileValidation = $successful

@@ -17,6 +17,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "раскраски"
         },
         {
+            "TrueBIM_ParameterAudit",
+            TrueBimRibbon.ModelReviewPanelName,
+            "Проверка\nпараметров",
+            $"TrueBIM.App.Commands.{nameof(ParameterAuditCommand)}",
+            TrueBimIcon.Check,
+            "CSV или XLSX"
+        },
+        {
             "TrueBIM_FinishSchedule",
             TrueBimRibbon.ArPanelName,
             "Ведомость\nотделки",
@@ -30,7 +38,7 @@ public sealed class AppRibbonButtonDefinitionTests
             "Армирование\nпо изополям",
             $"TrueBIM.App.Commands.{nameof(IsoFieldRebarCommand)}",
             TrueBimIcon.IsoFieldRebar,
-            "изополям"
+            "изополей"
         },
         {
             "TrueBIM_Lintels",
@@ -47,6 +55,14 @@ public sealed class AppRibbonButtonDefinitionTests
             $"TrueBIM.App.Commands.{nameof(ScheduleImportCommand)}",
             TrueBimIcon.ScheduleImport,
             "таблиц"
+        },
+        {
+            "TrueBIM_ScheduleRegister",
+            TrueBimRibbon.BimDocumentationPanelName,
+            "Ведомость\nспецификаций",
+            $"TrueBIM.App.Commands.{nameof(ScheduleRegisterCommand)}",
+            TrueBimIcon.ScheduleRegister,
+            "галочками"
         },
         {
             "TrueBIM_JoinCut",
@@ -121,6 +137,15 @@ public sealed class AppRibbonButtonDefinitionTests
             "семейств"
         }
     };
+
+    [Fact]
+    public void RibbonButtons_IncludeFamilyReplacementInCoordination()
+    {
+        TrueBimRibbonButtonDefinition button = Assert.Single(
+            TrueBimRibbon.Buttons, item => item.Name == "TrueBIM_ReplaceFamilies");
+        Assert.Equal(TrueBimRibbon.BimCoordinationPanelName, button.PanelName);
+        Assert.Equal($"TrueBIM.App.Commands.{nameof(ReplaceFamiliesCommand)}", button.CommandClassName);
+    }
 
     [Fact]
     public void RibbonButtons_IncludesViewVisibilityOnViewsPanel()
@@ -335,7 +360,7 @@ public sealed class AppRibbonButtonDefinitionTests
         {
             [TrueBimRibbon.BimDocumentationPanelName] = 4,
             [TrueBimRibbon.BimViewsPanelName] = 3,
-            [TrueBimRibbon.BimCoordinationPanelName] = 2,
+            [TrueBimRibbon.BimCoordinationPanelName] = 3,
             [TrueBimRibbon.BimLibraryPanelName] = 2,
             [TrueBimRibbon.ModelReviewPanelName] = 2,
             [TrueBimRibbon.GeometryPanelName] = 2,
@@ -358,6 +383,7 @@ public sealed class AppRibbonButtonDefinitionTests
     [Theory]
     [InlineData("TrueBIM_AutoTags")]
     [InlineData("TrueBIM_TitleBlockFill")]
+    [InlineData("TrueBIM_ScheduleRegisterSettings")]
     public void RibbonButtons_HideDeferredDocumentationTools(string name)
     {
         Assert.DoesNotContain(

@@ -18,7 +18,7 @@ public sealed class IsoFieldPreviewLayoutService
 
         if (width <= 0 || height <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(width), "Preview size must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(width), "Размер области просмотра должен быть больше нуля.");
         }
 
         if (result.Polylines.Count == 0)

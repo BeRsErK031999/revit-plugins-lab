@@ -1,7 +1,6 @@
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
-using System.Windows.Interop;
 using TrueBIM.App.Modules.Lintels;
 using TrueBIM.App.Modules.Lintels.Models;
 using TrueBIM.App.Modules.Lintels.Revit;
@@ -39,11 +38,9 @@ public sealed class LintelsCommand : IExternalCommand
             bool hasCurrentSelection = uiDocument.Selection.GetElementIds().Count > 0;
             bool hasExistingItems = collectorService.HasExistingItems(uiDocument.Document);
             LintelSourceModeWindow sourceWindow = new(hasCurrentSelection, hasExistingItems);
-            new WindowInteropHelper(sourceWindow)
-            {
-                Owner = commandData.Application.MainWindowHandle
-            };
-            if (sourceWindow.ShowDialog() != true)
+            if (RevitModalWindowService.ShowDialog(
+                    sourceWindow,
+                    commandData.Application.MainWindowHandle) != true)
             {
                 logger.Info("Lintels source selection was cancelled. Model was not changed.");
                 return Result.Cancelled;

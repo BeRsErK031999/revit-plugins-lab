@@ -9,7 +9,9 @@ plugins/truebim/artifacts/
 plugins/truebim/artifacts-2022/
 plugins/truebim/artifacts-2026/
 plugins/truebim/installer/Output/
+plugins/truebim/test-results/
 dist/
+tmp/
 *.addin.user
 *.journal
 *.rvt
@@ -29,3 +31,4 @@ Desktop.ini
 
 # Local tool downloads
 tools/downloads/
+tools/.dotnet/

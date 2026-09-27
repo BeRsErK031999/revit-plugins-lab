@@ -52,6 +52,24 @@ public sealed class IsoFieldRebarQualityServiceTests
     }
 
     [Fact]
+    public void Analyze_RequiredAreaAtPublishedTolerance_IsAccepted()
+    {
+        RebarRulePreviewItem item = CreateItem(
+            "zone-a",
+            IsoFieldLayerRole.As1X,
+            CreateRegion(0, 0, 10, 10),
+            requiredArea: 14,
+            providedArea: 13.98);
+
+        IsoFieldRebarQualityResult result = service.Analyze(
+            CreatePreview([item]),
+            CreateBinding());
+
+        Assert.DoesNotContain(result.Issues, issue =>
+            issue.Code == IsoFieldRebarQualityCode.RequiredAreaDeficit);
+    }
+
+    [Fact]
     public void Analyze_CrossLayerOverlapIsAllowed()
     {
         RebarRulePreviewItem first = CreateItem(
@@ -80,7 +98,10 @@ public sealed class IsoFieldRebarQualityServiceTests
 
         IsoFieldRebarQualityResult result = service.Analyze(
             CreatePreview([item]),
-            CreateBinding(clippedZoneIds: ["zone-a"], outsideZoneIds: ["source-outside"]));
+            CreateBinding(
+                clippedZoneIds: ["zone-a"],
+                removedZoneIds: ["source-outside"],
+                outsideZoneIds: ["source-outside"]));
 
         Assert.Empty(result.BlockingIssues);
         Assert.Contains(result.Warnings, issue => issue.Code == IsoFieldRebarQualityCode.PartialLayerCoverage);
@@ -106,6 +127,22 @@ public sealed class IsoFieldRebarQualityServiceTests
         IsoFieldRebarQualityIssue issue = Assert.Single(result.BlockingIssues, candidate =>
             candidate.Code == IsoFieldRebarQualityCode.FinalGeometryOutsideHost);
         Assert.Equal(["outside"], issue.EffectiveZoneIds);
+    }
+
+    [Fact]
+    public void Analyze_SubDisplayResolutionGeometryNoise_IsIgnored()
+    {
+        RebarRulePreviewItem item = CreateItem(
+            "edge-noise",
+            IsoFieldLayerRole.As1X,
+            CreateRegion(0, 0, 10.00001, 10));
+
+        IsoFieldRebarQualityResult result = service.Analyze(
+            CreatePreview([item]),
+            CreateBinding());
+
+        Assert.DoesNotContain(result.Issues, issue =>
+            issue.Code == IsoFieldRebarQualityCode.FinalGeometryOutsideHost);
     }
 
     [Fact]
@@ -196,6 +233,7 @@ public sealed class IsoFieldRebarQualityServiceTests
 
     private static IsoFieldSlabBindingAnalysis CreateBinding(
         IReadOnlyList<string>? clippedZoneIds = null,
+        IReadOnlyList<string>? removedZoneIds = null,
         IReadOnlyList<string>? outsideZoneIds = null)
     {
         IReadOnlyList<IsoFieldPoint> outer = CreateLoop(0, 0, 10, 10);
@@ -219,12 +257,13 @@ public sealed class IsoFieldRebarQualityServiceTests
             Array.Empty<IReadOnlyList<IsoFieldPoint>>(),
             Array.Empty<IsoFieldPoint>(),
             clippedZoneIds ?? Array.Empty<string>(),
-            Array.Empty<string>(),
+            removedZoneIds ?? Array.Empty<string>(),
             outsideZoneIds ?? Array.Empty<string>(),
             outsideZoneIds?.Count ?? 0,
             1,
             0,
             10,
+            true,
             true,
             Array.Empty<string>(),
             true);

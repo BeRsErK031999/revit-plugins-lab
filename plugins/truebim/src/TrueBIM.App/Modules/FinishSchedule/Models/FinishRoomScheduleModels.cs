@@ -8,6 +8,13 @@ public enum FinishRoomScheduleAction
     Blocked
 }
 
+public enum FinishScheduleHeaderMode
+{
+    Custom,
+    Standard,
+    None
+}
+
 public enum FinishRoomScheduleColumnKind
 {
     RoomList,
@@ -45,7 +52,8 @@ public sealed class FinishRoomSchedulePlan
         IEnumerable<FinishRoomScheduleColumn> columns,
         FinishRoomScheduleScopeFilter scopeFilter,
         string settingsHash,
-        IEnumerable<string> parameterIdentities)
+        IEnumerable<string> parameterIdentities,
+        IEnumerable<long>? roomIds = null)
     {
         if (string.IsNullOrWhiteSpace(scheduleName))
         {
@@ -61,6 +69,7 @@ public sealed class FinishRoomSchedulePlan
         Columns = (columns ?? throw new ArgumentNullException(nameof(columns))).ToArray();
         ScopeFilter = scopeFilter ?? throw new ArgumentNullException(nameof(scopeFilter));
         SettingsHash = settingsHash;
+        RoomIds = roomIds?.Distinct().OrderBy(id => id).ToArray();
         ParameterIdentities = (parameterIdentities ?? throw new ArgumentNullException(nameof(parameterIdentities)))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(identity => identity, StringComparer.Ordinal)
@@ -81,6 +90,13 @@ public sealed class FinishRoomSchedulePlan
     public string SettingsHash { get; }
 
     public IReadOnlyList<string> ParameterIdentities { get; }
+
+    public IReadOnlyList<long>? RoomIds { get; }
+
+    public FinishRoomSchedulePlan WithName(string name)
+    {
+        return new FinishRoomSchedulePlan(name, Columns, ScopeFilter, SettingsHash, ParameterIdentities, RoomIds);
+    }
 }
 
 public sealed class FinishRoomSchedulePreflight
@@ -89,12 +105,14 @@ public sealed class FinishRoomSchedulePreflight
         FinishRoomSchedulePlan? plan,
         FinishRoomScheduleAction action,
         long? scheduleId,
-        IEnumerable<FinishWriteIssue> issues)
+        IEnumerable<FinishWriteIssue> issues,
+        IEnumerable<long>? legacyScheduleIds = null)
     {
         Plan = plan;
         Action = action;
         ScheduleId = scheduleId;
         Issues = FinishWriteOrdering.OrderIssues(issues);
+        LegacyScheduleIds = (legacyScheduleIds ?? []).Distinct().OrderBy(id => id).ToArray();
     }
 
     public FinishRoomSchedulePlan? Plan { get; }
@@ -104,6 +122,8 @@ public sealed class FinishRoomSchedulePreflight
     public long? ScheduleId { get; }
 
     public IReadOnlyList<FinishWriteIssue> Issues { get; }
+
+    public IReadOnlyList<long> LegacyScheduleIds { get; }
 
     public bool RequiresTransaction => Action is FinishRoomScheduleAction.Create or FinishRoomScheduleAction.Update;
 

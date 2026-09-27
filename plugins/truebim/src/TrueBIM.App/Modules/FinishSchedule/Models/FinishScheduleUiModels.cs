@@ -57,7 +57,7 @@ public sealed record FinishScheduleLaunchState(
         return new FinishScheduleLaunchState(
             IsConfigurationValid: true,
             CanGenerate: true,
-            StatusText: "Настройки совместимы. Можно рассчитать и записать параметры помещений.",
-            GenerateToolTip: "Рассчитать отделку и атомарно записать параметры. Создание спецификации будет подключено в FS-008.");
+            StatusText: "Настройки совместимы. Можно сформировать новую версию ведомости отделки.",
+            GenerateToolTip: "Рассчитать отделку, записать изменившиеся параметры и создать новую версию ведомости с сохранением прежних данных.");
     }
 }

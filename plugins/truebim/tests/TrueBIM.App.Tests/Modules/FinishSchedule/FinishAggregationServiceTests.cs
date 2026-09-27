@@ -7,6 +7,34 @@ namespace TrueBIM.App.Tests.Modules.FinishSchedule;
 public sealed class FinishAggregationServiceTests
 {
     [Fact]
+    public void CeilingOwnershipAndScheduleUseTheSameResolvedOccurrence()
+    {
+        FinishScheduleSettings settings = Settings(ceilings: true);
+        settings = settings with
+        {
+            WriteOwnership = true,
+            Ceilings = settings.Ceilings with
+            {
+                OwnershipParameter = ParameterReference.Project("Потолки • Номер помещения", 50,
+                    ParameterBindingKind.Instance, ParameterStorageKind.String)
+            }
+        };
+        FinishClassifiedElement ceiling = Element(11, 1011, FinishPreviewCategory.Ceilings);
+        FinishQuantityResult quantities = new FinishElementOwnershipResolver().Resolve(
+            [Occurrence(211, 11, 17.5, FinishPreviewCategory.Ceilings)],
+            new Dictionary<long, double> { [11] = 19.03 });
+        RoomFinishSnapshotBuildResult snapshots = BuildSnapshots(settings, [Room(211, "211")],
+            [ceiling], [Type(1011, "Ceiling finish")], quantities.Occurrences, quantities.Warnings);
+        FinishAggregationResult aggregation = new FinishAggregationService(
+            new FinishGroupKeyBuilder(), new FinishAggregationFormatter()).Aggregate(snapshots);
+        FinishParameterTargetBuildResult ownership = new FinishOwnershipValueBuilder().Build(
+            settings, [ceiling], quantities, snapshots);
+        Assert.Equal("211", Assert.Single(ownership.Targets).Value);
+        Assert.Equal("19,03", aggregation.RoomOutputs[211].Ceilings!.AreaText);
+        Assert.Equal("Ceiling finish", aggregation.RoomOutputs[211].Ceilings!.DescriptionText);
+    }
+
+    [Fact]
     public void SameDescriptionsWithDifferentAreas_CreateOneGroup()
     {
         FinishAggregationResult result = Build(
@@ -96,11 +124,10 @@ public sealed class FinishAggregationServiceTests
             [Occurrence(1, 11, 10), Occurrence(1, 12, 2)]);
 
         FinishFormattedCategoryOutput output = Assert.Single(result.Groups).Output.Walls!;
-        Assert.Equal(["Coat 2", string.Empty, "Coat 10"], Lines(output.DescriptionText));
+        Assert.Equal(["Coat 2", "Coat 10"], Lines(output.DescriptionText));
         string[] areaLines = Lines(output.AreaText);
         Assert.Equal("2,00", areaLines[0]);
-        Assert.True(string.IsNullOrWhiteSpace(areaLines[1]));
-        Assert.Equal("10,00", areaLines[2]);
+        Assert.Equal("10,00", areaLines[1]);
         Assert.Equal(Lines(output.DescriptionText).Length, Lines(output.AreaText).Length);
     }
 
@@ -131,7 +158,13 @@ public sealed class FinishAggregationServiceTests
         string[] areaLines = Lines(output.AreaText);
         Assert.Equal(descriptionLines.Length, areaLines.Length);
 
-        (int Start, int End)[] blocks = DescriptionBlocks(descriptionLines);
+        Assert.DoesNotContain(descriptionLines, string.IsNullOrWhiteSpace);
+        int[] starts = Enumerable.Range(0, descriptionLines.Length)
+            .Where(index => descriptionLines[index].StartsWith("01 ", StringComparison.Ordinal)
+                            || descriptionLines[index].StartsWith("02 ", StringComparison.Ordinal)
+                            || descriptionLines[index].StartsWith("03 ", StringComparison.Ordinal)).ToArray();
+        (int Start, int End)[] blocks = starts.Select((start, index) =>
+            (start, index + 1 < starts.Length ? starts[index + 1] - 1 : descriptionLines.Length - 1)).ToArray();
         Assert.Equal(3, blocks.Length);
         int[] areaRows = areaLines
             .Select((line, index) => (Line: line.Trim(), Index: index))
@@ -428,25 +461,4 @@ public sealed class FinishAggregationServiceTests
         return value.Split([Environment.NewLine], StringSplitOptions.None);
     }
 
-    private static (int Start, int End)[] DescriptionBlocks(string[] lines)
-    {
-        List<(int Start, int End)> blocks = [];
-        int start = 0;
-        for (int index = 0; index <= lines.Length; index++)
-        {
-            if (index < lines.Length && lines[index].Length > 0)
-            {
-                continue;
-            }
-
-            if (index > start)
-            {
-                blocks.Add((start, index - 1));
-            }
-
-            start = index + 1;
-        }
-
-        return blocks.ToArray();
-    }
 }

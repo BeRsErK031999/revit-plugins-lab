@@ -39,7 +39,14 @@ public sealed record IsoFieldRebarReviewRow(
 
     public bool IsMerged => EffectiveSourceZoneIds.Count > 1;
 
-    public string LayerText => LayerRole?.ToString() ?? "—";
+    public string LayerText => LayerRole switch
+    {
+        IsoFieldLayerRole.As1X => "X, карта 1",
+        IsoFieldLayerRole.As2X => "X, карта 2",
+        IsoFieldLayerRole.As3Y => "Y, карта 1",
+        IsoFieldLayerRole.As4Y => "Y, карта 2",
+        _ => "—"
+    };
 
     public string StatusText => Status switch
     {
@@ -48,7 +55,7 @@ public sealed record IsoFieldRebarReviewRow(
         IsoFieldRebarReviewStatus.Update => "Обновить",
         IsoFieldRebarReviewStatus.Delete => "Удалить",
         IsoFieldRebarReviewStatus.Unchanged => "Без изменений",
-        IsoFieldRebarReviewStatus.Mixed => "Смешано",
+        IsoFieldRebarReviewStatus.Mixed => "Несколько изменений",
         IsoFieldRebarReviewStatus.Invalid => "Ошибка",
         IsoFieldRebarReviewStatus.Excluded => "Исключена",
         _ => Status.ToString()
@@ -79,7 +86,7 @@ public sealed record IsoFieldRebarReviewRow(
             ? string.Join(" ", Diagnostics)
             : "Правило содержит ошибку",
         IsoFieldRebarReviewStatus.Excluded => "Не войдёт в раскладку",
-        _ => $"+{AddCount} · ~{UpdateCount} · −{DeleteCount} · ={UnchangedCount}"
+        _ => $"добавить {AddCount} · изменить {UpdateCount} · удалить {DeleteCount} · оставить {UnchangedCount}"
     };
 
     private static string FormatZoneCount(int count)

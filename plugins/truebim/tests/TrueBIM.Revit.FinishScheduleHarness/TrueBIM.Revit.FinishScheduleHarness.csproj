@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DefineConstants>$(DefineConstants);REVIT2020_OR_GREATER;REVIT2021_OR_GREATER;REVIT2022_OR_GREATER</DefineConstants>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2022</RevitVersion>
+    <RevitApiRoot>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI"><HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Compile Include="..\..\src\TrueBIM.App\Compatibility\IsExternalInit.cs" Link="Source\IsExternalInit.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Services\RevitElementIds.cs" Link="Source\RevitElementIds.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Services\Logging\ITrueBimLogger.cs" Link="Source\ITrueBimLogger.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\FinishSchedule\Models\*.cs" Link="Source\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\FinishSchedule\Services\*.cs" Exclude="..\..\src\TrueBIM.App\Modules\FinishSchedule\Services\*Storage.cs" Link="Source\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\FinishSchedule\Revit\*.cs" Link="Source\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

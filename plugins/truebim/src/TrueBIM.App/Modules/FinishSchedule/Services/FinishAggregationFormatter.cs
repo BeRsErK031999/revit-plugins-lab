@@ -95,12 +95,6 @@ public sealed class FinishAggregationFormatter
         List<string> areaLines = [];
         for (int index = 0; index < formattedItems.Count; index++)
         {
-            if (index > 0)
-            {
-                descriptionLines.Add(string.Empty);
-                areaLines.Add(PreservedBlankLine);
-            }
-
             FormattedItem item = formattedItems[index];
             IReadOnlyList<string> wrappedDescription = Wrap(item.Description);
             descriptionLines.AddRange(wrappedDescription);

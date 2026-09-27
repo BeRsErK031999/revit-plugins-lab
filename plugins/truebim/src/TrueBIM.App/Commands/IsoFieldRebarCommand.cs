@@ -45,7 +45,7 @@ public sealed class IsoFieldRebarCommand : IExternalCommand
             logger.Error("Failed to open IsoField Rebar module scaffold.", exception);
             TaskDialog.Show(
                 "Армирование по изополям",
-                "Не удалось открыть модуль армирования по изополям. Используйте логи для диагностики.");
+                "Не удалось открыть армирование по изополям. Откройте журнал работы TrueBIM, чтобы узнать подробности.");
             return Result.Failed;
         }
     }

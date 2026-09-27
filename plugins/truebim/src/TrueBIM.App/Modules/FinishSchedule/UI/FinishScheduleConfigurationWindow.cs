@@ -146,7 +146,7 @@ public sealed class FinishScheduleConfigurationWindow : TrueBimWindow
     {
         StackPanel panel = new();
         panel.Children.Add(CreateDescription(
-            "Текстовый параметр типа должен быть доступен у всех включённых физических категорий."));
+            "Выберите параметр типа с составом отделки: «• Состав», «Состав» или проектный аналог. Его текст попадёт в ведомость. Параметр должен быть доступен у всех включённых физических категорий."));
         panel.Children.Add(CreateFieldRow("Источник описания", descriptionInput, isLast: true));
         return panel;
     }

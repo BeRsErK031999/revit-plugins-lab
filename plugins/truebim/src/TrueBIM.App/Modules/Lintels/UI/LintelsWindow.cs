@@ -26,6 +26,8 @@ public sealed class LintelsWindow : TrueBimWindow
     private const string DialogTitle = "Перемычки";
     private const string DefaultFrameFamilyFilePath =
         @"Y:\01 - REVIT\03 - FAMILIES 2017\Аннотации\•• (Аннотация) Рамка аннотации.rfa";
+    private const string DefaultElevationAnnotationFamilyFilePath =
+        @"Y:\01 - REVIT\03 - FAMILIES 2017\Аннотации\(Аннотация) Высотная отметка.rfa";
 
     private readonly UIDocument uiDocument;
     private readonly LintelDiagnosticCollectorService collectorService;
@@ -45,10 +47,13 @@ public sealed class LintelsWindow : TrueBimWindow
     private readonly Button createButton;
     private readonly Button createViewButton;
     private readonly Button frameFamilyButton;
+    private readonly Button elevationAnnotationFamilyButton;
     private readonly TextBlock frameFamilyStatusText = new();
+    private readonly TextBlock elevationAnnotationFamilyStatusText = new();
     private LintelDiagnosticResult currentResult;
     private IReadOnlyList<LintelPreparedViewRequest> preparedViewRequests = [];
     private string? selectedFrameFamilyPath;
+    private string? selectedElevationAnnotationFamilyPath;
     private bool isBulkSelectionUpdate;
 
     public LintelsWindow(
@@ -99,8 +104,19 @@ public sealed class LintelsWindow : TrueBimWindow
             minWidth: 210);
         frameFamilyButton.ToolTip = "Выбрать загружаемое семейство Revit, которым TrueBIM разместит рамку на каждом создаваемом виде.";
 
+        elevationAnnotationFamilyButton = TrueBimUi.CreateSecondaryButton(
+            "Шаг 4: выбрать высотную отметку .rfa",
+            TrueBimIcon.FamilyManager,
+            (_, _) => SelectElevationAnnotationFamily(),
+            minWidth: 265);
+        elevationAnnotationFamilyButton.ToolTip =
+            "Выбрать семейство категории «Типовая аннотация», которое TrueBIM разместит с текстом «отм.» по нижней грани перемычек.";
+
         selectedFrameFamilyPath = File.Exists(DefaultFrameFamilyFilePath)
             ? DefaultFrameFamilyFilePath
+            : null;
+        selectedElevationAnnotationFamilyPath = File.Exists(DefaultElevationAnnotationFamilyFilePath)
+            ? DefaultElevationAnnotationFamilyFilePath
             : null;
         createViewButton = TrueBimUi.CreateSecondaryButton(
             "Шаг 4: создать виды 1:10",
@@ -108,7 +124,8 @@ public sealed class LintelsWindow : TrueBimWindow
             (_, _) => RequestAssemblyViewCreation(),
             isEnabled: false,
             minWidth: 225);
-        createViewButton.ToolTip = "Сначала создайте сборки для отмеченных типоразмеров и выберите файл семейства рамки .rfa.";
+        createViewButton.ToolTip =
+            "Сначала создайте сборки для отмеченных типоразмеров и выберите семейства рамки и высотной аннотации .rfa.";
         ToolTipService.SetShowOnDisabled(createViewButton, true);
 
         frameFamilyStatusText.Text = selectedFrameFamilyPath is null
@@ -118,6 +135,14 @@ public sealed class LintelsWindow : TrueBimWindow
             ? TrueBimBrushes.TextSecondary
             : TrueBimBrushes.TextPrimary;
         frameFamilyStatusText.TextWrapping = TextWrapping.Wrap;
+
+        elevationAnnotationFamilyStatusText.Text = selectedElevationAnnotationFamilyPath is null
+            ? "Высотная аннотация не найдена автоматически. На шаге 4 укажите семейство «Типовая аннотация» (.rfa)."
+            : $"Высотная аннотация найдена в библиотеке: {Path.GetFileName(selectedElevationAnnotationFamilyPath)}. При необходимости выберите другой файл.";
+        elevationAnnotationFamilyStatusText.Foreground = selectedElevationAnnotationFamilyPath is null
+            ? TrueBimBrushes.TextSecondary
+            : TrueBimBrushes.TextPrimary;
+        elevationAnnotationFamilyStatusText.TextWrapping = TextWrapping.Wrap;
 
         Title = DialogTitle;
         Icon = IconFactory.CreateImage(TrueBimIcon.Lintels, TrueBimTheme.IconSizeRibbon);
@@ -143,34 +168,37 @@ public sealed class LintelsWindow : TrueBimWindow
 
     private UIElement CreateCommandBar()
     {
-        Button selectReadyButton = TrueBimUi.CreateSecondaryButton(
-            "Выбрать готовые",
-            TrueBimIcon.Check,
-            (_, _) => SetReadySelection(true),
-            minWidth: 145);
-        selectReadyButton.ToolTip = "Отметить типоразмеры, у которых найдены вложенные проектные компоненты с геометрией.";
-
-        Button clearSelectionButton = TrueBimUi.CreateSecondaryButton(
-            "Снять выбор",
-            TrueBimIcon.Close,
-            (_, _) => SetReadySelection(false),
-            minWidth: 125);
-        clearSelectionButton.ToolTip = "Снять отметки со всех типоразмеров.";
-
         Button diagnosticsButton = TrueBimUi.CreateSecondaryButton(
             "Диагностика",
             TrueBimIcon.Info,
             (_, _) => ShowDiagnostics(),
             minWidth: 130);
-        diagnosticsButton.ToolTip = "Показать причины исключения элементов и подробности временного правила поиска.";
+        diagnosticsButton.ToolTip = "Показать причины исключения элементов и подробности правила поиска.";
+
+        Button guideButton = TrueBimUi.CreateSecondaryButton(
+            "Методичка",
+            TrueBimIcon.Help,
+            (_, _) => ShowGuide(),
+            minWidth: 135);
+        guideButton.ToolTip = "Открыть полную пошаговую методичку по поиску, сборкам, загружаемым .rfa, видам и PNG.";
+        AutomationProperties.SetName(guideButton, "Открыть методичку по перемычкам");
+        AutomationProperties.SetHelpText(guideButton, "Полный пошаговый сценарий работы с модулем «Перемычки».");
 
         return TrueBimUi.CreateCommandBar(
-            selectReadyButton,
-            clearSelectionButton,
+            guideButton,
             refreshButton,
             preflightButton,
-            frameFamilyButton,
             diagnosticsButton);
+    }
+
+    private void ShowGuide()
+    {
+        logger.Info("Lintels guide requested from the main window.");
+        LintelGuideWindow guideWindow = new()
+        {
+            Owner = this
+        };
+        guideWindow.ShowDialog();
     }
 
     private UIElement CreateBody()
@@ -181,7 +209,7 @@ public sealed class LintelsWindow : TrueBimWindow
         body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         Border workflowGuide = TrueBimUi.CreateInfoBanner(
-            "Как пройти дальше: 2 — отметьте один или несколько типоразмеров; 3 — нажмите «Создать сборки»; 4 — выберите .rfa рамки и нажмите «Создать виды 1:10». Выбор сохраняется между шагами.");
+            "Как пройти дальше: 2 — отметьте один или несколько типоразмеров; 3 — нажмите «Создать сборки»; 4 — выберите .rfa рамки и высотной аннотации, затем нажмите «Создать виды 1:10». Выбор сохраняется между шагами.");
         workflowGuide.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         body.Children.Add(workflowGuide);
 
@@ -194,7 +222,9 @@ public sealed class LintelsWindow : TrueBimWindow
         columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TrueBimTheme.Spacing16) });
         columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
 
-        UIElement typesPanel = CreateStretchSection("Шаг 2. Выберите типоразмеры", CreateTypeGrid());
+        UIElement typesPanel = CreateStretchSection(
+            "Шаг 2. Выберите типоразмеры",
+            CreateTypeSelectionContent());
         columns.Children.Add(typesPanel);
 
         ScrollViewer previewScroll = new()
@@ -206,8 +236,22 @@ public sealed class LintelsWindow : TrueBimWindow
         Grid previewPanelContent = new();
         previewPanelContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         previewPanelContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        frameFamilyStatusText.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
-        previewPanelContent.Children.Add(frameFamilyStatusText);
+
+        StackPanel annotationFamilySettings = new();
+        frameFamilyButton.HorizontalAlignment = HorizontalAlignment.Left;
+        annotationFamilySettings.Children.Add(frameFamilyButton);
+        frameFamilyStatusText.Margin = new Thickness(0, TrueBimTheme.Spacing4, 0, TrueBimTheme.Spacing12);
+        annotationFamilySettings.Children.Add(frameFamilyStatusText);
+        elevationAnnotationFamilyButton.HorizontalAlignment = HorizontalAlignment.Left;
+        annotationFamilySettings.Children.Add(elevationAnnotationFamilyButton);
+        elevationAnnotationFamilyStatusText.Margin = new Thickness(
+            0,
+            TrueBimTheme.Spacing4,
+            0,
+            TrueBimTheme.Spacing12);
+        annotationFamilySettings.Children.Add(elevationAnnotationFamilyStatusText);
+        previewPanelContent.Children.Add(annotationFamilySettings);
+
         Grid.SetRow(previewScroll, 1);
         previewPanelContent.Children.Add(previewScroll);
         UIElement previewPanel = CreateStretchSection("Что создаст TrueBIM", previewPanelContent);
@@ -217,6 +261,44 @@ public sealed class LintelsWindow : TrueBimWindow
         Grid.SetRow(columns, 2);
         body.Children.Add(columns);
         return body;
+    }
+
+    private UIElement CreateTypeSelectionContent()
+    {
+        Grid content = new();
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        StackPanel actions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing8)
+        };
+        Button selectAllButton = TrueBimUi.CreateSecondaryButton(
+            "Выбрать все",
+            TrueBimIcon.Check,
+            (_, _) => SetReadySelection(true),
+            minWidth: 135);
+        selectAllButton.ToolTip =
+            "Отметить все доступные типоразмеры. Заблокированные строки останутся без отметки.";
+        AutomationProperties.SetName(selectAllButton, "Выбрать все доступные типоразмеры");
+        actions.Children.Add(selectAllButton);
+
+        Button clearSelectionButton = TrueBimUi.CreateSecondaryButton(
+            "Снять выбор",
+            TrueBimIcon.Close,
+            (_, _) => SetReadySelection(false),
+            minWidth: 125);
+        clearSelectionButton.Margin = new Thickness(TrueBimTheme.Spacing8, 0, 0, 0);
+        clearSelectionButton.ToolTip = "Снять отметки со всех типоразмеров.";
+        AutomationProperties.SetName(clearSelectionButton, "Снять выбор типоразмеров");
+        actions.Children.Add(clearSelectionButton);
+        content.Children.Add(actions);
+
+        UIElement grid = CreateTypeGrid();
+        Grid.SetRow(grid, 1);
+        content.Children.Add(grid);
+        return content;
     }
 
     private UIElement CreateTypeGrid()
@@ -619,7 +701,7 @@ public sealed class LintelsWindow : TrueBimWindow
                 $"Новых сборок: {preflight.ReadyCount}{Environment.NewLine}"
                 + $"Уже существуют: {preflight.ExistingCount}{Environment.NewLine}"
                 + $"Будут пропущены: {preflight.BlockedCount}{Environment.NewLine}{Environment.NewLine}"
-                + "На этом шаге создаются только Assembly. Виды и рамки создаются отдельной кнопкой шага 4.",
+                + "На этом шаге создаются только Assembly. Виды, рамки и высотные аннотации создаются отдельной кнопкой шага 4.",
             ExpandedContent = string.Join(
                 Environment.NewLine,
                 preflight.Items.Select(item =>
@@ -694,7 +776,7 @@ public sealed class LintelsWindow : TrueBimWindow
             int successfulCount = results.Count(result => result.Status is
                 LintelAssemblyCreationStatus.Created or LintelAssemblyCreationStatus.AlreadyExists);
             footerStatusText.Text =
-                $"Шаг 3 завершён: готовы сборки {successfulCount}/{results.Count}. Выбор сохранён; выберите .rfa рамки и переходите к шагу 4.";
+                $"Шаг 3 завершён: готовы сборки {successfulCount}/{results.Count}. Assembly сам по себе не открывается: дочерний вид появится после шага 4. Выбор сохранён.";
         }
 
         TaskDialog dialog = new(DialogTitle)
@@ -783,13 +865,22 @@ public sealed class LintelsWindow : TrueBimWindow
     private void UpdatePreparedViewButtonState()
     {
         bool hasRequests = preparedViewRequests.Count > 0;
+        int selectedCount = GetSelectedTypes().Length;
+        int skippedCount = Math.Max(0, selectedCount - preparedViewRequests.Count);
+        string batchSummary = skippedCount == 0
+            ? $"Сборки готовы: {preparedViewRequests.Count}."
+            : $"Сборки готовы: {preparedViewRequests.Count} из {selectedCount}; без отдельной сборки и будут пропущены: {skippedCount}.";
         bool hasFrameFamily = !string.IsNullOrWhiteSpace(selectedFrameFamilyPath);
-        createViewButton.IsEnabled = hasRequests && hasFrameFamily;
+        bool hasElevationAnnotationFamily =
+            !string.IsNullOrWhiteSpace(selectedElevationAnnotationFamilyPath);
+        createViewButton.IsEnabled = hasRequests && hasFrameFamily && hasElevationAnnotationFamily;
         string explanation = !hasRequests
             ? "Сначала создайте сборки для отмеченных типоразмеров."
             : !hasFrameFamily
-                ? $"Сборки готовы: {preparedViewRequests.Count}. Теперь нажмите «Шаг 4: выбрать рамку .rfa»."
-                : $"Создать или повторно оформить боковые виды 1:10: {preparedViewRequests.Count}. Рамка: {Path.GetFileName(selectedFrameFamilyPath)}.";
+                ? $"{batchSummary} Теперь нажмите «Шаг 4: выбрать рамку .rfa»."
+                : !hasElevationAnnotationFamily
+                    ? $"{batchSummary} Теперь выберите семейство высотной отметки .rfa."
+                    : $"{batchSummary} Создать или повторно оформить боковые виды 1:10: {preparedViewRequests.Count}. Рамка: {Path.GetFileName(selectedFrameFamilyPath)}; высотная аннотация: {Path.GetFileName(selectedElevationAnnotationFamilyPath)}.";
         createViewButton.ToolTip = explanation;
         AutomationProperties.SetHelpText(createViewButton, explanation);
     }
@@ -818,13 +909,39 @@ public sealed class LintelsWindow : TrueBimWindow
             $"Семейство рамки выбрано: {selectedFrameFamilyPath}. Если сборки готовы, можно выполнить шаг 4.";
     }
 
+    private void SelectElevationAnnotationFamily()
+    {
+        OpenFileDialog dialog = new()
+        {
+            Title = "Выбрать семейство высотной аннотации для видов перемычек",
+            Filter = "Семейства Revit (*.rfa)|*.rfa",
+            CheckFileExists = true,
+            Multiselect = false,
+            FileName = selectedElevationAnnotationFamilyPath
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        selectedElevationAnnotationFamilyPath = dialog.FileName;
+        elevationAnnotationFamilyStatusText.Text =
+            $"Высотная аннотация: {Path.GetFileName(selectedElevationAnnotationFamilyPath)}. TrueBIM разместит её с текстом «отм.» по центру нижней границы перемычек.";
+        elevationAnnotationFamilyStatusText.Foreground = TrueBimBrushes.TextPrimary;
+        UpdatePreparedViewButtonState();
+        footerStatusText.Text =
+            $"Семейство высотной аннотации выбрано: {selectedElevationAnnotationFamilyPath}. Если сборки и рамка готовы, можно выполнить шаг 4.";
+    }
+
     private void RequestAssemblyViewCreation()
     {
         if (!createViewButton.IsEnabled
             || preparedViewRequests.Count == 0
-            || string.IsNullOrWhiteSpace(selectedFrameFamilyPath))
+            || string.IsNullOrWhiteSpace(selectedFrameFamilyPath)
+            || string.IsNullOrWhiteSpace(selectedElevationAnnotationFamilyPath))
         {
-            footerStatusText.Text = "Для шага 4 нужны готовые сборки и выбранный файл семейства рамки .rfa.";
+            footerStatusText.Text =
+                "Для шага 4 нужны готовые сборки и выбранные файлы семейств рамки и высотной аннотации .rfa.";
             return;
         }
 
@@ -833,8 +950,10 @@ public sealed class LintelsWindow : TrueBimWindow
             MainInstruction = $"Выполнить шаг 4 для {preparedViewRequests.Count} сборок?",
             MainContent =
                 $"Семейство рамки: {Path.GetFileName(selectedFrameFamilyPath)}{Environment.NewLine}"
+                + $"Семейство высотной аннотации: {Path.GetFileName(selectedElevationAnnotationFamilyPath)}{Environment.NewLine}"
                 + $"Видов: {preparedViewRequests.Count}{Environment.NewLine}{Environment.NewLine}"
-                + "TrueBIM создаст или переиспользует боковые виды 1:10, нанесёт габаритный размер и отметку «отм.» без выноски по нижней грани, разместит семейство рамки, экспортирует оформленный вид в PNG и назначит PNG параметру типа «Изображение типоразмера».",
+                + BuildSkippedViewSelectionNotice()
+                + "TrueBIM создаст или переиспользует боковые виды 1:10, нанесёт габаритный размер, разместит выбранную типовую аннотацию с текстом «отм.» без выноски по нижней грани и семейство рамки, экспортирует оформленный вид в PNG и назначит PNG параметру типа «Изображение типоразмера».",
             ExpandedContent = string.Join(
                 Environment.NewLine,
                 preparedViewRequests.Select(request =>
@@ -849,13 +968,26 @@ public sealed class LintelsWindow : TrueBimWindow
 
         LintelPreparedViewRequest[] requests = preparedViewRequests.ToArray();
         string frameFamilyPath = selectedFrameFamilyPath!;
+        string elevationAnnotationFamilyPath = selectedElevationAnnotationFamilyPath!;
         footerStatusText.Text = $"Создание или оформление видов поставлено в очередь Revit: {requests.Length}.";
-        revitActions.Raise(() => RunAssemblyViewCreation(requests, frameFamilyPath));
+        revitActions.Raise(() => RunAssemblyViewCreation(
+            requests,
+            frameFamilyPath,
+            elevationAnnotationFamilyPath));
+    }
+
+    private string BuildSkippedViewSelectionNotice()
+    {
+        int skippedCount = Math.Max(0, GetSelectedTypes().Length - preparedViewRequests.Count);
+        return skippedCount == 0
+            ? string.Empty
+            : $"Без отдельной сборки и будут пропущены: {skippedCount}.{Environment.NewLine}{Environment.NewLine}";
     }
 
     private void RunAssemblyViewCreation(
         IReadOnlyCollection<LintelPreparedViewRequest> requests,
-        string frameFamilyPath)
+        string frameFamilyPath,
+        string elevationAnnotationFamilyPath)
     {
         List<LintelAssemblyViewCreationResult> results = [];
         try
@@ -869,6 +1001,7 @@ public sealed class LintelsWindow : TrueBimWindow
                         request.AssemblyName,
                         request.ViewName,
                         frameFamilyPath,
+                        elevationAnnotationFamilyPath,
                         request.TypeId));
                 }
                 catch (Exception exception)
@@ -978,9 +1111,12 @@ public sealed class LintelsWindow : TrueBimWindow
             ? $"Источник: {source}. Типоразмеров: {typeItems.Count}. Готово к обработке: {readyCount}. Выполните шаг 2 — отметьте нужные строки."
             : selectedExistingCount == selectedCount
                 ? selectedFrameFamilyPath is null
-                    ? $"Источник: {source}. Отмечено: {selectedCount}; у всех уже есть сборки TrueBIM. Выберите рамку .rfa и переходите к шагу 4."
-                    : $"Источник: {source}. Отмечено: {selectedCount}; у всех уже есть сборки TrueBIM. Рамка выбрана — кнопка шага 4 доступна."
-                : $"Источник: {source}. Отмечено: {selectedCount}; со сборкой TrueBIM: {selectedExistingCount}. Следующее действие — шаг 3 «Создать сборки».";
+                    || selectedElevationAnnotationFamilyPath is null
+                    ? $"Источник: {source}. Отмечено: {selectedCount}; у всех уже есть сборки TrueBIM. Выберите семейства рамки и высотной аннотации .rfa."
+                    : $"Источник: {source}. Отмечено: {selectedCount}; у всех уже есть сборки TrueBIM. Семейства аннотаций выбраны — кнопка шага 4 доступна."
+                : selectedExistingCount > 0
+                    ? $"Источник: {source}. Отмечено: {selectedCount}; отдельные сборки найдены для {selectedExistingCount}. Шаг 4 обработает найденные сборки, остальные {selectedCount - selectedExistingCount} будут пропущены; для них можно повторить шаг 3."
+                    : $"Источник: {source}. Отмечено: {selectedCount}; со сборкой TrueBIM: 0. Следующее действие — шаг 3 «Создать сборки».";
     }
 
     private static string ResolvePreflightStatus(LintelAssemblyPreflightStatus status)
@@ -1000,7 +1136,7 @@ public sealed class LintelsWindow : TrueBimWindow
         int created = results.Count(result => result.Status == LintelAssemblyCreationStatus.Created);
         int existing = results.Count(result => result.Status == LintelAssemblyCreationStatus.AlreadyExists);
         int skipped = results.Count - created - existing;
-        return $"Создано сборок: {created}; уже существовали: {existing}; не создано: {skipped}. Откройте подробности, чтобы увидеть результат каждой строки.";
+        return $"Создано сборок: {created}; уже существовали: {existing}; не создано: {skipped}. Assembly не является открываемым видом: после закрытия этого сообщения выполните шаг 4. Откройте подробности, чтобы увидеть результат каждой строки.";
     }
 
     private static string BuildAssemblyCreationBatchDetails(
@@ -1073,12 +1209,21 @@ public sealed class LintelsWindow : TrueBimWindow
         string bindingPath,
         DataGridLength width)
     {
+        Style elementStyle = new(typeof(TextBlock));
+        elementStyle.Setters.Add(new Setter(
+            TextBlock.TextTrimmingProperty,
+            TextTrimming.CharacterEllipsis));
+        elementStyle.Setters.Add(new Setter(
+            FrameworkElement.ToolTipProperty,
+            new WpfBinding(bindingPath)));
+
         return new DataGridTextColumn
         {
             Header = header,
             Binding = new WpfBinding(bindingPath),
             Width = width,
-            IsReadOnly = true
+            IsReadOnly = true,
+            ElementStyle = elementStyle
         };
     }
 

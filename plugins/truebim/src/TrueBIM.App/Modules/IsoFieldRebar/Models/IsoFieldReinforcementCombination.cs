@@ -16,6 +16,8 @@ public sealed record IsoFieldRebarComponent(
     public string BarTypeName => $"Ø{DiameterMillimeters:0.###} A500";
 
     public string DisplayName => $"d{DiameterMillimeters:0.###}s{SpacingMillimeters:0.###}";
+
+    public string UserDisplayName => $"Ø{DiameterMillimeters:0.###}, шаг {SpacingMillimeters:0.###} мм";
 }
 
 public sealed record IsoFieldReinforcementCombination(

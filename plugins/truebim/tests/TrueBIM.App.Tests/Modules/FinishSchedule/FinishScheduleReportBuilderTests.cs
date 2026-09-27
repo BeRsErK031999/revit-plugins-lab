@@ -71,7 +71,7 @@ public sealed class FinishScheduleReportBuilderTests
 
         Assert.Contains("КАК ИСПРАВИТЬ", report);
         Assert.Contains("проблемных элементов — 1", report);
-        Assert.Contains("верхнюю границу помещений", report);
+        Assert.Contains("расположение над помещением", report);
     }
 
     [Fact]

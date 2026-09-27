@@ -47,4 +47,37 @@ public sealed class LintelTypeImagePathBuilderTests
             path,
             StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Build_ShortensLongNamesAndKeepsPathBelowWindowsLimit()
+    {
+        string projectName = new('П', 120);
+        string imageFileName = $"{new string('И', 180)}.png";
+
+        string path = LintelTypeImagePathBuilder.Build(
+            @"C:\Users\User\AppData\Local",
+            projectName,
+            imageFileName);
+
+        Assert.InRange(path.Length, 1, 240);
+        Assert.InRange(Path.GetFileName(Path.GetDirectoryName(path)!).Length, 1, 64);
+        Assert.InRange(Path.GetFileNameWithoutExtension(path).Length, 1, 96);
+    }
+
+    [Fact]
+    public void Build_UsesHashToDistinguishLongNamesWithSamePrefix()
+    {
+        string sharedPrefix = new('И', 180);
+
+        string first = LintelTypeImagePathBuilder.Build(
+            @"C:\Local",
+            "Проект",
+            $"{sharedPrefix}A.png");
+        string second = LintelTypeImagePathBuilder.Build(
+            @"C:\Local",
+            "Проект",
+            $"{sharedPrefix}B.png");
+
+        Assert.NotEqual(first, second);
+    }
 }

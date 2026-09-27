@@ -1,9 +1,10 @@
 using System.IO;
 using Autodesk.Revit.DB;
+using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.Lintels.Revit;
 
-internal sealed class LintelFrameFamilyPlacementService
+internal sealed class LintelAnnotationFamilyPlacementService
 {
     private string? resolvedFamilyPath;
     private string? resolvedFamilyUniqueId;
@@ -12,7 +13,8 @@ internal sealed class LintelFrameFamilyPlacementService
         Document document,
         View view,
         string familyFilePath,
-        XYZ insertionPoint)
+        XYZ insertionPoint,
+        string annotationPurpose)
     {
         if (document is null)
         {
@@ -26,21 +28,38 @@ internal sealed class LintelFrameFamilyPlacementService
 
         if (string.IsNullOrWhiteSpace(familyFilePath))
         {
-            throw new ArgumentException("Frame family file path is required.", nameof(familyFilePath));
+            throw new ArgumentException("Annotation family file path is required.", nameof(familyFilePath));
+        }
+
+        if (string.IsNullOrWhiteSpace(annotationPurpose))
+        {
+            throw new ArgumentException("Annotation purpose is required.", nameof(annotationPurpose));
         }
 
         string normalizedPath = Path.GetFullPath(familyFilePath);
         if (!File.Exists(normalizedPath))
         {
-            throw new FileNotFoundException("Выбранный файл семейства рамки не найден.", normalizedPath);
+            throw new FileNotFoundException(
+                $"Выбранный файл семейства для аннотации «{annotationPurpose}» не найден.",
+                normalizedPath);
         }
 
         if (!string.Equals(Path.GetExtension(normalizedPath), ".rfa", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("Для рамки требуется файл загружаемого семейства Revit с расширением .rfa.");
+            throw new InvalidOperationException(
+                $"Для аннотации «{annotationPurpose}» требуется файл загружаемого семейства Revit с расширением .rfa.");
         }
 
-        Family family = ResolveOrLoadFamily(document, normalizedPath);
+        Family family = ResolveOrLoadFamily(document, normalizedPath, annotationPurpose);
+        if (family.FamilyCategory is null
+            || RevitElementIds.GetValue(family.FamilyCategory.Id)
+                != (long)BuiltInCategory.OST_GenericAnnotation)
+        {
+            throw new InvalidOperationException(
+                $"Семейство «{family.Name}» нельзя использовать для аннотации «{annotationPurpose}»: "
+                + "требуется категория «Типовая аннотация».");
+        }
+
         FamilySymbol symbol = family.GetFamilySymbolIds()
             .Select(document.GetElement)
             .OfType<FamilySymbol>()
@@ -62,13 +81,16 @@ internal sealed class LintelFrameFamilyPlacementService
         catch (Exception exception)
         {
             throw new InvalidOperationException(
-                $"Семейство «{family.Name} : {symbol.Name}» нельзя разместить как аннотацию на боковом виде. "
-                + "Выберите семейство категории «Типовая аннотация» с точкой вставки в центре рамки.",
+                $"Семейство «{family.Name} : {symbol.Name}» нельзя разместить как аннотацию «{annotationPurpose}» на боковом виде. "
+                + "Проверьте, что это обычное двумерное семейство категории «Типовая аннотация».",
                 exception);
         }
     }
 
-    private Family ResolveOrLoadFamily(Document document, string familyFilePath)
+    private Family ResolveOrLoadFamily(
+        Document document,
+        string familyFilePath,
+        string annotationPurpose)
     {
         if (string.Equals(
                 resolvedFamilyPath,
@@ -99,7 +121,8 @@ internal sealed class LintelFrameFamilyPlacementService
         if (existing is null)
         {
             throw new InvalidOperationException(
-                $"Revit не загрузил семейство рамки «{expectedFamilyName}». Проверьте совместимость файла .rfa с текущей версией Revit.");
+                $"Revit не загрузил семейство для аннотации «{annotationPurpose}» «{expectedFamilyName}». "
+                + "Проверьте совместимость файла .rfa с текущей версией Revit.");
         }
 
         Remember(familyFilePath, existing);

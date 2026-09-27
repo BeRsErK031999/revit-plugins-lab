@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DefineConstants>$(DefineConstants);REVIT2020_OR_GREATER;REVIT2021_OR_GREATER;REVIT2022_OR_GREATER</DefineConstants>
+    <RevitApiRoot>C:\Program Files\Autodesk\Revit 2022</RevitApiRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI"><HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Compile Include="..\..\src\TrueBIM.App\Compatibility\IsExternalInit.cs" Link="Source\IsExternalInit.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Services\RevitElementIds.cs" Link="Source\RevitElementIds.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\FamilyReplacement\Revit\*.cs" Link="Source\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\FamilyReplacement\Models\*.cs" Link="Source\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\FamilyReplacement\Services\FamilyReplacementParameterPolicy.cs" Link="Source\FamilyReplacementParameterPolicy.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\FamilyReplacement\Services\FamilyReplacementSelectionCoordinator.cs" Link="Source\FamilyReplacementSelectionCoordinator.cs" />
+  </ItemGroup>
+</Project>

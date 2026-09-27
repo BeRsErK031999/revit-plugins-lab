@@ -217,6 +217,15 @@ public sealed class FinishScheduleSettingsValidator
             return;
         }
 
+        if (FinishDescriptionSourceRules.IsTypeName(settings.DescriptionParameter))
+        {
+            issues.Add(new FinishScheduleValidationIssue(
+                "description_parameter.type_name",
+                "description_parameter",
+                "Выберите текстовый параметр типа с составом отделки: «• Состав», «Состав» или проектный аналог. «Имя типа» не содержит состав отделки."));
+            return;
+        }
+
         List<ParameterCategoryReference> requiredCategories = [];
         if (settings.Walls.IsEnabled)
         {
@@ -244,7 +253,7 @@ public sealed class FinishScheduleSettingsValidator
                 TextStorage,
                 requiredCategories,
                 requireWritable: false),
-            FinishSchedulePreferredParameterNames.Description,
+            FinishSchedulePreferredParameterNames.PrefixedDescription,
             issues);
     }
 

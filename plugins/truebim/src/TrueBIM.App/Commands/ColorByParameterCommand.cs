@@ -47,7 +47,7 @@ public sealed class ColorByParameterCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            ColorByParameterWindow window = new(uiDocument.Document, activeView, categories, service, logger);
+            ColorByParameterWindow window = new(commandData.Application, uiDocument.Document, activeView, categories, service, logger);
             ModelessWindowService.Show(windowKey, window, commandData.Application.MainWindowHandle, logger);
             return Result.Succeeded;
         }

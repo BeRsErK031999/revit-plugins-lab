@@ -8,6 +8,24 @@ namespace TrueBIM.App.Tests;
 
 public sealed class IsoFieldSourceSetServiceTests
 {
+    [Theory]
+    [InlineData("Плита_as1x1_результат.PNG", IsoFieldLayerRole.As1X)]
+    [InlineData("расчёт-AS2X-финал.png", IsoFieldLayerRole.As2X)]
+    [InlineData("prefix_As3Y1_suffix.jpeg", IsoFieldLayerRole.As3Y)]
+    [InlineData("AS4Y карта.tiff", IsoFieldLayerRole.As4Y)]
+    public void DetectRole_AcceptsMarkerAnywhereAndIgnoresCase(
+        string fileName,
+        IsoFieldLayerRole expectedRole)
+    {
+        Assert.Equal(expectedRole, IsoFieldSourceSetService.DetectRole(fileName));
+    }
+
+    [Fact]
+    public void DetectRole_RejectsAmbiguousFileName()
+    {
+        Assert.Null(IsoFieldSourceSetService.DetectRole("Плита_As1X_As2X.png"));
+    }
+
     [Fact]
     public void Build_DetectsFourRequiredRolesAndImageSize()
     {
@@ -24,6 +42,38 @@ public sealed class IsoFieldSourceSetServiceTests
             Assert.Equal(IsoFieldLayerRole.As1X, sourceSet.Files[0].Role);
             Assert.Equal(32, sourceSet.Files[0].PixelWidth);
             Assert.Equal(18, sourceSet.Files[0].PixelHeight);
+            Assert.Equal(IsoFieldRebarFace.Bottom, sourceSet.GetLayerMapping(IsoFieldLayerRole.As1X).Face);
+            Assert.Equal(IsoFieldRebarFace.Top, sourceSet.GetLayerMapping(IsoFieldLayerRole.As2X).Face);
+            Assert.Equal(IsoFieldRebarFace.Bottom, sourceSet.GetLayerMapping(IsoFieldLayerRole.As3Y).Face);
+            Assert.Equal(IsoFieldRebarFace.Top, sourceSet.GetLayerMapping(IsoFieldLayerRole.As4Y).Face);
+            Assert.True(sourceSet.HasConfirmedLayerMappings);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Build_ExplainsExpectedNamesForUnidentifiedFiles()
+    {
+        string directory = CreateTempDirectory();
+        try
+        {
+            string[] paths =
+            [
+                CreatePng(directory, "first.png", 32, 18),
+                CreatePng(directory, "second.png", 32, 18),
+                CreatePng(directory, "third.png", 32, 18),
+                CreatePng(directory, "fourth.png", 32, 18)
+            ];
+
+            IsoFieldSourceSet sourceSet = new IsoFieldSourceSetService().Build(paths);
+
+            Assert.False(sourceSet.IsComplete);
+            Assert.Contains(
+                sourceSet.ValidationMessages,
+                message => message.Contains("As1X, As2X, As3Y и As4Y", StringComparison.Ordinal));
         }
         finally
         {
@@ -121,7 +171,7 @@ public sealed class IsoFieldSourceSetServiceTests
             Assert.Equal(IsoFieldRoleDetectionKind.Conflict, conflictedFile.RoleDetection?.Kind);
             Assert.Contains(
                 sourceSet.ValidationMessages,
-                message => message.Contains("имя файла указывает As1X", StringComparison.Ordinal));
+                message => message.Contains("имя файла указывает «X, карта 1»", StringComparison.Ordinal));
 
             IsoFieldSourceSet corrected = service.AssignRole(sourceSet, path, IsoFieldLayerRole.As2X);
 
@@ -150,7 +200,7 @@ public sealed class IsoFieldSourceSetServiceTests
             new FakeRecognitionRunner());
 
         Assert.Equal(4, result.Polylines.Count);
-        Assert.Equal(4, result.Diagnostics.Count);
+        Assert.Equal(5, result.Diagnostics.Count);
         Assert.Collection(
             result.Polylines,
             polyline => Assert.Equal(IsoFieldLayerRole.As1X, polyline.LayerRole),
@@ -166,6 +216,30 @@ public sealed class IsoFieldSourceSetServiceTests
             legend => Assert.Equal(IsoFieldLayerRole.As2X, legend.LayerRole),
             legend => Assert.Equal(IsoFieldLayerRole.As3Y, legend.LayerRole),
             legend => Assert.Equal(IsoFieldLayerRole.As4Y, legend.LayerRole));
+        Assert.Equal(new IsoFieldImageBounds(40, 70, 379, 159), result.CalculationBounds);
+        Assert.Contains(
+            result.Diagnostics,
+            message => message.Contains("согласованы по 4 картам", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RecognitionService_UsesThreeMatchingBoundsWhenFourthMapDiffers()
+    {
+        IsoFieldSourceFile[] files = IsoFieldSourceSet.RequiredRoles
+            .Select(role => new IsoFieldSourceFile($"C:\\maps\\{role}.png", role, 420, 180))
+            .ToArray();
+        IsoFieldSourceSet sourceSet = new(files);
+        FakeRecognitionRunner runner = new(sourcePath =>
+            sourcePath!.Contains(nameof(IsoFieldLayerRole.As4Y), StringComparison.Ordinal)
+                ? new IsoFieldImageBounds(10, 20, 200, 100)
+                : new IsoFieldImageBounds(40, 70, 379, 159));
+
+        IsoFieldRecognitionResult result = new IsoFieldSourceSetRecognitionService().Run(sourceSet, runner);
+
+        Assert.Equal(new IsoFieldImageBounds(40, 70, 379, 159), result.CalculationBounds);
+        Assert.Contains(
+            result.Diagnostics,
+            message => message.Contains("согласованы по 3 картам", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -246,7 +320,7 @@ public sealed class IsoFieldSourceSetServiceTests
             IsoFieldSourceSet loaded = manifestService.Load(manifestPath);
 
             Assert.False(loaded.IsComplete);
-            Assert.Contains("SHA-256", loaded.Files[0].ValidationError, StringComparison.Ordinal);
+            Assert.Contains("файл изменился после сохранения комплекта", loaded.Files[0].ValidationError, StringComparison.Ordinal);
         }
         finally
         {
@@ -266,7 +340,7 @@ public sealed class IsoFieldSourceSetServiceTests
             InvalidDataException exception = Assert.Throws<InvalidDataException>(
                 () => new IsoFieldSourceSetManifestService(new IsoFieldSourceSetService()).Load(manifestPath));
 
-            Assert.Contains("schemaVersion", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("версия сохранённого комплекта", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -383,6 +457,14 @@ public sealed class IsoFieldSourceSetServiceTests
 
     private sealed class FakeRecognitionRunner : IIsoFieldRecognitionRunner
     {
+        private readonly Func<string?, IsoFieldImageBounds?> calculationBoundsFactory;
+
+        public FakeRecognitionRunner(Func<string?, IsoFieldImageBounds?>? calculationBoundsFactory = null)
+        {
+            this.calculationBoundsFactory = calculationBoundsFactory
+                ?? (_ => new IsoFieldImageBounds(40, 70, 379, 159));
+        }
+
         public IsoFieldRecognitionResult Run(string? sourcePath)
         {
             string id = Path.GetFileNameWithoutExtension(sourcePath ?? "source");
@@ -399,7 +481,8 @@ public sealed class IsoFieldSourceSetServiceTests
                         20,
                         10,
                         100)
-                ]);
+                ],
+                calculationBoundsFactory(sourcePath));
         }
     }
 }

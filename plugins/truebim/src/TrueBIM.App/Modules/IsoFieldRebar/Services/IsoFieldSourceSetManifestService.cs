@@ -47,17 +47,17 @@ public sealed class IsoFieldSourceSetManifestService
         if (!sourceSet.IsComplete)
         {
             throw new InvalidOperationException(
-                $"Cannot save an incomplete IsoField source set: {string.Join(" ", sourceSet.ValidationMessages)}");
+                $"Нельзя сохранить неполный комплект карт. {string.Join(" ", sourceSet.ValidationMessages)}");
         }
 
         if (string.IsNullOrWhiteSpace(manifestPath))
         {
-            throw new ArgumentException("Manifest path is required.", nameof(manifestPath));
+            throw new ArgumentException("Не указан путь для сохранения комплекта карт.", nameof(manifestPath));
         }
 
         string fullManifestPath = Path.GetFullPath(manifestPath);
         string manifestDirectory = Path.GetDirectoryName(fullManifestPath)
-            ?? throw new InvalidOperationException("Manifest directory could not be resolved.");
+            ?? throw new InvalidOperationException("Не удалось определить папку для сохранения комплекта карт.");
         Directory.CreateDirectory(manifestDirectory);
 
         SourceFileContract[] files = IsoFieldSourceSet.RequiredRoles
@@ -95,7 +95,7 @@ public sealed class IsoFieldSourceSetManifestService
     {
         if (string.IsNullOrWhiteSpace(manifestPath))
         {
-            throw new ArgumentException("Manifest path is required.", nameof(manifestPath));
+            throw new ArgumentException("Не указан путь к сохранённому комплекту карт.", nameof(manifestPath));
         }
 
         string fullManifestPath = Path.GetFullPath(manifestPath);
@@ -104,16 +104,16 @@ public sealed class IsoFieldSourceSetManifestService
         try
         {
             contract = JsonSerializer.Deserialize<ManifestContract>(json, ReadOptions)
-                ?? throw new InvalidDataException("IsoField source-set manifest root object is missing.");
+                ?? throw new InvalidDataException("В сохранённом комплекте не найдены данные о картах.");
         }
         catch (JsonException exception)
         {
-            throw new InvalidDataException("IsoField source-set manifest is not valid JSON.", exception);
+            throw new InvalidDataException("Не удалось прочитать сохранённый комплект карт. Возможно, файл повреждён.", exception);
         }
 
         ValidateContract(contract);
         string manifestDirectory = Path.GetDirectoryName(fullManifestPath)
-            ?? throw new InvalidOperationException("Manifest directory could not be resolved.");
+            ?? throw new InvalidOperationException("Не удалось определить папку сохранённого комплекта карт.");
         SourceFileContract[] fileContracts = contract.Files!;
         string[] resolvedPaths = fileContracts
             .Select(file => ResolveStoredPath(manifestDirectory, file.Path!))
@@ -121,7 +121,7 @@ public sealed class IsoFieldSourceSetManifestService
         IsoFieldSourceSet sourceSet = sourceSetService.Build(resolvedPaths);
         if (sourceSet.Files.Count != fileContracts.Length)
         {
-            throw new InvalidDataException("IsoField source-set manifest contains duplicate file paths.");
+            throw new InvalidDataException("В сохранённом комплекте одна и та же карта указана несколько раз.");
         }
 
         IsoFieldSourceFile[] files = sourceSet.Files
@@ -138,17 +138,17 @@ public sealed class IsoFieldSourceSetManifestService
         if (!string.Equals(contract.SchemaVersion, SupportedSchemaVersion, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                $"Unsupported IsoField source-set schemaVersion '{contract.SchemaVersion ?? "<missing>"}'. Expected '{SupportedSchemaVersion}'.");
+                $"Версия сохранённого комплекта не поддерживается. Нужна версия {SupportedSchemaVersion}.");
         }
 
         if (contract.Files is null || contract.Files.Length != IsoFieldSourceSet.RequiredRoles.Count)
         {
-            throw new InvalidDataException("IsoField source-set manifest must contain exactly four files.");
+            throw new InvalidDataException("Сохранённый комплект должен содержать ровно четыре карты.");
         }
 
         if (contract.LayerMappings is null || contract.LayerMappings.Length != IsoFieldSourceSet.RequiredRoles.Count)
         {
-            throw new InvalidDataException("IsoField source-set manifest must contain exactly four layerMappings.");
+            throw new InvalidDataException("В сохранённом комплекте должны быть назначены все четыре карты.");
         }
 
         if (contract.Files.Any(file => string.IsNullOrWhiteSpace(file.Path)
@@ -157,7 +157,7 @@ public sealed class IsoFieldSourceSetManifestService
             || file.PixelWidth <= 0
             || file.PixelHeight <= 0))
         {
-            throw new InvalidDataException("IsoField source-set manifest contains an incomplete file entry.");
+            throw new InvalidDataException("В сохранённом комплекте не хватает сведений об одной из карт.");
         }
 
         IsoFieldLayerRole[] fileRoles = contract.Files
@@ -165,7 +165,7 @@ public sealed class IsoFieldSourceSetManifestService
             .ToArray();
         if (fileRoles.Distinct().Count() != IsoFieldSourceSet.RequiredRoles.Count)
         {
-            throw new InvalidDataException("IsoField source-set manifest file roles must be unique.");
+            throw new InvalidDataException("В сохранённом комплекте несколько файлов имеют одно назначение карты.");
         }
 
         IsoFieldLayerRole[] mappingRoles = contract.LayerMappings
@@ -173,7 +173,7 @@ public sealed class IsoFieldSourceSetManifestService
             .ToArray();
         if (mappingRoles.Distinct().Count() != IsoFieldSourceSet.RequiredRoles.Count)
         {
-            throw new InvalidDataException("IsoField source-set manifest layer mapping roles must be unique.");
+            throw new InvalidDataException("В сохранённом комплекте одно назначение карты указано несколько раз.");
         }
 
         for (int index = 0; index < contract.LayerMappings.Length; index++)
@@ -185,7 +185,7 @@ public sealed class IsoFieldSourceSetManifestService
             if (direction != IsoFieldLayerMapping.ResolveDirection(mappingRoles[index]))
             {
                 throw new InvalidDataException(
-                    $"IsoField source-set manifest direction does not match role '{mappingRoles[index]}'.");
+                    "В сохранённом комплекте направление одной из карт не соответствует её назначению.");
             }
         }
     }
@@ -212,12 +212,12 @@ public sealed class IsoFieldSourceSetManifestService
             {
                 if (!string.Equals(CalculateSha256(sourceFile.FilePath), contract.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
-                    errors.Add("SHA-256 не совпадает с manifest");
+                    errors.Add("файл изменился после сохранения комплекта");
                 }
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                errors.Add("не удалось проверить SHA-256");
+                errors.Add("не удалось проверить, изменялся ли файл");
             }
         }
 
@@ -251,7 +251,7 @@ public sealed class IsoFieldSourceSetManifestService
             return parsed;
         }
 
-        throw new InvalidDataException($"IsoField source-set manifest contains unsupported {fieldName} '{value ?? "<missing>"}'.");
+        throw new InvalidDataException("В сохранённом комплекте найдено неизвестное назначение карты. Назначьте карты заново.");
     }
 
     private static string ResolveStoredPath(string manifestDirectory, string storedPath)

@@ -17,6 +17,8 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Models;
 using TrueBIM.App.Modules.BimTools.FamilyManager.Services;
+using TrueBIM.App.Modules.BimTools.FamilyReplacement.UI;
+using TrueBIM.App.Services;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 using TrueBIM.App.UI.DesignSystem;
@@ -174,6 +176,7 @@ public sealed class FamilyManagerControl : UserControl
     private readonly Button favoriteButton = CreateButton("В избранное", TrueBimIcon.Apply, 130);
     private readonly Button loadButton = CreateButton("Загрузить", TrueBimIcon.Apply, 130);
     private readonly Button loadAndPlaceButton = CreateButton("Загрузить и разместить", TrueBimIcon.FamilyManager, 190);
+    private readonly Button replaceInstancesButton = CreateButton("Заменить экземпляры…", TrueBimIcon.FamilyManager, 190);
     private readonly Button refreshMetadataButton = CreateButton("Обновить метаданные", TrueBimIcon.Preview, 220);
     private readonly Button refreshFolderMetadataButton = CreateButton("Метаданные папки", TrueBimIcon.Preview, 236);
     private readonly Button refreshThumbnailButton = CreateButton("Обновить preview", TrueBimIcon.Preview, 220);
@@ -606,6 +609,12 @@ public sealed class FamilyManagerControl : UserControl
         loadAndPlaceButton.Click += (_, _) => LoadSelectedFamily(placeAfterLoad: true);
         DockPanel.SetDock(loadAndPlaceButton, Dock.Top);
         panel.Children.Add(loadAndPlaceButton);
+
+        replaceInstancesButton.Margin = new Thickness(0, 0, 0, 12);
+        replaceInstancesButton.ToolTip = "Открыть замену экземпляров на выбранный загруженный тип. Тот же инструмент доступен в панели «Координация».";
+        replaceInstancesButton.Click += (_, _) => ReplaceSelectedInstances();
+        DockPanel.SetDock(replaceInstancesButton, Dock.Top);
+        panel.Children.Add(replaceInstancesButton);
 
         refreshMetadataButton.Margin = new Thickness(0, 0, 0, 12);
         refreshMetadataButton.Click += (_, _) => RefreshSelectedMetadata();
@@ -1129,6 +1138,7 @@ public sealed class FamilyManagerControl : UserControl
             favoriteButton.IsEnabled = false;
             loadButton.IsEnabled = false;
             loadAndPlaceButton.IsEnabled = false;
+            replaceInstancesButton.IsEnabled = false;
             refreshMetadataButton.IsEnabled = false;
             refreshThumbnailButton.IsEnabled = false;
             UpdateThumbnailPreview(null);
@@ -1139,6 +1149,7 @@ public sealed class FamilyManagerControl : UserControl
         favoriteButton.IsEnabled = true;
         loadButton.IsEnabled = !isFamilyLoadQueued;
         loadAndPlaceButton.IsEnabled = !isFamilyLoadQueued;
+        replaceInstancesButton.IsEnabled = !isFamilyLoadQueued;
         refreshMetadataButton.IsEnabled = true;
         refreshThumbnailButton.IsEnabled = true;
         favoriteButton.Content = IconFactory.CreateButtonContent(
@@ -1587,6 +1598,50 @@ public sealed class FamilyManagerControl : UserControl
         family.TypeCatalogPath = result.TypeCatalogPath;
         family.TypeCatalogTypeNames = result.TypeCatalogTypeNames.ToList();
         family.MetadataUpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private void ReplaceSelectedInstances()
+    {
+        if (selectedFamily is null)
+        {
+            statusText.Text = "Выберите семейство и тип для замены.";
+            return;
+        }
+        string familyName = selectedFamily.Name;
+        string? typeName = ResolveRequestedTypeName(selectedFamily);
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            statusText.Text = "Выберите конкретный тип семейства для замены.";
+            return;
+        }
+
+        revitActionDispatcher.Raise(() =>
+        {
+            if (!document.IsValidObject || uiApplication.ActiveUIDocument?.Document != document)
+            {
+                statusText.Text = "Вернитесь в проект, для которого открыт диспетчер семейств.";
+                return;
+            }
+            FamilySymbol? symbol = loadService.ResolveSymbolExact(document, familyName, typeName!);
+            if (symbol is null)
+            {
+                statusText.Text = "Сначала загрузите выбранный тип в проект кнопкой «Загрузить», затем повторите замену.";
+                return;
+            }
+            Window? ownerWindow = Window.GetWindow(this);
+            bool restoreWindow = ownerWindow is FamilyManagerWindow && ownerWindow.IsVisible;
+            try
+            {
+                if (restoreWindow)
+                    ownerWindow!.Hide();
+                FamilyReplacementWorkflow.Run(uiApplication, RevitElementIds.GetValue(symbol.Id));
+            }
+            finally
+            {
+                if (restoreWindow)
+                    ownerWindow!.Show();
+            }
+        });
     }
 
     private void LoadSelectedFamily(bool placeAfterLoad)

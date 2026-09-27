@@ -44,8 +44,11 @@ public sealed class FinishSchedulePreferredParameterResolver
         return settings with
         {
             DescriptionParameter = ResolveReference(
-                settings.DescriptionParameter,
+                FinishDescriptionSourceRules.IsTypeName(settings.DescriptionParameter)
+                    ? null
+                    : settings.DescriptionParameter,
                 descriptionOptions,
+                FinishSchedulePreferredParameterNames.PrefixedDescription,
                 FinishSchedulePreferredParameterNames.Description),
             RoomListOutputParameter = ResolveReference(
                 settings.RoomListOutputParameter,
@@ -111,7 +114,7 @@ public sealed class FinishSchedulePreferredParameterResolver
     private static ParameterReference? ResolveReference(
         ParameterReference? current,
         IEnumerable<FinishScheduleParameterOption> options,
-        string preferredName)
+        params string[] preferredNames)
     {
         FinishScheduleParameterOption[] available = options.ToArray();
         if (current is not null)
@@ -133,14 +136,22 @@ public sealed class FinishSchedulePreferredParameterResolver
             }
         }
 
-        FinishScheduleParameterOption[] matches = available
-            .Where(option => string.Equals(
-                option.Reference.Name,
-                preferredName,
-                StringComparison.OrdinalIgnoreCase))
-            .Take(2)
-            .ToArray();
-        return matches.Length == 1 ? matches[0].Reference : null;
+        foreach (string preferredName in preferredNames)
+        {
+            FinishScheduleParameterOption[] matches = available
+                .Where(option => string.Equals(
+                    option.Reference.Name,
+                    preferredName,
+                    StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToArray();
+            if (matches.Length > 0)
+            {
+                return matches.Length == 1 ? matches[0].Reference : null;
+            }
+        }
+
+        return null;
     }
 
     private static bool IsPortableMatch(ParameterReference source, ParameterReference candidate)

@@ -81,9 +81,9 @@ public sealed class FinishSchedulePreviewTests
                 FinishScheduleSettings.CreateDefault());
 
         Assert.Equal(new FinishPreviewCategoryCounts(1, 1, 1), build.Preview.Floors);
-        Assert.Equal(new FinishPreviewCategoryCounts(3, 2, 1), build.Preview.Ceilings);
-        Assert.Equal(2, build.Preview.Index.PotentialRoomElementPairs);
-        Assert.Equal([201L, 202L], build.InScopeElements.Select(element => element.Element.ElementId));
+        Assert.Equal(new FinishPreviewCategoryCounts(3, 2, 2), build.Preview.Ceilings);
+        Assert.Equal(3, build.Preview.Index.PotentialRoomElementPairs);
+        Assert.Equal([201L, 202L, 203L], build.InScopeElements.Select(element => element.Element.ElementId));
     }
 
     [Fact]
@@ -103,6 +103,29 @@ public sealed class FinishSchedulePreviewTests
         Assert.Contains(result.Issues, issue => issue.Code == "ceilings.classification.empty");
         Assert.Contains(result.Issues, issue => issue.Code == "scope.section_parameter.missing");
         Assert.Contains(result.Issues, issue => issue.Code == "scope.section_value.empty");
+    }
+
+    [Fact]
+    public void LevelScopeFindsRaisedFloorButDoesNotTakeFloorFromOtherLevel()
+    {
+        FinishElementCollection collection = new(
+            [new FinishRoomCandidateSnapshot(1, 10, 20, true, new AxisAlignedBox3D(0, 0, 0, 10, 10, 8))],
+            [],
+            [
+                Element(101, 201, FinishPhysicalCategory.Floor, new AxisAlignedBox3D(1, 1, 3.5, 9, 9, 3.8)) with { LevelId = 10 },
+                Element(102, 201, FinishPhysicalCategory.Floor, new AxisAlignedBox3D(1, 1, 3.5, 9, 9, 3.8)) with { LevelId = 20 }
+            ],
+            [new FinishTypeSnapshot(201, "Пол", true)]);
+        FinishScheduleSettings settings = FinishScheduleSettings.CreateDefault() with
+        {
+            Scope = new ReportScopeSettings(ReportScopeKind.Level, 10, null, string.Empty)
+        };
+
+        FinishSchedulePreviewBuild result = new FinishSchedulePreviewBuilder(new RoomScopeService(),
+            new FinishClassificationService()).BuildDetailed(collection, settings);
+
+        Assert.Equal(101L, Assert.Single(result.InScopeElements).Element.ElementId);
+        Assert.Equal(new FinishPreviewCategoryCounts(2, 2, 1), result.Preview.Floors);
     }
 
     [Fact]

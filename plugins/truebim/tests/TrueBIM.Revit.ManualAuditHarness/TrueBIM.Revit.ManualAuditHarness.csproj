@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RevitApiRoot>C:\Program Files\Autodesk\Revit 2023</RevitApiRoot>
+    <InstalledTrueBimPath Condition="'$(InstalledTrueBimPath)' == ''">$(APPDATA)\TrueBIM\2023\TrueBIM.App.dll</InstalledTrueBimPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI"><HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TrueBIM.App"><HintPath>$(InstalledTrueBimPath)</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+</Project>

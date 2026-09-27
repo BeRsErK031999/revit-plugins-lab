@@ -3,6 +3,7 @@ namespace TrueBIM.App.Modules.FinishSchedule.Models;
 public static class FinishSchedulePreferredParameterNames
 {
     public const string Description = "Состав";
+    public const string PrefixedDescription = "• Состав";
     public const string RoomListOutput = "Помещения • Список помещений для ВО";
 
     public const string WallsOwnership = "Отделка стен • Номер помещения";

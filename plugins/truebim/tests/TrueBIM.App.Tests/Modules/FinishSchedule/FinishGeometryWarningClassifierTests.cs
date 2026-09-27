@@ -20,6 +20,8 @@ public sealed class FinishGeometryWarningClassifierTests
     [InlineData(FinishGeometryWarningCode.WallFallbackUnresolved)]
     [InlineData(FinishGeometryWarningCode.SlabGeometryUnsupported)]
     [InlineData(FinishGeometryWarningCode.ProjectedAreaUnavailable)]
+    [InlineData(FinishGeometryWarningCode.FullElementAreaUnavailable)]
+    [InlineData(FinishGeometryWarningCode.UnassignedElement)]
     public void ConfirmedCompletenessWarnings_AreCritical(FinishGeometryWarningCode code)
     {
         Assert.True(FinishGeometryWarningClassifier.AffectsScheduleValue(Warning(code)));

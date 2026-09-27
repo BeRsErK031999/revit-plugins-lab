@@ -40,6 +40,7 @@ public sealed class LintelDiagnosticCollectorService
 
         if (sourceMode is not (LintelWizardSourceMode.CurrentSelection
             or LintelWizardSourceMode.ActiveView
+            or LintelWizardSourceMode.EntireProject
             or LintelWizardSourceMode.ExistingItems))
         {
             throw new NotSupportedException($"Источник «{LintelWizardSourceCatalog.GetTitle(sourceMode)}» пока недоступен.");
@@ -51,6 +52,7 @@ public sealed class LintelDiagnosticCollectorService
         {
             LintelWizardSourceMode.CurrentSelection => LintelDiagnosticSource.Selection,
             LintelWizardSourceMode.ActiveView => LintelDiagnosticSource.ActiveView,
+            LintelWizardSourceMode.EntireProject => LintelDiagnosticSource.EntireProject,
             LintelWizardSourceMode.ExistingItems => LintelDiagnosticSource.ExistingItems,
             _ => throw new NotSupportedException($"Источник «{LintelWizardSourceCatalog.GetTitle(sourceMode)}» пока недоступен.")
         };
@@ -58,6 +60,7 @@ public sealed class LintelDiagnosticCollectorService
         {
             LintelDiagnosticSource.Selection => ResolveSelectedElements(document, selectedIds),
             LintelDiagnosticSource.ActiveView => ResolveVisibleFamilyInstances(document, uiDocument.ActiveView),
+            LintelDiagnosticSource.EntireProject => ResolveProjectFamilyInstances(document),
             LintelDiagnosticSource.ExistingItems => ResolveProjectFamilyInstances(document),
             _ => []
         };
@@ -66,9 +69,10 @@ public sealed class LintelDiagnosticCollectorService
         List<LintelExcludedElement> excluded = [];
         List<string> diagnostics = [];
 
-        if (source == LintelDiagnosticSource.ActiveView)
+        if (source is LintelDiagnosticSource.ActiveView or LintelDiagnosticSource.EntireProject)
         {
-            diagnostics.Add("Автопоиск использует временное правило: имя семейства, типоразмера или экземпляра содержит «перемыч» либо «lintel».");
+            diagnostics.Add(
+                "Автопоиск использует правило: имя семейства, типоразмера или экземпляра содержит «перемыч» либо «lintel». Если имя другое, используйте «Текущее выделение».");
         }
         else if (source == LintelDiagnosticSource.ExistingItems)
         {
@@ -89,7 +93,9 @@ public sealed class LintelDiagnosticCollectorService
 
             string familyName = GetFamilyName(familyInstance);
             string typeName = GetTypeName(familyInstance);
-            if (source is LintelDiagnosticSource.ActiveView or LintelDiagnosticSource.ExistingItems
+            if (source is LintelDiagnosticSource.ActiveView
+                    or LintelDiagnosticSource.EntireProject
+                    or LintelDiagnosticSource.ExistingItems
                 && !LintelCandidateMatcher.IsMatch(familyName, typeName, familyInstance.Name))
             {
                 if (source == LintelDiagnosticSource.ActiveView)
@@ -126,6 +132,8 @@ public sealed class LintelDiagnosticCollectorService
                     "В выделении нет подходящих экземпляров семейств. Выберите родительские перемычки и повторите запуск.",
                 LintelDiagnosticSource.ActiveView =>
                     "На активном виде перемычки не найдены. Выберите нужные экземпляры явно либо уточните правило именования по рабочему RVT-файлу.",
+                LintelDiagnosticSource.EntireProject =>
+                    "Во всём проекте перемычки не найдены. Проверьте, что имя семейства, типоразмера или экземпляра содержит «перемыч» либо «lintel», или используйте текущее выделение.",
                 LintelDiagnosticSource.ExistingItems =>
                     "В проекте не найдены исходные семейства перемычек, связанные с результатами TrueBIM.",
                 _ => "Перемычки не найдены."
