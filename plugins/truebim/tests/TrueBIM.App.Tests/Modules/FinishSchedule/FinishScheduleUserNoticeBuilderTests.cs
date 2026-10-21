@@ -9,6 +9,57 @@ public sealed class FinishScheduleUserNoticeBuilderTests
     private readonly FinishScheduleUserNoticeBuilder builder = new();
 
     [Fact]
+    public void BuildPreview_ReportsEachMissingStoredNumberWithItsElementIds()
+    {
+        StoredFinishElement[] elements = Enumerable.Range(1, 18)
+            .Select(id => new StoredFinishElement(id, FinishPreviewCategory.Walls, 1, id <= 4 ? "802" : "320", 5))
+            .ToArray();
+        FinishQuantityResult quantities = new StoredFinishQuantityCalculator().Calculate(
+            elements, [Room(100), Room(101)], RoomIdentifierSettings.ByNumber());
+        FinishScheduleUserNotice notice = builder.BuildPreview(
+            CreatePreview(quantities.Warnings.Select(warning => warning.Message).ToArray(), quantities.Warnings),
+            FinishScheduleSettings.CreateDefault() with { WriteOwnership = false });
+
+        Assert.Equal(FinishScheduleUserNoticeSeverity.Warning, notice.Severity);
+        Assert.Equal(3, notice.WarningItems.Count);
+        Assert.Contains(notice.WarningItems, item => item.Contains("«802»") && item.Contains("не найдено")
+            && item.Contains("не учтена (4)") && item.Contains("Элементы: 1, 2, 3, 4."));
+        Assert.Contains(notice.WarningItems, item => item.Contains("«320»") && item.Contains("не учтена (14)"));
+        Assert.Contains(notice.WarningItems, item => item.Contains("стандартным параметром «Номер» самих помещений"));
+        Assert.DoesNotContain(notice.WarningItems, item => item.Contains("геометр", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void BuildPreview_ExplainsEmptyAndAmbiguousStoredOwnershipSeparately()
+    {
+        FinishQuantityResult quantities = new StoredFinishQuantityCalculator().Calculate(
+            [new StoredFinishElement(1, FinishPreviewCategory.Walls, 1, "", 5),
+                new StoredFinishElement(2, FinishPreviewCategory.Walls, 1, "101", 5)],
+            [new FinishRoomCandidateSnapshot(100, 1, 10, true, null, number: "101"),
+                new FinishRoomCandidateSnapshot(101, 1, 10, true, null, number: "101")],
+            RoomIdentifierSettings.ByNumber());
+        FinishScheduleUserNotice notice = builder.BuildPreview(
+            CreatePreview([], quantities.Warnings), FinishScheduleSettings.CreateDefault() with { WriteOwnership = false });
+
+        Assert.Contains(notice.WarningItems, item => item.Contains("не заполнена") && item.Contains("Элементы: 1."));
+        Assert.Contains(notice.WarningItems, item => item.Contains("«101» неоднозначна") && item.Contains("100, 101")
+            && item.Contains("Элементы: 2."));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPreview_GeometricMissingLinkAdviceRequiresAutomaticAssignment(bool writeOwnership)
+    {
+        FinishScheduleUserNotice notice = builder.BuildPreview(
+            CreatePreview([], [], slabOccurrences: 0),
+            FinishScheduleSettings.CreateDefault() with { WriteOwnership = writeOwnership });
+
+        Assert.Equal(writeOwnership, notice.WarningItems.Any(item => item.Contains("нижнюю границу")));
+        Assert.Equal(writeOwnership, notice.WarningItems.Any(item => item.Contains("верхнюю границу")));
+    }
+
+    [Fact]
     public void BuildPreview_ReplacesRawRevitExceptionWithFriendlyGroupedWarning()
     {
         const string rawMessage = "Failed to perform the Boolean operation for the two solids.";
@@ -61,7 +112,8 @@ public sealed class FinishScheduleUserNoticeBuilderTests
 
     private static FinishSchedulePreviewResult CreatePreview(
         IReadOnlyList<string> warnings,
-        IReadOnlyList<FinishGeometryWarning> geometryWarnings)
+        IReadOnlyList<FinishGeometryWarning> geometryWarnings,
+        int slabOccurrences = 2)
     {
         return new FinishSchedulePreviewResult(
             2,
@@ -77,8 +129,8 @@ public sealed class FinishScheduleUserNoticeBuilderTests
             warnings,
             new FinishQuantityPreviewSummary(
                 new FinishQuantityCategorySummary(3, 2, 3, 25.5),
-                new FinishQuantityCategorySummary(2, 2, 1, 12.25),
-                new FinishQuantityCategorySummary(2, 2, 1, 12.25)),
+                new FinishQuantityCategorySummary(slabOccurrences, 2, 1, 12.25),
+                new FinishQuantityCategorySummary(slabOccurrences, 2, 1, 12.25)),
             geometryWarnings: geometryWarnings);
     }
 

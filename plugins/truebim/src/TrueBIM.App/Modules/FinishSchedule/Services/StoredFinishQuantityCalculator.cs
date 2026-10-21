@@ -28,12 +28,10 @@ public sealed class StoredFinishQuantityCalculator
             string identifier = FinishDescriptionNormalizer.CollapseWhitespace(element.Ownership);
             if (identifier.Length == 0 || !byIdentifier.TryGetValue(identifier, out FinishRoomCandidateSnapshot[]? matches))
             {
-                warnings.Add(new FinishGeometryWarning(
-                    FinishGeometryWarningCode.StoredOwnershipUnresolved,
+                warnings.Add(UnresolvedOwnership(element,
                     identifier.Length == 0
-                        ? $"Элемент {element.ElementId}: принадлежность помещению не заполнена; площадь не учтена."
-                        : $"Элемент {element.ElementId}: помещение «{identifier}» не найдено. Укажите один идентификатор помещения; площадь не учтена.",
-                    ElementId: element.ElementId, Category: element.Category));
+                        ? "Принадлежность помещению не заполнена."
+                        : $"Помещение с идентификатором «{identifier}» не найдено. Укажите идентификатор существующего помещения."));
                 continue;
             }
 
@@ -43,11 +41,9 @@ public sealed class StoredFinishQuantityCalculator
                 : matches.Where(room => room.LevelId == element.LevelId).ToArray();
             if (candidates.Length != 1)
             {
-                warnings.Add(new FinishGeometryWarning(
-                    FinishGeometryWarningCode.StoredOwnershipUnresolved,
-                    $"Элемент {element.ElementId}: принадлежность «{identifier}» неоднозначна "
-                        + $"(ID помещений: {string.Join(", ", matches.Select(room => room.ElementId))}); площадь не учтена.",
-                    ElementId: element.ElementId, Category: element.Category));
+                warnings.Add(UnresolvedOwnership(element,
+                    $"Записанная принадлежность «{identifier}» неоднозначна "
+                        + $"(ID помещений: {string.Join(", ", matches.Select(room => room.ElementId))})."));
                 continue;
             }
 
@@ -67,4 +63,12 @@ public sealed class StoredFinishQuantityCalculator
 
         return new FinishQuantityResult(occurrences, warnings);
     }
+
+    private static FinishGeometryWarning UnresolvedOwnership(StoredFinishElement element, string issue) =>
+        new(FinishGeometryWarningCode.StoredOwnershipUnresolved,
+            $"Элемент {element.ElementId}: {issue} Площадь не учтена.",
+            ElementId: element.ElementId, Category: element.Category)
+        {
+            StoredOwnershipIssue = issue
+        };
 }

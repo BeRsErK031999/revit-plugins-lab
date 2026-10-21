@@ -33,7 +33,10 @@ public sealed record FinishGeometryWarning(
     string Message,
     long? RoomId = null,
     long? ElementId = null,
-    FinishPreviewCategory? Category = null);
+    FinishPreviewCategory? Category = null)
+{
+    public string? StoredOwnershipIssue { get; init; }
+}
 
 public sealed class FinishQuantityRequest
 {

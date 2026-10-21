@@ -176,12 +176,13 @@ public sealed class FinishScheduleUserNoticeBuilder
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         string[] geometryWarnings = preview.GeometryWarnings
-            .GroupBy(warning => $"{warning.Code}:{warning.Category}", StringComparer.Ordinal)
+            .GroupBy(warning => $"{warning.Code}:{warning.Category}:{warning.StoredOwnershipIssue}", StringComparer.Ordinal)
             .Select(FormatGeometryWarningGroup)
             .ToArray();
         string[] missingLinks = BuildMissingLinkWarnings(preview, settings).ToArray();
         string[] warningItems = geometryWarnings
             .Concat(missingLinks)
+            .Concat(BuildOwnershipGuidance(preview, settings))
             .Concat(generalWarnings)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -202,7 +203,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         return new FinishScheduleUserNotice(
             incomplete ? "Часть отделки нужно проверить" : "Расчёт готов, есть замечания",
             incomplete
-                ? "Некоторые площади могли рассчитаться не полностью. Ниже указано, что проверить в модели."
+                ? "Часть отделки не учтена в площадях ведомости. Ниже указаны причины и элементы для проверки."
                 : hasGeometryConcerns
                     ? "Расчёт завершён. Несколько сложных мест лучше сверить перед выпуском."
                     : "Расчёт завершён. Перед формированием проверьте замечания ниже.",
@@ -251,6 +252,11 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishSchedulePreviewResult preview,
         FinishScheduleSettings settings)
     {
+        if (!settings.WriteOwnership)
+        {
+            yield break;
+        }
+
         if (settings.Floors.IsEnabled
             && preview.Floors.InScope > 0
             && preview.Quantities?.Floors.OccurrenceCount == 0)
@@ -264,6 +270,26 @@ public sealed class FinishScheduleUserNoticeBuilder
         {
             yield return "Потолки найдены, но ни один не сопоставлен с помещением. Проверьте верхнюю границу помещений, «Границу помещения» и фактический контакт с потолком.";
         }
+    }
+
+    private static IEnumerable<string> BuildOwnershipGuidance(
+        FinishSchedulePreviewResult preview,
+        FinishScheduleSettings settings)
+    {
+        if (!preview.GeometryWarnings.Any(warning => warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved))
+        {
+            yield break;
+        }
+
+        string source = settings.RoomIdentifier.Mode switch
+        {
+            RoomIdentifierMode.Number => "со стандартным параметром «Номер»",
+            RoomIdentifierMode.Name => "с именем",
+            _ => $"с параметром «{settings.RoomIdentifier.CustomParameter?.Name}»"
+        };
+        yield return $"Принадлежность сверяется {source} самих помещений. "
+            + "Изменение значения у отделки не переименовывает помещение и не создаёт новое. "
+            + "Для переноса отделки укажите существующее помещение; для перенумерации измените также идентификатор самого помещения.";
     }
 
     private static string FormatGeometryWarningGroup(
@@ -280,6 +306,9 @@ public sealed class FinishScheduleUserNoticeBuilder
         };
         string message = first.Code switch
         {
+            FinishGeometryWarningCode.StoredOwnershipUnresolved =>
+                (first.StoredOwnershipIssue ?? string.Join(" ", group.Select(warning => warning.Message).Distinct()))
+                    + $" Площадь элементов {category} не учтена ({count}).",
             FinishGeometryWarningCode.BooleanIntersectionFailed =>
                 $"Сложных пересечений {category}: {count}. Revit не смог выполнить точную геометрическую проверку; расчёт продолжен другими доступными способами.",
             FinishGeometryWarningCode.RoomNotFound =>

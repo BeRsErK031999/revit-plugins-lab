@@ -1072,7 +1072,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             SetCurrentReport(reportBuilder.BuildResult(writePreview, result));
             SetLastSchedule(result.Succeeded ? result.Schedule?.ScheduleId : null);
             footerStatus.Text = incompleteCalculation
-                ? $"{result.Message} Расчёт выполнен частично; проверьте предупреждения геометрии."
+                ? $"{result.Message} Расчёт выполнен частично; проверьте причины исключения отделки в замечаниях."
                 : result.Message;
             footerStatus.Foreground = result.Succeeded && !incompleteCalculation
                 ? TrueBimBrushes.Success

@@ -69,7 +69,113 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         VerifyRoomHeight(document, service, settings, calculation, reportPath, serializer);
         VerifySchedule(document, service, settings, calculation, reportPath);
         VerifyOwnershipStage(document, service, settings);
+        VerifyReportedManualNumbers(document, service, settings, reportPath, serializer);
         File.WriteAllText(reportPath + ".checks.json", serializer.Serialize(passed));
+    }
+
+    private void VerifyReportedManualNumbers(Document document, FinishSchedulePreviewService service,
+        FinishScheduleSettings settings, string reportPath, JavaScriptSerializer serializer)
+    {
+        progress("Checking reported manual numbers 301 -> 802 and 213 -> 320 on the 18 reported walls.");
+        int[] walls301 = [2430782, 2431152, 2431231, 2431326];
+        int[] walls213 = [2444996, 2445234, 2445351, 2445442, 2445498, 2445544, 2445594,
+            2445695, 2445806, 2445851, 2445891, 2445976, 2446027, 2446080];
+        HashSet<long> reportedIds = walls301.Concat(walls213).Select(id => (long)id).ToHashSet();
+        using TransactionGroup group = new(document, "Reported manual numbers regression");
+        group.Start();
+        try
+        {
+            FinishScheduleSettings sourceSettings = settings with
+            {
+                DescriptionParameter = ParameterReference.Shared("• Состав",
+                    new Guid("e66886f1-e6bd-4d49-bb16-ef925b0ed41a"), 240032,
+                    ParameterBindingKind.Type, ParameterStorageKind.String)
+            };
+            FinishScheduleWriteWorkflow workflow = new(service, new RoomFinishWriteValueBuilder(), new FinishOwnershipValueBuilder(),
+                new RoomFinishParameterWriter(new FinishParameterChangePlanner()), new FinishOwnershipWriter(new FinishParameterChangePlanner()),
+                new FinishRoomSchedulePlanBuilder(), new FinishRoomScheduleBuilder(new FinishScheduleMetadataService(), this), this);
+            FinishScheduleWriteResult initial = workflow.Apply(document, workflow.Prepare(document, sourceSettings));
+            Check(initial.Succeeded, "Reported scenario starts from an automatically assigned model using composition descriptions");
+            ViewSchedule initialSchedule = (ViewSchedule)document.GetElement(new ElementId((int)initial.Schedule!.ScheduleId));
+            string initialText = ScheduleText(initialSchedule);
+            File.WriteAllText(reportPath + ".manual-before.txt", initialText);
+            FinishScheduleSettings readSettings = sourceSettings with { WriteOwnership = false };
+            FinishScheduleCalculationResult baseline = service.BuildDetailed(document, readSettings);
+            Check(!baseline.Collection.Rooms.Any(room => room.Number is "802" or "320"),
+                "Original model has no room numbered 802 or 320");
+            Check(baseline.Quantities.Occurrences.Count(item => reportedIds.Contains(item.ElementId)) == 18,
+                "All 18 reported walls are included before manual edits");
+            double reportedArea = baseline.Quantities.Occurrences.Where(item => reportedIds.Contains(item.ElementId))
+                .Sum(item => item.AreaSquareMeters);
+            using (Transaction edit = new(document, "Set reported manual wall numbers"))
+            {
+                edit.Start();
+                foreach (int id in walls301.Concat(walls213))
+                    document.GetElement(new ElementId(id)).LookupParameter(readSettings.Walls.OwnershipParameter!.Name)
+                        .Set(walls301.Contains(id) ? "802" : "320");
+                edit.Commit();
+            }
+
+            FinishScheduleCalculationResult missing = service.BuildDetailed(document, readSettings);
+            FinishGeometryWarning[] reportedWarnings = missing.Quantities.Warnings
+                .Where(warning => warning.ElementId.HasValue && reportedIds.Contains(warning.ElementId.Value)).ToArray();
+            Check(reportedWarnings.Length == 18
+                && reportedWarnings.All(warning => warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved),
+                "Changing only ownership to absent rooms reproduces all 18 reported exclusions");
+            Check(Math.Abs(baseline.Quantities.Occurrences.Sum(item => item.AreaSquareMeters)
+                - missing.Quantities.Occurrences.Sum(item => item.AreaSquareMeters) - reportedArea) < 1e-6,
+                "Excluded area equals exactly the sum of the 18 reported wall areas");
+            FinishScheduleUserNotice missingNotice = new FinishScheduleUserNoticeBuilder().BuildPreview(missing.Preview, readSettings);
+            File.WriteAllText(reportPath + ".manual-missing-notice.json", serializer.Serialize(missingNotice));
+            Check(missingNotice.WarningItems.Any(item => item.Contains("«802»") && item.Contains("не найдено"))
+                && missingNotice.WarningItems.Any(item => item.Contains("«320»") && item.Contains("не найдено"))
+                && !missingNotice.WarningItems.Any(item => item.Contains("Геометрических замечаний")),
+                "User notice reports the absent numbers instead of generic geometry concerns");
+            FinishScheduleWriteResult missingResult = workflow.Apply(document, workflow.Prepare(document, readSettings));
+            string missingText = ScheduleText(initialSchedule);
+            File.WriteAllText(reportPath + ".manual-missing.txt", missingText);
+            Check(missingResult.Succeeded && missingResult.AppliedOwnershipValues == 0 && missingResult.AppliedRoomValues > 0
+                && initialText != missingText, "Absent-room scenario updates actual room values and the existing live schedule");
+
+            using (Transaction edit = new(document, "Renumber actual rooms as well"))
+            {
+                edit.Start();
+                ((Room)document.GetElement(new ElementId(2064420))).Number = "802";
+                ((Room)document.GetElement(new ElementId(2308808))).Number = "320";
+                edit.Commit();
+            }
+            FinishScheduleCalculationResult renamed = service.BuildDetailed(document, readSettings);
+            foreach (FinishOccurrence original in baseline.Quantities.Occurrences.Where(item => reportedIds.Contains(item.ElementId)))
+            {
+                FinishOccurrence current = renamed.Quantities.Occurrences.Single(item => item.ElementId == original.ElementId);
+                Check(current.RoomId == original.RoomId && Math.Abs(current.AreaSquareMeters - original.AreaSquareMeters) < 1e-8,
+                    $"Renumbered room restores reported wall {original.ElementId} with its full native area");
+            }
+            Check(renamed.Quantities.CacheMetrics == FinishGeometryCacheMetrics.Empty,
+                "Reported renumbering scenario needs no room or element geometry");
+            FinishScheduleWriteResult renamedResult = workflow.Apply(document, workflow.Prepare(document, readSettings));
+            string renamedText = ScheduleText(initialSchedule);
+            File.WriteAllText(reportPath + ".manual-renamed.txt", renamedText);
+            Check(renamedResult.Succeeded && renamedResult.AppliedOwnershipValues == 0
+                && renamedText.Contains("802") && renamedText.Contains("320") && renamedText != missingText,
+                "Renumbered rooms and restored areas reach the actual live schedule without rewriting ownership");
+            Check(walls301.Concat(walls213).All(id => document.GetElement(new ElementId(id))
+                .LookupParameter(readSettings.Walls.OwnershipParameter!.Name).AsString() == (walls301.Contains(id) ? "802" : "320")),
+                "All 18 manual ownership values survive schedule creation");
+            File.WriteAllText(reportPath + ".manual-summary.json", serializer.Serialize(new
+            {
+                ReportedWallCount = reportedIds.Count, ExcludedWallAreaSquareMeters = reportedArea,
+                BaselineWalls = baseline.Preview.Quantities!.Walls,
+                MissingWalls = missing.Preview.Quantities!.Walls,
+                MissingRoomValuesWritten = missingResult.AppliedRoomValues,
+                RenamedWalls = renamed.Preview.Quantities!.Walls,
+                RenamedRoomValuesWritten = renamedResult.AppliedRoomValues
+            }));
+        }
+        finally
+        {
+            group.RollBack();
+        }
     }
 
     private void VerifyOwnershipStage(Document document, FinishSchedulePreviewService service, FinishScheduleSettings settings)
