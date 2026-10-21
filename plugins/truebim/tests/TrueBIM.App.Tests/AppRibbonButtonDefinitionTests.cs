@@ -367,7 +367,7 @@ public sealed class AppRibbonButtonDefinitionTests
             [TrueBimRibbon.ParametersPanelName] = 3,
             [TrueBimRibbon.AdministrationPanelName] = 2,
             [TrueBimRibbon.ArPanelName] = 2,
-            [TrueBimRibbon.KrPanelName] = 4,
+            [TrueBimRibbon.KrPanelName] = 5,
             [TrueBimRibbon.EomPanelName] = 2,
             [TrueBimRibbon.HelpPanelName] = 2
         };

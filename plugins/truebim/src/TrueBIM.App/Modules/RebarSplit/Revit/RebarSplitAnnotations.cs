@@ -285,7 +285,14 @@ internal sealed class RebarSplitAnnotations
         };
         options.SetElementsToDimension(ids);
         List<Reference> additional = references.Where(reference => document.GetElement(reference.ElementId) is not Rebar).ToList();
-        if (additional.Count > 0) options.SetAdditionalReferencesToDimension(additional);
+        if (additional.Count > 0)
+        {
+#if REVIT2020_OR_GREATER
+            options.SetAdditionalReferencesToDimension(additional);
+#else
+            throw new NotSupportedException("Revit 2019 не поддерживает восстановление дополнительных ссылок мультиарматурной аннотации. Разбиение с сохранением этой аннотации отменено.");
+#endif
+        }
         MultiReferenceAnnotation target = MultiReferenceAnnotation.Create(document, original.OwnerViewId, options);
         if (document.GetElement(target.DimensionId) is Dimension targetDimension)
             CopyPresentation(document, dimension, targetDimension);

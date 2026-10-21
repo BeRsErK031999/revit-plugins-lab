@@ -8,7 +8,9 @@ param(
 
     [switch] $AllowMissingRevitApi,
 
-    [string] $Revit2026ApiRoot = ""
+    [string] $Revit2026ApiRoot = "",
+
+    [hashtable] $RevitApiRoots = @{}
 )
 
 $ErrorActionPreference = "Stop"
@@ -219,7 +221,10 @@ $skipped = New-Object System.Collections.Generic.List[string]
 
 foreach ($year in $revitYears) {
     $framework = if ($year -in @("2025", "2026")) { "net8.0-windows" } else { "net48" }
-    $revitApiRoot = if ($year -eq "2026" -and -not [string]::IsNullOrWhiteSpace($Revit2026ApiRoot)) {
+    $revitApiRoot = if ($RevitApiRoots.ContainsKey($year)) {
+        [System.IO.Path]::GetFullPath([string]$RevitApiRoots[$year])
+    }
+    elseif ($year -eq "2026" -and -not [string]::IsNullOrWhiteSpace($Revit2026ApiRoot)) {
         [System.IO.Path]::GetFullPath($Revit2026ApiRoot)
     }
     else {
@@ -243,6 +248,12 @@ foreach ($year in $revitYears) {
         }
 
         throw "Revit API assemblies were not found for Revit $year under '$revitApiRoot'."
+    }
+
+    foreach ($reference in @($apiPath, $apiUiPath)) {
+        if ([Reflection.AssemblyName]::GetAssemblyName($reference).Version.Major -ne ([int]$year - 2000)) {
+            throw "Revit API version does not match target $year : $reference"
+        }
     }
 
     $tempOutputDir = Join-Path $buildTempRoot "$year\bin"

@@ -408,6 +408,15 @@ public static class TrueBimRibbon
             "Обрабатывает выбранные наборы или все наборы проекта с фактически разными длинами стержней. Можно включить сохранение аннотаций. При ошибках переноса параметров доступны отмена всей операции, пропуск проблемных наборов и разбиение с потерей этих параметров.",
             $"{CommandNamespace}.{nameof(RebarSplitCommandAvailability)}"),
         new(
+            KrPanelName,
+            "TrueBIM_RebarFill",
+            "Заполнятор\nарматуры",
+            $"{CommandNamespace}.{nameof(RebarFillCommand)}",
+            TrueBimIcon.Parameter,
+            "Заполняет выбранный параметр экземпляров арматуры, сохраняя вложенность и систему армирования.",
+            "Выберите арматуру в спецификации, на плане или 3D-виде либо родительскую обобщённую модель. Выберите параметр и значение, проверьте доступность записи и подтвердите перезапись заполненных значений.",
+            $"{CommandNamespace}.{nameof(RebarFillCommandAvailability)}"),
+        new(
             BimViewsPanelName,
             "TrueBIM_DatumExtents",
             "Оси\n2D/3D",
