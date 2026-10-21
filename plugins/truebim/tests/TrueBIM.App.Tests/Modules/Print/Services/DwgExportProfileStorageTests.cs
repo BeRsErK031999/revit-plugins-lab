@@ -13,6 +13,37 @@ public sealed class DwgExportProfileStorageTests
         LoadRevitApi();
     }
 
+    [Theory]
+    [InlineData(true, true, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, false, true)]
+    public void CreateSheetProfile_OverridesSetupXrefsWithoutChangingSavedProfile(
+        bool setupUsesXrefs,
+        bool keepSheetsWhole,
+        bool expectedXrefs)
+    {
+        DwgExportProfile savedProfile = new()
+        {
+            ProfileName = "Customer",
+            SourceRevitSetupName = "Customer setup",
+            UsePredefinedRevitSetup = true,
+            MergedViews = setupUsesXrefs,
+            SharedCoords = true,
+            LayerMapping = "AIA"
+        };
+
+        DwgExportProfile exportProfile = DwgExportOptionsFactory.CreateSheetProfile(savedProfile, keepSheetsWhole);
+
+        Assert.Equal(expectedXrefs, exportProfile.MergedViews);
+        Assert.Equal(setupUsesXrefs, savedProfile.MergedViews);
+        Assert.NotSame(savedProfile, exportProfile);
+        Assert.Equal("Customer setup", exportProfile.SourceRevitSetupName);
+        Assert.True(exportProfile.UsePredefinedRevitSetup);
+        Assert.True(exportProfile.SharedCoords);
+        Assert.Equal("AIA", exportProfile.LayerMapping);
+    }
+
     [Fact]
     public void Load_ReturnsEmptyStateWhenProfileFileDoesNotExist()
     {

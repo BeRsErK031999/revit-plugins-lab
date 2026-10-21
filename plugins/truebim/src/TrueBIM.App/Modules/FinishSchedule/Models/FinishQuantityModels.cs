@@ -7,7 +7,8 @@ public enum FinishQuantityMethod
     FloorProbeIntersection,
     CeilingProbeIntersection,
     ProjectedRoomFootprint,
-    ConnectedWallContour
+    ConnectedWallContour,
+    StoredOwnership
 }
 
 public enum FinishGeometryWarningCode
@@ -23,7 +24,8 @@ public enum FinishGeometryWarningCode
     ProjectedAreaUnavailable,
     FullElementAreaUnavailable,
     MultipleRoomContacts,
-    UnassignedElement
+    UnassignedElement,
+    StoredOwnershipUnresolved
 }
 
 public sealed record FinishGeometryWarning(

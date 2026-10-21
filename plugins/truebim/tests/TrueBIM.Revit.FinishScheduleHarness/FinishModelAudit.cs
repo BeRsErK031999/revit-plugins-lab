@@ -16,6 +16,7 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
     public void Run(Document document, string reportPath)
     {
         WriteGeometryAudit(document, reportPath);
+        new FinishScheduleDefaultParameterService(this).CreateOrUpdate(document.Application, document);
         FinishScheduleSettings defaults = FinishScheduleSettings.CreateDefault() with
         {
             DescriptionParameter = ParameterReference.BuiltIn("Имя типа", (long)BuiltInParameter.SYMBOL_NAME_PARAM,
@@ -64,9 +65,117 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         File.WriteAllText(reportPath + ".audit.json", serializer.Serialize(report));
         progress("Audit written: " + reportPath + ".audit.json");
         VerifyQuantities(document, calculation);
+        VerifyFilterDeletion(document);
         VerifyRoomHeight(document, service, settings, calculation, reportPath, serializer);
         VerifySchedule(document, service, settings, calculation, reportPath);
+        VerifyOwnershipStage(document, service, settings);
         File.WriteAllText(reportPath + ".checks.json", serializer.Serialize(passed));
+    }
+
+    private void VerifyOwnershipStage(Document document, FinishSchedulePreviewService service, FinishScheduleSettings settings)
+    {
+        progress("Checking stored ownership, manual edits and assignment rollback.");
+        using TransactionGroup group = new(document, "Stored ownership regression");
+        group.Start();
+        try
+        {
+            FinishScheduleWriteWorkflow workflow = new(service, new RoomFinishWriteValueBuilder(), new FinishOwnershipValueBuilder(),
+                new RoomFinishParameterWriter(new FinishParameterChangePlanner()), new FinishOwnershipWriter(new FinishParameterChangePlanner()),
+                new FinishRoomSchedulePlanBuilder(), new FinishRoomScheduleBuilder(new FinishScheduleMetadataService(), this), this);
+            FinishScheduleSettings readSettings = settings with { WriteOwnership = false };
+            FinishScheduleCalculationResult baseline = service.BuildDetailed(document, readSettings);
+            Check(baseline.Quantities.CacheMetrics == FinishGeometryCacheMetrics.Empty,
+                "Stored ownership mode never requests room or element geometry");
+            Check(baseline.OwnershipTargets!.Targets.Count == 0, "Stored ownership mode has no assignment targets");
+            foreach (FinishPreviewCategory category in new[] { FinishPreviewCategory.Walls, FinishPreviewCategory.Floors, FinishPreviewCategory.Ceilings })
+            {
+                FinishOccurrence original = baseline.Quantities.Occurrences.First(item => item.Category == category);
+                FinishRoomCandidateSnapshot targetRoom = baseline.Build.RoomScope.SelectedRooms
+                    .First(room => room.ElementId != original.RoomId && !string.IsNullOrWhiteSpace(room.Number)
+                        && baseline.Collection.Rooms.Count(other => other.Number == room.Number) == 1);
+                ParameterReference ownershipReference = category switch
+                {
+                    FinishPreviewCategory.Walls => settings.Walls.OwnershipParameter!,
+                    FinishPreviewCategory.Floors => settings.Floors.OwnershipParameter!,
+                    _ => settings.Ceilings.OwnershipParameter!
+                };
+                Parameter ownership = document.GetElement(new ElementId((int)original.ElementId)).LookupParameter(ownershipReference.Name);
+                string previousOwnership = ownership.AsString();
+                using (Transaction edit = new(document, "Manual ownership edit"))
+                {
+                    edit.Start();
+                    ownership.Set(targetRoom.Number);
+                    edit.Commit();
+                }
+
+                FinishScheduleCalculationResult manual = service.BuildDetailed(document, readSettings);
+                FinishOccurrence moved = manual.Quantities.Occurrences.Single(item => item.ElementId == original.ElementId);
+                Check(moved.RoomId == targetRoom.ElementId && Math.Abs(moved.AreaSquareMeters - original.AreaSquareMeters) < 1e-8,
+                    $"{category}: manual ownership moves the full element area to the selected room");
+                double Before(long roomId) => baseline.Quantities.Occurrences
+                    .Where(item => item.RoomId == roomId && item.Category == category).Sum(item => item.AreaSquareMeters);
+                double After(long roomId) => manual.Quantities.Occurrences
+                    .Where(item => item.RoomId == roomId && item.Category == category).Sum(item => item.AreaSquareMeters);
+                Check(Math.Abs(After(original.RoomId) - (Before(original.RoomId) - original.AreaSquareMeters)) < 1e-7
+                    && Math.Abs(After(targetRoom.ElementId) - (Before(targetRoom.ElementId) + original.AreaSquareMeters)) < 1e-7,
+                    $"{category}: source and target room totals follow the manual assignment");
+                FinishScheduleWritePreview preview = workflow.Prepare(document, readSettings);
+                Check(preview.OwnershipPlan.Changes.Count == 0, $"{category}: unchecked mode plans no ownership writes");
+                FinishScheduleWriteResult result = workflow.Apply(document, preview);
+                Check(result.Status == FinishScheduleWriteStatus.Applied && result.AppliedOwnershipValues == 0
+                    && ownership.AsString() == targetRoom.Number, $"{category}: schedule creation preserves the manual ownership");
+                foreach (FinishParameterTargetValue expected in new RoomFinishWriteValueBuilder().Build(readSettings, manual.Aggregation!).Targets)
+                {
+                    string actual = document.GetElement(new ElementId((int)expected.ElementId)).LookupParameter(expected.Reference.Name).AsString();
+                    Check(FinishParameterValueComparison.AreEqual(actual, expected.Value),
+                        $"{category}: written room {expected.ElementId}, {expected.Role} uses stored ownership");
+                }
+
+                using (Transaction restore = new(document, "Restore ownership fixture"))
+                {
+                    restore.Start();
+                    ownership.Set(previousOwnership);
+                    restore.Commit();
+                }
+            }
+
+            // Force a stale assignment plan: failed assignment must not publish a schedule.
+            Parameter wallOwnership = document.GetElement(new ElementId(2421343)).LookupParameter(settings.Walls.OwnershipParameter!.Name);
+            using (Transaction edit = new(document, "Manual wall reassignment"))
+            {
+                edit.Start();
+                wallOwnership.Set("213");
+                edit.Commit();
+            }
+            FinishScheduleWritePreview autoPreview = workflow.Prepare(document, settings);
+            Check(autoPreview.OwnershipPlan.Changes.Any(change => change.ElementId == 2421343 && change.IsRequired),
+                "Automatic assignment is a required stage before room outputs");
+            int scheduleCount = new FilteredElementCollector(document).OfClass(typeof(ViewSchedule)).GetElementCount();
+            using (Transaction edit = new(document, "Change assignment after preview"))
+            {
+                edit.Start();
+                wallOwnership.Set("QA-CHANGED");
+                edit.Commit();
+            }
+            FinishScheduleWriteResult failed = workflow.Apply(document, autoPreview);
+            Check(failed.Status == FinishScheduleWriteStatus.Failed && wallOwnership.AsString() == "QA-CHANGED"
+                && new FilteredElementCollector(document).OfClass(typeof(ViewSchedule)).GetElementCount() == scheduleCount,
+                "Failed ownership write rolls back the workflow and creates no schedule");
+            FinishScheduleWriteResult automatic = workflow.Apply(document, workflow.Prepare(document, settings));
+            Check(automatic.Status == FinishScheduleWriteStatus.Applied && wallOwnership.AsString() == "211",
+                "Checked mode overwrites manual ownership using geometry");
+            FinishScheduleCalculationResult actualCalculation = service.BuildDetailed(document, readSettings);
+            foreach (FinishParameterTargetValue expected in new RoomFinishWriteValueBuilder().Build(readSettings, actualCalculation.Aggregation!).Targets)
+            {
+                string actual = document.GetElement(new ElementId((int)expected.ElementId)).LookupParameter(expected.Reference.Name).AsString();
+                Check(FinishParameterValueComparison.AreEqual(actual, expected.Value),
+                    $"Automatic mode room {expected.ElementId}, {expected.Role} agrees with the recorded ownership");
+            }
+        }
+        finally
+        {
+            group.RollBack();
+        }
     }
 
     private void VerifyQuantities(Document document, FinishScheduleCalculationResult calculation)
@@ -77,6 +186,11 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         Check(calculation.Quantities.Occurrences.All(item => Math.Abs(item.AreaSquareMeters
             - document.GetElement(new ElementId((int)item.ElementId)).get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED).AsDouble() * 0.09290304) < 1e-6),
             "Every occurrence equals the full native Revit area");
+        foreach (int id in new[] { 2445594, 2445806, 2445891 })
+            Check(calculation.Quantities.Occurrences.Single(item => item.ElementId == id).RoomId == 2308808,
+                $"Reported wall {id} belongs to room 213, not platform 210");
+        Check(calculation.Quantities.Occurrences.Single(item => item.ElementId == 2421343).RoomId == 2002199,
+            "Reported wall 2421343 belongs to room 211, not platform 210");
         Check(Math.Round(calculation.Quantities.Occurrences.Where(item => item.RoomId == 2026734
             && item.Category == FinishPreviewCategory.Walls).Sum(item => item.AreaSquareMeters), 2) == 172.01,
             "Room 101 walls equal the user's control schedule: 172.01 square meters");
@@ -135,6 +249,51 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         File.WriteAllText(reportPath + ".heights.json", serializer.Serialize(variants));
     }
 
+    private void VerifyFilterDeletion(Document document)
+    {
+        using TransactionGroup group = new(document, "Disposable filter management regression");
+        group.Start();
+        try
+        {
+            ParameterFilterElement remove, keep, foreign;
+            ViewPlan view = new FilteredElementCollector(document).OfClass(typeof(ViewPlan))
+                .Cast<ViewPlan>().First(candidate => !candidate.IsTemplate);
+            using (Transaction transaction = new(document, "Create disposable filters"))
+            {
+                transaction.Start();
+                ElementParameterFilter rule = new(ParameterFilterRuleFactory.CreateEqualsRule(
+#if REVIT2023_OR_GREATER
+                    new ElementId(BuiltInParameter.ALL_MODEL_MARK), "QA-FILTER"));
+#else
+                    new ElementId(BuiltInParameter.ALL_MODEL_MARK), "QA-FILTER", false));
+#endif
+                ElementId[] categories = [new(BuiltInCategory.OST_Walls)];
+                string suffix = Guid.NewGuid().ToString("N");
+                remove = ParameterFilterElement.Create(document, "BIM_F_Delete_" + suffix, categories, rule);
+                keep = ParameterFilterElement.Create(document, "BIM_F_Keep_" + suffix, categories, rule);
+                foreign = ParameterFilterElement.Create(document, "UserFilter_" + suffix, categories, rule);
+                view.AddFilter(remove.Id);
+                view.AddFilter(keep.Id);
+                transaction.Commit();
+            }
+            var service = new TrueBIM.App.Modules.BimTools.ColorByParameter.Services.OwnedViewFilterService();
+            var rows = service.Collect(document);
+            Check(rows.Any(row => row.Id == remove.Id.IntegerValue && row.Rule.Contains("QA-FILTER")
+                    && row.Categories.Contains(Category.GetCategory(document, BuiltInCategory.OST_Walls).Name)),
+                "Filter table reads real category and rule value");
+            Check(rows.All(row => row.Id != foreign.Id.IntegerValue), "Filter table excludes unrelated filters");
+            ElementId deletedId = remove.Id;
+            Check(service.Delete(document, [deletedId.IntegerValue, foreign.Id.IntegerValue, deletedId.IntegerValue]) == 1,
+                "Batch deletion revalidates ownership and deduplicates selection");
+            Check(document.GetElement(deletedId) is null && !view.GetFilters().Contains(deletedId),
+                "Selected filter is deleted from project and attached view");
+            Check(document.GetElement(keep.Id) is not null && view.GetFilters().Contains(keep.Id)
+                    && document.GetElement(foreign.Id) is not null,
+                "Unselected and unrelated filters are retained");
+        }
+        finally { group.RollBack(); }
+    }
+
     private void VerifySchedule(Document document, FinishSchedulePreviewService service, FinishScheduleSettings settings,
         FinishScheduleCalculationResult calculation, string reportPath)
     {
@@ -142,6 +301,7 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         Dictionary<ElementId, string> previous = new FilteredElementCollector(document).OfClass(typeof(ViewSchedule))
             .Cast<ViewSchedule>().Where(metadata.IsManaged).ToDictionary(schedule => schedule.Id, ScheduleText);
         FinishRoomScheduleBuilder builder = new(new FinishScheduleMetadataService(), this);
+        int parameterCount = new FilteredElementCollector(document).OfClass(typeof(ParameterElement)).GetElementCount();
         FinishScheduleWriteWorkflow workflow = new(service, new RoomFinishWriteValueBuilder(), new FinishOwnershipValueBuilder(),
             new RoomFinishParameterWriter(new FinishParameterChangePlanner()), new FinishOwnershipWriter(new FinishParameterChangePlanner()),
             new FinishRoomSchedulePlanBuilder(), builder, this);
@@ -149,7 +309,19 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         FinishScheduleWriteResult result = workflow.Apply(document, preview);
         File.WriteAllText(reportPath + ".write.json", new JavaScriptSerializer().Serialize(result));
         Check(result.Schedule is not null, "Model schedule created");
+        Room paddingRoom = (Room)document.GetElement(new ElementId((int)calculation.Build.RoomScope.SelectedRooms
+            .Single(room => room.Number == "210").ElementId));
+        string expectedPadding = calculation.Aggregation!.RoomOutputs[paddingRoom.Id.IntegerValue].Floors!.AreaText;
+        string storedPadding = paddingRoom.LookupParameter(settings.Floors.OutputAreaParameter!.Name).AsString();
+        Check(storedPadding.Replace("\r\n", "\n") == expectedPadding.Replace("\r\n", "\n"),
+            "Revit retains leading and trailing area alignment lines for room 210");
         ViewSchedule first = (ViewSchedule)document.GetElement(new ElementId((int)result.Schedule!.ScheduleId));
+        Check(!metadata.IsSnapshot(first), "New schedule reads live configured parameters without snapshot metadata");
+        Check(new FilteredElementCollector(document).OfClass(typeof(ParameterElement)).GetElementCount() == parameterCount,
+            "First run does not create history parameters");
+        Check(first.Definition.GetFieldOrder().Select(id => first.Definition.GetField(id))
+            .Where(field => !field.IsHidden).All(field => !(document.GetElement(field.ParameterId)?.Name.StartsWith("TrueBIM • Отделка ") ?? false)),
+            "Schedule fields do not use a per-release parameter pack");
         string firstText = ScheduleText(first);
         ViewSheet sheet;
         ScheduleSheetInstance placement;
@@ -178,8 +350,9 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
             string after = ScheduleText((ViewSchedule)document.GetElement(old.Key));
             File.WriteAllText(reportPath + ".legacy-" + old.Key.IntegerValue + ".before.txt", old.Value);
             File.WriteAllText(reportPath + ".legacy-" + old.Key.IntegerValue + ".after.txt", after);
-            Check(ContentLines(after).SequenceEqual(ContentLines(old.Value)),
-                "Existing model schedule retains displayed values: " + old.Key.IntegerValue);
+            if (metadata.IsSnapshot((ViewSchedule)document.GetElement(old.Key)))
+                Check(ContentLines(after).SequenceEqual(ContentLines(old.Value)),
+                    "Legacy archived schedule is untouched: " + old.Key.IntegerValue);
         }
         using (TableData table = first.GetTableData())
         using (TableSectionData header = table.GetSectionData(SectionType.Header))
@@ -198,8 +371,19 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
         Check(secondPreview.TotalChangeCount == 0, "Repeated calculation does not rewrite unchanged parameters");
         FinishScheduleWriteResult second = workflow.Apply(document, secondPreview);
         Check(second.Schedule is not null && second.Schedule.ScheduleId != result.Schedule.ScheduleId,
-            "Repeated run creates a separate schedule version");
-        Check(ScheduleText(first) == firstText, "Previous model schedule keeps frozen values");
+            "Repeated run creates a separate standardized schedule");
+        Check(ScheduleText(first) == firstText, "Same input leaves existing live schedule values unchanged");
+        Check(new FilteredElementCollector(document).OfClass(typeof(ParameterElement)).GetElementCount() == parameterCount,
+            "Repeated run does not create history parameters");
+        Room liveRoom = (Room)document.GetElement(new ElementId((int)calculation.Build.RoomScope.SelectedRooms[0].ElementId));
+        using (Transaction transaction = new(document, "Verify live schedule binding"))
+        {
+            transaction.Start();
+            liveRoom.LookupParameter(settings.RoomListOutputParameter!.Name)!.Set("QA-LIVE-PARAMETER");
+            document.Regenerate();
+            Check(ScheduleText(first).Contains("QA-LIVE-PARAMETER"), "New schedule reflects edits to the configured room parameter");
+            transaction.RollBack();
+        }
         Check(document.GetElement(placement.Id) is ScheduleSheetInstance preserved
               && preserved.ScheduleId == first.Id && preserved.OwnerViewId == sheet.Id
               && preserved.Point.IsAlmostEqualTo(XYZ.Zero), "Previous version retains its placement on the sheet");
@@ -233,7 +417,7 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
     private static void WriteGeometryAudit(Document document, string reportPath)
     {
         using FinishRoomGeometryCache cache = new(document);
-        object[] rooms = new[] { 2257169, 2026734, 2002199 }.Select(id =>
+        object[] rooms = new[] { 2257169, 2026734, 2002199, 2304268, 2308808 }.Select(id =>
         {
             cache.TryGet(id, out FinishRoomGeometryData? geometry, out _);
             using SpatialElementBoundaryOptions options = new() { SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish };
@@ -256,7 +440,7 @@ internal sealed class FinishModelAudit(Action<string> progress) : ITrueBimLogger
             };
         }).ToArray();
         FinishElementGeometryCache elements = new(document);
-        object[] solids = new[] { 1956941, 2409164, 2416714, 2822885, 2466464 }.Select(id => (object)new
+        object[] solids = new[] { 1956941, 2409164, 2416714, 2822885, 2466464, 2445594, 2445806, 2445891, 2421343 }.Select(id => (object)new
         {
             Id = id,
             Faces = elements.Get(id).Geometry!.Solids.SelectMany(solid => solid.Faces.OfType<PlanarFace>()).Select(face => new

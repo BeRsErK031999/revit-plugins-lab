@@ -149,9 +149,7 @@ public sealed class FinishElementCollector
                     continue;
                 }
 
-                Parameter? classification = type
-                    .GetParameters(FinishScheduleSettings.ClassificationParameterName)
-                    .FirstOrDefault();
+                Parameter? classification = type.get_Parameter(BuiltInParameter.ALL_MODEL_MODEL);
                 FinishParameterValueSnapshot? description = descriptionReference is null
                     ? null
                     : FindParameterValue(

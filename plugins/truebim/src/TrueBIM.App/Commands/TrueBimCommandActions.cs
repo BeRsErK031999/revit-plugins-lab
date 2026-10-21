@@ -73,12 +73,10 @@ internal static class TrueBimCommandActions
             PrintFileNameTemplateService fileNameTemplateService = new();
             IReadOnlyCollection<string> sheetParameterNames = fileNameTemplateService.GetSheetParameterNames(
                 collectionSettings.FileNameMask,
-                collectionSettings.CombinedPdfFileName,
-                collectionSettings.CombinedDwgFileNameMask);
+                collectionSettings.CombinedPdfFileName);
             IReadOnlyCollection<string> titleBlockParameterNames = fileNameTemplateService.GetTitleBlockParameterNames(
                 collectionSettings.FileNameMask,
-                collectionSettings.CombinedPdfFileName,
-                collectionSettings.CombinedDwgFileNameMask);
+                collectionSettings.CombinedPdfFileName);
             Stopwatch collectionTimer = Stopwatch.StartNew();
             IReadOnlyList<PrintSheetSource> sheetSources = CollectPrintSheetSources(
                 commandData.Application.Application.Documents.Cast<Document>().ToList(),
@@ -95,8 +93,7 @@ internal static class TrueBimCommandActions
                 settingsService,
                 logger,
                 collectionSettings.FileNameMask,
-                collectionSettings.CombinedPdfFileName,
-                collectionSettings.CombinedDwgFileNameMask)
+                collectionSettings.CombinedPdfFileName)
             {
                 ShowInTaskbar = true
             };

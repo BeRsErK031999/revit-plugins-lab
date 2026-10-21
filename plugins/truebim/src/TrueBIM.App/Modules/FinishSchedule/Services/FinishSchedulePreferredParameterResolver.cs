@@ -57,27 +57,24 @@ public sealed class FinishSchedulePreferredParameterResolver
             Walls = ResolveCategory(
                 settings.Walls,
                 roomOutputOptions,
-                optionService.GetOwnershipOptions(catalog, categories.Walls),
+                optionService.GetOwnershipOptions(catalog, categories.Walls, settings.WriteOwnership),
                 FinishSchedulePreferredParameterNames.WallsOwnership,
                 FinishSchedulePreferredParameterNames.WallsDescription,
-                FinishSchedulePreferredParameterNames.WallsArea,
-                settings.WriteOwnership),
+                FinishSchedulePreferredParameterNames.WallsArea),
             Floors = ResolveCategory(
                 settings.Floors,
                 roomOutputOptions,
-                optionService.GetOwnershipOptions(catalog, categories.Floors),
+                optionService.GetOwnershipOptions(catalog, categories.Floors, settings.WriteOwnership),
                 FinishSchedulePreferredParameterNames.FloorsOwnership,
                 FinishSchedulePreferredParameterNames.FloorsDescription,
-                FinishSchedulePreferredParameterNames.FloorsArea,
-                settings.WriteOwnership),
+                FinishSchedulePreferredParameterNames.FloorsArea),
             Ceilings = ResolveCategory(
                 settings.Ceilings,
                 roomOutputOptions,
-                optionService.GetOwnershipOptions(catalog, categories.Ceilings),
+                optionService.GetOwnershipOptions(catalog, categories.Ceilings, settings.WriteOwnership),
                 FinishSchedulePreferredParameterNames.CeilingsOwnership,
                 FinishSchedulePreferredParameterNames.CeilingsDescription,
-                FinishSchedulePreferredParameterNames.CeilingsArea,
-                settings.WriteOwnership)
+                FinishSchedulePreferredParameterNames.CeilingsArea)
         };
     }
 
@@ -87,8 +84,7 @@ public sealed class FinishSchedulePreferredParameterResolver
         IReadOnlyList<FinishScheduleParameterOption> ownershipOptions,
         string preferredOwnershipName,
         string preferredDescriptionName,
-        string preferredAreaName,
-        bool writeOwnership)
+        string preferredAreaName)
     {
         if (!settings.IsEnabled)
         {
@@ -97,9 +93,7 @@ public sealed class FinishSchedulePreferredParameterResolver
 
         return settings with
         {
-            OwnershipParameter = writeOwnership
-                ? ResolveReference(settings.OwnershipParameter, ownershipOptions, preferredOwnershipName)
-                : settings.OwnershipParameter,
+            OwnershipParameter = ResolveReference(settings.OwnershipParameter, ownershipOptions, preferredOwnershipName),
             OutputDescriptionParameter = ResolveReference(
                 settings.OutputDescriptionParameter,
                 roomOutputOptions,

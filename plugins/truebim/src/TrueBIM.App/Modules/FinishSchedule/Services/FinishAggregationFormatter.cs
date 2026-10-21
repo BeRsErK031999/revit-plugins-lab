@@ -1,5 +1,5 @@
 using System.Globalization;
-using System.Text;
+
 using TrueBIM.App.Modules.FinishSchedule.Models;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Services;
@@ -11,33 +11,22 @@ public sealed class FinishAggregationFormatter
 
     private static readonly CultureInfo OutputCulture = CultureInfo.GetCultureInfo("ru-RU");
     private const string PreservedBlankLine = "\u00A0";
-    private const double HorizontalCellPaddingMillimeters = 2;
-    private const double AverageGlyphWidthFactor = 0.58;
-    private readonly int maximumCharactersPerLine;
+    // Revit trims whitespace at the edges of string parameters. A zero-width space
+    // preserves the leading/trailing alignment lines without printing a visible glyph.
+    private const string PreservedAreaPadding = "\u200B";
+    private readonly Func<string, int> visualLineCount;
 
     public FinishAggregationFormatter(
-        double descriptionColumnWidthMillimeters =
-            FinishScheduleColumnWidths.DefaultDescriptionMillimeters)
+        double descriptionColumnWidthMillimeters = FinishScheduleColumnWidths.DefaultDescriptionMillimeters,
+        Func<string, int>? visualLineCount = null)
     {
         if (double.IsNaN(descriptionColumnWidthMillimeters)
             || double.IsInfinity(descriptionColumnWidthMillimeters)
             || descriptionColumnWidthMillimeters < FinishScheduleColumnWidths.MinimumMillimeters
             || descriptionColumnWidthMillimeters > FinishScheduleColumnWidths.MaximumMillimeters)
-        {
             throw new ArgumentOutOfRangeException(nameof(descriptionColumnWidthMillimeters));
-        }
-
-        double usableWidth = Math.Max(
-            FinishRoomScheduleStyleRules.BodyTextSizeMillimeters * 4,
-            descriptionColumnWidthMillimeters - HorizontalCellPaddingMillimeters);
-        maximumCharactersPerLine = Math.Max(
-            8,
-            (int)Math.Floor(
-                usableWidth
-                / (FinishRoomScheduleStyleRules.BodyTextSizeMillimeters
-                    * AverageGlyphWidthFactor)));
+        this.visualLineCount = visualLineCount ?? (_ => 1);
     }
-
     public FinishRoomGroupOutput Format(
         IEnumerable<string> roomIdentifiers,
         FinishAggregatedCategory walls,
@@ -91,82 +80,23 @@ public sealed class FinishAggregationFormatter
             formattedItems.Add(new FormattedItem(UnknownDisplay, UnknownDisplay));
         }
 
-        List<string> descriptionLines = [];
-        List<string> areaLines = [];
-        for (int index = 0; index < formattedItems.Count; index++)
+        List<string> descriptionBlocks = [];
+        List<string> areaBlocks = [];
+        foreach (FormattedItem item in formattedItems)
         {
-            FormattedItem item = formattedItems[index];
-            IReadOnlyList<string> wrappedDescription = Wrap(item.Description);
-            descriptionLines.AddRange(wrappedDescription);
-            int areaLine = (wrappedDescription.Count - 1) / 2;
-            for (int line = 0; line < wrappedDescription.Count; line++)
-            {
-                areaLines.Add(line == areaLine ? item.Area : PreservedBlankLine);
-            }
+            // Revit wraps the unchanged description. Only area padding reflects its rendered height.
+            descriptionBlocks.Add(item.Description);
+            int lines = Math.Max(1, visualLineCount(item.Description));
+            int areaLine = (lines - 1) / 2;
+            areaBlocks.Add(string.Join(Environment.NewLine,
+                Enumerable.Range(0, lines).Select(line => line == areaLine ? item.Area : PreservedAreaPadding)));
         }
 
+        // A non-breaking space keeps the empty separator line visible in Revit text parameters.
+        string separator = Environment.NewLine + PreservedBlankLine + Environment.NewLine;
         return new FinishFormattedCategoryOutput(
-            string.Join(Environment.NewLine, descriptionLines),
-            string.Join(Environment.NewLine, areaLines));
+            string.Join(separator, descriptionBlocks),
+            string.Join(separator, areaBlocks));
     }
-
-    private IReadOnlyList<string> Wrap(string value)
-    {
-        string[] words = value.Split(
-            [' '],
-            StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0)
-        {
-            return [string.Empty];
-        }
-
-        List<string> lines = [];
-        StringBuilder current = new();
-        foreach (string sourceWord in words)
-        {
-            string word = sourceWord;
-            while (word.Length > maximumCharactersPerLine)
-            {
-                if (current.Length > 0)
-                {
-                    lines.Add(current.ToString());
-                    current.Clear();
-                }
-
-                lines.Add(word.Substring(0, maximumCharactersPerLine));
-                word = word.Substring(maximumCharactersPerLine);
-            }
-
-            if (word.Length == 0)
-            {
-                continue;
-            }
-
-            if (current.Length == 0)
-            {
-                current.Append(word);
-                continue;
-            }
-
-            if (current.Length + 1 + word.Length <= maximumCharactersPerLine)
-            {
-                current.Append(' ').Append(word);
-            }
-            else
-            {
-                lines.Add(current.ToString());
-                current.Clear();
-                current.Append(word);
-            }
-        }
-
-        if (current.Length > 0)
-        {
-            lines.Add(current.ToString());
-        }
-
-        return lines;
-    }
-
     private sealed record FormattedItem(string Description, string Area);
 }

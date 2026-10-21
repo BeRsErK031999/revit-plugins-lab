@@ -112,7 +112,7 @@ internal static class RevitFinishParameterAccess
         }
     }
 
-    private static Parameter? FindParameter(Element element, ParameterReference reference)
+    internal static Parameter? FindParameter(Element element, ParameterReference reference)
     {
         foreach (Parameter parameter in element.Parameters)
         {

@@ -40,7 +40,7 @@ public sealed class FinishScheduleReportBuilder
         StringBuilder report = Header("ПЛАН ЗАПИСИ");
         if (preview.Calculation is not null)
         {
-            AppendCalculation(report, preview.Calculation, settings: null);
+            AppendCalculation(report, preview.Calculation, preview.Settings);
             AppendGuidance(
                 report,
                 FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation));
@@ -75,7 +75,7 @@ public sealed class FinishScheduleReportBuilder
         StringBuilder report = Header(FormatStatus(result.Status, incompleteCalculation));
         if (preview.Calculation is not null)
         {
-            AppendCalculation(report, preview.Calculation, settings: null);
+            AppendCalculation(report, preview.Calculation, preview.Settings);
             AppendGuidance(
                 report,
                 FinishScheduleDiagnosticGuidanceBuilder.Build(preview.Calculation));
@@ -120,6 +120,12 @@ public sealed class FinishScheduleReportBuilder
     {
         report.AppendLine();
         report.AppendLine("РАСЧЁТ");
+        if (settings is not null)
+        {
+            report.AppendLine(settings.WriteOwnership
+                ? "Принадлежность: назначение по геометрии, затем расчёт по параметрам отделки."
+                : "Принадлежность: текущие параметры отделки; геометрический поиск отключён.");
+        }
         report.AppendLine(
             $"Помещения: найдено {preview.CollectedRooms}; обработано {preview.RoomScope.SelectedRooms.Count}; "
                 + $"невалидных {preview.RoomScope.InvalidRooms.Count}; вне scope {preview.RoomScope.OutsideScopeCount}.");
@@ -273,7 +279,8 @@ public sealed class FinishScheduleReportBuilder
                 $"{index + 1}. {FormatCategory(warning.Category)}: "
                     + $"помещение {FormatElementId(warning.RoomId)}; "
                     + $"элемент {FormatElementId(warning.ElementId)}; "
-                    + $"{FormatDiagnosticCode(warning.Code)}.");
+                    + $"{FormatDiagnosticCode(warning.Code)}."
+                    + (warning.Code == FinishGeometryWarningCode.MultipleRoomContacts ? " " + warning.Message : ""));
         }
     }
 
@@ -318,7 +325,8 @@ public sealed class FinishScheduleReportBuilder
         {
             FinishScheduleStageNames.CollectCandidates => "Сбор кандидатов",
             FinishScheduleStageNames.ScopeAndIndex => "Scope, классификация и spatial index",
-            FinishScheduleStageNames.PhysicalQuantities => "Физическая геометрия и площади",
+            FinishScheduleStageNames.PhysicalQuantities => "Определение принадлежности по геометрии",
+            FinishScheduleStageNames.StoredQuantities => "Площади по параметрам принадлежности",
             FinishScheduleStageNames.Aggregation => "Нормализация и агрегация",
             FinishScheduleStageNames.TotalCalculation => "Итого расчёт",
             FinishScheduleStageNames.OwnershipWrite => "Запись ownership",

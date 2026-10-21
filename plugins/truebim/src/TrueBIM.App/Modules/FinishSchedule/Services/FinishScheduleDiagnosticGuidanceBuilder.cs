@@ -12,6 +12,12 @@ public static class FinishScheduleDiagnosticGuidanceBuilder
         }
 
         List<string> guidance = [];
+        if (preview.GeometryWarnings.Any(warning => warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved))
+        {
+            guidance.Add("Проверьте параметры принадлежности перечисленных элементов: укажите один существующий "
+                + "идентификатор помещения. Для повторяющихся идентификаторов на уровне элемента должно быть "
+                + "единственное совпадение. Для автоматического назначения включите запись принадлежности.");
+        }
         AppendCategory(
             guidance,
             "Полы",
@@ -39,11 +45,14 @@ public static class FinishScheduleDiagnosticGuidanceBuilder
     {
         FinishGeometryWarning[] criticalWarnings = warnings
             .Where(warning => warning.Category == category)
+            .Where(warning => warning.Code != FinishGeometryWarningCode.StoredOwnershipUnresolved)
             .Where(FinishGeometryWarningClassifier.AffectsScheduleValue)
             .ToArray();
         bool hasNoGeometryLinks = counts.InScope > 0
             && quantities is not null
-            && quantities.OccurrenceCount == 0;
+            && quantities.OccurrenceCount == 0
+            && !warnings.Any(warning => warning.Category == category
+                && warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved);
         if (criticalWarnings.Length == 0 && !hasNoGeometryLinks)
         {
             return;

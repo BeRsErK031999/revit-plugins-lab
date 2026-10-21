@@ -15,7 +15,6 @@ public sealed class PrintOperationProgressTrackerTests
             exportPdf: true,
             pdfMode: PrintPdfExportMode.SeparateFiles,
             exportDwg: true,
-            combineDwg: false,
             exportDxf: true,
             exportDwf: true);
 
@@ -23,7 +22,7 @@ public sealed class PrintOperationProgressTrackerTests
     }
 
     [Fact]
-    public void CalculateExportFileCount_CountsCombinedFilesPerSource()
+    public void CalculateExportFileCount_CountsCombinedPdfPerSourceAndDwgPerSheet()
     {
         int result = PrintOperationProgressTracker.CalculateExportFileCount(
             selectedSheetCount: 5,
@@ -31,11 +30,10 @@ public sealed class PrintOperationProgressTrackerTests
             exportPdf: true,
             pdfMode: PrintPdfExportMode.CombinedFile,
             exportDwg: true,
-            combineDwg: true,
             exportDxf: false,
             exportDwf: false);
 
-        Assert.Equal(4, result);
+        Assert.Equal(7, result);
     }
 
     [Fact]

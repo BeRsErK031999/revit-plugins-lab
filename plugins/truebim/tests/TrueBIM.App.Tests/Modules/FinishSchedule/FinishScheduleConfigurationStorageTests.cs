@@ -25,6 +25,7 @@ public sealed class FinishScheduleConfigurationStorageTests
                 Walls = CreateSettings().Walls with
                 {
                     ClassificationValue = "Wall finish",
+                    OwnershipParameter = Shared("Принадлежность стен", "66666666-6666-6666-6666-666666666666"),
                     OutputDescriptionParameter = Shared("Стены описание", "44444444-4444-4444-4444-444444444444"),
                     OutputAreaParameter = Shared("Стены площадь", "55555555-5555-5555-5555-555555555555")
                 }
@@ -45,7 +46,7 @@ public sealed class FinishScheduleConfigurationStorageTests
             Assert.True(imported.WriteOwnership);
             Assert.Equal(901, imported.Scope.LevelId);
             Assert.Equal("Текущий расчёт", imported.ScheduleName);
-            Assert.Equal(current.Walls.OwnershipParameter, imported.Walls.OwnershipParameter);
+            Assert.Equal(source.Walls.OwnershipParameter, imported.Walls.OwnershipParameter);
         }
         finally
         {

@@ -83,7 +83,7 @@ public sealed record FinishScheduleSettings(
         return new FinishScheduleSettings(
             DescriptionParameter: null,
             RoomIdentifier: RoomIdentifierSettings.ByNumber(),
-            WriteOwnership: false,
+            WriteOwnership: true,
             Walls: new FinishCategorySettings(
                 IsEnabled: true,
                 ClassificationValue: "Внутренняя отделка",

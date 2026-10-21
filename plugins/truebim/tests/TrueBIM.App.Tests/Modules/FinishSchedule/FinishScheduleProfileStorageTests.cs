@@ -161,6 +161,24 @@ public sealed class FinishScheduleProfileStorageTests
         Assert.Equal(string.Empty, loaded.ScheduleName);
     }
 
+    [Fact]
+    public void Load_LegacyProfilePreservesExplicitUncheckedFlag()
+    {
+        using TempDirectory temp = new();
+        Directory.CreateDirectory(temp.Path);
+        File.WriteAllText(temp.SettingsPath, "{\"Version\":2,\"WriteOwnership\":false}");
+        Assert.False(new FinishScheduleProfileStorage(temp.SettingsPath, new TestLogger()).Load().WriteOwnership);
+    }
+
+    [Fact]
+    public void SaveLoad_PreservesStoredOwnershipModeInNewProfile()
+    {
+        using TempDirectory temp = new();
+        FinishScheduleProfileStorage storage = new(temp.SettingsPath, new TestLogger());
+        storage.Save(FinishScheduleSettings.CreateDefault() with { WriteOwnership = false });
+        Assert.False(storage.Load().WriteOwnership);
+    }
+
     private sealed class TempDirectory : IDisposable
     {
         public TempDirectory()

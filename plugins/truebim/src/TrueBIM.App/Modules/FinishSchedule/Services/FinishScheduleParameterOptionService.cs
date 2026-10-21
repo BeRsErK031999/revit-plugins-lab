@@ -90,7 +90,8 @@ public sealed class FinishScheduleParameterOptionService
 
     public IReadOnlyList<FinishScheduleParameterOption> GetOwnershipOptions(
         ParameterCatalog catalog,
-        ParameterCategoryReference category)
+        ParameterCategoryReference category,
+        bool requireWritable = true)
     {
         return GetOptions(
             catalog,
@@ -99,7 +100,7 @@ public sealed class FinishScheduleParameterOptionService
                 ParameterBindingKind.Instance,
                 TextStorage,
                 [category],
-                requireWritable: true));
+                requireWritable: requireWritable));
     }
 
     public IReadOnlyList<FinishScheduleParameterOption> GetSectionOptions(

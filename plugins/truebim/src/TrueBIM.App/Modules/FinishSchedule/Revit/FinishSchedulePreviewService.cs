@@ -44,13 +44,39 @@ public sealed class FinishSchedulePreviewService
         timings.Add(Timing(FinishScheduleStageNames.ScopeAndIndex, stageTimer));
 
         stageTimer.Restart();
-        IFinishQuantitySource quantitySource = new PhysicalFinishQuantitySource(document, logger);
-        // Resolve against all rooms so a neighbouring section or storey cannot claim a whole element
-        // merely because its actual owner is outside the selected report scope.
-        FinishQuantityResult allQuantities = quantitySource.Calculate(new FinishQuantityRequest(
+        FinishQuantityRequest request = new(
             new RoomScopeService().Select(collection.Rooms, ReportScopeSettings.EntireProject()).SelectedRooms,
-            build.Classification.Elements));
+            build.Classification.Elements);
         HashSet<long> selectedRoomIds = new(build.RoomScope.SelectedRooms.Select(room => room.ElementId));
+        FinishParameterTargetBuildResult ownershipTargets = new(0, [], []);
+        FinishQuantityResult? geometry = null;
+        if (settings.WriteOwnership)
+        {
+            // Resolve against all rooms before restricting writes to the selected report scope.
+            geometry = new PhysicalFinishQuantitySource(document, logger).Calculate(request);
+            HashSet<long> outsideGeometryIds = new(geometry.Occurrences
+                .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+            HashSet<long> selectedGeometryIds = new(geometry.Occurrences
+                .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+            FinishClassifiedElement[] assignmentElements = build.InScopeElements
+                .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)))
+                .Where(item => !outsideGeometryIds.Contains(item.Element.ElementId))
+                .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray();
+            RoomFinishSnapshotBuildResult identifiers = new RoomFinishSnapshotBuilder(
+                new FinishDescriptionNormalizer()).Build(new RoomFinishSnapshotRequest(
+                    settings, request.Rooms, build.Classification.Elements, collection.Types, geometry));
+            ownershipTargets = new FinishOwnershipValueBuilder().Build(
+                settings, assignmentElements, geometry, identifiers);
+            timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
+            stageTimer.Restart();
+        }
+
+        // Preview uses proposed parameter values; Apply reads them back after the assignment transaction.
+        FinishQuantityResult stored = new StoredFinishQuantitySource(document, settings,
+            ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value)).Calculate(request);
+        FinishQuantityResult allQuantities = new(stored.Occurrences,
+            stored.Warnings.Concat(geometry?.Warnings ?? []),
+            geometry?.CacheMetrics, geometry?.Contacts);
         HashSet<long> outsideOwnedIds = new(allQuantities.Occurrences
             .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
         HashSet<long> selectedOwnedIds = new(allQuantities.Occurrences
@@ -71,7 +97,7 @@ public sealed class FinishSchedulePreviewService
                     : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))),
             allQuantities.CacheMetrics,
             allQuantities.Contacts);
-        timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
+        timings.Add(Timing(FinishScheduleStageNames.StoredQuantities, stageTimer));
         FinishSchedulePreviewResult result = build.Preview.WithQuantities(quantities);
         RoomFinishSnapshotBuildResult? roomSnapshots = null;
         FinishAggregationResult? aggregation = null;
@@ -90,7 +116,9 @@ public sealed class FinishSchedulePreviewService
             aggregation = new FinishAggregationService(
                 new FinishGroupKeyBuilder(),
                 new FinishAggregationFormatter(
-                    settings.EffectiveColumnWidths.DescriptionMillimeters)).Aggregate(roomSnapshots);
+                    settings.EffectiveColumnWidths.DescriptionMillimeters,
+                    FinishScheduleTextLayout.CreateLineCounter(document,
+                        settings.EffectiveColumnWidths.DescriptionMillimeters))).Aggregate(roomSnapshots);
             result = result.WithAggregation(aggregation);
         }
 
@@ -129,7 +157,8 @@ public sealed class FinishSchedulePreviewService
             build,
             quantities,
             roomSnapshots,
-            aggregation);
+            aggregation,
+            ownershipTargets);
     }
 
     private static FinishScheduleStageTiming Timing(string stage, Stopwatch timer)

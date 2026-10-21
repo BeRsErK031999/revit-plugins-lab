@@ -39,7 +39,7 @@ public sealed class DwgExportSettingsWindow : TrueBimWindow
 
     private readonly CheckBox sharedCoordsInput = CreateCheckBox("Shared coordinates");
     private readonly CheckBox exportingAreasInput = CreateCheckBox("Экспорт помещений, пространств и зон");
-    private readonly CheckBox mergedViewsInput = CreateCheckBox("Merged views / XRef");
+    private readonly CheckBox mergedViewsInput = CreateCheckBox("Виды и связи отдельными DWG (XRef)");
     private readonly CheckBox hideScopeBoxInput = CreateCheckBox("Скрыть scope boxes");
     private readonly CheckBox hideReferencePlaneInput = CreateCheckBox("Скрыть reference planes");
     private readonly CheckBox hideUnreferenceViewTagsInput = CreateCheckBox("Скрыть неподдержанные view tags");
@@ -157,7 +157,7 @@ public sealed class DwgExportSettingsWindow : TrueBimWindow
     {
         WpfGrid grid = CreateFormGrid();
         AddRow(grid, "Версия AutoCAD", fileVersionInput);
-        AddRow(grid, "Merged views / XRef", mergedViewsInput);
+        AddRow(grid, "Внешние ссылки", mergedViewsInput);
         AddRow(grid, "Помещения и зоны", exportingAreasInput);
         AddRow(grid, "Non-plot layers", markNonplotLayersInput);
         AddRow(grid, "Non-plot suffix", nonplotSuffixInput);

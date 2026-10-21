@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.2.23"
+#define AppVersion "0.2.35"
 #define Publisher "TrueBIM"
 
 #ifndef ExcludeRevit2019
@@ -74,6 +74,7 @@ AppVersion={#AppVersion}
 AppPublisher={#Publisher}
 DefaultDirName={userappdata}\TrueBIM
 UsePreviousAppDir=no
+UsePreviousSetupType=no
 DefaultGroupName=TrueBIM
 OutputDir=..\..\..\dist\installer
 OutputBaseFilename=TrueBIM-Setup
@@ -83,9 +84,45 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
+DisableDirPage=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
+
+[Messages]
+WizardSelectComponents=Выберите версии Revit
+SelectComponentsDesc=Для каких версий Revit установить TrueBIM?
+SelectComponentsLabel2=По умолчанию выбраны все версии. Снимите отметки с тех, для которых установка не нужна.
+
+[Types]
+Name: "full"; Description: "Все версии Revit"
+Name: "custom"; Description: "Выбранные версии Revit"; Flags: iscustom
+
+[Components]
+#ifndef ExcludeRevit2019
+Name: "revit2019"; Description: "Revit 2019"; Types: full
+#endif
+#ifndef ExcludeRevit2020
+Name: "revit2020"; Description: "Revit 2020"; Types: full
+#endif
+#ifndef ExcludeRevit2021
+Name: "revit2021"; Description: "Revit 2021"; Types: full
+#endif
+#ifndef ExcludeRevit2022
+Name: "revit2022"; Description: "Revit 2022"; Types: full
+#endif
+#ifndef ExcludeRevit2023
+Name: "revit2023"; Description: "Revit 2023"; Types: full
+#endif
+#ifndef ExcludeRevit2024
+Name: "revit2024"; Description: "Revit 2024"; Types: full
+#endif
+#ifndef ExcludeRevit2025
+Name: "revit2025"; Description: "Revit 2025"; Types: full
+#endif
+#ifndef ExcludeRevit2026
+Name: "revit2026"; Description: "Revit 2026"; Types: full
+#endif
 
 [Files]
 #ifndef ExcludeRevit2019
@@ -223,18 +260,6 @@ Type: filesandordirs; Name: "{app}\2026"
 Type: dirifempty; Name: "{app}"
 
 [Code]
-var
-  VersionPage: TWizardPage;
-  VersionList: TNewCheckListBox;
-  Index2019: Integer;
-  Index2020: Integer;
-  Index2021: Integer;
-  Index2022: Integer;
-  Index2023: Integer;
-  Index2024: Integer;
-  Index2025: Integer;
-  Index2026: Integer;
-
 function IsPackagedYear(Year: String): Boolean;
 begin
   Result := False;
@@ -264,184 +289,18 @@ begin
 #endif
 end;
 
-function IsRevitInstalled(Year: String): Boolean;
-begin
-  Result :=
-    FileExists(ExpandConstant('{commonpf}\Autodesk\Revit ' + Year + '\Revit.exe')) or
-    DirExists(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + Year)) or
-    DirExists(ExpandConstant('{commonappdata}\Autodesk\Revit\Addins\' + Year)) or
-    RegKeyExists(HKLM64, 'SOFTWARE\Autodesk\Revit\' + Year) or
-    RegKeyExists(HKLM64, 'SOFTWARE\Autodesk\Revit\Autodesk Revit ' + Year) or
-    RegKeyExists(HKLM32, 'SOFTWARE\Autodesk\Revit\' + Year) or
-    RegKeyExists(HKLM32, 'SOFTWARE\Autodesk\Revit\Autodesk Revit ' + Year);
-end;
-
-function VersionCaption(Year: String): String;
-begin
-  if IsRevitInstalled(Year) then
-    Result := 'Revit ' + Year + ' — найден на компьютере'
-  else
-    Result := 'Revit ' + Year + ' — не найден, потребуется подтверждение';
-end;
-
-function AddVersion(Year: String): Integer;
-begin
-  Result := VersionList.AddCheckBox(
-    VersionCaption(Year),
-    '',
-    0,
-    IsRevitInstalled(Year),
-    True,
-    False,
-    False,
-    nil);
-end;
-
-procedure InitializeWizard;
-var
-  Note: TNewStaticText;
-begin
-  VersionPage := CreateCustomPage(
-    wpSelectDir,
-    'Выберите версии Revit',
-    'Отметьте версии Revit, для которых нужно установить TrueBIM.');
-
-  VersionList := TNewCheckListBox.Create(VersionPage);
-  VersionList.Parent := VersionPage.Surface;
-  VersionList.Left := 0;
-  VersionList.Top := 0;
-  VersionList.Width := VersionPage.SurfaceWidth;
-  VersionList.Height := ScaleY(160);
-
-  Index2019 := -1;
-  Index2020 := -1;
-  Index2021 := -1;
-  Index2022 := -1;
-  Index2023 := -1;
-  Index2024 := -1;
-  Index2025 := -1;
-  Index2026 := -1;
-  if IsPackagedYear('2019') then Index2019 := AddVersion('2019');
-  if IsPackagedYear('2020') then Index2020 := AddVersion('2020');
-  if IsPackagedYear('2021') then Index2021 := AddVersion('2021');
-  if IsPackagedYear('2022') then Index2022 := AddVersion('2022');
-  if IsPackagedYear('2023') then Index2023 := AddVersion('2023');
-  if IsPackagedYear('2024') then Index2024 := AddVersion('2024');
-  if IsPackagedYear('2025') then Index2025 := AddVersion('2025');
-  if IsPackagedYear('2026') then Index2026 := AddVersion('2026');
-
-  Note := TNewStaticText.Create(VersionPage);
-  Note.Parent := VersionPage.Surface;
-  Note.Left := 0;
-  Note.Top := VersionList.Top + VersionList.Height + ScaleY(12);
-  Note.Width := VersionPage.SurfaceWidth;
-  Note.Height := ScaleY(48);
-  Note.WordWrap := True;
-  Note.Caption :=
-    'Версии Revit, найденные на этом компьютере, уже отмечены. ' +
-    'Можно выбрать и другую версию — перед продолжением установщик попросит подтверждение.';
-end;
-
 function ShouldInstallYear(Year: String): Boolean;
 begin
-  if Year = '2019' then
-  begin
-    if Index2019 >= 0 then Result := VersionList.Checked[Index2019] else Result := False;
-  end
-  else if Year = '2020' then
-  begin
-    if Index2020 >= 0 then Result := VersionList.Checked[Index2020] else Result := False;
-  end
-  else if Year = '2021' then
-  begin
-    if Index2021 >= 0 then Result := VersionList.Checked[Index2021] else Result := False;
-  end
-  else if Year = '2022' then
-  begin
-    if Index2022 >= 0 then Result := VersionList.Checked[Index2022] else Result := False;
-  end
-  else if Year = '2023' then
-  begin
-    if Index2023 >= 0 then Result := VersionList.Checked[Index2023] else Result := False;
-  end
-  else if Year = '2024' then
-  begin
-    if Index2024 >= 0 then Result := VersionList.Checked[Index2024] else Result := False;
-  end
-  else if Year = '2025' then
-  begin
-    if Index2025 >= 0 then Result := VersionList.Checked[Index2025] else Result := False;
-  end
-  else if Year = '2026' then
-  begin
-    if Index2026 >= 0 then Result := VersionList.Checked[Index2026] else Result := False;
-  end
-  else
-    Result := False;
-end;
-
-function AnyYearSelected: Boolean;
-begin
-  Result :=
-    ShouldInstallYear('2019') or
-    ShouldInstallYear('2020') or
-    ShouldInstallYear('2021') or
-    ShouldInstallYear('2022') or
-    ShouldInstallYear('2023') or
-    ShouldInstallYear('2024') or
-    ShouldInstallYear('2025') or
-    ShouldInstallYear('2026');
-end;
-
-procedure AppendMissingYear(var MissingYears: String; Year: String);
-begin
-  if ShouldInstallYear(Year) and not IsRevitInstalled(Year) then
-  begin
-    if MissingYears <> '' then
-      MissingYears := MissingYears + ', ';
-
-    MissingYears := MissingYears + Year;
-  end;
-end;
-
-function MissingSelectedYears: String;
-begin
-  Result := '';
-  AppendMissingYear(Result, '2019');
-  AppendMissingYear(Result, '2020');
-  AppendMissingYear(Result, '2021');
-  AppendMissingYear(Result, '2022');
-  AppendMissingYear(Result, '2023');
-  AppendMissingYear(Result, '2024');
-  AppendMissingYear(Result, '2025');
-  AppendMissingYear(Result, '2026');
+  Result := IsPackagedYear(Year) and WizardIsComponentSelected('revit' + Year);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
-var
-  MissingYears: String;
 begin
   Result := True;
-
-  if CurPageID = VersionPage.ID then
+  if (CurPageID = wpSelectComponents) and (WizardSelectedComponents(False) = '') then
   begin
-    if not AnyYearSelected then
-    begin
-      MsgBox('Выберите хотя бы одну версию Revit.', mbError, MB_OK);
-      Result := False;
-      exit;
-    end;
-
-    MissingYears := MissingSelectedYears;
-    if MissingYears <> '' then
-    begin
-      Result :=
-        MsgBox(
-          'На компьютере не найдены выбранные версии Revit: ' + MissingYears + '.' + #13#10 + #13#10 +
-          'TrueBIM всё равно можно установить заранее. Продолжить установку?',
-          mbConfirmation,
-          MB_YESNO) = IDYES;
-    end;
+    MsgBox('Выберите хотя бы одну версию Revit.', mbError, MB_OK);
+    Result := False;
   end;
 end;
 

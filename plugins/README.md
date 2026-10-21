@@ -18,3 +18,4 @@ Start products here while they are experimental. Move mature products to separat
 ## Active products
 
 - `truebim/` - modular Revit add-in platform. First module: sheet numbering.
+- `vernadskogo/` - standalone Revit 2024 facade panel marking add-in with its own installer.

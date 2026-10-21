@@ -6,6 +6,29 @@ namespace TrueBIM.App.Tests.Modules.FinishSchedule;
 
 public sealed class FinishElementOwnershipResolverTests
 {
+    [Fact]
+    public void VerifiedContourOwnerWinsSmallContactDifferenceAndKeepsNativeArea()
+    {
+        FinishQuantityResult result = new FinishElementOwnershipResolver().Resolve(
+        [
+            new(210, 10, FinishPreviewCategory.Walls, 1.134, FinishQuantityMethod.ProjectedRoomFootprint),
+            new(211, 10, FinishPreviewCategory.Walls, 1.026, FinishQuantityMethod.ProjectedRoomFootprint)
+        ], new Dictionary<long, double> { [10] = 1.134 }, new Dictionary<long, long> { [10] = 211 });
+        FinishOccurrence owner = Assert.Single(result.Occurrences);
+        Assert.Equal(211, owner.RoomId);
+        Assert.Equal(1.134, owner.AreaSquareMeters);
+        Assert.Equal(FinishQuantityMethod.ConnectedWallContour, owner.Method);
+        Assert.Contains("единого контура", Assert.Single(result.Warnings).Message);
+    }
+
+    [Fact]
+    public void ContourCannotAssignAnElementToARoomWithoutContact()
+    {
+        FinishQuantityResult result = new FinishElementOwnershipResolver().Resolve(
+            [new(211, 10, FinishPreviewCategory.Walls, 2, FinishQuantityMethod.ProjectedRoomFootprint)],
+            new Dictionary<long, double> { [10] = 3 }, new Dictionary<long, long> { [10] = 999 });
+        Assert.Equal(211, Assert.Single(result.Occurrences).RoomId);
+    }
     [Theory]
     [InlineData(FinishPreviewCategory.Walls, FinishQuantityMethod.RoomBoundarySubface)]
     [InlineData(FinishPreviewCategory.Floors, FinishQuantityMethod.FloorProbeIntersection)]

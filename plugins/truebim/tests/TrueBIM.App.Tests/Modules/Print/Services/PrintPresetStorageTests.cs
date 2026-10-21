@@ -49,7 +49,8 @@ public sealed class PrintPresetStorageTests
             OpenExportFolderAfterCompletion: true,
             DwgSetupName: "  Customer A DWG  ",
             DxfSetupName: null,
-            CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  ");
+            CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  ",
+            KeepDwgSheetsWhole: false);
         PrintPresetStoreState state = new()
         {
             Presets =
@@ -82,6 +83,7 @@ public sealed class PrintPresetStorageTests
         Assert.True(preset.Settings.ExportDwg);
         Assert.True(preset.Settings.CombinePdf);
         Assert.True(preset.Settings.CombineDwg);
+        Assert.False(preset.Settings.KeepDwgSheetsWhole);
         Assert.True(preset.Settings.OpenExportFolderAfterCompletion);
         Assert.Equal("{Номер проекта}_Customer A", preset.Settings.CombinedPdfFileName);
         Assert.Equal("{Номер проекта}_{Имя документа}", preset.Settings.CombinedDwgFileNameMask);
@@ -165,6 +167,34 @@ public sealed class PrintPresetStorageTests
         string storagePath = PrintPresetStorage.CreateStoragePath("2025");
 
         Assert.EndsWith(Path.Combine("TrueBIM", "2025", "print-presets.json"), storagePath);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Load_LegacyDwgPresetDefaultsToWholeSheets(bool legacyCombineDwg)
+    {
+        using TempDirectory temp = new();
+        string storagePath = Path.Combine(temp.Path, "print-presets.json");
+        File.WriteAllText(storagePath, $$"""
+            {
+              "presets": [{
+                "name": "Legacy DWG",
+                "settings": {
+                  "exportDwg": true,
+                  "combineDwg": {{legacyCombineDwg.ToString().ToLowerInvariant()}}
+                },
+                "dwgProfile": { "mergedViews": true }
+              }]
+            }
+            """);
+
+        PrintPreset preset = Assert.Single(new PrintPresetStorage(storagePath, new TestLogger()).Load().Presets);
+
+        Assert.True(preset.Settings!.KeepDwgSheetsWhole);
+        DwgExportProfile exportProfile = DwgExportOptionsFactory.CreateSheetProfile(
+            preset.DwgProfile!, preset.Settings.KeepDwgSheetsWhole);
+        Assert.False(exportProfile.MergedViews);
     }
 
     private static void LoadRevitApi()

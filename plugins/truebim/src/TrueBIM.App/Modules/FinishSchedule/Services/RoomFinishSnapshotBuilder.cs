@@ -122,7 +122,7 @@ public sealed class RoomFinishSnapshotBuilder
             : type.DescriptionValue.DisplayValue;
     }
 
-    private static string ResolveIdentifier(
+    internal static string ResolveIdentifier(
         FinishRoomCandidateSnapshot room,
         RoomIdentifierSettings settings,
         List<FinishAggregationWarning> warnings)

@@ -121,22 +121,19 @@ public sealed class FinishScheduleSettingsValidator
                 context.PreferredAreaName,
                 issues);
 
-            if (settings.WriteOwnership)
-            {
-                ValidateRequiredReference(
-                    $"{context.Code}.ownership",
+            ValidateRequiredReference(
+                $"{context.Code}.ownership",
+                $"{context.DisplayName}: принадлежность помещению",
+                context.Settings.OwnershipParameter,
+                catalog,
+                new ParameterCatalogRequirement(
                     $"{context.DisplayName}: принадлежность помещению",
-                    context.Settings.OwnershipParameter,
-                    catalog,
-                    new ParameterCatalogRequirement(
-                        $"{context.DisplayName}: принадлежность помещению",
-                        ParameterBindingKind.Instance,
-                        TextStorage,
-                        [context.PhysicalCategory],
-                        requireWritable: true),
-                    context.PreferredOwnershipName,
-                    issues);
-            }
+                    ParameterBindingKind.Instance,
+                    TextStorage,
+                    [context.PhysicalCategory],
+                    requireWritable: settings.WriteOwnership),
+                context.PreferredOwnershipName,
+                issues);
         }
 
         ValidateScope(settings.Scope, catalog, categories, issues);

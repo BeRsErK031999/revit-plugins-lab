@@ -50,7 +50,7 @@ public sealed class FinishOwnershipValueBuilder
             {
                 issues.Add(new FinishWriteIssue(
                     FinishWriteIssueCode.OutputConfigurationInvalid,
-                    FinishWriteIssueSeverity.Warning,
+                    FinishWriteIssueSeverity.Critical,
                     $"{role}: не выбран параметр; элемент {elementId} пропущен.",
                     elementId,
                     role));
@@ -95,7 +95,7 @@ public sealed class FinishOwnershipValueBuilder
                 reference,
                 role,
                 value,
-                isRequired: false,
+                isRequired: true,
                 element.Category));
         }
 

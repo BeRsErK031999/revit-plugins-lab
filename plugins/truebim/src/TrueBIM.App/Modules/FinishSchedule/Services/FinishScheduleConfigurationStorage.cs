@@ -41,6 +41,9 @@ public sealed class FinishScheduleConfigurationStorage
             DescriptionParameter = ParameterReferenceData.FromReference(settings.DescriptionParameter),
             RoomIdentifierMode = settings.RoomIdentifier.Mode,
             RoomIdentifierParameter = ParameterReferenceData.FromReference(settings.RoomIdentifier.CustomParameter),
+            WallsOwnershipParameter = ParameterReferenceData.FromReference(settings.Walls.OwnershipParameter),
+            FloorsOwnershipParameter = ParameterReferenceData.FromReference(settings.Floors.OwnershipParameter),
+            CeilingsOwnershipParameter = ParameterReferenceData.FromReference(settings.Ceilings.OwnershipParameter),
             RoomListOutputParameter = ParameterReferenceData.FromReference(settings.RoomListOutputParameter),
             WallsDescriptionParameter = ParameterReferenceData.FromReference(settings.Walls.OutputDescriptionParameter),
             WallsAreaParameter = ParameterReferenceData.FromReference(settings.Walls.OutputAreaParameter),
@@ -88,18 +91,21 @@ public sealed class FinishScheduleConfigurationStorage
             Walls = currentSettings.Walls with
             {
                 ClassificationValue = Normalize(data.WallsClassificationValue),
+                OwnershipParameter = data.WallsOwnershipParameter?.ToReference() ?? currentSettings.Walls.OwnershipParameter,
                 OutputDescriptionParameter = data.WallsDescriptionParameter?.ToReference(),
                 OutputAreaParameter = data.WallsAreaParameter?.ToReference()
             },
             Floors = currentSettings.Floors with
             {
                 ClassificationValue = Normalize(data.FloorsClassificationValue),
+                OwnershipParameter = data.FloorsOwnershipParameter?.ToReference() ?? currentSettings.Floors.OwnershipParameter,
                 OutputDescriptionParameter = data.FloorsDescriptionParameter?.ToReference(),
                 OutputAreaParameter = data.FloorsAreaParameter?.ToReference()
             },
             Ceilings = currentSettings.Ceilings with
             {
                 ClassificationValue = Normalize(data.CeilingsClassificationValue),
+                OwnershipParameter = data.CeilingsOwnershipParameter?.ToReference() ?? currentSettings.Ceilings.OwnershipParameter,
                 OutputDescriptionParameter = data.CeilingsDescriptionParameter?.ToReference(),
                 OutputAreaParameter = data.CeilingsAreaParameter?.ToReference()
             }
@@ -127,6 +133,12 @@ internal sealed class FinishScheduleConfigurationData
     public RoomIdentifierMode RoomIdentifierMode { get; set; }
 
     public ParameterReferenceData? RoomIdentifierParameter { get; set; }
+
+    public ParameterReferenceData? WallsOwnershipParameter { get; set; }
+
+    public ParameterReferenceData? FloorsOwnershipParameter { get; set; }
+
+    public ParameterReferenceData? CeilingsOwnershipParameter { get; set; }
 
     public ParameterReferenceData? RoomListOutputParameter { get; set; }
 

@@ -208,7 +208,8 @@ function Assert-ModuleSupportsYear {
     }
 }
 
-Remove-DirectorySafe -Path $distRoot
+# Rebuild only installer payloads; keep reports, standalone packages and older installers.
+Remove-DirectorySafe -Path $distRevitRoot
 Remove-DirectorySafe -Path $buildTempRoot
 New-Item -ItemType Directory -Path $distRevitRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $distInstallerRoot -Force | Out-Null

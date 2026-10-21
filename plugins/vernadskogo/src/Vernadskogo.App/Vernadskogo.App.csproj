@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>Vernadskogo.App</AssemblyName>
+    <RootNamespace>Vernadskogo.App</RootNamespace>
+    <Version>1.0.2</Version>
+    <RevitApiRoot Condition="'$(RevitApiRoot)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitApiRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="ValidateRevitApi" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(RevitApiRoot)\RevitAPI.dll')" Text="Revit 2024 API was not found at $(RevitApiRoot)." />
+  </Target>
+</Project>

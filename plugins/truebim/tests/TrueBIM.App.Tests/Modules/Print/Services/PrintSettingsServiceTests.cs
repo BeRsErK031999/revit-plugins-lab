@@ -23,6 +23,7 @@ public sealed class PrintSettingsServiceTests
         Assert.False(settings.ExportDxf);
         Assert.False(settings.ExportDwf);
         Assert.False(settings.CombineDwg);
+        Assert.True(settings.KeepDwgSheetsWhole);
         Assert.False(settings.OpenExportFolderAfterCompletion);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);
@@ -53,7 +54,8 @@ public sealed class PrintSettingsServiceTests
             OpenExportFolderAfterCompletion: true,
             DwgSetupName: "  Office DWG  ",
             DxfSetupName: "  Office DXF  ",
-            CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  "));
+            CombinedDwgFileNameMask: "  {Номер проекта}_{Имя документа}  ",
+            KeepDwgSheetsWhole: false));
 
         Assert.True(service.SettingsFileExists);
         PrintSettings reloadedSettings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
@@ -70,6 +72,7 @@ public sealed class PrintSettingsServiceTests
         Assert.True(reloadedSettings.ExportDxf);
         Assert.True(reloadedSettings.ExportDwf);
         Assert.True(reloadedSettings.CombineDwg);
+        Assert.False(reloadedSettings.KeepDwgSheetsWhole);
         Assert.True(reloadedSettings.OpenExportFolderAfterCompletion);
         Assert.Equal("Office DWG", reloadedSettings.DwgSetupName);
         Assert.Equal("Office DXF", reloadedSettings.DxfSetupName);
@@ -108,25 +111,28 @@ public sealed class PrintSettingsServiceTests
         Assert.Null(settings.DxfSetupName);
     }
 
-    [Fact]
-    public void Load_UsesCombinedDefaultsForLegacySettingsFile()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Load_UsesWholeSheetsForLegacyDwgSettings(bool legacyCombineDwg)
     {
         using TempDirectory temp = new();
         string settingsPath = Path.Combine(temp.Path, "print-settings.json");
         File.WriteAllText(
             settingsPath,
-            """
+            $$"""
             {
               "fileNameMask": "{Номер листа}",
               "exportDwg": true,
-              "combineDwg": true
+              "combineDwg": {{legacyCombineDwg.ToString().ToLowerInvariant()}}
             }
             """);
 
         PrintSettings settings = new PrintSettingsService(settingsPath, new TestLogger()).Load();
 
         Assert.True(settings.ExportDwg);
-        Assert.True(settings.CombineDwg);
+        Assert.Equal(legacyCombineDwg, settings.CombineDwg);
+        Assert.True(settings.KeepDwgSheetsWhole);
         Assert.False(settings.OpenExportFolderAfterCompletion);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedPdfFileName);
         Assert.Equal(PrintFileNameTemplateService.DefaultCombinedTemplate, settings.CombinedDwgFileNameMask);

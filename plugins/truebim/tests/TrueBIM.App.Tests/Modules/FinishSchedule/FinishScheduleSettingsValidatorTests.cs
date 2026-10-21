@@ -150,7 +150,32 @@ public sealed class FinishScheduleSettingsValidatorTests
         return new FinishScheduleSettingsValidator(new ParameterCatalogMatcher());
     }
 
-    private static TestProfile CreateProfile(IEnumerable<long>? descriptionCategoryIds = null)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Validate_RequiresOwnershipParameterInBothModes(bool writeOwnership)
+    {
+        TestProfile profile = CreateProfile();
+        FinishScheduleSettings settings = profile.Settings with
+        {
+            WriteOwnership = writeOwnership,
+            Walls = profile.Settings.Walls with { OwnershipParameter = null }
+        };
+        Assert.Contains(CreateValidator().Validate(settings, profile.Catalog, Categories).Issues,
+            issue => issue.Code == "walls.ownership.missing");
+    }
+
+    [Fact]
+    public void Validate_ReadOnlyOwnershipIsAcceptedOnlyInStoredMode()
+    {
+        TestProfile profile = CreateProfile(ownershipWritable: false);
+        Assert.True(CreateValidator().Validate(profile.Settings with { WriteOwnership = false },
+            profile.Catalog, Categories).IsValid);
+        Assert.False(CreateValidator().Validate(profile.Settings with { WriteOwnership = true },
+            profile.Catalog, Categories).IsValid);
+    }
+
+    private static TestProfile CreateProfile(IEnumerable<long>? descriptionCategoryIds = null, bool ownershipWritable = true)
     {
         ParameterReference description = CreateParameter(
             100,
@@ -163,6 +188,7 @@ public sealed class FinishScheduleSettingsValidatorTests
         ParameterReference floorsArea = CreateParameter(105, "Полы. Площадь");
         ParameterReference ceilingsDescription = CreateParameter(106, "Потолки. Описание");
         ParameterReference ceilingsArea = CreateParameter(107, "Потолки. Площадь");
+        ParameterReference ownership = CreateParameter(108, "Принадлежность");
 
         FinishScheduleSettings defaults = FinishScheduleSettings.CreateDefault();
         FinishScheduleSettings settings = defaults with
@@ -171,16 +197,19 @@ public sealed class FinishScheduleSettingsValidatorTests
             RoomListOutputParameter = roomList,
             Walls = defaults.Walls with
             {
+                OwnershipParameter = ownership,
                 OutputDescriptionParameter = wallsDescription,
                 OutputAreaParameter = wallsArea
             },
             Floors = defaults.Floors with
             {
+                OwnershipParameter = ownership,
                 OutputDescriptionParameter = floorsDescription,
                 OutputAreaParameter = floorsArea
             },
             Ceilings = defaults.Ceilings with
             {
+                OwnershipParameter = ownership,
                 OutputDescriptionParameter = ceilingsDescription,
                 OutputAreaParameter = ceilingsArea
             }
@@ -192,6 +221,7 @@ public sealed class FinishScheduleSettingsValidatorTests
         ParameterCatalog catalog = new(
         [
             CreateItem(description, sourceCategories, writable: false),
+            CreateItem(ownership, [Categories.Walls.Id, Categories.Floors.Id, Categories.Ceilings.Id], ownershipWritable),
             CreateItem(roomList, [Categories.Rooms.Id]),
             CreateItem(wallsDescription, [Categories.Rooms.Id]),
             CreateItem(wallsArea, [Categories.Rooms.Id]),

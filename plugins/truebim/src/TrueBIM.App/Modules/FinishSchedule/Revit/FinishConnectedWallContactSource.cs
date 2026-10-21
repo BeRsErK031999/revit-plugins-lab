@@ -8,11 +8,14 @@ namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 /// <summary>Продолжает подтверждённую принадлежность по соединённым участкам одного контура отделки.</summary>
 internal sealed class FinishConnectedWallContactSource
 {
-    public void AddContacts(Document document, FinishQuantityRequest request, FinishOccurrenceAccumulator accumulator)
+    public IReadOnlyDictionary<long, long> AddContacts(Document document, FinishQuantityRequest request, FinishOccurrenceAccumulator accumulator)
     {
-        Dictionary<long, long> owners = accumulator.Build().Where(item => item.Category == FinishPreviewCategory.Walls)
+        Dictionary<long, FinishOccurrence[]> contacts = accumulator.Build().Where(item => item.Category == FinishPreviewCategory.Walls)
             .GroupBy(item => item.ElementId).ToDictionary(group => group.Key,
-                group => group.OrderByDescending(item => item.AreaSquareMeters).ThenBy(item => item.RoomId).First().RoomId);
+                group => group.OrderByDescending(item => item.AreaSquareMeters).ThenBy(item => item.RoomId).ToArray());
+        Dictionary<long, long> owners = [];
+        Dictionary<long, HashSet<long>> ambiguous = [];
+        Dictionary<long, long> contourOwners = [];
         List<WallPart> walls = [];
         foreach (FinishClassifiedElement item in request.Elements.Where(item => item.Category == FinishPreviewCategory.Walls))
         {
@@ -21,6 +24,15 @@ internal sealed class FinishConnectedWallContactSource
             Curve curve = location.Curve;
             Curve plan = curve.CreateTransformed(Transform.CreateTranslation(new XYZ(0, 0, -curve.GetEndPoint(0).Z)));
             walls.Add(new WallPart(item.Element.ElementId, wall.LevelId, wall.GetTypeId(), wall.Width, item.Element.Bounds, plan));
+            if (!contacts.TryGetValue(item.Element.ElementId, out FinishOccurrence[]? candidates)) continue;
+            // Mitred joins shorten one face by up to one wall thickness. Such a difference
+            // is not evidence that the opposite room owns the finish: consult its connected contour.
+            double jointArea = RevitAreaUnits.ToSquareMeters(wall.Width * (item.Element.Bounds.MaxZ - item.Element.Bounds.MinZ));
+            HashSet<long> nearOwners = new(candidates
+                .Where(contact => candidates[0].AreaSquareMeters - contact.AreaSquareMeters <= jointArea + 1e-6)
+                .Select(contact => contact.RoomId));
+            if (nearOwners.Count > 1) ambiguous[item.Element.ElementId] = nearOwners;
+            else owners[item.Element.ElementId] = candidates[0].RoomId;
         }
         Dictionary<long, WallPart> pending = walls.Where(wall => !owners.ContainsKey(wall.Id)).ToDictionary(wall => wall.Id);
         WallPart[] anchors = walls.Where(wall => owners.ContainsKey(wall.Id)).ToArray();
@@ -38,10 +50,17 @@ internal sealed class FinishConnectedWallContactSource
                 .Select(anchor => owners[anchor.Id]).Distinct().ToArray();
             // A junction between different rooms is genuinely ambiguous; keep it unresolved.
             if (adjacentOwners.Length != 1) continue;
+            long owner = adjacentOwners[0];
+            if (component.Any(part => ambiguous.TryGetValue(part.Id, out HashSet<long>? candidates)
+                    && !candidates.Contains(owner))) continue;
             foreach (WallPart part in component)
-                accumulator.KeepLargest(new FinishOccurrence(adjacentOwners[0], part.Id, FinishPreviewCategory.Walls,
+            {
+                if (ambiguous.ContainsKey(part.Id)) contourOwners[part.Id] = owner;
+                else accumulator.KeepLargest(new FinishOccurrence(owner, part.Id, FinishPreviewCategory.Walls,
                     1, FinishQuantityMethod.ConnectedWallContour));
+            }
         }
+        return contourOwners;
     }
 
     private static bool Touch(WallPart first, WallPart second)

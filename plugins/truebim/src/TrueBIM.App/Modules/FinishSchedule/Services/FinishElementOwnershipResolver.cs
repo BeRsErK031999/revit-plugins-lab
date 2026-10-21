@@ -7,7 +7,8 @@ public sealed class FinishElementOwnershipResolver
 {
     public FinishQuantityResult Resolve(
         IEnumerable<FinishOccurrence> contacts,
-        IReadOnlyDictionary<long, double> fullAreas)
+        IReadOnlyDictionary<long, double> fullAreas,
+        IReadOnlyDictionary<long, long>? contourOwners = null)
     {
         List<FinishOccurrence> occurrences = [];
         List<FinishGeometryWarning> warnings = [];
@@ -19,6 +20,11 @@ public sealed class FinishElementOwnershipResolver
                 .ThenBy(item => item.Category)
                 .ToArray();
             FinishOccurrence owner = candidates[0];
+            bool contourResolved = contourOwners is not null
+                && contourOwners.TryGetValue(element.Key, out long contourRoomId)
+                && candidates.Any(candidate => candidate.RoomId == contourRoomId);
+            if (contourResolved)
+                owner = candidates.First(candidate => candidate.RoomId == contourOwners![element.Key]);
             if (!fullAreas.TryGetValue(element.Key, out double area)
                 || area <= 0 || double.IsNaN(area) || double.IsInfinity(area))
             {
@@ -29,14 +35,17 @@ public sealed class FinishElementOwnershipResolver
                 continue;
             }
 
-            occurrences.Add(new FinishOccurrence(owner.RoomId, element.Key, owner.Category, area, owner.Method));
+            occurrences.Add(new FinishOccurrence(owner.RoomId, element.Key, owner.Category, area,
+                contourResolved ? FinishQuantityMethod.ConnectedWallContour : owner.Method));
             if (candidates.Select(item => item.RoomId).Distinct().Count() > 1)
             {
                 warnings.Add(new FinishGeometryWarning(
                     FinishGeometryWarningCode.MultipleRoomContacts,
                     $"Элемент {element.Key} касается нескольких помещений. Полная площадь учтена один раз в помещении "
-                    + $"{owner.RoomId} с наибольшей площадью контакта. Кандидаты: "
-                    + string.Join(", ", candidates.Select(item => $"{item.RoomId} ({item.AreaSquareMeters:F3} м² контакта)")) + ".",
+                    + $"{owner.RoomId} " + (contourResolved
+                        ? "по соседним участкам единого контура отделки: разница контактов не превышает площадь торца стены. "
+                        : "с наибольшей площадью контакта. ") + "Кандидаты: "
+                    + string.Join(", ", candidates.Select(item => $"{item.RoomId} ({item.AreaSquareMeters:F3} м² контакта; {item.Method})")) + ".",
                     owner.RoomId, element.Key, owner.Category));
             }
         }

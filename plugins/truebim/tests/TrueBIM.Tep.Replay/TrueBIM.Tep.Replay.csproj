@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepModels.cs" Link="Source\TepModels.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepCalculator.cs" Link="Source\TepCalculator.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepClassifier.cs" Link="Source\TepClassifier.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepExcel.cs" Link="Source\TepExcel.cs" />
+  </ItemGroup>
+</Project>

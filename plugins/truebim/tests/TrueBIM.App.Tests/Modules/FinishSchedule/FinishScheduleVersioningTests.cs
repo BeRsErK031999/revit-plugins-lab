@@ -31,50 +31,12 @@ public sealed class FinishScheduleVersioningTests
     }
 
     [Fact]
-    public void Confirmation_ExplainsAlignmentWithoutPretendingTheNumberChanged()
+    public void UnchangedParameters_StillCreateNewScheduleWithoutParameterWrites()
     {
-        FinishScheduleWriteConfirmation result = new FinishScheduleWriteConfirmationBuilder()
-            .Build(Preview(Plan("139,79\n20,00", "139,79\n\u00a0\n20,00")));
-        Assert.False(result.ReplacesExistingValues);
-        Assert.Contains("Только оформление текста: 1", result.Message);
-        Assert.Contains("сами числа и текст сохранятся", result.Message);
-        Assert.DoesNotContain("Примеры изменения значений", result.Message);
-        Assert.DoesNotContain("Будут заменены заполненные", result.Message);
-    }
-
-    [Fact]
-    public void Confirmation_ShowsRealReplacementAndReadableRoomLabel()
-    {
-        FinishScheduleWriteConfirmation result = new FinishScheduleWriteConfirmationBuilder()
-            .Build(Preview(Plan("139,79", "140,00")));
-        Assert.True(result.ReplacesExistingValues);
-        Assert.Contains("Помещение 101 «Кабинет»", result.Message);
-        Assert.Contains("«139,79» → «140,00»", result.Message);
-        Assert.Contains("Ручные правки", result.Message);
-        Assert.Contains("Прежние версии TrueBIM сохранят свои значения и размещение", result.Message);
-    }
-
-    [Fact]
-    public void Confirmation_ClearingIsExplicitAndWarnsAboutExistingValue()
-    {
-        FinishScheduleWriteConfirmation result = new FinishScheduleWriteConfirmationBuilder().Build(Preview(Plan("139,79", "")));
-        Assert.True(result.ReplacesExistingValues);
-        Assert.Contains("Будут очищены значения: 1", result.Message);
-        Assert.Contains("«139,79» → «пусто»", result.Message);
-    }
-
-    [Fact]
-    public void UnchangedParameters_StillCreateNewSnapshotWithoutParameterWrites()
-    {
-        FinishScheduleWritePreview preview = Preview(Plan("139,79", "139,79"), [55]);
-        FinishScheduleWriteConfirmation result = new FinishScheduleWriteConfirmationBuilder().Build(preview);
+        FinishScheduleWritePreview preview = Preview(Plan("139,79", "139,79"));
         Assert.True(preview.RequiresTransaction);
         Assert.Equal(0, preview.TotalChangeCount);
-        Assert.Contains("Параметры не будут перезаписаны", result.Message);
-        Assert.Contains("новая версия «Отделка (2)»", result.Message);
-        Assert.Contains("Ведомостей из прежней версии плагина: 1", result.Message);
     }
-
     private static readonly ParameterReference Parameter = ParameterReference.BuiltIn(
         "Площадь", -1, ParameterBindingKind.Instance, ParameterStorageKind.String);
 

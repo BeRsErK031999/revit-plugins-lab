@@ -5,6 +5,7 @@ public static class FinishScheduleStageNames
     public const string CollectCandidates = "collect_candidates";
     public const string ScopeAndIndex = "scope_and_index";
     public const string PhysicalQuantities = "physical_quantities";
+    public const string StoredQuantities = "stored_quantities";
     public const string Aggregation = "aggregation";
     public const string TotalCalculation = "total_calculation";
     public const string OwnershipWrite = "ownership_write";

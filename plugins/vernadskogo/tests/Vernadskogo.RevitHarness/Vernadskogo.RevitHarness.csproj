@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWPF>true</UseWPF>
+    <RevitApiRoot Condition="'$(RevitApiRoot)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitApiRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI"><HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Compile Include="..\..\src\Vernadskogo.App\Core\*.cs" Link="Production\Core\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\Vernadskogo.App\Revit\*.cs" Link="Production\Revit\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\Vernadskogo.App\UI\*.cs" Link="Production\UI\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\Vernadskogo.App\App.cs" Link="Production\App.cs" />
+    <Compile Include="..\..\src\Vernadskogo.App\MarkPanelsCommand.cs" Link="Production\MarkPanelsCommand.cs" />
+  </ItemGroup>
+</Project>

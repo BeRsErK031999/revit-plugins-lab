@@ -78,7 +78,7 @@ public sealed class FinishScheduleWriteWorkflow
         FinishParameterTargetBuildResult roomTargets = roomValueBuilder.Build(
             settings,
             calculation.Aggregation);
-        FinishParameterTargetBuildResult ownershipTargets = ownershipValueBuilder.Build(
+        FinishParameterTargetBuildResult ownershipTargets = calculation.OwnershipTargets ?? ownershipValueBuilder.Build(
             settings,
             calculation.Build.InScopeElements,
             calculation.Quantities,
@@ -100,7 +100,8 @@ public sealed class FinishScheduleWriteWorkflow
             roomPlan.Changes.Concat(ownershipPlan.Changes)
                 .Select(change => change.ElementId)
                 .Distinct()
-                .ToDictionary(id => id, id => DescribeElement(document, id)));
+                .ToDictionary(id => id, id => DescribeElement(document, id)),
+            settings);
         logger.Info(
             $"Finish Schedule write plan prepared. Rooms={preview.RoomCount}; Groups={preview.GroupCount}; "
             + $"RoomChanges={roomPlan.Changes.Count}; OwnershipChanges={ownershipPlan.Changes.Count}; "
@@ -193,15 +194,40 @@ public sealed class FinishScheduleWriteWorkflow
         {
             FinishTransactionStatus.EnsureStarted(group);
             groupStarted = true;
-            scheduleBuilder.PreservePreviousVersions(document, preview.Schedule);
             stageTimer.Restart();
             FinishOwnershipApplyResult ownershipResult = ownershipWriter.Apply(
                 document,
                 preview.OwnershipPlan);
             timings.Add(StopStage(FinishScheduleStageNames.OwnershipWrite, stageTimer));
+            if (ownershipResult.SkippedCount > 0)
+            {
+                throw new InvalidOperationException(
+                    "Не удалось завершить назначение принадлежности: " + string.Join("; ", ownershipResult.Warnings));
+            }
 
             stageTimer.Restart();
-            int appliedRoomValues = roomWriter.Apply(document, preview.RoomPlan);
+            FinishWritePlan roomPlan = preview.RoomPlan;
+            if (preview.Settings is not null)
+            {
+                FinishScheduleCalculationResult assignedCalculation = calculationService.BuildDetailed(
+                    document, preview.Settings with { WriteOwnership = false });
+                if (assignedCalculation.Aggregation is null)
+                {
+                    throw new InvalidOperationException("Не удалось рассчитать ведомость по записанной принадлежности.");
+                }
+
+                roomPlan = roomWriter.Plan(document, roomValueBuilder.Build(
+                    preview.Settings, assignedCalculation.Aggregation));
+                if (roomPlan.HasCriticalIssues)
+                {
+                    throw new InvalidOperationException("Параметры помещений недоступны для записи ведомости.");
+                }
+
+                preflightWarnings = preflightWarnings.Concat(assignedCalculation.Preview.Warnings)
+                    .Distinct(StringComparer.Ordinal).ToArray();
+            }
+
+            int appliedRoomValues = roomWriter.Apply(document, roomPlan);
             timings.Add(StopStage(FinishScheduleStageNames.RoomWrite, stageTimer));
 
             stageTimer.Restart();
@@ -300,7 +326,7 @@ public sealed class FinishScheduleWriteWorkflow
         string parameterMessage = roomValues + ownershipValues == 0
             ? " Параметры уже совпадают с расчётом и не перезаписывались."
             : $" Обновлено значений параметров: {roomValues + ownershipValues}.";
-        return $"{operation}{header}. Прежние версии сохранены.{parameterMessage}";
+        return $"{operation}{header}.{parameterMessage}";
     }
 
     private static string DescribeElement(Document document, long id)

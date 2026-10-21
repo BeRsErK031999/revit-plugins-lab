@@ -7,6 +7,16 @@ namespace TrueBIM.App.Modules.Print.Services;
 
 public sealed class DwgExportOptionsFactory
 {
+    public static DwgExportProfile CreateSheetProfile(DwgExportProfile profile, bool keepSheetsWhole)
+    {
+        Guard.NotNull(profile, nameof(profile));
+
+        DwgExportProfile sheetProfile = DwgExportProfileStorage.NormalizeProfile(profile);
+        // Revit's MergedViews is the "views on sheets and links as external references" flag.
+        sheetProfile.MergedViews = !keepSheetsWhole;
+        return sheetProfile;
+    }
+
     public DWGExportOptions Create(Document document, DwgExportProfile profile, ITrueBimLogger logger)
     {
         Guard.NotNull(document, nameof(document));
@@ -119,7 +129,7 @@ public sealed class DwgExportOptionsFactory
             : "default DWG options";
         string source = profile.IsUserProfile ? "пользовательский профиль" : "Revit Export Setup";
         string coordinates = profile.SharedCoords ? "shared coordinates" : "project/internal coordinates";
-        return $"{profile.ProfileName} ({source}; base: {setup}; version: {profile.FileVersion}; colors: {profile.Colors}; units: {profile.TargetUnit}; coordinates: {coordinates}; solids: {profile.ExportOfSolids})";
+        return $"{profile.ProfileName} ({source}; base: {setup}; version: {profile.FileVersion}; colors: {profile.Colors}; units: {profile.TargetUnit}; coordinates: {coordinates}; solids: {profile.ExportOfSolids}; external references: {profile.MergedViews})";
     }
 
     private static DWGExportOptions CreateBaseOptions(

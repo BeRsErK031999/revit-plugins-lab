@@ -44,7 +44,6 @@ public sealed class PrintOperationProgressTracker
         bool exportPdf,
         PrintPdfExportMode pdfMode,
         bool exportDwg,
-        bool combineDwg,
         bool exportDxf,
         bool exportDwf)
     {
@@ -75,7 +74,7 @@ public sealed class PrintOperationProgressTracker
 
         if (exportDwg)
         {
-            fileCount += combineDwg ? sourceCount : selectedSheetCount;
+            fileCount += selectedSheetCount;
         }
 
         if (exportDxf)

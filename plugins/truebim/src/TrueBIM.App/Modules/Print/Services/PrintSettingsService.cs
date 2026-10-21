@@ -125,7 +125,8 @@ public sealed class PrintSettingsService
             DxfSetupName: PrintCadExportSetupService.NormalizeSetupName(settings.DxfSetupName),
             CombinedDwgFileNameMask: string.IsNullOrWhiteSpace(settings.CombinedDwgFileNameMask)
                 ? DefaultSettings.CombinedDwgFileNameMask
-                : settings.CombinedDwgFileNameMask.Trim());
+                : settings.CombinedDwgFileNameMask.Trim(),
+            KeepDwgSheetsWhole: settings.KeepDwgSheetsWhole);
     }
 
     private static PrintSettings FromDto(PrintSettingsDto dto)
@@ -147,7 +148,8 @@ public sealed class PrintSettingsService
             dto.OpenExportFolderAfterCompletion ?? DefaultSettings.OpenExportFolderAfterCompletion,
             dto.DwgSetupName,
             dto.DxfSetupName,
-            dto.CombinedDwgFileNameMask ?? DefaultSettings.CombinedDwgFileNameMask);
+            dto.CombinedDwgFileNameMask ?? DefaultSettings.CombinedDwgFileNameMask,
+            dto.KeepDwgSheetsWhole ?? DefaultSettings.KeepDwgSheetsWhole);
     }
 
     private static PrintSettingsDto ToDto(PrintSettings settings)
@@ -170,7 +172,8 @@ public sealed class PrintSettingsService
             OpenExportFolderAfterCompletion = settings.OpenExportFolderAfterCompletion,
             DwgSetupName = settings.DwgSetupName,
             DxfSetupName = settings.DxfSetupName,
-            CombinedDwgFileNameMask = settings.CombinedDwgFileNameMask
+            CombinedDwgFileNameMask = settings.CombinedDwgFileNameMask,
+            KeepDwgSheetsWhole = settings.KeepDwgSheetsWhole
         };
     }
 
@@ -244,5 +247,8 @@ public sealed class PrintSettingsService
 
         [JsonPropertyName("combinedDwgFileNameMask")]
         public string? CombinedDwgFileNameMask { get; init; }
+
+        [JsonPropertyName("keepDwgSheetsWhole")]
+        public bool? KeepDwgSheetsWhole { get; init; }
     }
 }

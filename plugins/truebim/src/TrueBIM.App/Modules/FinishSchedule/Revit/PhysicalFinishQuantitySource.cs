@@ -135,9 +135,9 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             if (searchBounds.Includes(roomsById[contact.RoomId], elementsById[contact.ElementId]))
                 eligible.KeepLargest(contact);
         }
-        new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
+        IReadOnlyDictionary<long, long> contourOwners = new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
-        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas);
+        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas, contourOwners);
         warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements, contacts, consideredElementIds));
         FinishQuantityResult result = new(
             resolved.Occurrences,

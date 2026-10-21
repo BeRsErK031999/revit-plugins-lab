@@ -199,12 +199,7 @@ public sealed record FinishFormattedCategoryOutput
     {
         DescriptionText = descriptionText ?? throw new ArgumentNullException(nameof(descriptionText));
         AreaText = areaText ?? throw new ArgumentNullException(nameof(areaText));
-        int descriptionLines = DescriptionText.Split([Environment.NewLine], StringSplitOptions.None).Length;
-        int areaLines = AreaText.Split([Environment.NewLine], StringSplitOptions.None).Length;
-        if (descriptionLines != areaLines)
-        {
-            throw new ArgumentException("Description and area output must contain the same number of lines.");
-        }
+        // Description wraps automatically in Revit; area text can contain extra alignment lines.
     }
 
     public string DescriptionText { get; }

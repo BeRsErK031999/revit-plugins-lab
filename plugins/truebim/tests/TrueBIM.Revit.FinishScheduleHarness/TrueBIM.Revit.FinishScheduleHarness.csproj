@@ -8,6 +8,9 @@
     <RevitVersion Condition="'$(RevitVersion)' == ''">2022</RevitVersion>
     <RevitApiRoot>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiRoot>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(RevitVersion)' == '2023'">
+    <DefineConstants>$(DefineConstants);REVIT2023_OR_GREATER</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="RevitAPI"><HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="RevitAPIUI"><HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
@@ -21,5 +24,8 @@
     <Compile Include="..\..\src\TrueBIM.App\Modules\FinishSchedule\Models\*.cs" Link="Source\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TrueBIM.App\Modules\FinishSchedule\Services\*.cs" Exclude="..\..\src\TrueBIM.App\Modules\FinishSchedule\Services\*Storage.cs" Link="Source\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TrueBIM.App\Modules\FinishSchedule\Revit\*.cs" Link="Source\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\ColorByParameter\Services\OwnedViewFilterService.cs" Link="Source\OwnedViewFilterService.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\ColorByParameter\Services\FilterNameBuilder.cs" Link="Source\FilterNameBuilder.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\BimTools\ColorByParameter\Models\OwnedViewFilterRow.cs" Link="Source\OwnedViewFilterRow.cs" />
   </ItemGroup>
 </Project>

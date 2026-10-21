@@ -12,7 +12,7 @@ public sealed class FinishScheduleSettingsTests
 
         Assert.Equal(RoomIdentifierMode.Number, settings.RoomIdentifier.Mode);
         Assert.Equal(ReportScopeKind.EntireProject, settings.Scope.Kind);
-        Assert.False(settings.WriteOwnership);
+        Assert.True(settings.WriteOwnership);
         Assert.True(settings.Walls.IsEnabled);
         Assert.True(settings.Floors.IsEnabled);
         Assert.True(settings.Ceilings.IsEnabled);

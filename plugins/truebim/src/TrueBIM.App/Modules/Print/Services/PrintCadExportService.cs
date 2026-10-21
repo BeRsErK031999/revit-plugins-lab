@@ -92,9 +92,11 @@ public sealed class PrintCadExportService
         }
 
         BaseExportOptions options = CreateExportOptions(document, format, setupName, dwgProfile, logger);
-        if (mergeViews && format == PrintCadExportFormat.Dwg)
+        if (mergeViews && options is DWGExportOptions dwgOptions)
         {
-            return ExportMergedDwg(document, exportFolder, items, mergedFileName, options, logger, exportedFiles, failures, progress);
+            // Legacy "one DWG" requests mean one complete file per sheet.
+            // MergedViews enables external references; it does not combine sheets.
+            dwgOptions.MergedViews = false;
         }
 
         foreach (PrintCadExportItem item in items)
@@ -122,6 +124,12 @@ public sealed class PrintCadExportService
                 if (!exported)
                 {
                     failures.Add(new PrintCadExportFailure(format, item, "Revit не подтвердил экспорт CAD."));
+                    continue;
+                }
+
+                if (!File.Exists(outputPath))
+                {
+                    failures.Add(new PrintCadExportFailure(format, item, $"Revit не создал ожидаемый файл: {outputPath}"));
                     continue;
                 }
 
@@ -158,70 +166,6 @@ public sealed class PrintCadExportService
         }
 
         return setupService.CreateOptions(document, format, setupName, logger);
-    }
-
-    private static PrintCadExportResult ExportMergedDwg(
-        Document document,
-        string exportFolder,
-        IReadOnlyList<PrintCadExportItem> items,
-        string? mergedFileName,
-        BaseExportOptions options,
-        ITrueBimLogger logger,
-        List<string> exportedFiles,
-        List<PrintCadExportFailure> failures,
-        Action<PrintOperationProgressStep>? progress)
-    {
-        string progressItemName = string.IsNullOrWhiteSpace(mergedFileName)
-            ? "Объединенный DWG"
-            : mergedFileName!;
-        progress?.Invoke(new PrintOperationProgressStep(
-            "DWG",
-            progressItemName,
-            PrintOperationProgressPhase.Started));
-        try
-        {
-            string cadFileName = NormalizeCadFileName(
-                string.IsNullOrWhiteSpace(mergedFileName) ? "Объединенный DWG" : mergedFileName!,
-                PrintCadExportFormat.Dwg);
-            string exportName = Path.GetFileNameWithoutExtension(cadFileName);
-            string outputPath = Path.Combine(exportFolder, cadFileName);
-            if (File.Exists(outputPath))
-            {
-                File.Delete(outputPath);
-            }
-
-            if (options is DWGExportOptions dwgOptions)
-            {
-                dwgOptions.MergedViews = true;
-            }
-
-            List<ElementId> viewIds = items
-                .Select(item => RevitElementIds.Create(item.ElementId))
-                .ToList();
-            bool exported = ExportWithOptions(document, exportFolder, exportName, viewIds, PrintCadExportFormat.Dwg, options);
-            if (!exported)
-            {
-                AddFailureForItems(PrintCadExportFormat.Dwg, items, failures, "Revit не подтвердил экспорт объединенного DWG.");
-                return new PrintCadExportResult(PrintCadExportFormat.Dwg, exportedFiles, failures);
-            }
-
-            exportedFiles.Add(outputPath);
-            logger.Info($"Exported merged DWG: {outputPath}");
-        }
-        catch (Exception exception)
-        {
-            logger.Error("Failed to export merged DWG.", exception);
-            AddFailureForItems(PrintCadExportFormat.Dwg, items, failures, exception.Message);
-        }
-        finally
-        {
-            progress?.Invoke(new PrintOperationProgressStep(
-                "DWG",
-                progressItemName,
-                PrintOperationProgressPhase.Completed));
-        }
-
-        return new PrintCadExportResult(PrintCadExportFormat.Dwg, exportedFiles, failures);
     }
 
     private static PrintCadExportResult ExportDwf(

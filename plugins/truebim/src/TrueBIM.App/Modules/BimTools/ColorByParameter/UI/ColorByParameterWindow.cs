@@ -41,6 +41,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
     private List<BimParameterItem> parameters = [];
     private List<ColorRuleRow> rows = [];
     private int colorGenerationOffset;
+    private readonly OwnedViewFilterService ownedFilters = new();
+    private readonly DataGrid filterTable = new();
+    private IReadOnlyList<OwnedViewFilterRow> filterRows = [];
 
     public ColorByParameterWindow(
         UIApplication application,
@@ -80,9 +83,9 @@ public sealed class ColorByParameterWindow : TrueBimWindow
                 $"Исходный вид: {initialViewName}. Фильтры BIM_F_ применяются к виду, активному в момент нажатия.",
                 TrueBimIcon.ColorByParameter),
             commandBar: null,
-            body: CreateMainPanel(),
+            body: CreateTabs(),
             status: CreateStatus(),
-            footer: CreateFooter());
+            footer: CreateCloseFooter());
     }
 
     private UIElement CreateMainPanel()
@@ -100,6 +103,116 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         main.Children.Add(valuesPanel);
 
         return main;
+    }
+
+    private UIElement CreateTabs()
+    {
+        TabControl tabs = new();
+        DockPanel coloring = new();
+        UIElement colorActions = CreateFooter();
+        DockPanel.SetDock(colorActions, Dock.Bottom);
+        coloring.Children.Add(colorActions);
+        coloring.Children.Add(CreateMainPanel());
+        tabs.Items.Add(new TabItem { Header = "Раскраска", Content = coloring });
+        DockPanel panel = new() { Margin = new Thickness(8) };
+        TextBlock hint = new()
+        {
+            Text = "Фильтры BIM_F_ во всём проекте. Удаление убирает выбранные фильтры со всех видов и шаблонов видов.",
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8)
+        };
+        DockPanel.SetDock(hint, Dock.Top);
+        panel.Children.Add(hint);
+        StackPanel toolbar = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        toolbar.Children.Add(CreateSmallButton("Отметить все", TrueBimIcon.Check, (_, _) => SelectFilters(true), 140));
+        toolbar.Children.Add(CreateSmallButton("Снять все", TrueBimIcon.Close, (_, _) => SelectFilters(false), 120));
+        toolbar.Children.Add(CreateSmallButton("Обновить", TrueBimIcon.Refresh, (_, _) => QueueFilterRefresh(), 120));
+        toolbar.Children.Add(CreateSmallButton("Удалить выбранные", TrueBimIcon.Close, (_, _) => DeleteSelectedFilters(), 180));
+        DockPanel.SetDock(toolbar, Dock.Top);
+        panel.Children.Add(toolbar);
+        filterTable.AutoGenerateColumns = false;
+        filterTable.CanUserAddRows = false;
+        filterTable.CanUserDeleteRows = false;
+        filterTable.SelectionUnit = DataGridSelectionUnit.Cell;
+        FrameworkElementFactory checkbox = new(typeof(CheckBox));
+        checkbox.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        checkbox.SetBinding(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,
+            new System.Windows.Data.Binding(nameof(OwnedViewFilterRow.IsSelected))
+                { Mode = System.Windows.Data.BindingMode.TwoWay, UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged });
+        filterTable.Columns.Add(new DataGridTemplateColumn
+        {
+            Header = "✓", Width = 45, CellTemplate = new DataTemplate { VisualTree = checkbox }
+        });
+        AddFilterColumn("Название", nameof(OwnedViewFilterRow.Name), 2);
+        AddFilterColumn("Категории", nameof(OwnedViewFilterRow.Categories), 1);
+        AddFilterColumn("Правило", nameof(OwnedViewFilterRow.Rule), 2);
+        panel.Children.Add(filterTable);
+        TabItem management = new() { Header = "Удаление фильтров", Content = panel };
+        tabs.SelectionChanged += (_, args) =>
+        {
+            if (ReferenceEquals(args.Source, tabs) && ReferenceEquals(tabs.SelectedItem, management)) QueueFilterRefresh();
+        };
+        tabs.Items.Add(management);
+        return tabs;
+    }
+
+    private void AddFilterColumn(string header, string property, double width)
+    {
+        Style text = new(typeof(TextBlock));
+        text.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        filterTable.Columns.Add(new DataGridTextColumn
+        {
+            Header = header, Binding = new System.Windows.Data.Binding(property), IsReadOnly = true,
+            Width = new DataGridLength(width, DataGridLengthUnitType.Star), ElementStyle = text
+        });
+    }
+
+    private void SelectFilters(bool selected)
+    {
+        filterTable.CommitEdit();
+        foreach (OwnedViewFilterRow row in filterRows) row.IsSelected = selected;
+        filterTable.Items.Refresh();
+    }
+
+    private void QueueFilterRefresh() => revitActions.Raise(() =>
+    {
+        try { RefreshFilters(); }
+        catch (Exception exception)
+        {
+            logger.Error("Failed to list owned view filters.", exception);
+            statusText.Text = "Не удалось прочитать фильтры. " + exception.Message;
+        }
+    });
+
+    private void RefreshFilters()
+    {
+        if (!document.IsValidObject) return;
+        filterRows = ownedFilters.Collect(document);
+        filterTable.ItemsSource = filterRows;
+        statusText.Text = $"Фильтров BIM_F_ в проекте: {filterRows.Count}.";
+    }
+
+    private void DeleteSelectedFilters()
+    {
+        filterTable.CommitEdit();
+        long[] ids = filterRows.Where(row => row.IsSelected).Select(row => row.Id).ToArray();
+        if (ids.Length == 0) { statusText.Text = "Отметьте фильтры для удаления."; return; }
+        revitActions.Raise(() =>
+        {
+            try
+            {
+                if (!document.IsValidObject || application.ActiveUIDocument is not UIDocument active
+                    || !active.Document.Equals(document))
+                { statusText.Text = "Вернитесь в исходный документ и обновите список фильтров."; return; }
+                int count = ownedFilters.Delete(document, ids);
+                RefreshFilters();
+                statusText.Text = $"Удалено фильтров из проекта: {count}. Действие можно отменить в Revit.";
+            }
+            catch (Exception exception)
+            {
+                logger.Error("Failed to delete owned view filters.", exception);
+                statusText.Text = "Фильтры не удалены. " + exception.Message;
+            }
+        });
     }
 
     private UIElement CreateStatus()
@@ -240,11 +353,16 @@ public sealed class ColorByParameterWindow : TrueBimWindow
         Button applyButton = TrueBimUi.CreatePrimaryButton("Применить к активному виду", TrueBimIcon.Apply, minWidth: 230);
         applyButton.Click += (_, _) => ApplyFilters();
 
+        return TrueBimUi.CreateFooter(temporaryViewCheckBox, clearButton, applyButton);
+    }
+
+    private UIElement CreateCloseFooter()
+    {
         Button closeButton = TrueBimUi.CreateSecondaryButton("Закрыть", TrueBimIcon.Close);
         closeButton.IsCancel = true;
         closeButton.Click += (_, _) => Close();
 
-        return TrueBimUi.CreateFooter(temporaryViewCheckBox, clearButton, applyButton, closeButton);
+        return TrueBimUi.CreateFooter(closeButton);
     }
 
     private void ApplySharedControlStyles()

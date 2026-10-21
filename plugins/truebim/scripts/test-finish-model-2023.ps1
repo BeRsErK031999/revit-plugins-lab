@@ -13,9 +13,10 @@ if (-not $AllowRunningRevit -and (Get-Process -Name Revit -ErrorAction SilentlyC
 }
 . (Join-Path $PSScriptRoot 'resolve-dotnet-sdk.ps1')
 $finishDotnet = Resolve-DotNetSdk
-& $finishDotnet build (Join-Path $harnessRoot 'TrueBIM.Revit.FinishScheduleHarness.csproj') -c Release -p:RevitVersion=2023 -m:1 -nodeReuse:false -p:UseSharedCompilation=false --nologo --verbosity:minimal
-if ($LASTEXITCODE -ne 0) { throw 'Model harness build failed.' }
 $runId = [Guid]::NewGuid().ToString('N')
+$binaryRoot = Join-Path $harnessRoot ('bin\runs\' + $runId)
+& $finishDotnet build (Join-Path $harnessRoot 'TrueBIM.Revit.FinishScheduleHarness.csproj') -c Release -p:RevitVersion=2023 "-p:OutputPath=$binaryRoot\" -m:1 -nodeReuse:false -p:UseSharedCompilation=false -p:NuGetAudit=false --nologo --verbosity:minimal
+if ($LASTEXITCODE -ne 0) { throw 'Model harness build failed.' }
 New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
 $runRoot = Join-Path $reportRoot $runId
 New-Item -ItemType Directory -Path $runRoot | Out-Null
@@ -24,33 +25,41 @@ Copy-Item -LiteralPath $ModelPath -Destination $copyPath
 $manifestDirectory = Join-Path $env:APPDATA 'Autodesk\Revit\Addins\2023'
 $manifestPath = Join-Path $manifestDirectory ('TrueBIM.FinishHarness.' + $runId + '.addin')
 $reportPath = Join-Path $runRoot 'report.json'
-$assembly = [Security.SecurityElement]::Escape((Join-Path $harnessRoot 'bin\Release\net48\TrueBIM.Revit.FinishScheduleHarness.dll'))
+$assembly = [Security.SecurityElement]::Escape((Join-Path $binaryRoot 'TrueBIM.Revit.FinishScheduleHarness.dll'))
 $manifest = '<?xml version="1.0" encoding="utf-8"?><RevitAddIns><AddIn Type="Application"><Name>TrueBIM Finish Regression</Name><Assembly>' + $assembly + '</Assembly><AddInId>96CA279B-0CB2-4D58-90F6-FEF27B615690</AddInId><FullClassName>TrueBIM.Revit.FinishScheduleHarness.FinishScheduleHarnessApplication</FullClassName><VendorId>TRBM</VendorId><VendorDescription>TrueBIM isolated regression test</VendorDescription></AddIn></RevitAddIns>'
 $previousReport = $env:TRUEBIM_FINISH_HARNESS_REPORT
 $previousModel = $env:TRUEBIM_FINISH_HARNESS_MODEL
 $regressionProcess = $null
+$completedSuccessfully = $false
 try {
     [IO.File]::WriteAllText($manifestPath, $manifest, [Text.UTF8Encoding]::new($false))
     $env:TRUEBIM_FINISH_HARNESS_REPORT = $reportPath
     $env:TRUEBIM_FINISH_HARNESS_MODEL = $copyPath
-    $regressionProcess = Start-Process -FilePath 'C:\Program Files\Autodesk\Revit 2023\Revit.exe' -ArgumentList '/viewer /language ENU' -WindowStyle Hidden -PassThru
+    $regressionProcess = Start-Process -FilePath 'C:\Program Files\Autodesk\Revit 2023\Revit.exe' -ArgumentList '/language ENU' -WindowStyle Hidden -PassThru
     [pscustomobject]@{ ProcessId=$regressionProcess.Id; Manifest=$manifestPath; Report=$reportPath; Copy=$copyPath } |
         ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
     Write-Output "Revit process $($regressionProcess.Id); report $reportPath"
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $reportPath)) {
-        if ($regressionProcess.HasExited) { break }
+        if ($regressionProcess.HasExited) {
+            throw "Test Revit exited before producing a report (exit code $($regressionProcess.ExitCode))."
+        }
         Start-Sleep -Milliseconds 500
         $regressionProcess.Refresh()
     }
-    if (-not (Test-Path -LiteralPath $reportPath)) { throw "Revit did not produce a report within $TimeoutSeconds seconds." }
+    if (-not (Test-Path -LiteralPath $reportPath)) {
+        throw "Revit did not produce a report within $TimeoutSeconds seconds. Test process $($regressionProcess.Id) has been left open for diagnosis."
+    }
     $report = [IO.File]::ReadAllText($reportPath) | ConvertFrom-Json
     Write-Output "Report: $reportPath"
     $report.Passed | Write-Output
     if ($report.FatalError) { throw $report.FatalError }
+    $completedSuccessfully = $true
 }
 finally {
-    if ($regressionProcess -and -not $regressionProcess.HasExited) { Stop-Process -Id $regressionProcess.Id -Force }
+    if ($completedSuccessfully -and $regressionProcess -and -not $regressionProcess.HasExited) {
+        Stop-Process -Id $regressionProcess.Id -Force
+    }
     if (Test-Path -LiteralPath $manifestPath) { Remove-Item -LiteralPath $manifestPath -Force }
     $env:TRUEBIM_FINISH_HARNESS_REPORT = $previousReport
     $env:TRUEBIM_FINISH_HARNESS_MODEL = $previousModel

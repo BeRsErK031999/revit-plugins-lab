@@ -28,6 +28,7 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
         {
             Progress("Loaded; waiting for Idling.");
             application.Idling += OnIdling;
+            application.DialogBoxShowing += OnDialog;
         }
         return Result.Succeeded;
     }
@@ -35,7 +36,15 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         application.Idling -= OnIdling;
+        application.DialogBoxShowing -= OnDialog;
         return Result.Succeeded;
+    }
+
+    private static void OnDialog(object? sender, DialogBoxShowingEventArgs args)
+    {
+        // Only dismiss the informational viewer-mode notice, never security or authentication prompts.
+        if (args is TaskDialogShowingEventArgs dialog && dialog.DialogId == "TaskDialog_License_Current_Status_Demo_Mode")
+            dialog.OverrideResult((int)TaskDialogResult.Close);
     }
 
     private void OnIdling(object? sender, IdlingEventArgs args)
@@ -48,7 +57,9 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
             if (!string.IsNullOrWhiteSpace(modelPath))
             {
                 Progress("Opening model copy: " + modelPath);
-                using Document model = application.Application.OpenDocumentFile(modelPath);
+                using OpenOptions options = new() { DetachFromCentralOption = DetachFromCentralOption.DetachAndDiscardWorksets };
+                using Document model = application.Application.OpenDocumentFile(
+                    ModelPathUtils.ConvertUserVisiblePathToModelPath(modelPath), options);
                 new FinishModelAudit(Progress).Run(model, reportPath!);
                 model.Close(false);
                 Check(true, "Model audit completed on disposable copy");
@@ -100,7 +111,7 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
         ViewSchedule first = Create(builder, document, plan);
         Check(first.ViewTemplateId == ElementId.InvalidElementId,
             "New finish schedule is created without a view template");
-        Check(metadata.IsSnapshot(first), "New version marked as snapshot");
+        Check(!metadata.IsSnapshot(first), "New schedule uses live parameters");
         string original = Text(first);
         File.WriteAllText(reportPath + ".first.txt", original);
         Check(original.Contains("01 Coat") && original.Contains("10,00"), "First version contains displayed room data");
@@ -121,8 +132,8 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
         Progress("Creating second version after changing room values.");
         ViewSchedule second = Create(builder, document, plan);
         Check(second.Id != first.Id && second.Name == "Finish regression (2)", "Second version gets a new ID and numbered name");
-        Check(Text(first) == original, "Old snapshot unchanged after room parameters changed");
-        Check(Text(second).Contains("139,79") && !Text(second).Contains("01 Coat"), "New snapshot uses new room data");
+        Check(Text(first).Contains("139,79") && !Text(first).Contains("01 Coat"), "Existing live schedule reflects changed room data");
+        Check(Text(second).Contains("139,79") && !Text(second).Contains("01 Coat"), "New schedule uses current room data");
         Check(document.GetElement(placementId) is ScheduleSheetInstance oldPlacement
               && oldPlacement.ScheduleId == first.Id && oldPlacement.Point.IsAlmostEqualTo(placementPoint),
             "Existing sheet placement keeps ID, schedule and position");
@@ -138,12 +149,11 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
             transaction.Commit();
         }
         FinishRoomSchedulePreflight preflight = builder.Preflight(document, plan);
-        Check(preflight.LegacyScheduleIds.SequenceEqual(new[] { (long)legacy.Id.IntegerValue }), "Preflight finds legacy live version");
+        Check(preflight.LegacyScheduleIds.Count == 0, "Preflight does not request legacy archiving");
         int countBefore = ScheduleCount(document);
         using (TransactionGroup group = new(document, "Rollback test"))
         {
             group.Start();
-            builder.PreservePreviousVersions(document, preflight);
             ChangeRoom(document, room, "Rollback value", "99,00");
             builder.Apply(document, preflight);
             group.RollBack();
@@ -151,19 +161,19 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
         Check(!metadata.IsSnapshot(legacy) && Text(legacy) == oldDynamic
               && room.get_Parameter(BuiltInParameter.ROOM_FINISH_FLOOR).AsString() == "139,79"
               && ScheduleCount(document) == countBefore, "Outer rollback restores legacy data, metadata, parameters and schedule count");
-        using (TransactionGroup group = new(document, "Archive before writing new room values"))
+        int parameterCount = new FilteredElementCollector(document).OfClass(typeof(ParameterElement)).GetElementCount();
+        using (TransactionGroup group = new(document, "Update live parameters and create another schedule"))
         {
             group.Start();
-            builder.PreservePreviousVersions(document, preflight);
-            string frozenLegacy = Text(legacy);
-            Check(frozenLegacy.Contains("139,79"), "Legacy snapshot captures pre-write values");
             ChangeRoom(document, room, "04 Wallpaper", "25,00");
             builder.Apply(document, preflight);
-            Check(Text(legacy) == frozenLegacy, "Legacy snapshot remains unchanged during new calculation");
+            Check(Text(legacy).Contains("25,00"), "Legacy live schedule keeps reading configured parameters");
             group.Assimilate();
         }
-        Check(metadata.IsSnapshot(legacy) && document.GetElement(legacyPlacementId) is ScheduleSheetInstance item
-              && item.ScheduleId == legacy.Id, "Legacy conversion preserves sheet instance and marks snapshot");
+        Check(!metadata.IsSnapshot(legacy) && document.GetElement(legacyPlacementId) is ScheduleSheetInstance item
+              && item.ScheduleId == legacy.Id, "Legacy schedule retains live metadata and sheet placement");
+        Check(new FilteredElementCollector(document).OfClass(typeof(ParameterElement)).GetElementCount() == parameterCount,
+            "Creating another schedule does not allocate history parameters");
         Progress("Testing alternate header modes.");
         ViewSchedule standard = Create(builder, document, Plan("Standard header"), FinishScheduleHeaderMode.Standard);
         Check(Text(standard).Contains("25,00"), "Standard-header fallback contains data");
@@ -192,7 +202,6 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
         FinishRoomSchedulePreflight preflight = builder.Preflight(document, plan);
         using TransactionGroup group = new(document, "Create finish test version");
         group.Start();
-        builder.PreservePreviousVersions(document, preflight);
         FinishRoomScheduleApplyResult result = builder.Apply(document, preflight, mode);
         group.Assimilate();
         return (ViewSchedule)document.GetElement(new ElementId((int)result.ScheduleId));

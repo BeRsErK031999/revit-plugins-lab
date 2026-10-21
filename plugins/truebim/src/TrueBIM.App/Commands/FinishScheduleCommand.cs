@@ -71,7 +71,14 @@ public sealed class FinishScheduleCommand : IExternalCommand
                     : () => new FinishScheduleDefaultParameterService(logger).CreateOrUpdate(
                         commandData.Application.Application,
                         uiDocument.Document),
-                logger);
+                logger,
+                uiDocument is null ? null : settings =>
+                {
+                    FinishElementCollection collection = new FinishElementCollector(logger).Collect(uiDocument.Document, settings);
+                    return FinishMissingDescriptionValidator.FindTypeIds(collection, settings)
+                        .Select(id => $"{uiDocument.Document.GetElement(RevitElementIds.Create(id))?.Name} — ID типоразмера: {id}")
+                        .ToArray();
+                });
             logger.Info(
                 $"Finish Schedule settings opened. Document='{status.DocumentName}'; HasActiveDocument={status.HasActiveDocument}.");
             RevitModalWindowService.ShowDialog(

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DefineConstants>$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI"><HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Compile Include="..\..\src\TrueBIM.App\Compatibility\IsExternalInit.cs" Link="Source\IsExternalInit.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Services\RevitElementIds.cs" Link="Source\RevitElementIds.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepModels.cs" Link="Source\TepModels.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepCalculator.cs" Link="Source\TepCalculator.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepClassifier.cs" Link="Source\TepClassifier.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepCollector.cs" Link="Source\TepCollector.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\Tep\TepExcel.cs" Link="Source\TepExcel.cs" />
+  </ItemGroup>
+</Project>

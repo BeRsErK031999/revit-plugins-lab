@@ -28,6 +28,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         FinishScheduleWriteResult>? writeApplyFactory;
     private readonly Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory;
     private readonly ITrueBimLogger logger;
+    private readonly Func<FinishScheduleSettings, IReadOnlyList<string>>? missingDescriptionsFactory;
     private readonly FinishScheduleSettingsValidator validator;
     private readonly FinishSchedulePreviewValidator previewValidator;
     private readonly FinishScheduleParameterOptionService optionService;
@@ -65,7 +66,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         "Текстовый параметр экземпляра помещения для пользовательского идентификатора.");
     private readonly CheckBox writeOwnershipInput = CreateCheckBox(
         "Записывать фактическую принадлежность в элементы отделки",
-        "В выбранные параметры физических элементов будут записаны реальные идентификаторы связанных помещений.");
+        "Включено: определить принадлежность по геометрии и перезаписать параметры отделки. "
+            + "Выключено: использовать уже записанную принадлежность, сохраняя ручные исправления. "
+            + "Ведомость в обоих случаях рассчитывается по этим параметрам.");
     private readonly ComboBox roomListOutputInput = CreateParameterInput(
         $"Записываемый текстовый параметр экземпляра помещения. Рекомендуемое имя: «{FinishSchedulePreferredParameterNames.RoomListOutput}».");
     private readonly ComboBox scopeModeInput = CreateChoiceInput();
@@ -134,7 +137,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             FinishScheduleHeaderMode,
             FinishScheduleWriteResult>? writeApplyFactory,
         Func<FinishScheduleDefaultParameterResult>? defaultParameterFactory,
-        ITrueBimLogger logger)
+        ITrueBimLogger logger,
+        Func<FinishScheduleSettings, IReadOnlyList<string>>? missingDescriptionsFactory = null)
     {
         this.status = status ?? throw new ArgumentNullException(nameof(status));
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -146,6 +150,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         this.writeApplyFactory = writeApplyFactory;
         this.defaultParameterFactory = defaultParameterFactory;
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        this.missingDescriptionsFactory = missingDescriptionsFactory;
 
         ParameterCatalogMatcher matcher = new();
         validator = new FinishScheduleSettingsValidator(matcher);
@@ -509,6 +514,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         StackPanel panel = new();
         writeOwnershipInput.Margin = new Thickness(0, 0, 0, TrueBimTheme.Spacing12);
         panel.Children.Add(writeOwnershipInput);
+        panel.Children.Add(CreateDescription(
+            "С галкой принадлежность определяется и перезаписывается перед расчётом. "
+                + "Без галки ведомость использует текущие значения этих параметров, включая ручные исправления."));
         panel.Children.Add(CreateFieldRow("Стены", walls.OwnershipInput));
         panel.Children.Add(CreateFieldRow("Полы", floors.OwnershipInput));
         panel.Children.Add(CreateFieldRow("Потолки", ceilings.OwnershipInput, isLast: true));
@@ -628,8 +636,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         descriptionInput.SelectionChanged += (_, _) => OnInputChanged();
         roomIdentifierModeInput.SelectionChanged += (_, _) => OnInputChanged(refreshDependencies: true);
         roomIdentifierParameterInput.SelectionChanged += (_, _) => OnInputChanged();
-        writeOwnershipInput.Checked += (_, _) => OnInputChanged(refreshDependencies: true);
-        writeOwnershipInput.Unchecked += (_, _) => OnInputChanged(refreshDependencies: true);
+        writeOwnershipInput.Checked += (_, _) => OnCategoryChanged();
+        writeOwnershipInput.Unchecked += (_, _) => OnCategoryChanged();
         roomListOutputInput.SelectionChanged += (_, _) => OnInputChanged();
         scopeModeInput.SelectionChanged += (_, _) => OnInputChanged(refreshDependencies: true);
         levelInput.SelectionChanged += (_, _) => OnInputChanged();
@@ -834,13 +842,13 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
             SetOptions(
                 walls.OwnershipInput,
-                optionService.GetOwnershipOptions(catalog, categories.Walls));
+                optionService.GetOwnershipOptions(catalog, categories.Walls, writeOwnershipInput.IsChecked == true));
             SetOptions(
                 floors.OwnershipInput,
-                optionService.GetOwnershipOptions(catalog, categories.Floors));
+                optionService.GetOwnershipOptions(catalog, categories.Floors, writeOwnershipInput.IsChecked == true));
             SetOptions(
                 ceilings.OwnershipInput,
-                optionService.GetOwnershipOptions(catalog, categories.Ceilings));
+                optionService.GetOwnershipOptions(catalog, categories.Ceilings, writeOwnershipInput.IsChecked == true));
             SetOptions(
                 sectionParameterInput,
                 optionService.GetSectionOptions(catalog, categories));
@@ -856,15 +864,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         bool wallsEnabled = walls.EnabledInput.IsChecked == true;
         bool floorsEnabled = floors.EnabledInput.IsChecked == true;
         bool ceilingsEnabled = ceilings.EnabledInput.IsChecked == true;
-        bool writeOwnership = writeOwnershipInput.IsChecked == true;
         bool customRoomIdentifier = ReadChoice(
             roomIdentifierModeInput,
             RoomIdentifierMode.Number) == RoomIdentifierMode.CustomParameter;
         ReportScopeKind scope = ReadChoice(scopeModeInput, ReportScopeKind.EntireProject);
 
-        SetCategoryState(walls, wallsEnabled, writeOwnership);
-        SetCategoryState(floors, floorsEnabled, writeOwnership);
-        SetCategoryState(ceilings, ceilingsEnabled, writeOwnership);
+        SetCategoryState(walls, wallsEnabled);
+        SetCategoryState(floors, floorsEnabled);
+        SetCategoryState(ceilings, ceilingsEnabled);
         descriptionInput.IsEnabled = wallsEnabled || floorsEnabled || ceilingsEnabled;
         roomIdentifierParameterInput.IsEnabled = customRoomIdentifier;
         levelInput.IsEnabled = scope == ReportScopeKind.Level;
@@ -874,11 +881,10 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
     private static void SetCategoryState(
         CategoryControls controls,
-        bool categoryEnabled,
-        bool writeOwnership)
+        bool categoryEnabled)
     {
         controls.ClassificationInput.IsEnabled = categoryEnabled;
-        controls.OwnershipInput.IsEnabled = categoryEnabled && writeOwnership;
+        controls.OwnershipInput.IsEnabled = categoryEnabled;
         controls.OutputDescriptionInput.IsEnabled = categoryEnabled;
         controls.OutputAreaInput.IsEnabled = categoryEnabled;
     }
@@ -1022,6 +1028,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         try
         {
             SaveProfile(showFeedback: false);
+            IReadOnlyList<string> missingDescriptions = missingDescriptionsFactory?.Invoke(settings) ?? [];
+            if (missingDescriptions.Count > 0
+                && new FinishMissingDescriptionWindow(settings.DescriptionParameter?.Name ?? "Описание", missingDescriptions)
+                    { Owner = this }.ShowDialog() != true)
+            {
+                footerStatus.Text = "Формирование отменено. Заполните описания указанных типоразмеров.";
+                return;
+            }
             FinishScheduleWritePreview writePreview = writePreviewFactory(settings);
             SetUserNotice(userNoticeBuilder.BuildWritePreview(writePreview, settings));
             SetCurrentReport(reportBuilder.BuildWritePreview(writePreview));
@@ -1031,24 +1045,6 @@ public sealed class FinishScheduleWindow : TrueBimWindow
                 footerStatus.Text = "Запись не начата: откройте предупреждения и исправьте указанные пункты.";
                 footerStatus.Foreground = TrueBimBrushes.Danger;
                 return;
-            }
-
-            if (writePreview.RequiresTransaction)
-            {
-                FinishScheduleWriteConfirmation notice = new FinishScheduleWriteConfirmationBuilder().Build(writePreview);
-                MessageBoxResult confirmation = MessageBox.Show(
-                    this,
-                    notice.Message,
-                    "Ведомость отделки — новая версия",
-                    MessageBoxButton.YesNo,
-                    notice.ReplacesExistingValues ? MessageBoxImage.Warning : MessageBoxImage.Question,
-                    MessageBoxResult.No);
-                if (confirmation != MessageBoxResult.Yes)
-                {
-                    footerStatus.Text = "Применение отменено. Модель Revit не изменялась.";
-                    footerStatus.Foreground = TrueBimBrushes.TextSecondary;
-                    return;
-                }
             }
 
             FinishScheduleWriteResult result = writeApplyFactory(
@@ -1570,7 +1566,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             EnabledInput.IsChecked = true;
             ClassificationInput = CreateClassificationInput(defaultClassification, classificationToolTip);
             OwnershipInput = CreateParameterInput(
-                $"Записываемый текстовый параметр элементов категории «{displayName}». Рекомендуемое имя: «{preferredOwnershipName}».");
+                $"Параметр принадлежности элементов категории «{displayName}», по которому рассчитывается ведомость. Рекомендуемое имя: «{preferredOwnershipName}».");
             OutputDescriptionInput = CreateParameterInput(
                 $"Параметр помещения для агрегированного описания категории «{displayName}». Рекомендуемое имя: «{preferredDescriptionName}».");
             OutputAreaInput = CreateParameterInput(

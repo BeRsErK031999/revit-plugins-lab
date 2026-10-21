@@ -40,20 +40,6 @@ public sealed class FinishRoomScheduleBuilder
         }
 
         List<ViewSchedule> schedules = CollectSchedules(document);
-        List<ViewSchedule> legacy = schedules
-            .Where(IsRoomSchedule)
-            .Where(metadataService.IsManaged)
-            .Where(schedule => !metadataService.IsRoomBackedVersion(schedule))
-            .ToList();
-        foreach (ViewSchedule schedule in legacy)
-        {
-            string? issue = FinishRoomVersionService.Validate(schedule, metadataService.IsTextSnapshot(schedule));
-            if (issue is not null)
-            {
-                return Conflict(plan, issue);
-            }
-        }
-
         string name = FinishScheduleVersionNameService.CreateUniqueName(
             plan.ScheduleName,
             schedules.Select(schedule => schedule.Name));
@@ -61,8 +47,7 @@ public sealed class FinishRoomScheduleBuilder
             plan.WithName(name),
             FinishRoomScheduleAction.Create,
             null,
-            [],
-            legacy.Select(schedule => RevitElementIds.GetValue(schedule.Id)));
+            []);
     }
 
     public void PreservePreviousVersions(Document document, FinishRoomSchedulePreflight preflight)
@@ -198,7 +183,6 @@ public sealed class FinishRoomScheduleBuilder
             ConfigureDefinition(document, schedule, plan, headerMode);
             document.Regenerate();
             schedule.RefreshData();
-            new FinishRoomVersionService().Preserve(schedule, textSnapshot: false, plan.RoomIds);
             FinishTransactionStatus.EnsureCommitted(transaction);
             return schedule;
         }
@@ -339,7 +323,7 @@ public sealed class FinishRoomScheduleBuilder
             forceBold: false);
         ElementId bodyTextTypeId = EnsureManagedTextType(
             document,
-            schedule.BodyTextTypeId,
+            FinishScheduleTextLayout.ResolveBodySource(document).Id,
             ManagedBodyTextTypeName,
             "тела спецификации",
             FinishRoomScheduleStyleRules.BodyTextSizeMillimeters,

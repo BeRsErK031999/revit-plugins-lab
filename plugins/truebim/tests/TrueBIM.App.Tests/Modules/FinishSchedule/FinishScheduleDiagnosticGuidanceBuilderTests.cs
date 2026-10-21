@@ -59,6 +59,21 @@ public sealed class FinishScheduleDiagnosticGuidanceBuilderTests
             geometryWarnings: geometryWarnings);
     }
 
+    [Fact]
+    public void Build_StoredOwnershipIssuesExplainParametersWithoutGeometryAdvice()
+    {
+        FinishSchedulePreviewResult preview = Preview(
+        [
+            new FinishGeometryWarning(FinishGeometryWarningCode.StoredOwnershipUnresolved,
+                "Не заполнена принадлежность.", ElementId: 100, Category: FinishPreviewCategory.Ceilings)
+        ]);
+
+        IReadOnlyList<string> guidance = FinishScheduleDiagnosticGuidanceBuilder.Build(preview);
+
+        Assert.Contains(guidance, item => item.Contains("параметры принадлежности"));
+        Assert.DoesNotContain(guidance, item => item.Contains("расположение над помещением"));
+    }
+
     private static FinishGeometryWarning Warning(long roomId, long elementId)
     {
         return new FinishGeometryWarning(

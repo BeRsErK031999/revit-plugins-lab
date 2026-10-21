@@ -196,7 +196,8 @@ public sealed class FinishScheduleWritePreview
         IEnumerable<string> calculationWarnings,
         FinishRoomSchedulePreflight? schedule = null,
         FinishSchedulePreviewResult? calculation = null,
-        IReadOnlyDictionary<long, string>? elementLabels = null)
+        IReadOnlyDictionary<long, string>? elementLabels = null,
+        FinishScheduleSettings? settings = null)
     {
         if (groupCount < 0 || roomCount < 0)
         {
@@ -213,6 +214,7 @@ public sealed class FinishScheduleWritePreview
             null,
             []);
         Calculation = calculation;
+        Settings = settings;
         ElementLabels = elementLabels ?? new Dictionary<long, string>();
         CalculationWarnings = (calculationWarnings ?? throw new ArgumentNullException(nameof(calculationWarnings)))
             .Distinct(StringComparer.Ordinal)
@@ -232,6 +234,8 @@ public sealed class FinishScheduleWritePreview
     public FinishRoomSchedulePreflight Schedule { get; }
 
     public FinishSchedulePreviewResult? Calculation { get; }
+
+    public FinishScheduleSettings? Settings { get; }
 
     public IReadOnlyDictionary<long, string> ElementLabels { get; }
 
@@ -304,7 +308,8 @@ public sealed record FinishScheduleCalculationResult(
     FinishSchedulePreviewBuild Build,
     FinishQuantityResult Quantities,
     RoomFinishSnapshotBuildResult? RoomSnapshots,
-    FinishAggregationResult? Aggregation);
+    FinishAggregationResult? Aggregation,
+    FinishParameterTargetBuildResult? OwnershipTargets = null);
 
 internal static class FinishWriteOrdering
 {

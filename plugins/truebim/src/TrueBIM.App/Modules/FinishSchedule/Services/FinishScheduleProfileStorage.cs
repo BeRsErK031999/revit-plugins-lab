@@ -7,7 +7,7 @@ namespace TrueBIM.App.Modules.FinishSchedule.Services;
 public sealed class FinishScheduleProfileStorage
 {
     public const string SettingsKey = "finish-schedule";
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 3;
 
     private readonly JsonSettingsStorage storage;
     private readonly string settingsPath;
@@ -201,7 +201,7 @@ internal sealed class FinishScheduleProfileData
         return new FinishScheduleProfileData { Version = CurrentProfileVersion };
     }
 
-    private const int CurrentProfileVersion = 2;
+    private const int CurrentProfileVersion = 3;
 }
 
 internal sealed class FinishCategoryProfileData
