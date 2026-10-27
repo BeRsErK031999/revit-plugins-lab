@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <DefineConstants>$(DefineConstants);REVIT2020_OR_GREATER;REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER</DefineConstants>
+    <RevitApiRoot>C:\Program Files\Autodesk\Revit 2024</RevitApiRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RevitAPI"><HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>$(RevitApiRoot)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Web.Extensions" />
+    <Compile Include="..\..\src\TrueBIM.App\Services\RevitElementIds.cs" Link="Source\RevitElementIds.cs" />
+    <Compile Include="..\..\src\TrueBIM.App\Modules\RebarDetailing\*.cs" Exclude="..\..\src\TrueBIM.App\Modules\RebarDetailing\RebarDetailingWindow.cs" Link="Source\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
