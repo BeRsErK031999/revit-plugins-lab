@@ -26,14 +26,20 @@ internal sealed class RebarSplitParameters
 
     private RebarSplitParameters(List<Value> values) => this.values = values;
 
-    public static RebarSplitParameters Capture(Element source, ISet<ElementId> shapeParameters)
+    internal RebarSplitParameters Remap(Func<ElementId, ElementId> resolve) => new(values
+        .Select(value => value.StorageType == StorageType.ElementId
+            ? value with { Data = resolve((ElementId)value.Data) } : value).ToList());
+
+    public static RebarSplitParameters Capture(Element source, ISet<ElementId> shapeParameters,
+        ISet<BuiltInParameter>? excludedParameters = null)
     {
         List<Value> result = new();
         foreach (Parameter parameter in source.Parameters)
         {
             if (parameter.IsReadOnly || !parameter.HasValue || shapeParameters.Contains(parameter.Id))
                 continue;
-            if (parameter.Definition is InternalDefinition definition && LayoutParameters.Contains(definition.BuiltInParameter))
+            if (parameter.Definition is InternalDefinition definition && (LayoutParameters.Contains(definition.BuiltInParameter)
+                || excludedParameters?.Contains(definition.BuiltInParameter) == true))
                 continue;
             object? value = Read(parameter);
             if (value is not null)

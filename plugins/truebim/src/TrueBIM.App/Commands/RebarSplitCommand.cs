@@ -41,12 +41,21 @@ public sealed class RebarSplitCommand : IExternalCommand
             }
             // Снимаем UI-выделение, чтобы служебные элементы выбора не участвовали в каскадном удалении.
             uiDocument.Selection.SetElementIds(Array.Empty<ElementId>());
-            RebarSplitResult result = service.Execute(uiDocument.Document, candidates, options.PreserveAnnotations, ResolveParameters);
+            RebarSplitResult result = service.Execute(uiDocument.Document, candidates, options.PreserveAnnotations, ResolveParameters,
+                issues => ResolveProtection(issues, commandData.Application.MainWindowHandle),
+                issues => ResolveGroups(issues, commandData.Application.MainWindowHandle));
             uiDocument.Selection.SetElementIds(result.CreatedIds.Concat(originalSelection.Where(id => uiDocument.Document.GetElement(id) is not null)).ToList());
             logger.Info($"Rebar split: cancelled={result.Cancelled}, sets={result.SetCount}, bars={result.CreatedIds.Count}, skipped={result.SkippedCount}.");
             if (result.Cancelled) return Result.Cancelled;
-            TaskDialog.Show(Title, $"Разбито наборов: {result.SetCount}.\nСоздано отдельных стержней: {result.CreatedIds.Count}."
-                + (result.SkippedCount > 0 ? $"\nПропущено по вашему выбору: {result.SkippedCount}." : string.Empty));
+            new TaskDialog(Title)
+            {
+                MainIcon = result.Warnings.Count > 0 ? TaskDialogIcon.TaskDialogIconWarning : TaskDialogIcon.TaskDialogIconInformation,
+                MainInstruction = $"Разбито наборов: {result.SetCount}. Создано стержней: {result.CreatedIds.Count}.",
+                MainContent = (result.SkippedCount > 0 ? $"Не обработано наборов: {result.SkippedCount}.\n" : string.Empty)
+                    + (result.Warnings.Count > 0 ? "Есть замечания к переносу. Разверните подробности с ID элементов." : string.Empty),
+                ExpandedContent = string.Join("\n\n", result.Warnings),
+                CommonButtons = TaskDialogCommonButtons.Close
+            }.Show();
             return Result.Succeeded;
         }
         catch (Autodesk.Revit.Exceptions.OperationCanceledException)
@@ -72,7 +81,8 @@ public sealed class RebarSplitCommand : IExternalCommand
             MainIcon = TaskDialogIcon.TaskDialogIconWarning,
             MainInstruction = "Не удалось сохранить все параметры экземпляров",
             MainContent = "ID исходных наборов: " + string.Join(", ", issues.Select(issue => issue.SourceId))
-                + "\nВыбранное действие применяется ко всем перечисленным наборам.",
+                + "\nВыбранное действие применяется ко всем перечисленным наборам. При пропуске затронутые группы "
+                + "сохраняются целиком; соответствующие наборы в других экземплярах также пропускаются.",
             ExpandedContent = string.Join("\n\n", issues.Select(issue => $"ID {issue.SourceId}\n" + string.Join("\n", issue.Parameters))),
             CommonButtons = TaskDialogCommonButtons.Cancel,
             DefaultButton = TaskDialogResult.Cancel,
@@ -86,6 +96,20 @@ public sealed class RebarSplitCommand : IExternalCommand
             TaskDialogResult.CommandLink2 => RebarSplitParameterAction.SplitAnyway,
             _ => RebarSplitParameterAction.Cancel
         };
+    }
+
+    private static RebarSplitProtectionAction ResolveProtection(IReadOnlyList<RebarSplitProtectionIssue> issues, IntPtr owner)
+    {
+        RebarSplitProtectionWindow window = new(issues);
+        return RevitModalWindowService.ShowDialog(window, owner) == true
+            ? window.Action : RebarSplitProtectionAction.Cancel;
+    }
+
+    private static RebarSplitGroupAction ResolveGroups(IReadOnlyList<RebarSplitProtectionIssue> issues, IntPtr owner)
+    {
+        RebarSplitProtectionWindow window = new(issues, groupsOnly: true);
+        return RevitModalWindowService.ShowDialog(window, owner) == true
+            ? window.GroupAction : RebarSplitGroupAction.Cancel;
     }
 
     private sealed class SetSelectionFilter : ISelectionFilter

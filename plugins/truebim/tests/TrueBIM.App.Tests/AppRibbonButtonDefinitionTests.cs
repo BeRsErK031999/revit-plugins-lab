@@ -142,7 +142,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_IncludeFamilyReplacementInCoordination()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons, item => item.Name == "TrueBIM_ReplaceFamilies");
+            TrueBimRibbon.CommandCatalog, item => item.Name == "TrueBIM_ReplaceFamilies");
         Assert.Equal(TrueBimRibbon.BimCoordinationPanelName, button.PanelName);
         Assert.Equal($"TrueBIM.App.Commands.{nameof(ReplaceFamiliesCommand)}", button.CommandClassName);
     }
@@ -151,7 +151,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_IncludesViewVisibilityOnViewsPanel()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, "TrueBIM_ViewVisibility", StringComparison.Ordinal));
 
         Assert.Equal(TrueBimRibbon.BimViewsPanelName, button.PanelName);
@@ -176,7 +176,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_GroupsOpeningViewCreationAndAnnotation()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, "TrueBIM_OpeningViews", StringComparison.Ordinal));
 
         Assert.True(button.IsPulldown);
@@ -209,7 +209,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_IncludesSheetNumberingOnDocumentationPanel()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, "TrueBIM_SheetNumbering", StringComparison.Ordinal));
 
         Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, button.PanelName);
@@ -223,7 +223,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_IncludesVoltageDropCalculationOnEomPanel()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, "TrueBIM_VoltageDropCalculation", StringComparison.Ordinal));
 
         Assert.Equal(TrueBimRibbon.EomPanelName, button.PanelName);
@@ -237,7 +237,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_IncludesQuickLogAccessOnHelpPanel()
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, "TrueBIM_OpenLogs", StringComparison.Ordinal));
 
         Assert.Equal(TrueBimRibbon.HelpPanelName, button.PanelName);
@@ -251,7 +251,7 @@ public sealed class AppRibbonButtonDefinitionTests
     public void RibbonButtons_IncludeSingleUnifiedPrintButton()
     {
         TrueBimRibbonButtonDefinition printButton = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, "TrueBIM_Print", StringComparison.Ordinal));
 
         Assert.Equal(TrueBimRibbon.BimDocumentationPanelName, printButton.PanelName);
@@ -260,7 +260,7 @@ public sealed class AppRibbonButtonDefinitionTests
         Assert.Equal(TrueBimIcon.Print, printButton.Icon);
         Assert.Contains("PDF", printButton.Tooltip, StringComparison.Ordinal);
         Assert.Contains("DWG", printButton.Tooltip, StringComparison.Ordinal);
-        Assert.DoesNotContain(TrueBimRibbon.Buttons, button =>
+        Assert.DoesNotContain(TrueBimRibbon.CommandCatalog, button =>
             string.Equals(button.Name, "TrueBIM_PrintPdf", StringComparison.Ordinal)
             || string.Equals(button.Name, "TrueBIM_PrintDwg", StringComparison.Ordinal));
     }
@@ -276,7 +276,7 @@ public sealed class AppRibbonButtonDefinitionTests
         string tooltipFragment)
     {
         TrueBimRibbonButtonDefinition button = Assert.Single(
-            TrueBimRibbon.Buttons,
+            TrueBimRibbon.CommandCatalog,
             button => string.Equals(button.Name, name, StringComparison.Ordinal));
 
         Assert.Equal(panelName, button.PanelName);
@@ -288,41 +288,13 @@ public sealed class AppRibbonButtonDefinitionTests
     }
 
     [Fact]
-    public void RibbonPanelNames_IncludeVisiblePanelsOnly()
-    {
-        Assert.Contains(TrueBimRibbon.BimDocumentationPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.BimViewsPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.BimCoordinationPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.BimLibraryPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.ModelReviewPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.GeometryPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.ParametersPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.AdministrationPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.HelpPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.ArPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.KrPanelName, TrueBimRibbon.PanelNames);
-        Assert.Contains(TrueBimRibbon.EomPanelName, TrueBimRibbon.PanelNames);
-
-        Assert.DoesNotContain(TrueBimRibbon.BimPanelName, TrueBimRibbon.PanelNames);
-        Assert.DoesNotContain(TrueBimRibbon.SsPanelName, TrueBimRibbon.PanelNames);
-    }
-
-    [Fact]
     public void RibbonPanelNames_UseReviewedOrder()
     {
         string[] expectedPanelNames =
         [
-            TrueBimRibbon.BimDocumentationPanelName,
+            TrueBimRibbon.QuickAccessPanelName,
             TrueBimRibbon.BimViewsPanelName,
-            TrueBimRibbon.BimCoordinationPanelName,
-            TrueBimRibbon.BimLibraryPanelName,
-            TrueBimRibbon.ModelReviewPanelName,
-            TrueBimRibbon.GeometryPanelName,
-            TrueBimRibbon.ParametersPanelName,
-            TrueBimRibbon.AdministrationPanelName,
-            TrueBimRibbon.ArPanelName,
-            TrueBimRibbon.KrPanelName,
-            TrueBimRibbon.EomPanelName,
+            TrueBimRibbon.ToolsPanelName,
             TrueBimRibbon.HelpPanelName
         ];
 
@@ -358,25 +330,78 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         Dictionary<string, int> maxButtonCountByPanel = new(StringComparer.Ordinal)
         {
-            [TrueBimRibbon.BimDocumentationPanelName] = 4,
+            [TrueBimRibbon.QuickAccessPanelName] = 3,
             [TrueBimRibbon.BimViewsPanelName] = 3,
-            [TrueBimRibbon.BimCoordinationPanelName] = 3,
-            [TrueBimRibbon.BimLibraryPanelName] = 2,
-            [TrueBimRibbon.ModelReviewPanelName] = 2,
-            [TrueBimRibbon.GeometryPanelName] = 2,
-            [TrueBimRibbon.ParametersPanelName] = 3,
-            [TrueBimRibbon.AdministrationPanelName] = 2,
-            [TrueBimRibbon.ArPanelName] = 2,
-            [TrueBimRibbon.KrPanelName] = 5,
-            [TrueBimRibbon.EomPanelName] = 2,
-            [TrueBimRibbon.HelpPanelName] = 2
+            [TrueBimRibbon.ToolsPanelName] = 4,
+            [TrueBimRibbon.HelpPanelName] = 1
         };
 
         foreach (string panelName in TrueBimRibbon.PanelNames)
         {
             int buttonCount = TrueBimRibbon.Buttons.Count(button => string.Equals(button.PanelName, panelName, StringComparison.Ordinal));
 
-            Assert.InRange(buttonCount, 1, maxButtonCountByPanel[panelName]);
+            Assert.Equal(maxButtonCountByPanel[panelName], buttonCount);
+        }
+    }
+
+    [Fact]
+    public void CompactRibbon_PreservesEveryCommandAndItsMetadata()
+    {
+        foreach (TrueBimRibbonButtonDefinition command in TrueBimRibbon.CommandCatalog)
+        {
+            if (command.IsPulldown)
+            {
+                TrueBimRibbonButtonDefinition menu = Assert.Single(TrueBimRibbon.Buttons, button => button.Name == command.Name);
+                Assert.Equal(command.Items, menu.Items);
+                Assert.Equal(command.Tooltip, menu.Tooltip);
+                Assert.Equal(command.LongDescription, menu.LongDescription);
+                continue;
+            }
+
+            var root = TrueBimRibbon.Buttons.Where(button => button.Name == command.Name).ToArray();
+            var children = TrueBimRibbon.Buttons.SelectMany(button => button.Items).Where(item => item.Name == command.Name).ToArray();
+            Assert.Equal(1, root.Length + children.Length);
+            if (children.Length == 1)
+            {
+                TrueBimRibbonPulldownItemDefinition item = children[0];
+                Assert.Equal(command.CommandClassName, item.CommandClassName);
+                Assert.Equal(command.AvailabilityClassName, item.AvailabilityClassName);
+                Assert.Equal(command.Icon, item.Icon);
+                Assert.Equal(command.Tooltip, item.Tooltip);
+                Assert.Equal(command.LongDescription, item.LongDescription);
+                Assert.DoesNotContain('\n', item.Text);
+            }
+            else
+            {
+                Assert.Equal(command with { Text = command.Text.Replace("\n", " ") }, root[0]);
+            }
+        }
+    }
+
+    [Fact]
+    public void CompactRibbon_StacksQuickAccessAndViewsOnly()
+    {
+        var stacks = TrueBimRibbon.Panels.Where(panel => panel.IsStacked).ToArray();
+        Assert.Equal(new[] { TrueBimRibbon.QuickAccessPanelName, TrueBimRibbon.BimViewsPanelName }, stacks.Select(panel => panel.Name));
+        foreach (TrueBimRibbonPanelDefinition stack in stacks)
+        {
+            Assert.Equal(3, stack.Buttons.Count);
+            Assert.All(stack.Buttons, button => Assert.DoesNotContain('\n', button.Text));
+        }
+    }
+
+    [Fact]
+    public void CompactRibbon_QuickAccessReusesCommandsWithUniqueIds()
+    {
+        var quickAccess = TrueBimRibbon.Panels.Single(panel => panel.Name == TrueBimRibbon.QuickAccessPanelName);
+        Assert.Equal(new[] { "TrueBIM_ColorByParameter_QuickAccess", "TrueBIM_CopyParameters_QuickAccess", "TrueBIM_Print_QuickAccess" }, quickAccess.Buttons.Select(button => button.Name));
+        foreach (TrueBimRibbonButtonDefinition button in quickAccess.Buttons)
+        {
+            TrueBimRibbonButtonDefinition command = Assert.Single(TrueBimRibbon.CommandCatalog, item => item.CommandClassName == button.CommandClassName);
+            Assert.Equal(command.AvailabilityClassName, button.AvailabilityClassName);
+            Assert.Equal(command.Icon, button.Icon);
+            Assert.Equal(command.Tooltip, button.Tooltip);
+            Assert.Equal(command.LongDescription, button.LongDescription);
         }
     }
 
@@ -422,8 +447,11 @@ public sealed class AppRibbonButtonDefinitionTests
     {
         foreach (TrueBimRibbonButtonDefinition button in TrueBimRibbon.Buttons)
         {
-            Assert.StartsWith("TrueBIM.App.Commands.", button.CommandClassName, StringComparison.Ordinal);
-            Assert.EndsWith("Command", button.CommandClassName, StringComparison.Ordinal);
+            if (!button.IsPulldown)
+            {
+                Assert.StartsWith("TrueBIM.App.Commands.", button.CommandClassName, StringComparison.Ordinal);
+                Assert.EndsWith("Command", button.CommandClassName, StringComparison.Ordinal);
+            }
 
             foreach (TrueBimRibbonPulldownItemDefinition item in button.Items)
             {

@@ -18,6 +18,10 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 
 ## Initial modules
 
+- Версия **0.2.42**: «Разбить арматуру» предлагает для элементов групп «Извлечь из группы и разбить» или «Пропустить обработку элементов». При извлечении затронутые группы разгруппировываются, остальные элементы сохраняют ID, геометрию и свойства. Если это невозможно, наборы внутри групп остаются без изменений, а результат сообщает их ID и причину пропуска. Для закрепления отдельно доступны сохранение, снятие, пропуск и отмена. Списки ID можно копировать. См. [описание](docs/rebar-split.md).
+
+- Версия **0.2.40**: компактная лента TrueBIM — «Быстрый доступ», «Виды», «Инструменты» и «Помощь». Все команды сохранены. Навигация и проверки: [компактная лента](docs/compact-ribbon.md).
+
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
 - `schedule-column-collapse` - normalizes a schedule by showing non-zero columns and hiding zero-only numeric columns (`Свернуть ВРС`).
 - `print` - sheet batch print/export module (`Печать`) for PDF, DWG, and DXF export with filename templates, CAD export setups, multi-document sheet sources, saved settings, and Revit 2022/2025 preflight coverage.

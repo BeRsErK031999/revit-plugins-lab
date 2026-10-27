@@ -3,10 +3,21 @@ param(
     [switch] $AllowExistingRevit,
     [switch] $ShowViewer,
     [string] $ModelPath = '',
-    [switch] $SkipAvailabilityCheck
+    [switch] $SkipAvailabilityCheck,
+    [switch] $ProtectionOnly,
+    [switch] $Comprehensive,
+    [ValidateSet('', 'NestedGroup', 'RebarOnlyGroup', 'RotatedRepeatedGroup', 'NestedRepeatedGroup',
+        'MultiSetRepeatedGroup', 'MirroredRepeatedGroup', 'PinnedMemberRepeatedGroup', 'ParameterIssues', 'GroupExtraction', 'SharedGroupsProbe')][string] $ProtectionScenario = ''
 )
 
 $ErrorActionPreference = 'Stop'
+if ($ProtectionScenario) { $ProtectionOnly = $true }
+if ($ProtectionOnly -and -not [string]::IsNullOrWhiteSpace($ModelPath)) {
+    throw 'ProtectionOnly uses a temporary fixture and cannot be combined with ModelPath.'
+}
+if ($Comprehensive -and -not [string]::IsNullOrWhiteSpace($ModelPath)) {
+    throw 'Run Comprehensive and ModelPath separately: repeated-group fixtures require an active test document.'
+}
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
 $harnessRoot = Join-Path $repoRoot 'plugins\truebim\tests\TrueBIM.Revit.RebarSplitHarness'
 $reportRoot = Join-Path $repoRoot 'plugins\truebim\test-results\rebar-split'
@@ -27,6 +38,9 @@ $manifest = '<?xml version="1.0" encoding="utf-8"?><RevitAddIns><AddIn Type="App
 $previousReportVariable = $env:TRUEBIM_REBAR_SPLIT_HARNESS_REPORT
 $previousModelVariable = $env:TRUEBIM_REBAR_SPLIT_HARNESS_MODEL
 $previousAvailabilityVariable = $env:TRUEBIM_REBAR_SPLIT_SKIP_AVAILABILITY
+$previousProtectionVariable = $env:TRUEBIM_REBAR_SPLIT_PROTECTION_ONLY
+$previousScenarioVariable = $env:TRUEBIM_REBAR_SPLIT_PROTECTION_SCENARIO
+$previousComprehensiveVariable = $env:TRUEBIM_REBAR_SPLIT_COMPREHENSIVE
 $viewerProcess = $null
 try {
     New-Item -ItemType Directory -Path $reportRoot -Force | Out-Null
@@ -35,6 +49,9 @@ try {
     $env:TRUEBIM_REBAR_SPLIT_HARNESS_REPORT = $reportPath
     $env:TRUEBIM_REBAR_SPLIT_HARNESS_MODEL = $null
     $env:TRUEBIM_REBAR_SPLIT_SKIP_AVAILABILITY = if ($SkipAvailabilityCheck) { '1' } else { $null }
+    $env:TRUEBIM_REBAR_SPLIT_PROTECTION_ONLY = if ($ProtectionOnly) { '1' } else { $null }
+    $env:TRUEBIM_REBAR_SPLIT_PROTECTION_SCENARIO = $ProtectionScenario
+    $env:TRUEBIM_REBAR_SPLIT_COMPREHENSIVE = if ($Comprehensive) { '1' } else { $null }
     if (-not [string]::IsNullOrWhiteSpace($ModelPath)) {
         $inputDirectory = Join-Path $reportRoot "inputs\$runId"
         New-Item -ItemType Directory -Path $inputDirectory -Force | Out-Null
@@ -57,7 +74,7 @@ try {
     Write-Output "Report: $reportPath"
     $report.Scenarios | Select-Object Scenario, Passed, SetCount, Bars | Format-Table -AutoSize
     if ($report.FatalError) { throw $report.FatalError }
-    $expectedScenarios = if ([string]::IsNullOrWhiteSpace($ModelPath)) { 12 } else { 8 }
+    $expectedScenarios = if ($Comprehensive) { 176 } elseif ($ProtectionScenario -eq 'SharedGroupsProbe') { 12 } elseif ($ProtectionScenario -eq 'GroupExtraction') { 10 } elseif ($ProtectionScenario -eq 'ParameterIssues') { 12 } elseif ($ProtectionScenario) { 8 } elseif ($ProtectionOnly) { 140 } elseif ([string]::IsNullOrWhiteSpace($ModelPath)) { 140 } else { 36 }
     if (@($report.Scenarios).Count -ne $expectedScenarios -or @($report.Scenarios | Where-Object { -not $_.Passed }).Count -gt 0) {
         throw "Regression failed. See $reportPath."
     }
@@ -75,4 +92,7 @@ finally {
     $env:TRUEBIM_REBAR_SPLIT_HARNESS_REPORT = $previousReportVariable
     $env:TRUEBIM_REBAR_SPLIT_HARNESS_MODEL = $previousModelVariable
     $env:TRUEBIM_REBAR_SPLIT_SKIP_AVAILABILITY = $previousAvailabilityVariable
+    $env:TRUEBIM_REBAR_SPLIT_PROTECTION_ONLY = $previousProtectionVariable
+    $env:TRUEBIM_REBAR_SPLIT_PROTECTION_SCENARIO = $previousScenarioVariable
+    $env:TRUEBIM_REBAR_SPLIT_COMPREHENSIVE = $previousComprehensiveVariable
 }

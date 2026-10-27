@@ -28,15 +28,20 @@ public sealed class App : IExternalApplication
             // Revit throws if the tab already exists.
         }
 
-        Dictionary<string, RibbonPanel> panels = new(StringComparer.Ordinal);
-        foreach (string panelName in TrueBimRibbon.PanelNames)
+        foreach (TrueBimRibbonPanelDefinition definition in TrueBimRibbon.Panels)
         {
-            panels[panelName] = application.CreateRibbonPanel(TabName, panelName);
-        }
-
-        foreach (TrueBimRibbonButtonDefinition button in TrueBimRibbon.Buttons)
-        {
-            AddButton(panels[button.PanelName], button);
+            RibbonPanel panel = application.CreateRibbonPanel(TabName, definition.Name);
+            if (definition.IsStacked)
+            {
+                AddStackedButtons(panel, definition.Buttons);
+            }
+            else
+            {
+                foreach (TrueBimRibbonButtonDefinition button in definition.Buttons)
+                {
+                    InitializeButton(panel.AddItem(CreateButtonData(button)), button);
+                }
+            }
         }
 
         RegisterFamilyManagerPane(application);
@@ -64,25 +69,37 @@ public sealed class App : IExternalApplication
         }
     }
 
-    private static void AddButton(
+    private static void AddStackedButtons(
         RibbonPanel panel,
-        TrueBimRibbonButtonDefinition button)
+        IReadOnlyList<TrueBimRibbonButtonDefinition> buttons)
     {
-        if (button.IsPulldown)
+        IList<RibbonItem> items = buttons.Count switch
         {
-            AddPulldownButton(panel, button);
+            2 => panel.AddStackedItems(CreateButtonData(buttons[0]), CreateButtonData(buttons[1])),
+            3 => panel.AddStackedItems(CreateButtonData(buttons[0]), CreateButtonData(buttons[1]), CreateButtonData(buttons[2])),
+            _ => throw new InvalidOperationException("A ribbon stack must contain two or three buttons.")
+        };
+
+        for (int index = 0; index < items.Count; index++)
+        {
+            InitializeButton(items[index], buttons[index]);
+        }
+    }
+
+    private static RibbonItemData CreateButtonData(TrueBimRibbonButtonDefinition button)
+    {
+        return button.IsPulldown
+            ? new PulldownButtonData(button.Name, button.Text)
+            : CreatePushButtonData(button);
+    }
+
+    private static void InitializeButton(RibbonItem ribbonItem, TrueBimRibbonButtonDefinition button)
+    {
+        if (ribbonItem is not PulldownButton pulldown)
+        {
             return;
         }
 
-        panel.AddItem(CreatePushButtonData(button));
-    }
-
-    private static void AddPulldownButton(
-        RibbonPanel panel,
-        TrueBimRibbonButtonDefinition button)
-    {
-        PulldownButtonData pulldownData = new(button.Name, button.Text);
-        PulldownButton pulldown = (PulldownButton)panel.AddItem(pulldownData);
         pulldown.Image = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbonSmall);
         pulldown.LargeImage = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbon);
         pulldown.ToolTip = button.Tooltip;
@@ -136,6 +153,7 @@ public sealed class App : IExternalApplication
         buttonData.Image = IconFactory.CreateImage(item.Icon, TrueBimTheme.IconSizeRibbonSmall);
         buttonData.LargeImage = IconFactory.CreateImage(item.Icon, TrueBimTheme.IconSizeRibbon);
         buttonData.ToolTip = item.Tooltip;
+        buttonData.LongDescription = item.LongDescription;
         if (!string.IsNullOrWhiteSpace(item.AvailabilityClassName))
         {
             buttonData.AvailabilityClassName = item.AvailabilityClassName;

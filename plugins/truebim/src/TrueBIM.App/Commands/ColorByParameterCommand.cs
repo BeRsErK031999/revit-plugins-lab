@@ -38,7 +38,7 @@ public sealed class ColorByParameterCommand : IExternalCommand
                 return Result.Succeeded;
             }
 
-            ColorByParameterService service = new(new ViewFilterService(new FilterNameBuilder(), logger), new ColorPaletteService(), logger);
+            ColorByParameterService service = new(new ViewFilterService(new FilterNameBuilder(), logger), new ColorPaletteService());
             IReadOnlyList<Modules.BimTools.ColorByParameter.Models.BimCategoryItem> categories =
                 service.CollectCategories(uiDocument.Document, activeView);
             if (categories.Count == 0)
