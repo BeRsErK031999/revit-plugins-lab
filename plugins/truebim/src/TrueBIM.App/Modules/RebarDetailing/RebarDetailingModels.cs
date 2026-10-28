@@ -9,6 +9,8 @@ public sealed class DetailingOptions
     public bool BarDimensions { get; set; } = true;
     public bool Elevations { get; set; } = true;
     public bool ReplaceExisting { get; set; } = true;
+    public bool WriteQuantities { get; set; } = true;
+    public bool Details { get; set; } = true;
     public ElementId TagTypeId { get; set; } = ElementId.InvalidElementId;
     public ElementId DimensionTypeId { get; set; } = ElementId.InvalidElementId;
     public ElementId SpotTypeId { get; set; } = ElementId.InvalidElementId;
@@ -44,8 +46,12 @@ public sealed class DetailingResult
     public int Dimensions { get; internal set; }
     public int Elevations { get; internal set; }
     public int Removed { get; internal set; }
+    public int QuantityWrites { get; internal set; }
+    public int Details { get; internal set; }
+    internal Dictionary<ElementId, XYZ> ExpectedTagHeads { get; } = new();
+    internal List<string> LayoutTrace { get; } = new();
     public List<string> Notes { get; } = new();
     public override string ToString() => Succeeded
-        ? $"{ViewName}: марки {Tags}, размеры {Dimensions}, отметки {Elevations}; удалено {Removed}." + (Notes.Count == 0 ? "" : "\n" + string.Join("\n", Notes.Distinct()))
+        ? $"{ViewName}: марки {Tags}, размеры {Dimensions}, отметки {Elevations}, детали {Details}; записано количеств {QuantityWrites}, удалено {Removed}." + (Notes.Count == 0 ? "" : "\n" + string.Join("\n", Notes.Distinct()))
         : $"{ViewName}: изменения отменены. " + string.Join("; ", Notes.Distinct());
 }

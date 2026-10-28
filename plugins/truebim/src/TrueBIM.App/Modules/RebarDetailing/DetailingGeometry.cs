@@ -12,11 +12,33 @@ internal sealed class DetailingBar
     public ElementId Host { get; set; } = ElementId.InvalidElementId;
     public List<XYZ> Positions { get; } = new();
     public List<Reference> TagReferences { get; } = new();
+    public List<Reference> PositionReferences { get; } = new();
     public HashSet<int> VisibleIndices { get; } = new();
     public XYZ Distribution { get; set; } = XYZ.Zero;
     public List<DetailingAxis> DimensionReferences { get; } = new();
+    public List<DetailingAxis> EndReferences { get; } = new();
+    public List<DetailingSegment> Segments { get; } = new();
+    public double Spacing { get; set; }
+    public string Shape { get; set; } = "";
+    public string ShapeName { get; set; } = "";
     public XYZ Target => Positions[Positions.Count / 2];
     public string Key { get; set; } = "";
+}
+
+internal sealed class DetailingSegment
+{
+    public XYZ Start { get; set; } = null!;
+    public XYZ End { get; set; } = null!;
+    public int BarIndex { get; set; }
+    public XYZ Direction => (End - Start).Normalize();
+}
+
+internal sealed class DetailingHost
+{
+    public Element Element { get; set; } = null!;
+    public RevitLinkInstance? Link { get; set; }
+    public string Key => DetailingGeometry.Key(Element.Id, Link);
+    public DetailingRect Bounds { get; set; }
 }
 
 internal sealed class DetailingAxis
@@ -34,12 +56,14 @@ internal sealed class DetailingFace
     public XYZ Normal { get; set; } = null!;
     public string HostKey { get; set; } = "";
     public bool Horizontal { get; set; }
+    public DetailingRect Bounds { get; set; }
 }
 
 internal sealed class DetailingGeometry
 {
     public List<DetailingBar> Bars { get; } = new();
     public List<DetailingFace> Faces { get; } = new();
+    public List<DetailingHost> Hosts { get; } = new();
     public List<string> Notes { get; } = new();
     public int HostCount { get; private set; }
     public static string Key(ElementId id, RevitLinkInstance? link) => $"{(link == null ? 0 : RevitElementIds.GetValue(link.Id))}:{RevitElementIds.GetValue(id)}";
@@ -84,6 +108,16 @@ internal sealed class DetailingGeometry
             {
                 if (!frame.Intersects(e.get_BoundingBox(null), transform)) continue;
                 HostCount++;
+                BoundingBoxXYZ box = e.get_BoundingBox(null);
+                if (box != null)
+                {
+                    var corners = new List<XYZ>();
+                    for (int x = 0; x < 2; x++) for (int y = 0; y < 2; y++) for (int z = 0; z < 2; z++)
+                        corners.Add(transform.OfPoint(box.Transform.OfPoint(new XYZ(x == 0 ? box.Min.X : box.Max.X,
+                            y == 0 ? box.Min.Y : box.Max.Y, z == 0 ? box.Min.Z : box.Max.Z))));
+                    Hosts.Add(new DetailingHost { Element = e, Link = link,
+                        Bounds = new DetailingRect(corners.Min(frame.X), corners.Min(frame.Y), corners.Max(frame.X), corners.Max(frame.Y)) });
+                }
                 Options options = new() { ComputeReferences = true, IncludeNonVisibleObjects = false };
                 if (link == null) options.View = view; else options.DetailLevel = ViewDetailLevel.Fine;
                 GeometryElement geometry = e.get_Geometry(options);
@@ -154,9 +188,11 @@ internal sealed class DetailingGeometry
                 for (int i = 1; i < points.Count; i++)
                 {
                     XYZ a = transform.OfPoint(points[i - 1]), b = transform.OfPoint(points[i]);
-                    XYZ? clipped = frame.Clip(a, b);
-                    if (clipped == null || a.DistanceTo(b) <= longest) continue;
-                    target = clipped; longest = a.DistanceTo(b);
+                    if (!frame.ClipSegment(a, b, out XYZ visibleStart, out XYZ visibleEnd)) continue;
+                    if (visibleStart.DistanceTo(visibleEnd) > 1e-8)
+                        bar.Segments.Add(new DetailingSegment { Start = visibleStart, End = visibleEnd, BarIndex = index });
+                    if (a.DistanceTo(b) <= longest) continue;
+                    target = (visibleStart + visibleEnd) / 2; longest = a.DistanceTo(b);
                 }
             }
             if (target == null) continue;
@@ -183,6 +219,25 @@ internal sealed class DetailingGeometry
                 if (matches.Count == 0) continue;
                 var dimensionReferences = matches.Select(line => line.Reference)
                     .OrderBy(reference => reference.ConvertToStableRepresentation(view.Document), StringComparer.Ordinal).ToList();
+                if (frame.Vertical && Math.Abs(centerline.Direction.DotProduct(frame.Up)) > 0.999)
+                {
+                    foreach (int endpoint in new[] { 0, 1 })
+                    {
+                        XYZ end = centerline.GetEndPoint(endpoint);
+                        if (!frame.Contains(end)) continue;
+                        var ends = referenceLines.Where(line => Math.Abs(line.Direction.DotProduct(frame.Up)) < 0.001
+                            && Math.Abs(frame.Y(line.Origin) - frame.Y(end)) < 0.1 / 304.8
+                            && (frame.Flatten(line.Origin) - frame.Flatten(end)).GetLength() < 100 / 304.8)
+                            .Select(line => line.Reference).ToList();
+                        foreach (Line match in matches.Where(line => line.IsBound))
+                        foreach (int indexOfEnd in new[] { 0, 1 })
+                        {
+                            if (Math.Abs(frame.Y(match.GetEndPoint(indexOfEnd)) - frame.Y(end)) > 0.1 / 304.8) continue;
+                            try { Reference reference = match.GetEndPointReference(indexOfEnd); if (reference != null) ends.Add(reference); } catch { }
+                        }
+                        if (ends.Count > 0) bar.EndReferences.Add(new DetailingAxis { Point = end, Direction = frame.Right, Candidates = ends });
+                    }
+                }
                 if (Math.Abs(centerline.Direction.DotProduct(frame.Normal)) > 0.999)
                 {
                     // A bar cut perpendicular to the view is a dimension point. Revit's
@@ -202,14 +257,18 @@ internal sealed class DetailingGeometry
         }
         if (bar.Positions.Count == 0) return;
         bar.Reference = visibleReferences[visibleReferences.Count / 2];
+        bar.PositionReferences.AddRange(visibleReferences);
         bar.TagReferences.AddRange(visibleReferences.Concat(references.OrderBy(pair => pair.Key)
             .Select(pair => link == null ? pair.Value : pair.Value.CreateLinkReference(link)))
             .GroupBy(reference => reference.ConvertToStableRepresentation(view.Document)).Select(g => g.First()));
         string parameters = string.Join("|", new[] { BuiltInParameter.ALL_MODEL_MARK, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS,
             BuiltInParameter.REBAR_NUMBER, BuiltInParameter.REBAR_ELEM_LENGTH, BuiltInParameter.REBAR_ELEM_QUANTITY_OF_BARS }
             .Select(id => e.get_Parameter(id)).Where(p => p != null).Select(p => p!.AsValueString() ?? p.AsString() ?? ""));
-        string shape = rebar?.GetShapeId().ToString() ?? system!.get_Parameter(BuiltInParameter.REBAR_SHAPE)?.AsElementId().ToString() ?? "";
+        ElementId shapeId = rebar?.GetShapeId() ?? system!.get_Parameter(BuiltInParameter.REBAR_SHAPE)?.AsElementId() ?? ElementId.InvalidElementId;
+        string shape = shapeId.ToString();
+        bar.ShapeName = e.Document.GetElement(shapeId)?.Name ?? "";
         double spacing = e.get_Parameter(BuiltInParameter.REBAR_ELEM_BAR_SPACING)?.AsDouble() ?? 0;
+        bar.Spacing = spacing; bar.Shape = shape;
         bar.Key = Key(bar.Host, link) + "|" + e.GetTypeId() + "|" + shape + "|" + Math.Round(spacing, 6) + "|" + parameters;
         Bars.Add(bar);
     }
@@ -244,12 +303,17 @@ internal sealed class DetailingGeometry
                     bool horizontal = Math.Abs(normal.DotProduct(frame.Right)) > 0.999;
                     if (!horizontal && Math.Abs(normal.DotProduct(frame.Up)) < 0.999) continue;
                     XYZ? point = null;
+                    var facePoints = new List<XYZ>();
                     foreach (EdgeArray loop in face.EdgeLoops)
                     foreach (Edge edge in loop)
                     {
                         IList<XYZ> vertices = edge.Tessellate();
-                        for (int i = 1; i < vertices.Count && point == null; i++)
-                            point = frame.Clip(transform.OfPoint(vertices[i - 1]), transform.OfPoint(vertices[i]));
+                        for (int i = 1; i < vertices.Count; i++)
+                        {
+                            if (!frame.ClipSegment(transform.OfPoint(vertices[i - 1]), transform.OfPoint(vertices[i]), out XYZ start, out XYZ end)) continue;
+                            facePoints.Add(start); facePoints.Add(end);
+                            point ??= (start + end) / 2;
+                        }
                     }
                     // Wide horizontal slab faces can contain the entire crop, with all edges outside.
                     if (point == null)
@@ -260,8 +324,10 @@ internal sealed class DetailingGeometry
                         if (projection != null && frame.Contains(transform.OfPoint(projection.XYZPoint))) point = transform.OfPoint(projection.XYZPoint);
                     }
                     if (point == null) continue;
+                    if (facePoints.Count == 0) facePoints.Add(point);
                     Faces.Add(new DetailingFace { Reference = link == null ? face.Reference : face.Reference.CreateLinkReference(link),
-                        Point = point, Normal = normal, HostKey = host, Horizontal = horizontal });
+                        Point = point, Normal = normal, HostKey = host, Horizontal = horizontal,
+                        Bounds = new DetailingRect(facePoints.Min(frame.X), facePoints.Min(frame.Y), facePoints.Max(frame.X), facePoints.Max(frame.Y)) });
                 }
             }
         }

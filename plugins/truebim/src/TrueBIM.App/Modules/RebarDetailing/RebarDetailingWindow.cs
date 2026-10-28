@@ -13,7 +13,8 @@ public sealed class RebarDetailingWindow : TrueBimWindow
 {
     private readonly IReadOnlyList<DetailingViewRow> rows;
     private readonly CheckBox tags = Check("Марки арматуры"), concrete = Check("Размеры бетона"), bars = Check("Шаг и привязки арматуры"), spots = Check("Высотные отметки"), replace = Check("Заменить существующие размеры, отметки и марки арматуры");
-    private readonly ComboBox tagType = Combo(), dimType = Combo(), spotType = Combo(), multiType = Combo();
+    private readonly ComboBox tagType = Combo(), dimType = Combo(), spotType = Combo();
+    private readonly CheckBox details = Check("Обрывы, швы и подписи плит"), quantities = Check("Записать количество в «Комментарии» арматуры");
     public RebarDetailingWindow(Document doc, IReadOnlyList<DetailingViewRow> rows, RebarDetailingService service)
     {
         this.rows = rows;
@@ -22,12 +23,13 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         Grid body = new(); body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition());
         StackPanel settings = new();
         WrapPanel choices = new() { Margin = new Thickness(0, 0, 0, 8) };
-        foreach (CheckBox option in new[] { tags, concrete, bars, spots }) choices.Children.Add(option);
+        foreach (CheckBox option in new[] { tags, concrete, bars, spots, details }) choices.Children.Add(option);
         settings.Children.Add(choices);
-        Add("Марка арматуры", "tag", tagType); Add("Линейный размер", "dimension", dimType);
-        Add("Высотная отметка", "spot", spotType); Add("Тип для размерных цепочек арматуры", "multi", multiType);
+        Add("Резервная марка арматуры", "tag", tagType); Add("Линейный размер", "dimension", dimType);
+        Add("Резервная высотная отметка", "spot", spotType);
         settings.Children.Add(replace);
-        settings.Children.Add(new TextBlock { Text = "Линии дорисовки, тексты и символы обрыва сохраняются. Граница аннотаций при необходимости расширяется; обрезка модели, шаблон и положение вида на листе сохраняются.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 10) });
+        settings.Children.Add(quantities);
+        settings.Children.Add(new TextBlock { Text = "Марки подбираются по назначению стержней. Количество записывается только в пустые комментарии или вместо прежнего количества; текстовые комментарии сохраняются. Существующие ручные обрывы и подписи сохраняются.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 10) });
         body.Children.Add(settings);
         DataGrid table = new() { AutoGenerateColumns = false, ItemsSource = rows, CanUserAddRows = false, CanUserDeleteRows = false, Margin = new Thickness(0, 4, 0, 8) };
         table.Columns.Add(new DataGridCheckBoxColumn { Header = "✓", Binding = new Binding(nameof(DetailingViewRow.Selected)) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged }, Width = 40 });
@@ -40,7 +42,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         {
             table.CommitEdit(); table.CommitEdit(DataGridEditingUnit.Row, true);
             if (!rows.Any(r => r.Selected)) { MessageBox.Show(this, "Отметьте хотя бы один вид.", Title); return; }
-            if (!tags.IsChecked.GetValueOrDefault() && !concrete.IsChecked.GetValueOrDefault() && !bars.IsChecked.GetValueOrDefault() && !spots.IsChecked.GetValueOrDefault())
+            if (!tags.IsChecked.GetValueOrDefault() && !concrete.IsChecked.GetValueOrDefault() && !bars.IsChecked.GetValueOrDefault() && !spots.IsChecked.GetValueOrDefault() && !details.IsChecked.GetValueOrDefault())
             { MessageBox.Show(this, "Включите хотя бы один вид оформления.", Title); return; }
             DialogResult = true;
         });
@@ -58,7 +60,8 @@ public sealed class RebarDetailingWindow : TrueBimWindow
     }
     public IReadOnlyList<View> SelectedViews => rows.Where(r => r.Selected).Select(r => r.View).ToList();
     public DetailingOptions Options => new() { Tags = tags.IsChecked == true, ConcreteDimensions = concrete.IsChecked == true, BarDimensions = bars.IsChecked == true, Elevations = spots.IsChecked == true,
-        ReplaceExisting = replace.IsChecked == true, TagTypeId = Id(tagType), DimensionTypeId = Id(dimType), SpotTypeId = Id(spotType), MultiTypeId = Id(multiType) };
+        ReplaceExisting = replace.IsChecked == true, Details = details.IsChecked == true, WriteQuantities = quantities.IsChecked == true,
+        TagTypeId = Id(tagType), DimensionTypeId = Id(dimType), SpotTypeId = Id(spotType) };
     private static ElementId Id(ComboBox box) => (box.SelectedItem as DetailingType)?.Id ?? ElementId.InvalidElementId;
     private static ComboBox Combo() => new() { DisplayMemberPath = nameof(DetailingType.Name), MinHeight = 28, IsTextSearchEnabled = true };
     private static CheckBox Check(string text) => new() { Content = text, IsChecked = true, Margin = new Thickness(0, 4, 16, 4), Style = TrueBimStyles.CreateCheckBoxStyle() };

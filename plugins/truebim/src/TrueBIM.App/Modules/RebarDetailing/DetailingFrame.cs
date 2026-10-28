@@ -52,19 +52,26 @@ internal sealed class DetailingFrame
     // is not necessarily present inside the section itself.
     public XYZ? Clip(XYZ a, XYZ b)
     {
-        if (!View.CropBoxActive) return (a + b) / 2;
+        return ClipSegment(a, b, out XYZ start, out XYZ end) ? (start + end) / 2 : null;
+    }
+
+    public bool ClipSegment(XYZ a, XYZ b, out XYZ startPoint, out XYZ endPoint)
+    {
+        startPoint = a; endPoint = b;
+        if (!View.CropBoxActive) return true;
         XYZ p = inverse.OfPoint(a), q = inverse.OfPoint(b);
         double lower = 0, upper = 1;
         for (int axis = 0; axis < 3; axis++)
         {
             double start = p[axis], delta = q[axis] - start;
             double min = crop.Min[axis] - 0.002, max = crop.Max[axis] + 0.002;
-            if (Math.Abs(delta) < 1e-10) { if (start < min || start > max) return null; continue; }
+            if (Math.Abs(delta) < 1e-10) { if (start < min || start > max) return false; continue; }
             double t0 = (min - start) / delta, t1 = (max - start) / delta;
             lower = Math.Max(lower, Math.Min(t0, t1)); upper = Math.Min(upper, Math.Max(t0, t1));
-            if (lower > upper) return null;
+            if (lower > upper) return false;
         }
-        return a + (b - a) * ((lower + upper) / 2);
+        startPoint = a + (b - a) * lower; endPoint = a + (b - a) * upper;
+        return true;
     }
 
     public bool Intersects(BoundingBoxXYZ? box, Transform placement)

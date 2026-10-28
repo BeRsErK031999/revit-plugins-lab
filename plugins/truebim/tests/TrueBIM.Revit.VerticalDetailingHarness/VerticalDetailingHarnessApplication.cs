@@ -95,12 +95,16 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "apply") { TestDetailing(ui); return; }
             var sheets = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>().ToList();
             var placed = new HashSet<ElementId>(sheets.SelectMany(s => s.GetAllPlacedViews()));
+            var nameFilters = (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VIEW_NAME_FILTER") ?? "")
+                .Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
             var views = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
-                .Where(v => !v.IsTemplate && placed.Contains(v.Id) && v.ViewType != ViewType.Legend && v.ViewType != ViewType.Schedule).ToList();
+                .Where(v => !v.IsTemplate && (nameFilters.Length == 0 ? placed.Contains(v.Id) : nameFilters.Any(f => v.Name.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0))
+                    && v.ViewType != ViewType.Legend && v.ViewType != ViewType.Schedule).ToList();
             var details = new List<object>();
             foreach (View view in views)
             {
                 Progress("View " + view.Id.Value + " " + view.Name);
+                if (nameFilters.Length > 0) Export(doc, view, "reference");
                 var elements = new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType().ToElements();
                 details.Add(new {
                     Id = view.Id.Value, view.Name, ViewType = view.ViewType.ToString(), view.Scale,
@@ -150,7 +154,12 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             };
             else if (e is TextNote note) data = new { note.Text, Position = Point(note.Coord) };
             else if (e is CurveElement curve) data = new { Start = Point(curve.GeometryCurve.GetEndPoint(0)), End = Point(curve.GeometryCurve.GetEndPoint(1)), Style = curve.LineStyle.Name };
-            else if (e is FamilyInstance family) data = new { Family = family.Symbol.FamilyName, Location = family.Location is LocationPoint p ? Point(p.Point) : null, Params = Parameters(family) };
+            else if (e is FamilyInstance family) data = new { Family = family.Symbol.FamilyName, Placement = family.Symbol.Family.FamilyPlacementType.ToString(),
+                Location = family.Location is LocationPoint p ? Point(p.Point) : null,
+                Start = family.Location is LocationCurve lc ? SafePoint(() => lc.Curve.GetEndPoint(0)) : null,
+                End = family.Location is LocationCurve lc2 ? SafePoint(() => lc2.Curve.GetEndPoint(1)) : null,
+                BasisX = Point(family.GetTransform().BasisX), BasisY = Point(family.GetTransform().BasisY), BasisZ = Point(family.GetTransform().BasisZ),
+                TransformOrigin = Point(family.GetTransform().Origin), Params = Parameters(family) };
         }
         catch (Exception ex) { data = new { Error = ex.Message }; }
         return new { Id = e.Id.Value, e.Name, Class = e.GetType().Name, Category = e.Category?.Name, TypeId = e.GetTypeId().Value, GroupId = e.GroupId.Value, Data = data };
