@@ -2,8 +2,15 @@ using Autodesk.Revit.DB;
 
 namespace TrueBIM.App.Modules.RebarDetailing;
 
+public enum DetailingVariant { Straight, BentSameSide, BentOppositeSides }
+
 public sealed class DetailingOptions
 {
+    public DetailingVariant Variant { get; set; } = DetailingVariant.Straight;
+    public string UpperNoteTop { get; set; } = "Плита";
+    public string UpperNoteBottom { get; set; } = "перекрытия";
+    public string LowerNoteTop { get; set; } = "Фундаментная плита";
+    public string LowerNoteBottom { get; set; } = "{том}";
     public bool Tags { get; set; } = true;
     public bool ConcreteDimensions { get; set; } = true;
     public bool BarDimensions { get; set; } = true;
@@ -30,7 +37,7 @@ public sealed class DetailingViewRow
     public bool Selected { get; set; } = true;
     public string Name => View.Name;
     public int Scale => View.Scale;
-    public string Kind => Math.Abs(View.ViewDirection.Z) > 0.9 ? "Горизонтальный узел" : "Вертикальное сечение";
+    public string Kind => "Вертикальное сечение";
     public int Bars { get; internal set; }
     public int Hosts { get; internal set; }
     public int Existing { get; internal set; }

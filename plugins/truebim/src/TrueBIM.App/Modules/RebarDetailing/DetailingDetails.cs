@@ -6,91 +6,19 @@ namespace TrueBIM.App.Modules.RebarDetailing;
 public sealed partial class RebarDetailingService
 {
     private static readonly Guid DetailSchemaId = new("BFA6314C-B0ED-4A57-AB73-E4956BAC54DB");
-    private sealed class DetailingCut
-    {
-        public string Host { get; set; } = "";
-        public bool HorizontalRun { get; set; }
-        public bool Low { get; set; }
-        public double Coordinate { get; set; }
-        public XYZ Start { get; set; } = null!;
-        public XYZ End { get; set; } = null!;
-        public bool Includes(DetailingFrame frame, XYZ point) => Low
-            ? (HorizontalRun ? frame.X(point) : frame.Y(point)) >= Coordinate - 0.1 / 304.8
-            : (HorizontalRun ? frame.X(point) : frame.Y(point)) <= Coordinate + 0.1 / 304.8;
-    }
-
-    private static List<DetailingCut> PrepareCuts(DetailingFrame frame, DetailingGeometry geometry)
-    {
-        var cuts = new List<DetailingCut>();
-        if (frame.Vertical) return cuts;
-        if (!new FilteredElementCollector(frame.View.Document).OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>()
-            .Any(s => s.FamilyName == "(Узел) Область обрыва • 1" && s.Name == "M" + frame.View.Scale)) return cuts;
-        foreach (var host in geometry.Bars.GroupBy(b => DetailingGeometry.Key(b.Host, b.Link)))
-        {
-            DetailingRect bounds = Region(frame, host);
-            bool horizontal = bounds.Width > bounds.Height;
-            double low = horizontal ? bounds.Left : bounds.Bottom, high = horizontal ? bounds.Right : bounds.Top;
-            if (high - low < frame.Paper(20)) continue;
-            var faces = geometry.Faces.Where(f => f.Horizontal == horizontal
-                && (horizontal ? f.Bounds.Top >= bounds.Bottom && f.Bounds.Bottom <= bounds.Top
-                    : f.Bounds.Right >= bounds.Left && f.Bounds.Left <= bounds.Right)).ToList();
-            foreach (bool atLow in new[] { true, false })
-            {
-                double boundary = atLow ? low : high;
-                if (faces.Any(f => Math.Abs((horizontal ? frame.X(f.Point) : frame.Y(f.Point)) - boundary) < frame.Paper(4))) continue;
-                // A detail break sits inside the crop so its masking region can hide
-                // the unfinished end. Its hidden bars must not contribute to counts.
-                double position = boundary + (atLow ? 1 : -1) * frame.Paper(5);
-                var manual = new FilteredElementCollector(frame.View.Document).OwnedByView(frame.View.Id).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
-                    .Where(f => !OwnedDetail(f) && f.Symbol.FamilyName == "(Узел) Область обрыва • 1" && f.Location is LocationCurve)
-                    .Select(f => ((LocationCurve)f.Location).Curve).OfType<Line>()
-                    .Where(line => Math.Abs(line.Direction.DotProduct(horizontal ? frame.Up : frame.Right)) > 0.999)
-                    .Select(line => line.Evaluate(0.5, true)).Where(point => Math.Abs((horizontal ? frame.X(point) : frame.Y(point)) - boundary) < frame.Paper(12)
-                        && (horizontal ? frame.Y(point) >= bounds.Bottom - frame.Paper(2) && frame.Y(point) <= bounds.Top + frame.Paper(2)
-                            : frame.X(point) >= bounds.Left - frame.Paper(2) && frame.X(point) <= bounds.Right + frame.Paper(2)))
-                    .OrderBy(point => Math.Abs((horizontal ? frame.X(point) : frame.Y(point)) - boundary)).FirstOrDefault();
-                if (manual != null) position = horizontal ? frame.X(manual) : frame.Y(manual);
-                var crossFaces = geometry.Faces.Where(f => f.HostKey == host.Key && f.Horizontal != horizontal).ToList();
-                if (crossFaces.Count < 2) continue;
-                double crossLow = crossFaces.Min(f => horizontal ? frame.Y(f.Point) : frame.X(f.Point));
-                double crossHigh = crossFaces.Max(f => horizontal ? frame.Y(f.Point) : frame.X(f.Point));
-                if (crossHigh - crossLow > 1000 / 304.8) continue;
-                cuts.Add(new DetailingCut { Host = host.Key, HorizontalRun = horizontal, Low = atLow, Coordinate = position,
-                    Start = horizontal ? frame.Point(position, crossLow) : frame.Point(crossLow, position),
-                    End = horizontal ? frame.Point(position, crossHigh) : frame.Point(crossHigh, position) });
-            }
-        }
-        foreach (var cut in cuts)
-        foreach (var bar in geometry.Bars.Where(b => DetailingGeometry.Key(b.Host, b.Link) == cut.Host).ToList())
-        {
-            var indices = bar.VisibleIndices.OrderBy(i => i).ToList();
-            for (int index = bar.Positions.Count - 1; index >= 0; index--)
-            {
-                if (cut.Includes(frame, bar.Positions[index])) continue;
-                bar.Positions.RemoveAt(index); bar.PositionReferences.RemoveAt(index); bar.VisibleIndices.Remove(indices[index]);
-            }
-            bar.DimensionReferences.RemoveAll(axis => !cut.Includes(frame, axis.Point));
-            for (int index = bar.Segments.Count - 1; index >= 0; index--)
-            {
-                var segment = bar.Segments[index];
-                bool start = cut.Includes(frame, segment.Start), end = cut.Includes(frame, segment.End);
-                if (!start && !end) { bar.Segments.RemoveAt(index); continue; }
-                if (start && end) continue;
-                double a = cut.HorizontalRun ? frame.X(segment.Start) : frame.Y(segment.Start);
-                double b = cut.HorizontalRun ? frame.X(segment.End) : frame.Y(segment.End);
-                XYZ intersection = segment.Start + (segment.End - segment.Start) * ((cut.Coordinate - a) / (b - a));
-                if (!start) segment.Start = intersection; else segment.End = intersection;
-            }
-            if (bar.Positions.Count == 0) geometry.Bars.Remove(bar);
-            else bar.Reference = bar.PositionReferences[bar.PositionReferences.Count / 2];
-        }
-        return cuts;
-    }
 
     internal static bool OwnedDetail(Element element)
     {
         Schema? schema = Schema.Lookup(DetailSchemaId);
         return schema != null && element.GetEntity(schema).IsValid();
+    }
+
+    private static string DetailRole(Element element)
+    {
+        Schema? schema = Schema.Lookup(DetailSchemaId);
+        if (schema == null) return "";
+        Entity entity = element.GetEntity(schema);
+        return entity.IsValid() ? entity.Get<string>(schema.GetField("Role")) : "";
     }
 
     private static void MarkDetail(Element element, string role)
@@ -106,83 +34,144 @@ public sealed partial class RebarDetailingService
         Entity data = new(schema); data.Set(schema.GetField("Role"), role); element.SetEntity(data);
     }
 
+    private static DetailingRect SectionAnnotationBoundary(Document doc, View view, DetailingFrame frame, DetailingSection section)
+    {
+        double left = section.BreakLeft, right = section.BreakRight, bottom = section.BreakBottom;
+        // Dimension offsets start at the actual break line, not its masking box.
+        // A masking region may extend hundreds of millimetres beyond that line.
+        foreach (var detail in new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+            .Where(f => f.Symbol.FamilyName.StartsWith("(Узел) Область обрыва", StringComparison.Ordinal)))
+        {
+            if (detail.Location is LocationPoint point)
+            {
+                double length = detail.LookupParameter("Длина линии 2")?.AsDouble() ?? 0;
+                XYZ along = detail.GetTransform().BasisY;
+                double level = frame.Y(point.Point);
+                if (length > 0 && Math.Abs(along.DotProduct(frame.Right)) > 0.999 && level < section.Wall.Bottom
+                    && level >= section.Wall.Bottom - frame.Paper(20))
+                {
+                    double aX = frame.X(point.Point), bX = frame.X(point.Point + along * length);
+                    if (Math.Max(aX, bX) >= section.Wall.Left && Math.Min(aX, bX) <= section.Wall.Right)
+                    { left = Math.Min(left, Math.Min(aX, bX)); right = Math.Max(right, Math.Max(aX, bX)); bottom = Math.Min(bottom, level); }
+                }
+                continue;
+            }
+            if (detail.Location is not LocationCurve location || location.Curve is not Line line) continue;
+            XYZ a = line.GetEndPoint(0), b = line.GetEndPoint(1);
+            double x = frame.X((a + b) / 2), y = frame.Y((a + b) / 2);
+            if (Math.Abs(line.Direction.DotProduct(frame.Up)) > 0.999
+                && x >= section.Wall.Left - frame.Paper(30) && x <= section.Wall.Right + frame.Paper(30)
+                && Math.Max(frame.Y(a), frame.Y(b)) >= section.Wall.Bottom && Math.Min(frame.Y(a), frame.Y(b)) <= section.Reinforcement.Top)
+            { left = Math.Min(left, x); right = Math.Max(right, x); }
+            if (Math.Abs(line.Direction.DotProduct(frame.Right)) > 0.999
+                && y < section.Wall.Bottom && y >= section.Wall.Bottom - frame.Paper(20)
+                && Math.Max(frame.X(a), frame.X(b)) >= section.Wall.Left && Math.Min(frame.X(a), frame.X(b)) <= section.Wall.Right)
+                bottom = Math.Min(bottom, y);
+        }
+        return new DetailingRect(left, bottom, right, section.Reinforcement.Top);
+    }
+
     private static void Details(Document doc, View view, DetailingFrame frame, DetailingGeometry geometry,
-        IReadOnlyList<DetailingCut> cuts, DetailingResult result)
+        DetailingOptions options, DetailingResult result)
     {
         var preserved = new FilteredElementCollector(doc).OwnedByView(view.Id).WhereElementIsNotElementType().Where(e => !OwnedDetail(e)).ToList();
         var symbols = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>().ToList();
-        FamilySymbol? breakType = symbols.FirstOrDefault(s => s.FamilyName == "(Узел) Область обрыва • 1" && s.Name == "M" + view.Scale);
-        if (breakType != null && !breakType.IsActive) breakType.Activate();
-        foreach (var cut in cuts) AddBreak(cut.Start, cut.End, cut.Low);
-        if (!frame.Vertical) return;
-        foreach (var host in geometry.Bars.GroupBy(b => DetailingGeometry.Key(b.Host, b.Link)))
+        var createdBreaks = new HashSet<string>();
+        foreach (var section in Sections(frame, geometry, options))
         {
-            var sideFaces = geometry.Faces.Where(f => f.HostKey == host.Key && f.Horizontal).OrderBy(f => frame.X(f.Point)).ToList();
-            var levels = geometry.Faces.Where(f => f.HostKey == host.Key && !f.Horizontal).OrderBy(f => frame.Y(f.Point)).ToList();
-            if (sideFaces.Count < 2 || levels.Count < 2) continue;
-            double left = frame.X(sideFaces.First().Point), right = frame.X(sideFaces.Last().Point);
-            if (right - left > 1000 / 304.8) continue;
-            double bottom = frame.Y(levels.First().Point), top = frame.Y(levels.Last().Point);
-            DetailingRect barBounds = Region(frame, host);
+            double left = section.Wall.Left, right = section.Wall.Right, bottom = section.Wall.Bottom, top = section.Wall.Top;
+            if (section.Faces.Count(f => f.Horizontal) < 2 || section.Faces.Count(f => !f.Horizontal) < 2) continue;
             foreach (double y in new[] { bottom, top }) AddJoint(frame.Point(left, y), frame.Point(right, y));
-            double upperBreak = barBounds.Top + frame.Paper(2);
-            AddBreak(frame.Point(left, upperBreak), frame.Point(right, upperBreak), true);
-            double lowerBreak = bottom - frame.Paper(6);
-            if (!AddFoundationBreak(left, right, lowerBreak))
-                AddBreak(frame.Point(left - frame.Paper(5), lowerBreak), frame.Point(right + frame.Paper(5), lowerBreak), false);
-            var slab = geometry.Faces.Where(f => !f.Horizontal && f.HostKey != host.Key && frame.Y(f.Point) > top + 1 / 304.8
-                && frame.Y(f.Point) < top + 1000 / 304.8).OrderBy(f => frame.Y(f.Point)).FirstOrDefault();
-            if (slab != null)
+            if (options.Variant == DetailingVariant.Straight)
+                AddBreak(frame.Point(left, section.Reinforcement.Top + frame.Paper(2)), frame.Point(right, section.Reinforcement.Top + frame.Paper(2)), true);
+            // Each side uses its own slab thickness and elevation. A slab on one
+            // side must neither invent a break nor a level on the other side.
+            foreach (bool atLeft in new[] { true, false })
             {
-                double slabTop = frame.Y(slab.Point);
-                AddBreak(frame.Point(left - frame.Paper(5), top), frame.Point(left - frame.Paper(5), slabTop), true);
-                AddNote("Плита", "перекрытия", frame.Point(right + frame.Paper(15), slabTop + frame.Paper(5)), frame.Point((left + right) / 2, (top + slabTop) / 2), 20);
+                var slabs = section.UpperSlabs.Where(h => atLeft ? h.Bounds.Left < left - 1 / 304.8 : h.Bounds.Right > right + 1 / 304.8);
+                foreach (var slab in slabs)
+                {
+                    double slabBottom = Math.Max(slab.Bounds.Bottom, top - 1000 / 304.8), slabTop = slab.Bounds.Top;
+                    double x = atLeft ? section.BreakLeft : section.BreakRight;
+                    if (slabTop > slabBottom + 1 / 304.8)
+                        AddBreak(frame.Point(x, slabBottom), frame.Point(x, slabTop), atLeft);
+                }
             }
-            string foundation = geometry.Hosts.Where(h => h.Link != null && (h.Element is Floor || h.Element.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation))
-                && h.Bounds.Bottom <= bottom && h.Bounds.Top >= bottom - frame.Paper(6))
-                .OrderBy(h => h.Link!.Name.Contains("_ALL") ? 1 : 0).FirstOrDefault()?.Link?.Name ?? "";
-            var mark = System.Text.RegularExpressions.Regex.Match(foundation, @"КЖ\d+(?:\.\d+)*");
-            AddNote("Фундаментная плита", mark.Success ? mark.Value : " ", frame.Point(right + frame.Paper(30), bottom - frame.Paper(12)), frame.Point((left + right) / 2, bottom - frame.Paper(2)), 32);
+            double lowerY = section.BreakBottom;
+            int lowerKind = DetailingSectionLayout.LowerBreakKind(section.LowerLeft, section.LowerRight);
+            if (lowerKind == 1)
+                AddBreak(frame.Point(left, lowerY), frame.Point(right, lowerY), false);
+            else
+                AddCornerBreak(section, lowerKind);
+            if (section.UpperSlabs.Count > 0)
+            {
+                double slabTop = section.UpperSlabs.Max(h => h.Bounds.Top), slabBottom = section.UpperSlabs.Min(h => h.Bounds.Bottom);
+                AddNote(options.UpperNoteTop, ResolveNote(options.UpperNoteBottom, section.UpperSlabs),
+                    frame.Point(section.BreakRight + frame.Paper(15), slabTop + frame.Paper(5)), frame.Point((left + right) / 2, (slabBottom + slabTop) / 2));
+            }
+            if (section.LowerConcrete.Count > 0)
+                AddNote(options.LowerNoteTop, ResolveNote(options.LowerNoteBottom, section.LowerConcrete),
+                    frame.Point(section.BreakRight + frame.Paper(25), bottom - frame.Paper(12)), frame.Point((left + right) / 2, bottom - frame.Paper(2)));
         }
 
-        bool AddFoundationBreak(double left, double right, double y)
+        string ResolveNote(string text, IEnumerable<DetailingHost> hosts)
         {
-            if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName == "(Узел) Область обрыва • 3")) return true;
-            FamilyInstance? template = new FilteredElementCollector(doc).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
-                .Where(f => f.Symbol.FamilyName == "(Узел) Область обрыва • 3" && f.Name == "M" + view.Scale && f.OwnerViewId != view.Id
-                    && doc.GetElement(f.OwnerViewId) is View source && source.ViewDirection.DotProduct(frame.Normal) > 0.999)
-                .OrderBy(f => f.Location is LocationPoint point ? point.Point.DistanceTo(frame.Point(right, y)) : double.MaxValue).FirstOrDefault();
-            if (template == null) return false;
-            var copied = ElementTransformUtils.CopyElements((View)doc.GetElement(template.OwnerViewId), new[] { template.Id }, view, Transform.Identity, new CopyPasteOptions());
-            foreach (var id in copied)
-            {
-                Element element = doc.GetElement(id);
-                if (element.Location is LocationPoint location) location.Point = frame.Point(right + frame.Paper(5), y);
-                element.LookupParameter("Длина линии 1")?.Set(frame.Paper(6));
-                element.LookupParameter("Длина линии 2")?.Set(right - left + frame.Paper(10));
-                element.LookupParameter("Длина линии 3")?.Set(frame.Paper(6));
-                MarkDetail(element, "break"); result.Details++;
-            }
-            return true;
+            string name = hosts.Where(h => h.Link != null).OrderBy(h => h.Link!.Name.Contains("_ALL") ? 1 : 0).FirstOrDefault()?.Link?.Name ?? "";
+            var mark = System.Text.RegularExpressions.Regex.Match(name, @"КЖ\d+(?:\.\d+)*");
+            return text.Replace("{том}", mark.Success ? mark.Value : "");
         }
-
+        FamilySymbol? Symbol(int kind)
+        {
+            string family = "(Узел) Область обрыва • " + kind;
+            var symbol = symbols.FirstOrDefault(s => s.FamilyName == family && s.Name == "M" + view.Scale);
+            if (symbol == null) { result.Notes.Add("Для обрывов загрузите семейство «" + family + "» с типом M" + view.Scale + "."); return null; }
+            if (!symbol.IsActive) symbol.Activate();
+            return symbol;
+        }
+        void AddCornerBreak(DetailingSection section, int kind)
+        {
+            double left = section.LowerLeft ? section.BreakLeft : section.Wall.Left;
+            double right = section.LowerRight ? section.BreakRight : section.Wall.Right;
+            double y = section.BreakBottom;
+            if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName == "(Узел) Область обрыва • " + kind
+                && f.Location is LocationPoint p && Math.Abs(frame.Y(p.Point) - y) < frame.Paper(12)
+                && frame.X(p.Point) >= left - frame.Paper(10) && frame.X(p.Point) <= right + frame.Paper(10))) return;
+            FamilySymbol? symbol = Symbol(kind);
+            if (symbol == null) return;
+            // Place the requested family directly. A random instance copied from
+            // another view can carry a different rotation, handedness and lengths.
+            XYZ point = frame.Point(right, y);
+            FamilyInstance detail = doc.Create.NewFamilyInstance(point, symbol, view);
+            SetLength(detail, "Длина линии 1", frame.Paper(6));
+            SetLength(detail, "Длина линии 2", right - left);
+            if (kind == 3) SetLength(detail, "Длина линии 3", frame.Paper(6));
+            doc.Regenerate();
+            XYZ axis = detail.GetTransform().BasisX;
+            // In these families line 1 follows local X (the vertical return),
+            // line 2 follows local Y (to the left in a bottom U/L break).
+            double angle = Math.Atan2(frame.Normal.DotProduct(axis.CrossProduct(frame.Up)), axis.DotProduct(frame.Up));
+            if (Math.Abs(angle) > 1e-8) ElementTransformUtils.RotateElement(doc, detail.Id, Line.CreateBound(point, point + frame.Normal), angle);
+            // Family 2 has a single side return. Mirror the new annotation for
+            // concrete on the right; the model and manual details stay untouched.
+            if (kind == 2 && section.LowerRight)
+                ElementTransformUtils.MirrorElements(doc, new[] { detail.Id }, Plane.CreateByNormalAndOrigin(frame.Right, frame.Point((left + right) / 2, y)), false);
+            MarkDetail(detail, "break"); result.Details++;
+        }
         void AddBreak(XYZ start, XYZ end, bool reverse)
         {
-            if (breakType == null) { result.Notes.Add("Для обрывов загрузите семейство «(Узел) Область обрыва • 1» с типом M" + view.Scale + "."); return; }
-            XYZ middle = (start + end) / 2;
-            if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName.StartsWith("(Узел) Область обрыва")
-                && (f.Location is LocationPoint point ? frame.Flatten(point.Point).DistanceTo(middle) < frame.Paper(10)
-                    : f.Location is LocationCurve curve && frame.Flatten(curve.Curve.Evaluate(0.5, true)).DistanceTo(middle) < frame.Paper(10)))) return;
-            if (view is ViewPlan plan)
-            {
-                double elevation = plan.GenLevel.ProjectElevation;
-                start = new XYZ(start.X, start.Y, elevation); end = new XYZ(end.X, end.Y, elevation);
-            }
-            Line line = Line.CreateBound(reverse ? end : start, reverse ? start : end);
-            FamilyInstance detail = doc.Create.NewFamilyInstance(line, breakType, view);
-            foreach (Parameter length in detail.Parameters)
-                if (length.Definition.Name == "Длина" && length.StorageType == StorageType.Double && !length.IsReadOnly)
-                    length.Set(start.DistanceTo(end));
+            string key = string.Join("|", new[] { frame.X(start), frame.Y(start), frame.X(end), frame.Y(end) }.Select(v => Math.Round(v * 304.8, 1)));
+            if (!createdBreaks.Add(key)) return;
+            XYZ middle = (start + end) / 2, direction = (end - start).Normalize();
+            if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName.StartsWith("(Узел) Область обрыва", StringComparison.Ordinal)
+                && f.Location is LocationCurve curve && curve.Curve is Line line && Math.Abs(line.Direction.DotProduct(direction)) > 0.999
+                && frame.Flatten(line.Evaluate(0.5, true)).DistanceTo(middle) < frame.Paper(2))) return;
+            FamilySymbol? symbol = Symbol(1);
+            if (symbol == null) return;
+            FamilyInstance detail = doc.Create.NewFamilyInstance(Line.CreateBound(reverse ? end : start, reverse ? start : end), symbol, view);
+            // The placement line already defines the length. Some family
+            // versions expose it as read-only instead of a writable parameter.
+            var length = detail.GetParameters("Длина").FirstOrDefault(p => p.StorageType == StorageType.Double && !p.IsReadOnly);
+            length?.Set(start.DistanceTo(end));
             MarkDetail(detail, "break"); result.Details++;
         }
         void AddJoint(XYZ start, XYZ end)
@@ -212,16 +201,19 @@ public sealed partial class RebarDetailingService
                 }
             }
         }
-        void AddNote(string upper, string lower, XYZ head, XYZ target, double width)
+        void AddNote(string upper, string lower, XYZ head, XYZ target)
         {
-            if (preserved.OfType<FamilyInstance>().Any(f => (f.LookupParameter("Верхняя строка")?.AsString() ?? "").TrimStart().StartsWith(upper, StringComparison.OrdinalIgnoreCase))
-                || preserved.OfType<TextNote>().Any(note => note.Text.TrimStart().StartsWith(upper, StringComparison.OrdinalIgnoreCase))) return;
+            if (string.IsNullOrWhiteSpace(upper) && string.IsNullOrWhiteSpace(lower)) return;
+            if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName == "(Аннотация) Выноска" && f.Location is LocationPoint p
+                && frame.Flatten(p.Point).DistanceTo(head) < frame.Paper(15))
+                || preserved.OfType<TextNote>().Any(n => n.Text.Trim() == (upper + "\n" + lower).Trim() && frame.Flatten(n.Coord).DistanceTo(head) < frame.Paper(15))) return;
             FamilySymbol? symbol = symbols.FirstOrDefault(s => s.FamilyName == "(Аннотация) Выноска" && s.Name == "• Без указателя");
             if (symbol == null) { result.Notes.Add("Для подписей плит загрузите семейство «(Аннотация) Выноска»."); return; }
             if (!symbol.IsActive) symbol.Activate();
+            double width = Math.Max(20, Math.Max(upper.Length, lower.Length) * 1.5 + 2);
             FamilyInstance note = doc.Create.NewFamilyInstance(head, symbol, view);
             note.LookupParameter("Верхняя строка")?.Set(upper); note.LookupParameter("Нижняя строка")?.Set(lower);
-            note.LookupParameter("Длина полки")?.Set(width / 304.8);
+            SetLength(note, "Длина полки", width / 304.8);
             if (note is AnnotationSymbol annotation)
             {
                 annotation.addLeader(); doc.Regenerate();
@@ -229,5 +221,11 @@ public sealed partial class RebarDetailingService
             }
             MarkDetail(note, "note"); result.Details++;
         }
+    }
+
+    private static void SetLength(Element element, string name, double value)
+    {
+        Parameter? parameter = element.GetParameters(name).FirstOrDefault(p => p.StorageType == StorageType.Double && !p.IsReadOnly);
+        if (parameter == null || !parameter.Set(value)) throw new InvalidOperationException("Семейство «" + element.Name + "»: недоступен размер «" + name + "».");
     }
 }

@@ -403,10 +403,10 @@ public static class TrueBimRibbon
         new(
             KrPanelName,
             "TrueBIM_RebarDetailing",
-            "Оформление\nсечений",
+            "Оформление\nвертикальных сечений",
             $"{CommandNamespace}.{nameof(RebarDetailingCommand)}",
             TrueBimIcon.RebarSplit,
-            "Оформляет готовые вертикальные сечения и горизонтальные узлы армирования.",
+            "Оформляет готовые вертикальные сечения армирования: прямые и Г-образные.",
             "Выберите виды на листе, в диспетчере проекта или откройте один вид. Проверьте список и типы аннотаций. Создаются марки арматуры, размеры и высотные отметки без изменения конструкций и стержней.",
             $"{CommandNamespace}.{nameof(RebarDetailingCommandAvailability)}"),
         new(

@@ -21,7 +21,7 @@ public sealed class RebarDetailingCommand : IExternalCommand
             var views = service.ResolveViews(ui.Document, ui.Selection.GetElementIds(), ui.ActiveView);
             if (views.Count == 0)
             {
-                TaskDialog.Show("Оформление сечений", "Выберите виды на листе или в диспетчере проекта. Для оформления открытого разреза или плана снимите выделение и повторите команду.");
+                TaskDialog.Show("Оформление вертикальных сечений", "Выберите виды на листе или в диспетчере проекта. Для оформления открытого вертикального сечения снимите выделение и повторите команду.");
                 return Result.Cancelled;
             }
             RebarDetailingWindow window = new(ui.Document, service.Inspect(views), service);
@@ -29,12 +29,12 @@ public sealed class RebarDetailingCommand : IExternalCommand
             var results = service.Apply(ui.Document, window.SelectedViews, window.Options);
             string report = string.Join("\n\n", results.Select(r => r.ToString()));
             logger.Info("Rebar detailing:\n" + report);
-            new TaskDialog("Оформление сечений") { MainInstruction = $"Оформлено видов: {results.Count(r => r.Succeeded)} из {results.Count}",
+            new TaskDialog("Оформление вертикальных сечений") { MainInstruction = $"Оформлено видов: {results.Count(r => r.Succeeded)} из {results.Count}",
                 MainContent = "Подробный результат доступен ниже. Изменения можно отменить одной командой Revit.", ExpandedContent = report, CommonButtons = TaskDialogCommonButtons.Close }.Show();
             return results.Any(r => r.Succeeded) ? Result.Succeeded : Result.Cancelled;
         }
         catch (Autodesk.Revit.Exceptions.OperationCanceledException) { return Result.Cancelled; }
-        catch (Exception ex) { logger.Error("Rebar detailing failed.", ex); TaskDialog.Show("Оформление сечений", ex.Message); return Result.Failed; }
+        catch (Exception ex) { logger.Error("Rebar detailing failed.", ex); TaskDialog.Show("Оформление вертикальных сечений", ex.Message); return Result.Failed; }
     }
 }
 

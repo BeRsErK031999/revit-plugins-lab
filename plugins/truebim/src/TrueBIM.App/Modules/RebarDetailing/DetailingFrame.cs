@@ -17,21 +17,6 @@ internal sealed class DetailingFrame
     public DetailingFrame(View view)
     {
         View = view; crop = view.CropBox; inverse = crop.Transform.Inverse;
-        if (view is ViewPlan plan && Math.Abs(crop.Transform.BasisZ.Z) > 0.999)
-        {
-            using PlanViewRange range = plan.GetViewRange();
-            double? bottom = Height(PlanViewPlane.BottomClipPlane), depth = Height(PlanViewPlane.ViewDepthPlane), top = Height(PlanViewPlane.TopClipPlane);
-            double low = Math.Min(bottom ?? double.PositiveInfinity, depth ?? double.PositiveInfinity);
-            if (!double.IsInfinity(low)) crop.Min = new XYZ(crop.Min.X, crop.Min.Y, (low - crop.Transform.Origin.Z) / crop.Transform.BasisZ.Z);
-            if (top.HasValue) crop.Max = new XYZ(crop.Max.X, crop.Max.Y, (top.Value - crop.Transform.Origin.Z) / crop.Transform.BasisZ.Z);
-            double? Height(PlanViewPlane plane)
-            {
-                ElementId levelId = range.GetLevelId(plane);
-                if (levelId == PlanViewRange.Unlimited) return null;
-                Level? level = levelId == PlanViewRange.Current ? plan.GenLevel : view.Document.GetElement(levelId) as Level;
-                return level == null ? null : level.ProjectElevation + range.GetOffset(plane);
-            }
-        }
     }
     public double X(XYZ p) => (p - Origin).DotProduct(Right);
     public double Y(XYZ p) => (p - Origin).DotProduct(Up);

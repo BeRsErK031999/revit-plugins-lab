@@ -10,55 +10,69 @@ public sealed class DetailingChainPoint
     { Id = id; PositionMm = positionMm; RunKey = runKey; Boundary = boundary; }
 }
 
-public sealed class DetailingChainSpan
+public sealed class DetailingChainSection
 {
-    public DetailingChainPoint Start { get; }
-    public DetailingChainPoint End { get; }
-    public int Intervals { get; }
-    public double PitchMm { get; }
-    public DetailingChainSpan(DetailingChainPoint start, DetailingChainPoint end, int intervals, double pitchMm)
-    { Start = start; End = end; Intervals = intervals; PitchMm = pitchMm; }
+    public IReadOnlyList<DetailingChainPoint> Points { get; }
+    public bool UseEqualityFormula { get; }
+    public int Intervals => Points.Count - 1;
+    public double PitchMm => (Points[Points.Count - 1].PositionMm - Points[0].PositionMm) / Intervals;
+    internal DetailingChainSection(IReadOnlyList<DetailingChainPoint> points, bool equality)
+    { Points = points; UseEqualityFormula = equality; }
 }
 
 public sealed class DetailingChainPlan
 {
     public IReadOnlyList<DetailingChainPoint> Points { get; }
-    public IReadOnlyList<DetailingChainSpan> EqualSpans { get; }
-    private DetailingChainPlan(IReadOnlyList<DetailingChainPoint> points, IReadOnlyList<DetailingChainSpan> equalSpans)
-    { Points = points; EqualSpans = equalSpans; }
+    public IReadOnlyList<DetailingChainSection> Sections { get; }
+    private DetailingChainPlan(IReadOnlyList<DetailingChainPoint> points, IReadOnlyList<DetailingChainSection> sections)
+    { Points = points; Sections = sections; }
 
-    public static DetailingChainPlan Create(IEnumerable<DetailingChainPoint> source, int minimumIntervals = 4, double toleranceMm = 0.1)
+    // Keep every reference in a regular run: Revit's equality formula measures
+    // the segments itself. A cover or shape transition is always a separate span.
+    public static DetailingChainPlan Create(IEnumerable<DetailingChainPoint> source, bool equality = true, double toleranceMm = 0.1)
     {
-        if (minimumIntervals < 2) throw new ArgumentOutOfRangeException(nameof(minimumIntervals));
+        if (toleranceMm < 0) throw new ArgumentOutOfRangeException(nameof(toleranceMm));
         var ordered = source.OrderBy(p => p.PositionMm).ThenBy(p => p.Boundary).ThenBy(p => p.Id).ToList();
         List<DetailingChainPoint> unique = new();
         foreach (DetailingChainPoint point in ordered)
-            if (unique.Count == 0 || point.PositionMm - unique[unique.Count - 1].PositionMm > toleranceMm) unique.Add(point);
-        List<DetailingChainPoint> selected = new();
-        List<DetailingChainSpan> spans = new();
-        int index = 0;
-        while (index < unique.Count)
         {
-            DetailingChainPoint first = unique[index];
-            selected.Add(first);
-            if (first.Boundary || index + 1 >= unique.Count) { index++; continue; }
-            int last = index;
-            double pitch = unique[index + 1].PositionMm - first.PositionMm;
-            while (last + 1 < unique.Count)
-            {
-                DetailingChainPoint next = unique[last + 1];
-                bool sameRun = !next.Boundary && next.RunKey == first.RunKey;
-                bool samePitch = Math.Abs(next.PositionMm - unique[last].PositionMm - pitch) <= toleranceMm;
-                if (!sameRun || !samePitch) break;
-                last++;
-            }
-            if (last - index >= minimumIntervals)
-            {
-                spans.Add(new DetailingChainSpan(first, unique[last], last - index, pitch));
-                index = last;
-            }
-            else index++;
+            if (unique.Count == 0 || point.PositionMm - unique[unique.Count - 1].PositionMm > toleranceMm) { unique.Add(point); continue; }
+            DetailingChainPoint previous = unique[unique.Count - 1];
+            if (!previous.Boundary && !point.Boundary && previous.RunKey != point.RunKey)
+                unique[unique.Count - 1] = new DetailingChainPoint(previous.Id, previous.PositionMm, previous.RunKey, true);
         }
-        return new DetailingChainPlan(selected, spans);
+        List<DetailingChainSection> sections = new();
+        if (!equality)
+        {
+            if (unique.Count > 1) sections.Add(new DetailingChainSection(unique, false));
+            return new DetailingChainPlan(unique, sections);
+        }
+        int index = 0;
+        while (index + 1 < unique.Count)
+        {
+            int last = EqualEnd(index);
+            bool formula = last - index >= 2;
+            if (!formula)
+            {
+                last = index + 1;
+                // Irregular intervals of one shape remain numeric. Stop before
+                // an equality run, a concrete face, or a transition to another shape.
+                while (SameRun(index, last) && last + 1 < unique.Count && SameRun(last, last + 1) && EqualEnd(last) - last < 2) last++;
+            }
+            sections.Add(new DetailingChainSection(unique.Skip(index).Take(last - index + 1).ToList(), formula));
+            index = last;
+        }
+        return new DetailingChainPlan(unique, sections);
+
+        bool SameRun(int a, int b) => !unique[a].Boundary && !unique[b].Boundary && unique[a].RunKey == unique[b].RunKey;
+        int EqualEnd(int start)
+        {
+            if (start + 1 >= unique.Count || !SameRun(start, start + 1)) return start;
+            double pitch = unique[start + 1].PositionMm - unique[start].PositionMm;
+            int end = start + 1;
+            while (end + 1 < unique.Count && SameRun(start, end + 1)
+                && Math.Abs(unique[end + 1].PositionMm - unique[end].PositionMm - pitch) <= toleranceMm) end++;
+            return end;
+        }
     }
 }

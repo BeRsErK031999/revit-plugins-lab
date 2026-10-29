@@ -14,6 +14,8 @@ public sealed partial class VerticalDetailingHarnessApplication
     {
         Document doc = ui.Document;
         RebarDetailingService service = new();
+        DetailingVariant variant = Enum.TryParse(Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VARIANT"), out DetailingVariant requestedVariant)
+            ? requestedVariant : DetailingVariant.Straight;
         string ids = Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VIEWS") ?? "2310980,2568691";
         var views = ids.Split(',').Select(s => (View)doc.GetElement(new ElementId(long.Parse(s)))).ToList();
         var snapshot = ModelFingerprint(doc);
@@ -34,7 +36,7 @@ public sealed partial class VerticalDetailingHarnessApplication
             Progress("Testing " + view.Id + " " + view.Name);
             Export(doc, view, "before");
             DetailingGeometry geometry = DetailingGeometry.Read(doc, view);
-            DetailingOptions options = new();
+            DetailingOptions options = new() { Variant = variant };
             options.TagTypeId = service.PreferredType(new[] { view }, service.Types(doc, "tag"), "tag");
             options.DimensionTypeId = service.PreferredType(new[] { view }, service.Types(doc, "dimension"), "dimension");
             options.SpotTypeId = service.PreferredType(new[] { view }, service.Types(doc, "spot"), "spot");
@@ -61,7 +63,15 @@ public sealed partial class VerticalDetailingHarnessApplication
             bool repeatStable = second != null && firstAnnotations == AnnotationFingerprint(view);
             File.WriteAllText(report + ".fingerprints-" + view.Id + ".json", new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new { First = firstAnnotations, Second = AnnotationFingerprint(view) }));
             bool protectedAnnotationSafe = ProtectedAnnotationCheck(doc, view, service, options);
-            tests.Add(new { Id = view.Id.Value, view.Name, Options = new { Tag = options.TagTypeId.Value, Dimension = options.DimensionTypeId.Value, Spot = options.SpotTypeId.Value, Multi = options.MultiTypeId.Value },
+            var dimensions = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(Dimension)).Cast<Dimension>().Where(d => d is not SpotDimension).ToList();
+            var formulaDimensions = dimensions.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2).ToList();
+            tests.Add(new { Id = view.Id.Value, view.Name, Options = new { Variant = variant.ToString(), Tag = options.TagTypeId.Value, Dimension = options.DimensionTypeId.Value, Spot = options.SpotTypeId.Value, Multi = options.MultiTypeId.Value },
+                EqualityFormulas = formulaDimensions.Select(d => new { Id = d.Id.Value, References = d.References.Size, d.NumberOfSegments, d.AreSegmentsEqual,
+                    Segments = d.Segments.Cast<DimensionSegment>().Select(s => new { s.Value, s.Prefix, s.Suffix, s.ValueOverride }).ToList(),
+                    Formula = d.DimensionType.GetEqualityFormula().Select(f => new { Label = f.LabelType.ToString(), f.Prefix, f.Suffix }).ToList() }).ToList(),
+                NativeEqualitySafe = formulaDimensions.All(d => !d.AreSegmentsEqual && d.References.Size == d.NumberOfSegments + 1
+                    && d.Segments.Cast<DimensionSegment>().All(s => string.IsNullOrEmpty(s.Prefix) && string.IsNullOrEmpty(s.ValueOverride))),
+                NoManualPitchText = dimensions.All(d => string.IsNullOrEmpty(d.Prefix) && d.Segments.Cast<DimensionSegment>().All(s => string.IsNullOrEmpty(s.Prefix))),
                 Probe = probe,
                 Bars = geometry.Bars.Select(b => new { Id = b.Element.Id.Value, b.Element.Name, Class = b.Element.GetType().Name, Link = b.Link?.Id.Value, Count = b.Positions.Count, Target = Point(b.Target), Reference = b.Reference.ConvertToStableRepresentation(doc) }).ToList(),
                 Faces = geometry.Faces.Select(f => new { f.HostKey, f.Horizontal, Point = Point(f.Point), Normal = Point(f.Normal) }).ToList(),
@@ -78,6 +88,7 @@ public sealed partial class VerticalDetailingHarnessApplication
         string commentsBeforeBatch = CommentsFingerprint(doc);
         DetailingOptions batchOptions = new()
         {
+            Variant = variant,
             TagTypeId = service.PreferredType(views, service.Types(doc, "tag"), "tag"),
             DimensionTypeId = service.PreferredType(views, service.Types(doc, "dimension"), "dimension"),
             SpotTypeId = service.PreferredType(views, service.Types(doc, "spot"), "spot"),
@@ -99,6 +110,8 @@ public sealed partial class VerticalDetailingHarnessApplication
             && (change.Before.Length == 0 || System.Text.RegularExpressions.Regex.IsMatch(change.Before, @"^\s*\d+\s*шт\.?\s*$"))
             && System.Text.RegularExpressions.Regex.IsMatch(change.After, @"^\d+ шт\.$"));
         Write(new { FatalError = (string?)null, Mode = "apply", Preview = preview, SelectionWorks = selectionWorks,
+            HorizontalViewsRejected = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
+                .Where(v => !v.IsTemplate && (v.ViewType == ViewType.FloorPlan || v.ViewType == ViewType.EngineeringPlan)).All(v => !RebarDetailingService.Supports(v)),
             BatchSucceeded = batchSucceeded, BatchUndoStable = batchUndoStable, ModelUnchanged = snapshot == ModelFingerprint(doc) && commentsAllowed,
             QuantityCommentChanges = commentChanges, QuantityCommentsAllowed = commentsAllowed, QuantityDisabledSafe = quantityDisabledSafe, Tests = tests,
             PlacedViews = new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>()
@@ -191,7 +204,8 @@ public sealed partial class VerticalDetailingHarnessApplication
                 string.Join(",", tag.GetTaggedReferences().Select(r => r.ConvertToStableRepresentation(v.Document)))
             : e is Dimension d ? (d.Curve is Line axis ? axis.Origin.ToString() : "spot") + ":" + d.Value + ":" + d.Prefix + ":" +
                 string.Join(",", d.References.Cast<Reference>().Select(r => r.ConvertToStableRepresentation(v.Document))) + ":" +
-                string.Join(",", d.Segments.Cast<DimensionSegment>().Select(s => s.Value + ":" + s.Prefix + ":" + s.TextPosition))
+                d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() + ":" +
+                string.Join(",", d.Segments.Cast<DimensionSegment>().Select(s => s.Value + ":" + s.Prefix + ":" + (s.IsTextPositionAdjustable() ? s.TextPosition.ToString() : "formula")))
             : RebarDetailingService.OwnedDetail(e) ? DetailFingerprint(e) : ""))
         .OrderBy(s => s));
     private static string DetailFingerprint(Element e) =>

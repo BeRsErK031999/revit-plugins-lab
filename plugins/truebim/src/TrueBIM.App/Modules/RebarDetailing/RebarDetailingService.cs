@@ -5,9 +5,9 @@ namespace TrueBIM.App.Modules.RebarDetailing;
 
 public sealed partial class RebarDetailingService
 {
-    public static bool Supports(View view) => !view.IsTemplate && (view.ViewType == ViewType.Section
-        || view.ViewType == ViewType.Detail || view.ViewType == ViewType.Elevation
-        || view.ViewType == ViewType.FloorPlan || view.ViewType == ViewType.EngineeringPlan);
+    public static bool Supports(View view) => !view.IsTemplate && Math.Abs(view.ViewDirection.Z) < 0.001
+        && Math.Abs(view.UpDirection.Z) > 0.999 && (view.ViewType == ViewType.Section
+        || view.ViewType == ViewType.Detail || view.ViewType == ViewType.Elevation);
 
     public IReadOnlyList<View> ResolveViews(Document doc, ICollection<ElementId> selection, View active)
     {
@@ -53,7 +53,7 @@ public sealed partial class RebarDetailingService
     {
         if (kind == "dimension")
         {
-            string rounded = views.All(v => Math.Abs(v.ViewDirection.Z) < 0.1) ? "2.5 (окр. 5)" : "2.5 (окр. 1)";
+            string rounded = "2.5 (окр. 5)";
             var standard = types.FirstOrDefault(t => t.Name.EndsWith(rounded, StringComparison.OrdinalIgnoreCase));
             if (standard != null) return standard.Id;
         }
@@ -70,7 +70,7 @@ public sealed partial class RebarDetailingService
     public IReadOnlyList<DetailingResult> Apply(Document doc, IEnumerable<View> views, DetailingOptions options)
     {
         List<DetailingResult> results = new();
-        using TransactionGroup group = new(doc, "TrueBIM · Оформление сечений");
+        using TransactionGroup group = new(doc, "TrueBIM · Оформление вертикальных сечений");
         group.Start();
         foreach (View view in views) results.Add(ApplyView(doc, view, options));
         group.Assimilate();
@@ -84,12 +84,10 @@ public sealed partial class RebarDetailingService
         using Transaction transaction = new(doc, "Оформление: " + view.Name);
         try
         {
-            if (!Supports(view) || !view.CropBoxActive) throw new InvalidOperationException("Нужен разрез, фасад или план с включённой обрезкой.");
+            if (!Supports(view) || !view.CropBoxActive) throw new InvalidOperationException("Нужно вертикальное сечение с включённой обрезкой. Горизонтальные и наклонные виды не оформляются.");
             DetailingGeometry geometry = DetailingGeometry.Read(doc, view);
             result.Notes.AddRange(geometry.Notes);
             if (geometry.Bars.Count == 0) throw new InvalidOperationException("В границах вида нет видимой системной арматуры.");
-            var cuts = options.Details ? PrepareCuts(frame: new DetailingFrame(view), geometry) : new List<DetailingCut>();
-            if (geometry.Bars.Count == 0) throw new InvalidOperationException("После размещения обрывов в узле не осталось стержней. Увеличьте границы вида.");
             List<Element> old = options.ReplaceExisting ? Annotations(view, options) : new();
             if (old.Any(e => e.Pinned || e.GroupId != ElementId.InvalidElementId || IsLocked(e)))
                 throw new InvalidOperationException("Размеры или марки закреплены, сгруппированы либо заблокированы. Снимите защиту вручную или отключите замену аннотаций.");
@@ -97,6 +95,7 @@ public sealed partial class RebarDetailingService
             if ((options.ConcreteDimensions || options.BarDimensions) && doc.GetElement(options.DimensionTypeId) is not DimensionType)
                 throw new InvalidOperationException("Выберите линейный размерный стиль.");
             DetailingFrame frame = new(view);
+            ValidateVariant(frame, geometry, options);
             List<XYZ> points = geometry.Bars.SelectMany(b => b.Segments.SelectMany(s => new[] { s.Start, s.End })).ToList();
             if (points.Count == 0) points.AddRange(geometry.Bars.SelectMany(b => b.Positions));
             double minX = points.Min(frame.X), maxX = points.Max(frame.X), minY = points.Min(frame.Y), maxY = points.Max(frame.Y);
@@ -122,7 +121,7 @@ public sealed partial class RebarDetailingService
                 result.Removed = deleted.Count;
             }
             stage = "Обрывы и подписи плит";
-            if (options.Details) Details(doc, view, frame, geometry, cuts, result);
+            if (options.Details) Details(doc, view, frame, geometry, options, result);
             doc.Regenerate();
             stage = "Шаг и привязки арматуры";
             CombinedDimensions(doc, view, frame, geometry, options, result);
@@ -204,31 +203,62 @@ public sealed partial class RebarDetailingService
         manager.TopAnnotationCropOffset = Math.Max(manager.TopAnnotationCropOffset, (boxes.Max(box => box.MaxY) - maxY + margin) / view.Scale);
     }
 
+    private sealed class DimensionLabel
+    {
+        public XYZ Position { get; set; } = null!;
+        public XYZ Origin { get; set; } = null!;
+        public double Length { get; set; }
+        public double Width { get; set; }
+        public Action<XYZ> Move { get; set; } = null!;
+    }
+
     private static void ArrangeDimensionText(DetailingFrame frame, IEnumerable<Dimension> dimensions)
     {
-        foreach (Dimension dimension in dimensions)
+        var numeric = dimensions.Where(d => d.Curve is Line && d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() != 2).ToList();
+        foreach (var row in numeric.GroupBy(d =>
         {
-            if (dimension.Curve is not Line line || dimension.NumberOfSegments < 2) continue;
-            var segments = dimension.Segments.Cast<DimensionSegment>().ToList();
-            if (segments.Any(s => !s.IsTextPositionAdjustable() || !s.Value.HasValue)) continue;
-            double textHeight = dimension.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() * frame.View.Scale ?? frame.Paper(2.5);
-            var widths = segments.Select(s => Math.Max(frame.Paper(2), (s.Prefix + Math.Round(s.Value!.Value * 304.8).ToString(System.Globalization.CultureInfo.InvariantCulture) + s.Suffix).Length * textHeight * 0.65)).ToArray();
-            var centers = segments.Select(s => s.TextPosition.DotProduct(line.Direction)).ToArray();
-            for (int index = 0; index < segments.Count; index++)
+            var line = (Line)d.Curve;
+            bool horizontal = Math.Abs(line.Direction.DotProduct(frame.Right)) > 0.999;
+            return (Horizontal: horizontal, Lane: Math.Round((horizontal ? frame.Y(line.Origin) : frame.X(line.Origin)) * 304.8, 1));
+        }))
+        {
+            XYZ direction = row.Key.Horizontal ? frame.Right : frame.Up;
+            var labels = new List<DimensionLabel>();
+            foreach (var dimension in row)
             {
-                double length = segments[index].Value!.Value;
-                if (length >= widths[index] + frame.Paper(0.5)) continue;
-                if (index == 0) centers[index] = segments[index].Origin.DotProduct(line.Direction) - length / 2 - widths[index] / 2 - frame.Paper(1);
-                else if (index == segments.Count - 1) centers[index] = segments[index].Origin.DotProduct(line.Direction) + length / 2 + widths[index] / 2 + frame.Paper(1);
+                double textHeight = dimension.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() * frame.View.Scale ?? frame.Paper(2.5);
+                double Width(double value) => Math.Max(frame.Paper(2), Math.Round(value * 304.8).ToString(System.Globalization.CultureInfo.InvariantCulture).Length * textHeight * 0.65);
+                if (dimension.NumberOfSegments < 2)
+                {
+                    if (!dimension.IsTextPositionAdjustable() || !dimension.Value.HasValue) continue;
+                    labels.Add(new DimensionLabel { Position = dimension.TextPosition, Origin = dimension.Origin,
+                        Length = dimension.Value.Value, Width = Width(dimension.Value.Value), Move = p => dimension.TextPosition = p });
+                    continue;
+                }
+                foreach (DimensionSegment segment in dimension.Segments)
+                {
+                    if (!segment.IsTextPositionAdjustable() || !segment.Value.HasValue) continue;
+                    labels.Add(new DimensionLabel { Position = segment.TextPosition, Origin = segment.Origin,
+                        Length = segment.Value.Value, Width = Width(segment.Value.Value), Move = p => segment.TextPosition = p });
+                }
             }
-            // Move neighboring short labels along the dimension line, using the
-            // space in the adjoining long span instead of piling them across it.
-            for (int index = centers.Length - 2; index >= 0; index--)
-                centers[index] = Math.Min(centers[index], centers[index + 1] - (widths[index] + widths[index + 1]) / 2 - frame.Paper(1.2));
-            for (int index = 0; index < segments.Count; index++)
+            labels = labels.OrderBy(l => l.Origin.DotProduct(direction)).ToList();
+            var centers = labels.Select(l => l.Position.DotProduct(direction)).ToArray();
+            for (int index = 0; index < labels.Count; index++)
             {
-                double shift = centers[index] - segments[index].TextPosition.DotProduct(line.Direction);
-                if (Math.Abs(shift) > frame.Paper(0.01)) segments[index].TextPosition += line.Direction * shift;
+                var label = labels[index];
+                if (label.Length >= label.Width + frame.Paper(0.5)) continue;
+                if (index == 0) centers[index] = label.Origin.DotProduct(direction) - label.Length / 2 - label.Width / 2 - frame.Paper(1);
+                else if (index == labels.Count - 1) centers[index] = label.Origin.DotProduct(direction) + label.Length / 2 + label.Width / 2 + frame.Paper(1);
+            }
+            // Cover and transition dimensions are separate native objects, but
+            // their labels must be spaced together with the adjoining numeric run.
+            for (int index = centers.Length - 2; index >= 0; index--)
+                centers[index] = Math.Min(centers[index], centers[index + 1] - (labels[index].Width + labels[index + 1].Width) / 2 - frame.Paper(1.2));
+            for (int index = 0; index < labels.Count; index++)
+            {
+                double shift = centers[index] - labels[index].Position.DotProduct(direction);
+                if (Math.Abs(shift) > frame.Paper(0.01)) labels[index].Move(labels[index].Position + direction * shift);
             }
         }
     }
@@ -312,24 +342,34 @@ public sealed partial class RebarDetailingService
         double minX, DetailingResult result)
     {
         if (doc.GetElement(options.SpotTypeId) is not DimensionType) throw new InvalidOperationException("Выберите тип высотной отметки.");
-        var levels = geometry.Faces.Where(f => !f.Horizontal && Math.Abs(f.Normal.Z) > 0.999)
-            .GroupBy(f => Math.Round(f.Point.Z * 304.8)).Select(g => g.OrderBy(f => frame.X(f.Point)).First()).OrderBy(f => f.Point.Z).ToList();
-        double lastY = double.NegativeInfinity;
-        foreach (DetailingFace face in levels)
+        foreach (var section in Sections(frame, geometry, options))
         {
-            double y = Math.Max(frame.Y(face.Point), lastY + frame.Paper(5)); lastY = y;
-            XYZ origin = frame.Flatten(face.Point);
-            XYZ bend = frame.Point(minX - frame.Paper(options.Details ? 30 : 24), y), end = bend - frame.Right * frame.Paper(10);
-            SpotDimension spot = doc.Create.NewSpotElevation(view, Reference.ParseFromStableRepresentation(doc, face.Reference.ConvertToStableRepresentation(doc)), origin, bend, end, face.Point, true);
-            string style = levels.IndexOf(face) > 0 && levels.IndexOf(face) < levels.Count - 1
-                ? "(ПСК) Стрелка Вниз • 5" : "(ПСК) Стрелка Вверх • 5";
-            var standard = new FilteredElementCollector(doc).OfClass(typeof(DimensionType)).Cast<DimensionType>()
-                .FirstOrDefault(t => t.StyleType == DimensionStyleType.SpotElevation && t.Name == style);
-            spot.ChangeTypeId(standard?.Id ?? options.SpotTypeId); result.Elevations++;
+            var levels = section.Faces.Where(f => !f.Horizontal && Math.Abs(f.Normal.Z) > 0.999).OrderBy(f => frame.Y(f.Point)).ToList();
+            if (levels.Count == 0) continue;
+            var selected = new List<DetailingFace> { levels.First() };
+            var keys = new HashSet<string>(section.UpperSlabs.Select(h => h.Key));
+            var slabLevels = geometry.Faces.Where(f => keys.Contains(f.HostKey) && !f.Horizontal && Math.Abs(f.Normal.Z) > 0.999)
+                .OrderBy(f => frame.Y(f.Point)).ToList();
+            if (slabLevels.Count > 0) { selected.Add(slabLevels.First()); selected.Add(slabLevels.Last()); }
+            else selected.Add(levels.Last());
+            selected = selected.GroupBy(f => Math.Round(f.Point.Z * 304.8, 1)).Select(g => g.First()).OrderBy(f => f.Point.Z).ToList();
+            var layout = SectionAnnotationBoundary(doc, view, frame, section);
+            double lastY = double.NegativeInfinity;
+            foreach (var face in selected)
+            {
+                double y = Math.Max(frame.Y(face.Point), lastY + frame.Paper(5)); lastY = y;
+                XYZ origin = frame.Flatten(face.Point);
+                XYZ end = frame.Point(layout.Left - frame.Paper(24), y), bend = end + frame.Right * frame.Paper(10);
+                SpotDimension spot = doc.Create.NewSpotElevation(view, Reference.ParseFromStableRepresentation(doc, face.Reference.ConvertToStableRepresentation(doc)), origin, bend, end, face.Point, true);
+                bool upperSurface = face == selected.First() || (slabLevels.Count > 0 && Math.Abs(face.Point.Z - slabLevels.Last().Point.Z) < 0.1 / 304.8);
+                string style = upperSurface ? "(ПСК) Стрелка Вверх • 5" : "(ПСК) Стрелка Вниз • 5";
+                var standard = new FilteredElementCollector(doc).OfClass(typeof(DimensionType)).Cast<DimensionType>()
+                    .FirstOrDefault(t => t.StyleType == DimensionStyleType.SpotElevation && t.Name == style);
+                spot.ChangeTypeId(standard?.Id ?? options.SpotTypeId); result.Elevations++;
+            }
         }
         if (result.Elevations == 0) result.Notes.Add("Высотные отметки: в обрезке нет горизонтальных граней бетона.");
     }
-
     private sealed class FailureHandler : IFailuresPreprocessor
     {
         private readonly DetailingResult result;

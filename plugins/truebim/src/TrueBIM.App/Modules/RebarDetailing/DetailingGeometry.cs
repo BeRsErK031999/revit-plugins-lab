@@ -17,6 +17,7 @@ internal sealed class DetailingBar
     public XYZ Distribution { get; set; } = XYZ.Zero;
     public List<DetailingAxis> DimensionReferences { get; } = new();
     public List<DetailingAxis> EndReferences { get; } = new();
+    public List<DetailingAxis> BendEndReferences { get; } = new();
     public List<DetailingSegment> Segments { get; } = new();
     public double Spacing { get; set; }
     public string Shape { get; set; } = "";
@@ -202,7 +203,10 @@ internal sealed class DetailingGeometry
             visibleReferences.Add(link == null ? tagReference : tagReference.CreateLinkReference(link));
             // Hidden reference geometry includes the bar centerlines as well as its outlines.
             // Match the actual 3D centerline, not the stable-reference numbering convention.
-            foreach (Line centerline in curves.OfType<Line>().Where(c => c.IsBound).OrderByDescending(c => c.Length))
+            bool dimensionAdded = false;
+            bool longitudinal = curves.OfType<Line>().Any(c => Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999 && c.Length > 500 / 304.8);
+            foreach (Line centerline in curves.OfType<Line>().Where(c => c.IsBound)
+                .OrderByDescending(c => longitudinal && Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999).ThenByDescending(c => c.Length))
             {
                 XYZ? clipped = frame.Clip(centerline.GetEndPoint(0), centerline.GetEndPoint(1));
                 if (clipped == null) continue;
@@ -219,6 +223,22 @@ internal sealed class DetailingGeometry
                 if (matches.Count == 0) continue;
                 var dimensionReferences = matches.Select(line => line.Reference)
                     .OrderBy(reference => reference.ConvertToStableRepresentation(view.Document), StringComparer.Ordinal).ToList();
+                if (longitudinal && Math.Abs(centerline.Direction.DotProduct(frame.Right)) > 0.999 && centerline.Length > 50 / 304.8)
+                {
+                    foreach (int endpoint in new[] { 0, 1 })
+                    {
+                        XYZ end = centerline.GetEndPoint(endpoint);
+                        if (!frame.Contains(end)) continue;
+                        var ends = new List<Reference>();
+                        foreach (Line match in matches.Where(line => line.IsBound))
+                        foreach (int indexOfEnd in new[] { 0, 1 })
+                        {
+                            if (Math.Abs(frame.X(match.GetEndPoint(indexOfEnd)) - frame.X(end)) > 0.1 / 304.8) continue;
+                            try { Reference reference = match.GetEndPointReference(indexOfEnd); if (reference != null) ends.Add(reference); } catch { }
+                        }
+                        if (ends.Count > 0) bar.BendEndReferences.Add(new DetailingAxis { Point = end, Direction = frame.Up, Candidates = ends });
+                    }
+                }
                 if (frame.Vertical && Math.Abs(centerline.Direction.DotProduct(frame.Up)) > 0.999)
                 {
                     foreach (int endpoint in new[] { 0, 1 })
@@ -251,8 +271,11 @@ internal sealed class DetailingGeometry
                             ? Reference.ParseFromStableRepresentation(view.Document, stable.Substring(0, stable.Length - ":LINEAR".Length)) : reference;
                     }).ToList();
                 }
-                bar.DimensionReferences.Add(new DetailingAxis { Point = clipped, Direction = centerline.Direction,
-                    Candidates = dimensionReferences }); break;
+                if (!dimensionAdded)
+                {
+                    bar.DimensionReferences.Add(new DetailingAxis { Point = clipped, Direction = centerline.Direction, Candidates = dimensionReferences });
+                    dimensionAdded = true;
+                }
             }
         }
         if (bar.Positions.Count == 0) return;

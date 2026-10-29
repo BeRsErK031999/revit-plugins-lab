@@ -45,12 +45,17 @@ public sealed partial class RebarDetailingService
         }
         var labels = new List<LabelGroup>();
         string MarkKey((DetailingBar Bar, IndependentTag Tag) item) => DetailingGeometry.Key(item.Bar.Host, item.Bar.Link) + "|" + item.Tag.TagText;
+        var irregularMarks = new HashSet<string>(candidates.GroupBy(p => MarkKey(p) + "|" + p.Bar.Shape)
+            .Where(g => !g.Any(p => p.Bar.Segments.Any(s => Math.Abs(s.Direction.DotProduct(frame.Up)) > 0.999))
+                && DetailingSectionLayout.HasIrregularPitch(g.SelectMany(p => p.Bar.DimensionReferences).Select(a => frame.Y(a.Point) * 304.8)))
+            .Select(g => g.Key));
         foreach (var group in candidates.GroupBy(p =>
         {
             string comment = p.Bar.Element.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
             if (comment.Length > 0 && !Regex.IsMatch(comment, @"^\s*\d+\s*шт\.?\s*$", RegexOptions.IgnoreCase)
                 && (comment.StartsWith("ш.", StringComparison.OrdinalIgnoreCase) || comment.StartsWith("шаг", StringComparison.OrdinalIgnoreCase)))
                 return MarkKey(p) + "|comment|" + comment;
+            if (irregularMarks.Contains(MarkKey(p) + "|" + p.Bar.Shape)) return MarkKey(p) + "|" + p.Bar.Shape + "|count";
             double pitch = p.Bar.Spacing;
             if (pitch < 0.1 / 304.8)
             {
@@ -72,8 +77,9 @@ public sealed partial class RebarDetailingService
                 && (b.Element.get_Parameter(BuiltInParameter.REBAR_ELEM_LENGTH)?.AsDouble() ?? 0)
                     > (representative.Element.get_Parameter(BuiltInParameter.REBAR_ELEM_LENGTH)?.AsDouble() ?? 0) + 200 / 304.8);
             int quantity = label.Bars.Sum(b => b.VisibleIndices.Count);
+            bool irregular = DetailingSectionLayout.HasIrregularPitch(label.Bars.SelectMany(b => b.DimensionReferences).Select(a => frame.Y(a.Point) * 304.8));
             bool counted = !perMetre && ((!frame.Vertical && longitudinal && (representative.Element is Rebar || shortSystem || representative.Spacing < 0.1 / 304.8))
-                || (frame.Vertical && !longitudinal && quantity <= 3));
+                || (frame.Vertical && !longitudinal && (quantity <= 3 || irregular)));
             string comments = representative.Element.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
             bool textComment = comments.Length > 0 && !Regex.IsMatch(comments, @"^\s*\d+\s*шт\.?\s*$", RegexOptions.IgnoreCase);
             if (counted && options.WriteQuantities)
@@ -153,7 +159,9 @@ public sealed partial class RebarDetailingService
             if (label.Inline)
             {
                 var field = Region(frame, label.Bars);
-                label.Tag.TagHeadPosition = frame.Point(host.Left - frame.Paper(options.Details ? 11 : 6), field.CenterY);
+                var section = Sections(frame, geometry, options).First(s => s.HostKey == hostKey);
+                var boundary = SectionAnnotationBoundary(doc, view, frame, section);
+                label.Tag.TagHeadPosition = frame.Point(boundary.Left - frame.Paper(6), field.CenterY);
                 result.ExpectedTagHeads[label.Tag.Id] = label.Tag.TagHeadPosition;
                 doc.Regenerate();
                 result.Tags++; continue;
@@ -297,7 +305,17 @@ public sealed partial class RebarDetailingService
             double height = dimension.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() * view.Scale ?? frame.Paper(2.5);
             bool horizontal = Math.Abs(line.Direction.DotProduct(frame.Right)) > 0.7;
             var texts = new List<(XYZ Point, string Text)>();
-            if (dimension.NumberOfSegments > 1)
+            if (dimension.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2)
+            {
+                var segments = dimension.Segments.Cast<DimensionSegment>().ToList();
+                if (segments.Count > 0 && segments.All(s => s.Value.HasValue))
+                {
+                    double total = segments.Sum(s => s.Value!.Value);
+                    XYZ center = segments[0].Origin + line.Direction * ((total - segments[0].Value!.Value) / 2);
+                    texts.Add((center, segments.Count + "×" + Math.Round(segments[0].Value!.Value * 304.8) + "=" + Math.Round(total * 304.8)));
+                }
+            }
+            else if (dimension.NumberOfSegments > 1)
             {
                 foreach (DimensionSegment segment in dimension.Segments)
                     if (segment.IsTextPositionAdjustable()) texts.Add((segment.TextPosition, segment.Prefix + segment.ValueString + segment.Suffix));

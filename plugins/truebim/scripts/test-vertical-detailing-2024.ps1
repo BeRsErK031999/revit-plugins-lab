@@ -5,6 +5,7 @@ param(
     [string] $ViewIds = '2310980,2568691',
     [string] $PreviewPayload = '',
     [string] $ViewNameFilter = '',
+    [ValidateSet('Straight','BentSameSide','BentOppositeSides')][string] $Variant = 'Straight',
     [switch] $Viewer
 )
 $ErrorActionPreference = 'Stop'
@@ -34,6 +35,7 @@ $previousMode = $env:TRUEBIM_VERTICAL_MODE
 $previousViews = $env:TRUEBIM_VERTICAL_VIEWS
 $previousPayload = $env:TRUEBIM_VERTICAL_PAYLOAD
 $previousViewNameFilter = $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER
+$previousVariant = $env:TRUEBIM_VERTICAL_VARIANT
 $viewerProcess = $null
 try {
     [IO.File]::WriteAllText($manifestPath, $manifest)
@@ -43,6 +45,7 @@ try {
     $env:TRUEBIM_VERTICAL_VIEWS = $ViewIds
     $env:TRUEBIM_VERTICAL_PAYLOAD = $PreviewPayload
     $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER = $ViewNameFilter
+    $env:TRUEBIM_VERTICAL_VARIANT = $Variant
     $launchArguments = if ($Viewer) { '/viewer' } else { '/nosplash' }
     $viewerProcess = Start-Process -FilePath 'C:\Program Files\Autodesk\Revit 2024\Revit.exe' -ArgumentList $launchArguments -WindowStyle Hidden -PassThru
     [pscustomobject]@{ ProcessId=$viewerProcess.Id; Report=$env:TRUEBIM_VERTICAL_REPORT; Manifest=$manifestPath; RunRoot=$runRoot; SourceHashes=$hashes } | ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
@@ -57,8 +60,8 @@ try {
     $report = Get-Content -LiteralPath $env:TRUEBIM_VERTICAL_REPORT -Raw | ConvertFrom-Json
     if ($report.FatalError) { throw $report.FatalError }
     if ($Mode -eq 'apply') {
-        $failedViews = @($report.Tests | Where-Object { -not $_.First.Succeeded -or -not $_.Second.Succeeded -or -not $_.RepeatStable -or -not $_.ViewUnchanged -or -not $_.ProtectedAnnotationSafe -or $_.VisibleAnnotations -ne $_.OwnedAnnotations })
-        if (-not $report.ModelUnchanged -or -not $report.QuantityDisabledSafe -or -not $report.SelectionWorks -or -not $report.BatchSucceeded -or -not $report.BatchUndoStable -or $failedViews.Count -gt 0) {
+        $failedViews = @($report.Tests | Where-Object { -not $_.First.Succeeded -or -not $_.Second.Succeeded -or -not $_.RepeatStable -or -not $_.ViewUnchanged -or -not $_.ProtectedAnnotationSafe -or -not $_.NativeEqualitySafe -or -not $_.NoManualPitchText -or $_.VisibleAnnotations -ne $_.OwnedAnnotations })
+        if (-not $report.ModelUnchanged -or -not $report.QuantityDisabledSafe -or -not $report.SelectionWorks -or -not $report.HorizontalViewsRejected -or -not $report.BatchSucceeded -or -not $report.BatchUndoStable -or $failedViews.Count -gt 0) {
             throw "Native acceptance failed. Views: $($failedViews.Name -join ', '). See $env:TRUEBIM_VERTICAL_REPORT"
         }
         if ($PreviewPayload -and -not $report.Preview.Rendered) { throw 'Preview window was not rendered.' }
@@ -74,6 +77,7 @@ finally {
     $env:TRUEBIM_VERTICAL_VIEWS = $previousViews
     $env:TRUEBIM_VERTICAL_PAYLOAD = $previousPayload
     $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER = $previousViewNameFilter
+    $env:TRUEBIM_VERTICAL_VARIANT = $previousVariant
     foreach ($file in $originals) {
         if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $hashes[$file.FullName]) { throw "Original changed: $($file.FullName)" }
     }
