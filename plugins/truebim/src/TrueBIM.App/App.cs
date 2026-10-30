@@ -3,6 +3,7 @@ using Autodesk.Revit.UI.Events;
 using TrueBIM.App.Modules.BimTools.FamilyManager.UI;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 using TrueBIM.App.Modules.ViewVisibility.UI;
+using TrueBIM.App.Modules.SelectionBox;
 using TrueBIM.App.Services.Logging;
 using TrueBIM.App.Services.Runtime;
 using TrueBIM.App.UI;
@@ -28,15 +29,20 @@ public sealed class App : IExternalApplication
             // Revit throws if the tab already exists.
         }
 
-        Dictionary<string, RibbonPanel> panels = new(StringComparer.Ordinal);
-        foreach (string panelName in TrueBimRibbon.PanelNames)
+        foreach (TrueBimRibbonPanelDefinition definition in TrueBimRibbon.Panels)
         {
-            panels[panelName] = application.CreateRibbonPanel(TabName, panelName);
-        }
-
-        foreach (TrueBimRibbonButtonDefinition button in TrueBimRibbon.Buttons)
-        {
-            AddButton(panels[button.PanelName], button);
+            RibbonPanel panel = application.CreateRibbonPanel(TabName, definition.Name);
+            if (definition.IsStacked)
+            {
+                AddStackedButtons(panel, definition.Buttons);
+            }
+            else
+            {
+                foreach (TrueBimRibbonButtonDefinition button in definition.Buttons)
+                {
+                    InitializeButton(panel.AddItem(CreateButtonData(button)), button);
+                }
+            }
         }
 
         RegisterFamilyManagerPane(application);
@@ -45,6 +51,7 @@ public sealed class App : IExternalApplication
 
     public Result OnShutdown(UIControlledApplication application)
     {
+        SelectionBoxRequest.CancelPending();
         application.ViewActivated -= OnViewActivated;
         ScheduleActiveViewTracker.Clear();
         NetFrameworkAssemblyResolver.Unregister();
@@ -57,6 +64,7 @@ public sealed class App : IExternalApplication
         try
         {
             ScheduleActiveViewTracker.CaptureActivatedView(args.CurrentActiveView);
+            SelectionBoxViews.Record(args.CurrentActiveView);
             ViewVisibilityRibbonState.Update(args.CurrentActiveView?.Document, args.CurrentActiveView);
         }
         catch
@@ -64,25 +72,44 @@ public sealed class App : IExternalApplication
         }
     }
 
-    private static void AddButton(
+    private static void AddStackedButtons(
         RibbonPanel panel,
-        TrueBimRibbonButtonDefinition button)
+        IReadOnlyList<TrueBimRibbonButtonDefinition> buttons)
     {
-        if (button.IsPulldown)
+        if (buttons.Count == 4)
         {
-            AddPulldownButton(panel, button);
+            AddStackedButtons(panel, buttons.Take(2).ToArray());
+            AddStackedButtons(panel, buttons.Skip(2).ToArray());
             return;
         }
 
-        panel.AddItem(CreatePushButtonData(button));
+        IList<RibbonItem> items = buttons.Count switch
+        {
+            2 => panel.AddStackedItems(CreateButtonData(buttons[0]), CreateButtonData(buttons[1])),
+            3 => panel.AddStackedItems(CreateButtonData(buttons[0]), CreateButtonData(buttons[1]), CreateButtonData(buttons[2])),
+            _ => throw new InvalidOperationException("A ribbon stack must contain two or three buttons.")
+        };
+
+        for (int index = 0; index < items.Count; index++)
+        {
+            InitializeButton(items[index], buttons[index]);
+        }
     }
 
-    private static void AddPulldownButton(
-        RibbonPanel panel,
-        TrueBimRibbonButtonDefinition button)
+    private static RibbonItemData CreateButtonData(TrueBimRibbonButtonDefinition button)
     {
-        PulldownButtonData pulldownData = new(button.Name, button.Text);
-        PulldownButton pulldown = (PulldownButton)panel.AddItem(pulldownData);
+        return button.IsPulldown
+            ? new PulldownButtonData(button.Name, button.Text)
+            : CreatePushButtonData(button);
+    }
+
+    private static void InitializeButton(RibbonItem ribbonItem, TrueBimRibbonButtonDefinition button)
+    {
+        if (ribbonItem is not PulldownButton pulldown)
+        {
+            return;
+        }
+
         pulldown.Image = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbonSmall);
         pulldown.LargeImage = IconFactory.CreateImage(button.Icon, TrueBimTheme.IconSizeRibbon);
         pulldown.ToolTip = button.Tooltip;
@@ -136,6 +163,7 @@ public sealed class App : IExternalApplication
         buttonData.Image = IconFactory.CreateImage(item.Icon, TrueBimTheme.IconSizeRibbonSmall);
         buttonData.LargeImage = IconFactory.CreateImage(item.Icon, TrueBimTheme.IconSizeRibbon);
         buttonData.ToolTip = item.Tooltip;
+        buttonData.LongDescription = item.LongDescription;
         if (!string.IsNullOrWhiteSpace(item.AvailabilityClassName))
         {
             buttonData.AvailabilityClassName = item.AvailabilityClassName;

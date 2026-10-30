@@ -82,6 +82,7 @@ public sealed class PrintPdfExportService
 
         try
         {
+            exportFolder = Path.GetFullPath(exportFolder);
             Directory.CreateDirectory(exportFolder);
         }
         catch (Exception exception)
@@ -139,18 +140,11 @@ public sealed class PrintPdfExportService
             {
                 string pdfFileName = NormalizePdfFileName(item.FileName);
                 string outputPath = Path.Combine(exportFolder, pdfFileName);
-                if (File.Exists(outputPath))
-                {
-                    File.Delete(outputPath);
-                }
-
-                using PDFExportOptions options = CreateOptions(pdfFileName, settings);
-
                 List<ElementId> viewIds = new()
                 {
                     RevitElementIds.Create(item.ElementId)
                 };
-                bool exported = document.Export(exportFolder, viewIds, options);
+                bool exported = ExportAndPublish(document, exportFolder, pdfFileName, viewIds, settings, logger);
                 if (!exported)
                 {
                     failures.Add(new PrintPdfExportFailure(item, "Revit не подтвердил экспорт PDF."));
@@ -199,17 +193,10 @@ public sealed class PrintPdfExportService
         {
             string pdfFileName = BuildCombinedPdfFileName(combinedFileName);
             string outputPath = Path.Combine(exportFolder, pdfFileName);
-            if (File.Exists(outputPath))
-            {
-                File.Delete(outputPath);
-            }
-
-            using PDFExportOptions options = CreateOptions(pdfFileName, settings);
-
             List<ElementId> viewIds = items
                 .Select(item => RevitElementIds.Create(item.ElementId))
                 .ToList();
-            bool exported = document.Export(exportFolder, viewIds, options);
+            bool exported = ExportAndPublish(document, exportFolder, pdfFileName, viewIds, settings, logger);
             if (!exported)
             {
                 AddCombinedFailure(items, failures, "Revit не подтвердил экспорт объединенного PDF.");
@@ -235,12 +222,37 @@ public sealed class PrintPdfExportService
         return new PrintPdfExportResult(exportedFiles, failures);
     }
 
+    private static bool ExportAndPublish(Document document, string folder, string fileName,
+        IList<ElementId> viewIds, PrintPdfExportSettings settings, ITrueBimLogger logger)
+    {
+        string staging = Path.Combine(folder, ".truebim-pdf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(staging);
+        try
+        {
+            using PDFExportOptions options = CreateOptions(fileName, settings);
+            if (!document.Export(staging, viewIds, options)) return false;
+            string produced = Path.Combine(staging, fileName);
+            if (!File.Exists(produced) || new FileInfo(produced).Length == 0)
+                throw new IOException("Revit подтвердил экспорт, но файл PDF не создан: " + fileName);
+            string destination = Path.Combine(folder, fileName);
+            if (File.Exists(destination)) File.Replace(produced, destination, null);
+            else File.Move(produced, destination);
+            return true;
+        }
+        finally
+        {
+            try { Directory.Delete(staging, recursive: true); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            { logger.Warning("Не удалось очистить временную папку PDF: " + exception.Message); }
+        }
+    }
+
     private static PDFExportOptions CreateOptions(string fileName, PrintPdfExportSettings settings)
     {
         return new PDFExportOptions
         {
             Combine = true,
-            FileName = fileName,
+            FileName = Path.GetFileNameWithoutExtension(fileName),
             StopOnError = true,
             ColorDepth = MapColorDepth(settings.ColorMode),
             RasterQuality = MapRasterQuality(settings.RasterQuality),

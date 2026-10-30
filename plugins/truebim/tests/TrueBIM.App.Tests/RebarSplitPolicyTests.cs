@@ -34,11 +34,11 @@ public sealed class RebarSplitPolicyTests
     }
 
     [Fact]
-    public void ButtonIsInKrAndOffersParameterTransferAndAnnotations()
+    public void ButtonIsInKrDisciplineAndOffersParameterTransferAndAnnotations()
     {
-        TrueBimRibbonButtonDefinition button = Assert.Single(TrueBimRibbon.Buttons, item => item.Name == "TrueBIM_RebarSplit");
-        Assert.Equal(TrueBimRibbon.KrPanelName, button.PanelName);
-        Assert.Equal("Разбить\nарматуру", button.Text);
+        TrueBimRibbonButtonDefinition menu = Assert.Single(TrueBimRibbon.Buttons, item => item.Name == "TrueBIM_DisciplinesMenu");
+        TrueBimRibbonPulldownItemDefinition button = Assert.Single(menu.Items, item => item.Name == "TrueBIM_RebarSplit");
+        Assert.Equal("КР · Разбить арматуру", button.Text);
         Assert.Equal(TrueBimIcon.RebarSplit, button.Icon);
         Assert.EndsWith("RebarSplitCommand", button.CommandClassName);
         Assert.EndsWith("RebarSplitCommandAvailability", button.AvailabilityClassName);

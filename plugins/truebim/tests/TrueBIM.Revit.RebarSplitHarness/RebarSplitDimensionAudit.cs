@@ -8,6 +8,7 @@ namespace TrueBIM.Revit.RebarSplitHarness;
 internal sealed class RebarSplitDimensionAudit
 {
     private readonly ElementId originalId;
+    private readonly Guid originalVersion;
     private readonly ElementId viewId;
     private readonly ElementId typeId;
     private readonly Line line;
@@ -20,6 +21,7 @@ internal sealed class RebarSplitDimensionAudit
     private RebarSplitDimensionAudit(Document document, Dimension dimension, IReadOnlyList<ElementId> candidates)
     {
         originalId = dimension.Id;
+        originalVersion = dimension.VersionGuid;
         viewId = dimension.OwnerViewId;
         typeId = dimension.GetTypeId();
         line = (Line)dimension.Curve.Clone();
@@ -48,8 +50,18 @@ internal sealed class RebarSplitDimensionAudit
             .Select(dimension => new RebarSplitDimensionAudit(document, dimension, candidates)).ToList();
     }
 
-    public DimensionAuditResult Verify(Document document, IReadOnlyList<ElementId> created, bool requireAvailableReferences)
+    public DimensionAuditResult Verify(Document document, IReadOnlyList<ElementId> created, bool requireAvailableReferences,
+        IReadOnlyCollection<ElementId>? skipped = null)
     {
+        if (skipped is not null && references.Where(reference => reference.BarCurves is not null)
+            .All(reference => skipped.Contains(reference.Id)))
+        {
+            Dimension? original = document.GetElement(originalId) as Dimension;
+            bool unchanged = original?.VersionGuid == originalVersion
+                && (!requireAvailableReferences || original.AreReferencesAvailable);
+            return new(originalId.IntegerValue, original?.Id.IntegerValue, unchanged,
+                $"Dimension of skipped sets retained unchanged={unchanged}.");
+        }
         List<Dimension> matches = new FilteredElementCollector(document).OfClass(typeof(Dimension)).Cast<Dimension>()
             .Where(dimension => dimension.Id != originalId && dimension.OwnerViewId == viewId && dimension.GetTypeId() == typeId &&
                 dimension.Curve is Line candidate && candidate.Origin.DistanceTo(line.Origin) < 1e-7 &&
@@ -69,7 +81,7 @@ internal sealed class RebarSplitDimensionAudit
         {
             var expected = references[index];
             ElementId actualId = actualReferences[index].ElementId;
-            if (expected.BarCurves is null) mappedBars &= actualId == expected.Id;
+            if (expected.BarCurves is null || skipped?.Contains(expected.Id) == true) mappedBars &= actualId == expected.Id;
             else mappedBars &= created.Contains(actualId) && document.GetElement(actualId) is Rebar bar &&
                 RebarSplitGeometry.SameCurves(expected.BarCurves, RebarSplitGeometry.Curves(bar, 0));
         }

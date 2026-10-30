@@ -137,7 +137,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly ComboBox pdfRasterQualityInput = CreatePdfSettingInput("Качество растровых элементов PDF.");
     private readonly CheckBox forceRasterPdfInput = new()
     {
-        Content = "Всегда растр",
+        Content = "Растровая обработка (иначе векторная)",
         ToolTip = "Принудительно растрировать PDF вместо векторного вывода."
     };
     private readonly CheckBox pdfInput = new()
@@ -207,7 +207,6 @@ public sealed class PrintWindow : TrueBimWindow
     private bool isBatchUpdatingSelection;
     private bool isSheetNumberSortDescending;
     private bool reloadInitialSourcesForPreset;
-    private bool showDetailedExportSettings;
     private bool isOperationRunning;
     private UIElement? operationSettingsPanel;
     private PrintOperationProgressTracker? operationProgressTracker;
@@ -634,7 +633,7 @@ public sealed class PrintWindow : TrueBimWindow
         printerRow.Children.Add(printerInput);
         TextBlock printSetupLabel = new()
         {
-            Text = "Настройка Revit",
+            Text = "Бумага / масштаб",
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(16, 0, 8, 0)
         };
@@ -643,23 +642,11 @@ public sealed class PrintWindow : TrueBimWindow
         printSetupInput.SelectionChanged += (_, _) => UpdateExportState();
         Grid.SetColumn(printSetupInput, 3);
         printerRow.Children.Add(printSetupInput);
-        TextBlock rangeLabel = new()
-        {
-            Text = "Диапазон",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(16, 0, 8, 0)
-        };
-        Grid.SetColumn(rangeLabel, 4);
-        printerRow.Children.Add(rangeLabel);
-        TextBlock rangeValue = new()
-        {
-            Text = "Выбранные листы",
-            VerticalAlignment = VerticalAlignment.Center,
-            FontWeight = FontWeights.SemiBold,
-            ToolTip = "Печатаются только листы, отмеченные флажками в таблице."
-        };
-        Grid.SetColumn(rangeValue, 5);
-        printerRow.Children.Add(rangeValue);
+        Button printerSettingsButton = CreateActionButton("Настройки...", TrueBimIcon.Settings, isEnabled: true);
+        printerSettingsButton.Margin = new Thickness(12, 0, 0, 0);
+        printerSettingsButton.Click += (_, _) => OpenPrinterSettings();
+        Grid.SetColumn(printerSettingsButton, 5);
+        printerRow.Children.Add(printerSettingsButton);
         Grid.SetRow(printerRow, rowIndex++);
         root.Children.Add(printerRow);
         printerModeRows.Add(printerRow);
@@ -969,8 +956,8 @@ public sealed class PrintWindow : TrueBimWindow
 
             Button settingsButton = CreateActionButton("Настройки...", TrueBimIcon.Settings, isEnabled: true);
             settingsButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
-            settingsButton.ToolTip = "Показать или скрыть общие параметры PDF и DWG.";
-            settingsButton.Click += (_, _) => ToggleDetailedSettings(settingsButton);
+            settingsButton.ToolTip = "Настройки PDF, DWG и имён файлов по параметрам Revit.";
+            settingsButton.Click += (_, _) => OpenExportSettings();
             formatActions.Children.Add(settingsButton);
 
             DockPanel.SetDock(formatActions, Dock.Left);
@@ -1010,14 +997,96 @@ public sealed class PrintWindow : TrueBimWindow
         detailedSettingsRows.Add(row);
     }
 
-    private void ToggleDetailedSettings(Button settingsButton)
+    private void OpenPrinterSettings()
     {
-        showDetailedExportSettings = !showDetailedExportSettings;
-        ApplyOperationModeVisibility();
+        Window dialog = new()
+        {
+            Title = "Настройки печати", Owner = this, Width = 540,
+            SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        StackPanel panel = new() { Margin = new Thickness(20) };
+        ComboBox printer = new() { ItemsSource = printerInput.ItemsSource,
+            DisplayMemberPath = printerInput.DisplayMemberPath, SelectedItem = printerInput.SelectedItem };
+        ComboBox color = new() { ItemsSource = GetPdfColorModeOptions(), DisplayMemberPath = "Value",
+            SelectedValuePath = "Key", SelectedValue = GetSelectedPdfColorMode() };
+        ComboBox quality = new() { ItemsSource = GetPdfRasterQualityOptions(), DisplayMemberPath = "Value",
+            SelectedValuePath = "Key", SelectedValue = GetSelectedPdfRasterQuality() };
+        ComboBox processing = new() { ItemsSource = new[] { "Векторная обработка", "Растровая обработка" },
+            SelectedIndex = forceRasterPdfInput.IsChecked == true ? 1 : 0 };
+        foreach (var entry in new[] { ("Принтер", printer), ("Цвета", color),
+            ("Тип обработки", processing), ("Качество растра", quality) })
+        {
+            panel.Children.Add(new TextBlock { Text = entry.Item1, Margin = new Thickness(0, 8, 0, 4) });
+            entry.Item2.MinHeight = 30;
+            panel.Children.Add(entry.Item2);
+        }
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Цвета, обработка и качество применяются к выбранным листам из этого окна. " +
+                "Бумага, масштаб и ориентация берутся из выбранной настройки Revit. " +
+                "Для PDF с автоматическими именами, папкой и объединением выберите режим «Экспорт».",
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 16)
+        });
+        StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        Button save = new() { Content = "Применить", IsDefault = true, Padding = new Thickness(16, 6, 16, 6) };
+        save.Click += (_, _) => dialog.DialogResult = true;
+        Button cancel = new() { Content = "Отмена", IsCancel = true, Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(16, 6, 16, 6) };
+        buttons.Children.Add(save);
+        buttons.Children.Add(cancel);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        if (dialog.ShowDialog() != true) return;
+        printerInput.SelectedItem = printer.SelectedItem;
+        pdfColorModeInput.SelectedValue = color.SelectedValue;
+        pdfRasterQualityInput.SelectedValue = quality.SelectedValue;
+        forceRasterPdfInput.IsChecked = processing.SelectedIndex == 1;
+        SavePrintSettings();
+        UpdateExportState();
+    }
 
-        settingsButton.ToolTip = showDetailedExportSettings
-            ? "Скрыть подробные параметры PDF и DWG."
-            : "Показать подробные параметры PDF и DWG.";
+    private void OpenExportSettings()
+    {
+        Window dialog = new()
+        {
+            Title = "Настройки экспорта и имён файлов", Owner = this,
+            Width = Math.Min(1000, SystemParameters.WorkArea.Width - 40),
+            SizeToContent = SizeToContent.Height,
+            MaxHeight = SystemParameters.WorkArea.Height - 40,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        StackPanel panel = new() { Margin = new Thickness(16) };
+        List<(UIElement Row, Panel Parent, int Index)> originalParents = detailedSettingsRows
+            .Select(row => (Row: row, Parent: (Panel)VisualTreeHelper.GetParent(row)))
+            .Select(item => (item.Row, item.Parent, item.Parent.Children.IndexOf(item.Row))).ToList();
+        try
+        {
+            foreach (var item in originalParents)
+            {
+                item.Parent.Children.Remove(item.Row);
+                item.Row.Visibility = Visibility.Visible;
+                panel.Children.Add(item.Row);
+            }
+            DockPanel layout = new();
+            Button done = new() { Content = "Готово", IsCancel = true,
+                HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(16), Padding = new Thickness(20, 6, 20, 6) };
+            DockPanel.SetDock(done, Dock.Bottom);
+            layout.Children.Add(done);
+            layout.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                MaxHeight = SystemParameters.WorkArea.Height - 140 });
+            dialog.Content = layout;
+            dialog.ShowDialog();
+        }
+        finally
+        {
+            foreach (var item in originalParents.OrderBy(item => item.Index))
+            {
+                panel.Children.Remove(item.Row);
+                item.Parent.Children.Insert(item.Index, item.Row);
+                item.Row.Visibility = Visibility.Collapsed;
+            }
+            SavePrintSettings();
+        }
     }
 
     private void RequestLoadSheetsUnlessApplyingPreset()
@@ -1074,9 +1143,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         foreach (UIElement row in detailedSettingsRows)
         {
-            row.Visibility = !printToPrinter && showDetailedExportSettings
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            row.Visibility = Visibility.Collapsed;
         }
 
         if (fileNameColumn is not null)
@@ -2064,7 +2131,8 @@ public sealed class PrintWindow : TrueBimWindow
                 printer.Name,
                 printSetupName,
                 logger,
-                HandleOperationProgress);
+                HandleOperationProgress,
+                GetSelectedPdfSettings());
             printedSheetCount += result.PrintedSheetCount;
             failureCount += result.Failures.Count;
             HashSet<long> failedIds = result.Failures
@@ -2331,7 +2399,18 @@ public sealed class PrintWindow : TrueBimWindow
             summaryDialog.ExpandedContent = summary.ExpandedContent;
         }
 
-        summaryDialog.Show();
+        // Revit owns TaskDialog; a modeless WPF sibling can otherwise cover it.
+        // Restore our window even if the native dialog fails.
+        Hide();
+        try
+        {
+            summaryDialog.Show();
+        }
+        finally
+        {
+            Show();
+            Activate();
+        }
         OpenExportFolderAfterCompletion(summary.ExportedFileCount);
         UpdateExportState();
     }
@@ -3022,17 +3101,40 @@ public sealed class PrintWindow : TrueBimWindow
         sheetGrid.GroupStyle.Clear();
         if (includeSourceLevel)
         {
-            sheetGrid.GroupStyle.Add(CreateSheetGroupStyle("Источник: {0}"));
+            sheetGrid.GroupStyle.Add(CreateSheetGroupStyle("Источник: {0}", SetRowsSelected));
         }
 
-        sheetGrid.GroupStyle.Add(CreateSheetGroupStyle("Том / группа: {0}"));
+        sheetGrid.GroupStyle.Add(CreateSheetGroupStyle("Том / группа: {0}", SetRowsSelected));
     }
 
-    private static GroupStyle CreateSheetGroupStyle(string headerFormat)
+    private static GroupStyle CreateSheetGroupStyle(string headerFormat, Action<IEnumerable<PrintSheetRow>, bool> selectRows)
     {
         FrameworkElementFactory expander = new(typeof(Expander));
         expander.SetValue(Expander.IsExpandedProperty, true);
-        expander.SetBinding(HeaderedContentControl.HeaderProperty, new Binding("Name") { StringFormat = headerFormat });
+        FrameworkElementFactory check = new(typeof(CheckBox));
+        check.SetValue(CheckBox.IsThreeStateProperty, true);
+        check.SetBinding(ContentControl.ContentProperty, new Binding("Name") { StringFormat = headerFormat });
+        check.AddHandler(FrameworkElement.LoadedEvent, new RoutedEventHandler((sender, _) =>
+        {
+            CheckBox box = (CheckBox)sender;
+            if (box.DataContext is not CollectionViewGroup group) return;
+            MultiBinding selection = new() { Converter = new GroupSelectionConverter(), Mode = BindingMode.OneWay };
+            foreach (PrintSheetRow row in GetGroupRows(group).Where(row => row.CanBePrinted))
+                selection.Bindings.Add(new Binding(nameof(PrintSheetRow.IsSelected)) { Source = row });
+            box.IsEnabled = selection.Bindings.Count > 0;
+            BindingOperations.SetBinding(box, CheckBox.IsCheckedProperty, selection);
+        }));
+        check.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent, new RoutedEventHandler((sender, args) =>
+        {
+            if (((CheckBox)sender).DataContext is CollectionViewGroup group)
+            {
+                List<PrintSheetRow> rows = GetGroupRows(group).Where(row => row.CanBePrinted).ToList();
+                selectRows(rows, !rows.All(row => row.IsSelected));
+            }
+            args.Handled = true;
+        }));
+        expander.SetValue(HeaderedContentControl.HeaderTemplateProperty, new DataTemplate { VisualTree = check });
+        expander.SetBinding(HeaderedContentControl.HeaderProperty, new Binding());
         FrameworkElementFactory presenter = new(typeof(ItemsPresenter));
         expander.AppendChild(presenter);
 
@@ -3047,6 +3149,29 @@ public sealed class PrintWindow : TrueBimWindow
         {
             ContainerStyle = containerStyle
         };
+    }
+
+    private static IEnumerable<PrintSheetRow> GetGroupRows(CollectionViewGroup group)
+    {
+        foreach (object item in group.Items)
+        {
+            if (item is PrintSheetRow row) yield return row;
+            else if (item is CollectionViewGroup child)
+                foreach (PrintSheetRow descendant in GetGroupRows(child)) yield return descendant;
+        }
+    }
+
+    private sealed class GroupSelectionConverter : IMultiValueConverter
+    {
+        public object? Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            bool[] selected = values.OfType<bool>().ToArray();
+            return selected.Length == 0 || selected.All(value => !value) ? false
+                : selected.All(value => value) ? true : null;
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+            => throw new NotSupportedException();
     }
 
     private static Style CreateSheetRowStyle()

@@ -20,7 +20,6 @@ namespace TrueBIM.App.Modules.BimTools.ColorByParameter.UI;
 
 public sealed class ColorByParameterWindow : TrueBimWindow
 {
-    private const int MaxValueCount = 40;
     private readonly UIApplication application;
     private readonly Document document;
     private readonly string initialViewName;
@@ -445,14 +444,11 @@ public sealed class ColorByParameterWindow : TrueBimWindow
                 document,
                 activeView!,
                 GetSelectedCategories(),
-                parameter,
-                MaxValueCount);
+                parameter);
             rows = collection.Rows.ToList();
             colorGenerationOffset = 0;
             RefreshValueList();
-            statusText.Text = collection.WasTruncated
-                ? $"Вид «{activeView!.Name}». Найдено значений: {collection.TotalValueCount}. Показаны первые {rows.Count}; сузьте категории перед применением."
-                : $"Вид «{activeView!.Name}». Найдено уникальных значений: {rows.Count}.";
+            statusText.Text = $"Вид «{activeView!.Name}». Найдено уникальных значений: {rows.Count}.";
         }
         catch (Exception exception)
         {

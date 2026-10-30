@@ -2,10 +2,14 @@ namespace TrueBIM.App.Modules.RebarSplit.Models;
 
 public enum RebarSplitScope { Selection, VaryingSetsInProject }
 public enum RebarSplitParameterAction { Cancel, Skip, SplitAnyway }
+public enum RebarSplitProtectionAction { Cancel, Skip, PreserveStatus, RemoveStatus }
+public enum RebarSplitGroupAction { Cancel, Extract, Skip }
 
 public sealed record RebarSplitOptions(RebarSplitScope Scope, bool PreserveAnnotations = true);
 
 public sealed record RebarSplitParameterIssue(long SourceId, IReadOnlyList<string> Parameters);
+
+public sealed record RebarSplitProtectionIssue(long SourceId, bool Pinned, long? GroupId, string? GroupName);
 
 public static class RebarSplitPolicy
 {

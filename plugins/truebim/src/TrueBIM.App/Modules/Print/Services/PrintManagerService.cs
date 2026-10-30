@@ -35,7 +35,8 @@ public sealed class PrintManagerService
         string printerName,
         string? printSetupName,
         ITrueBimLogger logger,
-        Action<PrintOperationProgressStep>? progress = null)
+        Action<PrintOperationProgressStep>? progress = null,
+        PrintPdfExportSettings? settings = null)
     {
         if (document is null)
         {
@@ -64,6 +65,8 @@ public sealed class PrintManagerService
 
         Autodesk.Revit.DB.PrintManager? printManager = null;
         PrintManagerSnapshot? snapshot = null;
+        PrintParameters? modifiedParameters = null;
+        (ColorDepthType Color, RasterQualityType Quality, HiddenLineViewsType Processing)? originalParameters = null;
         try
         {
             printManager = document.PrintManager;
@@ -83,6 +86,28 @@ public sealed class PrintManagerService
             }
 
             logger.Info($"Print driver job started for document '{document.Title}'. Printer: {printerName}. Print setup: {printSetupName ?? "current document setting"}. Range: selected sheets. Sheets: {items.Count}.");
+            if (settings is not null)
+            {
+                modifiedParameters = printManager.PrintSetup.CurrentPrintSetting.PrintParameters;
+                originalParameters = (modifiedParameters.ColorDepth, modifiedParameters.RasterQuality, modifiedParameters.HiddenLineViews);
+                modifiedParameters.ColorDepth = settings.ColorMode switch
+                {
+                    PrintPdfColorMode.BlackLine => ColorDepthType.BlackLine,
+                    PrintPdfColorMode.GrayScale => ColorDepthType.GrayScale,
+                    _ => ColorDepthType.Color
+                };
+                modifiedParameters.RasterQuality = settings.RasterQuality switch
+                {
+                    PrintPdfRasterQuality.Low => RasterQualityType.Low,
+                    PrintPdfRasterQuality.Medium => RasterQualityType.Medium,
+                    PrintPdfRasterQuality.Presentation => RasterQualityType.Presentation,
+                    _ => RasterQualityType.High
+                };
+                modifiedParameters.HiddenLineViews = settings.AlwaysUseRaster
+                    ? HiddenLineViewsType.RasterProcessing : HiddenLineViewsType.VectorProcessing;
+                printManager.Apply();
+            }
+
             int printedSheetCount = 0;
             List<PrintDriverFailure> failures = new();
             foreach (PrintDriverJobItem item in items)
@@ -135,6 +160,19 @@ public sealed class PrintManagerService
         }
         finally
         {
+            if (modifiedParameters is not null && originalParameters.HasValue)
+            {
+                try
+                {
+                    modifiedParameters.ColorDepth = originalParameters.Value.Color;
+                    modifiedParameters.RasterQuality = originalParameters.Value.Quality;
+                    modifiedParameters.HiddenLineViews = originalParameters.Value.Processing;
+                }
+                catch (Exception exception)
+                {
+                    logger.Warning($"Could not restore print parameters: {exception.Message}");
+                }
+            }
             if (printManager is not null && snapshot is not null)
             {
                 snapshot.Restore(printManager, logger, document.Title);

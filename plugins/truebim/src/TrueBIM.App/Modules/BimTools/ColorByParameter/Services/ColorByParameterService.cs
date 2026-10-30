@@ -2,7 +2,6 @@ using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.BimTools.ColorByParameter.Models;
 using TrueBIM.App.Modules.BimTools.CopyParameters.Models;
 using TrueBIM.App.Services;
-using TrueBIM.App.Services.Logging;
 
 namespace TrueBIM.App.Modules.BimTools.ColorByParameter.Services;
 
@@ -10,16 +9,13 @@ public sealed class ColorByParameterService
 {
     private readonly ViewFilterService viewFilterService;
     private readonly ColorPaletteService colorPaletteService;
-    private readonly ITrueBimLogger logger;
 
     public ColorByParameterService(
         ViewFilterService viewFilterService,
-        ColorPaletteService colorPaletteService,
-        ITrueBimLogger logger)
+        ColorPaletteService colorPaletteService)
     {
         this.viewFilterService = viewFilterService ?? throw new ArgumentNullException(nameof(viewFilterService));
         this.colorPaletteService = colorPaletteService ?? throw new ArgumentNullException(nameof(colorPaletteService));
-        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public IReadOnlyList<BimCategoryItem> CollectCategories(Document document, View activeView)
@@ -93,8 +89,7 @@ public sealed class ColorByParameterService
         Document document,
         View activeView,
         IReadOnlyList<BimCategoryItem> categories,
-        BimParameterItem parameter,
-        int maxValueCount)
+        BimParameterItem parameter)
     {
         HashSet<long> selectedCategoryIds = CreateCategoryIdSet(categories, parameter);
         Dictionary<ParameterValueToken, int> valueCounts = [];
@@ -119,11 +114,6 @@ public sealed class ColorByParameterService
             .Select(pair => pair.Key)
             .ToList();
         int totalValueCount = values.Count;
-        if (maxValueCount > 0 && values.Count > maxValueCount)
-        {
-            values = values.Take(maxValueCount).ToList();
-            logger.Warning($"Color By Parameter truncated value list to {maxValueCount} of {totalValueCount} values for '{parameter.Name}'.");
-        }
 
         IReadOnlyList<ColorSwatch> colors = colorPaletteService.Generate(values.Count);
         List<ColorRuleRow> rows = [];

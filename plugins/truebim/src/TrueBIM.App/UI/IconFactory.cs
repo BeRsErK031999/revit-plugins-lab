@@ -61,7 +61,8 @@ public enum TrueBimIcon
     Cut,
     Up,
     Down,
-    Move
+    Move,
+    SelectionBox
 }
 
 internal static class IconFactory
@@ -188,6 +189,7 @@ internal static class IconFactory
     {
         return icon switch
         {
+            TrueBimIcon.SelectionBox => "M0,0 L5,0 L5,1.5 L1.5,1.5 L1.5,5 L0,5 Z M11,0 L16,0 L16,5 L14.5,5 L14.5,1.5 L11,1.5 Z M0,11 L1.5,11 L1.5,14.5 L5,14.5 L5,16 L0,16 Z M14.5,11 L16,11 L16,16 L11,16 L11,14.5 L14.5,14.5 Z M8,3 L13,5.5 L13,10.5 L8,13 L3,10.5 L3,5.5 Z M8,4.5 L4.5,6.2 L8,8 L11.5,6.2 Z M4.5,7.7 L4.5,9.6 L7.3,11 L7.3,9.1 Z M8.7,9.1 L8.7,11 L11.5,9.6 L11.5,7.7 Z",
             TrueBimIcon.App => "M2,2 L14,2 L14,14 L2,14 Z M4,4 L12,4 L12,12 L4,12 Z M6,6 L10,6 L10,8 L6,8 Z M6,9 L11,9 L11,10.5 L6,10.5 Z",
             TrueBimIcon.Logs => "M3,2 L12,2 L12,14 L3,14 Z M5,5 L10,5 L10,6 L5,6 Z M5,8 L10,8 L10,9 L5,9 Z M5,11 L9,11 L9,12 L5,12 Z",
             TrueBimIcon.Print => "M4,1.5 L12,1.5 L12,5 L4,5 Z M3,5 L13,5 L14.5,7 L14.5,11.5 L12.5,11.5 L12.5,14.5 L3.5,14.5 L3.5,11.5 L1.5,11.5 L1.5,7 Z M4.5,10 L11.5,10 L11.5,13.5 L4.5,13.5 Z M4,7 L5.5,7 L5.5,8.2 L4,8.2 Z M6.5,11 L10,11 L10,12 L6.5,12 Z",

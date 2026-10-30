@@ -26,10 +26,18 @@ public sealed record TrueBimRibbonPulldownItemDefinition(
     TrueBimIcon Icon,
     string Tooltip,
     bool BeginsGroup = false,
-    string AvailabilityClassName = "");
+    string AvailabilityClassName = "",
+    string LongDescription = "");
+
+public sealed record TrueBimRibbonPanelDefinition(
+    string Name,
+    IReadOnlyList<TrueBimRibbonButtonDefinition> Buttons,
+    bool IsStacked = false);
 
 public static class TrueBimRibbon
 {
+    public const string QuickAccessPanelName = "Быстрый доступ";
+    public const string ToolsPanelName = "Инструменты";
     public const string BimPanelName = "БИМ";
     public const string BimDocumentationPanelName = "Оформление";
     public const string BimViewsPanelName = "Виды";
@@ -309,23 +317,8 @@ public static class TrueBimRibbon
             BeginsGroup: true)
     ];
 
-    public static IReadOnlyList<string> PanelNames { get; } =
-    [
-        BimDocumentationPanelName,
-        BimViewsPanelName,
-        BimCoordinationPanelName,
-        BimLibraryPanelName,
-        ModelReviewPanelName,
-        GeometryPanelName,
-        ParametersPanelName,
-        AdministrationPanelName,
-        ArPanelName,
-        KrPanelName,
-        EomPanelName,
-        HelpPanelName
-    ];
-
-    public static IReadOnlyList<TrueBimRibbonButtonDefinition> Buttons { get; } =
+    // Command metadata stays in one catalog; the compact layout below reuses it.
+    public static IReadOnlyList<TrueBimRibbonButtonDefinition> CommandCatalog { get; } =
     [
         new(
             BimDocumentationPanelName,
@@ -350,6 +343,14 @@ public static class TrueBimRibbon
             "Включает и выключает видимость категорий на активном виде.",
             LongDescription: "Открывает выпадающий список категорий без отдельного модального окна. Выбор пункта сразу переключает видимость категории на активном виде.",
             PulldownItems: ViewVisibilityPulldownItems),
+        new(
+            BimViewsPanelName,
+            "TrueBIM_SelectionBox",
+            "Рамка выбора",
+            $"{CommandNamespace}.{nameof(SelectionBoxCommand)}",
+            TrueBimIcon.SelectionBox,
+            "Ограничивает 3D-вид выбранными элементами основной модели и RVT-связей.",
+            "Сначала выберите один или несколько элементов, затем нажмите кнопку. Элемент внутри связи выбирается через Tab. Отступ 300 мм; видимость и шаблон вида сохраняются. Предварительный выбор в связях поддерживается с Revit 2023."),
         new(
             BimDocumentationPanelName,
             "TrueBIM_ScheduleImport",
@@ -546,4 +547,109 @@ public static class TrueBimRibbon
             "Предпросмотр по параметру «• Группа», диагностика и методичка. Запись только отмеченных строк; 1000 Вт нагрузки → 1 ВА в семействе схемы.")
     ];
 
+    public static IReadOnlyList<TrueBimRibbonPanelDefinition> Panels { get; } =
+    [
+        new(QuickAccessPanelName,
+        [
+            QuickAccess("TrueBIM_ColorByParameter"),
+            QuickAccess("TrueBIM_CopyParameters"),
+            QuickAccess("TrueBIM_Print")
+        ], IsStacked: true),
+        new(BimViewsPanelName,
+        [
+            InPanel("TrueBIM_ViewVisibility", BimViewsPanelName),
+            InPanel("TrueBIM_SelectionBox", BimViewsPanelName),
+            InPanel("TrueBIM_DatumExtents", BimViewsPanelName),
+            InPanel("TrueBIM_OpeningViews", BimViewsPanelName)
+        ], IsStacked: true),
+        new(ToolsPanelName,
+        [
+            Menu("TrueBIM_ModelMenu", "Модель", TrueBimIcon.Family,
+                "Семейства, геометрия и проверка модели.",
+            [
+                MenuItem("TrueBIM_FamilyManager"),
+                MenuItem("TrueBIM_ReplaceFamilies"),
+                MenuItem("TrueBIM_JoinCut"),
+                MenuItem("TrueBIM_ColorByParameter", beginsGroup: true),
+                MenuItem("TrueBIM_ParameterAudit"),
+                MenuItem("TrueBIM_ClashReport")
+            ]),
+            Menu("TrueBIM_ParametersMenu", "Параметры", TrueBimIcon.Parameters,
+                "Копирование и управление параметрами, рабочие наборы.",
+            [
+                MenuItem("TrueBIM_CopyParameters"),
+                MenuItem("TrueBIM_ParaManager"),
+                MenuItem("TrueBIM_SharedParameterInspector"),
+                MenuItem("TrueBIM_CreateWorksets", beginsGroup: true)
+            ]),
+            Menu("TrueBIM_DocumentsMenu", "Документы", TrueBimIcon.SheetNumbering,
+                "Листы, печать, импорт таблиц и ведомость спецификаций.",
+            [
+                MenuItem("TrueBIM_SheetNumbering"),
+                MenuItem("TrueBIM_Print"),
+                MenuItem("TrueBIM_ScheduleImport", beginsGroup: true),
+                MenuItem("TrueBIM_ScheduleRegister")
+            ]),
+            Menu("TrueBIM_DisciplinesMenu", "Разделы", TrueBimIcon.Worksets,
+                "Инструменты разделов АР, КР и ЭОМ.",
+            [
+                MenuItem("TrueBIM_FinishSchedule", prefix: "АР"),
+                MenuItem("TrueBIM_Tep", prefix: "АР"),
+                MenuItem("TrueBIM_IsoFieldRebar", beginsGroup: true, prefix: "КР"),
+                MenuItem("TrueBIM_Lintels", prefix: "КР"),
+                MenuItem("TrueBIM_RebarSplit", prefix: "КР"),
+                MenuItem("TrueBIM_RebarFill", prefix: "КР"),
+                MenuItem("TrueBIM_CollapseScheduleColumns", prefix: "КР"),
+                MenuItem("TrueBIM_VoltageDropCalculation", beginsGroup: true, prefix: "ЭОМ"),
+                MenuItem("TrueBIM_ElectricalSchematic", prefix: "ЭОМ")
+            ])
+        ]),
+        new(HelpPanelName, [InPanel("TrueBIM_OpenLogs", HelpPanelName)])
+    ];
+
+    public static IReadOnlyList<TrueBimRibbonButtonDefinition> Buttons { get; } =
+        Panels.SelectMany(panel => panel.Buttons).ToArray();
+
+    public static IReadOnlyList<string> PanelNames { get; } =
+        Panels.Select(panel => panel.Name).ToArray();
+
+    private static TrueBimRibbonButtonDefinition InPanel(string name, string panelName)
+    {
+        TrueBimRibbonButtonDefinition command = CommandCatalog.Single(item => item.Name == name);
+        return command with { PanelName = panelName, Text = SingleLine(command.Text) };
+    }
+
+    private static TrueBimRibbonButtonDefinition QuickAccess(string name)
+    {
+        return InPanel(name, QuickAccessPanelName) with { Name = name + "_QuickAccess" };
+    }
+
+    private static TrueBimRibbonPulldownItemDefinition MenuItem(
+        string name,
+        bool beginsGroup = false,
+        string prefix = "")
+    {
+        TrueBimRibbonButtonDefinition command = CommandCatalog.Single(item => item.Name == name);
+        if (command.IsPulldown)
+        {
+            throw new InvalidOperationException($"Cannot flatten the submenu '{name}'.");
+        }
+
+        string text = SingleLine(command.Text);
+        return new(command.Name, string.IsNullOrEmpty(prefix) ? text : $"{prefix} · {text}",
+            command.CommandClassName, command.Icon, command.Tooltip, beginsGroup,
+            command.AvailabilityClassName, command.LongDescription);
+    }
+
+    private static TrueBimRibbonButtonDefinition Menu(
+        string name,
+        string text,
+        TrueBimIcon icon,
+        string tooltip,
+        IReadOnlyList<TrueBimRibbonPulldownItemDefinition> items)
+    {
+        return new(ToolsPanelName, name, text, "", icon, tooltip, PulldownItems: items);
+    }
+
+    private static string SingleLine(string text) => text.Replace("\r", "").Replace("\n", " ");
 }
