@@ -214,7 +214,8 @@ public sealed partial class RebarDetailingService
 
     private static void ArrangeDimensionText(DetailingFrame frame, IEnumerable<Dimension> dimensions)
     {
-        var numeric = dimensions.Where(d => d.Curve is Line && d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() != 2).ToList();
+        var all = dimensions.Where(d => d.Curve is Line).ToList();
+        var numeric = all.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() != 2).ToList();
         foreach (var row in numeric.GroupBy(d =>
         {
             var line = (Line)d.Curve;
@@ -223,6 +224,19 @@ public sealed partial class RebarDetailingService
         }))
         {
             XYZ direction = row.Key.Horizontal ? frame.Right : frame.Up;
+            XYZ across = row.Key.Horizontal ? frame.Up : frame.Right;
+            var formulas = all.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2
+                && Math.Abs(((Line)d.Curve).Direction.DotProduct(direction)) > 0.999
+                && Math.Round((row.Key.Horizontal ? frame.Y(((Line)d.Curve).Origin) : frame.X(((Line)d.Curve).Origin)) * 304.8, 1) == row.Key.Lane)
+                .Select(d =>
+                {
+                    var segments = d.Segments.Cast<DimensionSegment>().ToList();
+                    string text = segments.Count + "×" + Math.Round((segments.FirstOrDefault()?.Value ?? 0) * 304.8) + "="
+                        + Math.Round(segments.Sum(s => s.Value ?? 0) * 304.8);
+                    double height = d.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() * frame.View.Scale ?? frame.Paper(2.5);
+                    return new { Center = segments.Count == 0 ? 0 : (segments.First().Origin + segments.Last().Origin).DotProduct(direction) / 2,
+                        Width = text.Length * height * 0.65 };
+                }).ToList();
             var labels = new List<DimensionLabel>();
             foreach (var dimension in row)
             {
@@ -257,8 +271,15 @@ public sealed partial class RebarDetailingService
                 centers[index] = Math.Min(centers[index], centers[index + 1] - (labels[index].Width + labels[index + 1].Width) / 2 - frame.Paper(1.2));
             for (int index = 0; index < labels.Count; index++)
             {
-                double shift = centers[index] - labels[index].Position.DotProduct(direction);
-                if (Math.Abs(shift) > frame.Paper(0.01)) labels[index].Move(labels[index].Position + direction * shift);
+                var label = labels[index];
+                double shift = centers[index] - label.Position.DotProduct(direction);
+                XYZ position = label.Position + direction * shift;
+                // A short cover/transition label may overlap an adjacent native
+                // equality formula. Move its text across the row, keeping the
+                // dimension line at its required offset and the formula intact.
+                if (formulas.Any(f => Math.Abs(centers[index] - f.Center) < (label.Width + f.Width) / 2 + frame.Paper(1.2)))
+                    position += across * (frame.Paper(4) - (position - label.Origin).DotProduct(across));
+                if (position.DistanceTo(label.Position) > frame.Paper(0.01)) label.Move(position);
             }
         }
     }

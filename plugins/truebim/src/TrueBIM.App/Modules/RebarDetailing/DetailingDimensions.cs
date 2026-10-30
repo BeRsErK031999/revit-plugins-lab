@@ -91,7 +91,26 @@ public sealed partial class RebarDetailingService
                         .Select(a => new ChainReference { Point = a.Point, Axis = a, Run = b.Shape })))
                     .Concat(section.Faces.Where(f => f.Horizontal).Select(f => new ChainReference { Point = f.Point, Face = f })).ToList();
                 if (bars.Any(b => b.BendEndReferences.Count > 0))
-                    AddChain(bent, frame.Point(bounds.Left, Math.Max(bounds.Top, section.Wall.Top) + frame.Paper(8)), frame.Right, true, false);
+                {
+                    double row = Math.Max(bounds.Top, section.Wall.Top) + frame.Paper(8);
+                    // Keep existing manual slab notes intact and place the new
+                    // top dimension above them if they occupy its normal row.
+                    var notes = new FilteredElementCollector(doc).OwnedByView(view.Id).WhereElementIsNotElementType()
+                        .Where(e => (e is AnnotationSymbol || e is TextNote) && !OwnedDetail(e))
+                        .Select(e => e.get_BoundingBox(view)).Where(b => b != null).Select(b =>
+                        {
+                            var corners = new List<XYZ>();
+                            for (int x = 0; x < 2; x++) for (int y = 0; y < 2; y++) for (int z = 0; z < 2; z++)
+                                corners.Add(b!.Transform.OfPoint(new XYZ(x == 0 ? b.Min.X : b.Max.X,
+                                    y == 0 ? b.Min.Y : b.Max.Y, z == 0 ? b.Min.Z : b.Max.Z)));
+                            return new DetailingRect(corners.Min(frame.X), corners.Min(frame.Y), corners.Max(frame.X), corners.Max(frame.Y));
+                        }).OrderBy(b => b.Bottom).ToList();
+                    foreach (var note in notes)
+                        if (note.Right >= bent.Min(p => frame.X(p.Point)) && note.Left <= bent.Max(p => frame.X(p.Point))
+                            && note.Top >= row - frame.Paper(3) && note.Bottom <= row + frame.Paper(3))
+                            row = note.Top + frame.Paper(4);
+                    AddChain(bent, frame.Point(bounds.Left, row), frame.Right, true, false);
+                }
             }
 
             void AddChain(List<ChainReference> entries, XYZ origin, XYZ direction, bool horizontal, bool equality)
@@ -99,6 +118,9 @@ public sealed partial class RebarDetailingService
                 var plan = DetailingChainPlan.Create(entries.Select((p, i) => new DetailingChainPoint(i,
                     (horizontal ? frame.X(p.Point) : frame.Y(p.Point)) * 304.8, p.Run, p.Face != null)), equality);
                 if (plan.Points.Count < 2) return;
+                result.LayoutTrace.Add("chain " + (horizontal ? "horizontal" : "vertical") + ": "
+                    + string.Join("; ", plan.Sections.Select(s => (s.UseEqualityFormula ? "formula " : "numeric ")
+                        + string.Join(",", s.Points.Select(p => p.PositionMm.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + (p.Boundary ? " face" : ""))))));
                 var anchorFace = entries.Select(p => p.Face).FirstOrDefault(f => f != null);
                 var axes = entries.Where(p => p.Axis != null).Select(p => p.Axis!).ToList();
                 var references = new Dictionary<int, Reference>();
@@ -139,7 +161,11 @@ public sealed partial class RebarDetailingService
         string role = "equality-style:" + source.UniqueId;
         var existing = new FilteredElementCollector(doc).OfClass(typeof(DimensionType)).Cast<DimensionType>().ToList();
         DimensionType? own = existing.FirstOrDefault(t => DetailRole(t) == role);
-        if (own != null) return own;
+        if (own != null)
+        {
+            own.get_Parameter(BuiltInParameter.EQUALITY_WITNESS_DISPLAY)?.Set(2);
+            return own;
+        }
         string available = name;
         for (int index = 2; existing.Any(t => t.Name == available); index++) available = name + " " + index;
         DimensionType type = (DimensionType)source.Duplicate(available);
@@ -151,7 +177,7 @@ public sealed partial class RebarDetailingService
             new(0, "", LabelType.TotalLength, "", format)
         });
         // Hide intermediate ticks while retaining their real references.
-        type.get_Parameter(BuiltInParameter.EQUALITY_WITNESS_DISPLAY)?.Set(0);
+        type.get_Parameter(BuiltInParameter.EQUALITY_WITNESS_DISPLAY)?.Set(2);
         MarkDetail(type, role);
         return type;
     }

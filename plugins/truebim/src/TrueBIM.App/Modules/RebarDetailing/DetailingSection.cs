@@ -35,6 +35,9 @@ public sealed partial class RebarDetailingService
                 double y = frame.Y(bend.Start);
                 if (Math.Min(Math.Abs(y - frame.Y(spine.Start)), Math.Abs(y - frame.Y(spine.End))) > 100 / 304.8) continue;
                 double a = frame.X(bend.Start) - frame.X(spine.Start), b = frame.X(bend.End) - frame.X(spine.Start);
+                XYZ end = Math.Abs(a) > Math.Abs(b) ? bend.Start : bend.End;
+                if (position.Any(other => !ReferenceEquals(other, bend)
+                    && (other.Start.DistanceTo(end) < 0.1 / 304.8 || other.End.DistanceTo(end) < 0.1 / 304.8))) continue;
                 offsets.Add((Math.Abs(a) > Math.Abs(b) ? a : b) * 304.8);
             }
         }
@@ -47,7 +50,29 @@ public sealed partial class RebarDetailingService
     private static List<DetailingSection> Sections(DetailingFrame frame, DetailingGeometry geometry, DetailingOptions options)
     {
         var sections = new List<DetailingSection>();
-        foreach (var group in geometry.Bars.GroupBy(b => DetailingGeometry.Key(b.Host, b.Link)))
+        var reinforcedHosts = new HashSet<string>(geometry.Bars.Select(b => DetailingGeometry.Key(b.Host, b.Link)));
+        string SectionKey(DetailingBar bar)
+        {
+            string own = DetailingGeometry.Key(bar.Host, bar.Link);
+            if (geometry.Faces.Any(f => f.HostKey == own)) return own;
+            // A transverse set may belong to a neighbouring wall while crossing
+            // this section. Use the unique visible reinforced host around its
+            // cut point, so real concrete faces supply both end covers.
+            var candidates = geometry.Hosts.Where(h => h.Link?.Id == bar.Link?.Id && reinforcedHosts.Contains(h.Key)
+                && (h.Element is Wall || h.Element.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralColumns)))
+                .Where(h =>
+                {
+                    var faces = geometry.Faces.Where(f => f.HostKey == h.Key).ToList();
+                    var sides = faces.Where(f => f.Horizontal).ToList();
+                    var levels = faces.Where(f => !f.Horizontal).ToList();
+                    double x = frame.X(bar.Target), y = frame.Y(bar.Target), tolerance = 1 / 304.8;
+                    return sides.Count >= 2 && levels.Count >= 2
+                        && x >= sides.Min(f => frame.X(f.Point)) - tolerance && x <= sides.Max(f => frame.X(f.Point)) + tolerance
+                        && y >= levels.Min(f => frame.Y(f.Point)) - tolerance && y <= levels.Max(f => frame.Y(f.Point)) + tolerance;
+                }).Select(h => h.Key).Distinct().ToList();
+            return candidates.Count == 1 ? candidates[0] : own;
+        }
+        foreach (var group in geometry.Bars.GroupBy(SectionKey))
         {
             var bars = group.ToList();
             DetailingRect reinforcement = Region(frame, bars);

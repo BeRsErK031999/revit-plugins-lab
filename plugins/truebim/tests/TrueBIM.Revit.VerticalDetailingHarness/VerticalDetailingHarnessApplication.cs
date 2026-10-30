@@ -62,8 +62,9 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
                     if (reference.ExternalFileReferenceType != ExternalFileReferenceType.RevitLink) continue;
                     string name = Path.GetFileName(ModelPathUtils.ConvertModelPathToUserVisiblePath(reference.GetPath()));
                     string local = Path.Combine(Path.GetDirectoryName(model)!, name);
-                    if (!File.Exists(local)) continue;
-                    transmission.SetDesiredReferenceData(id, new FilePath(local), PathType.Absolute, true);
+                    // The supplied fixture contains only the host and ALL link.
+                    // Missing links stay unloaded in this disposable copy.
+                    transmission.SetDesiredReferenceData(id, new FilePath(local), PathType.Absolute, File.Exists(local));
                     changed = true;
                 }
                 if (changed) { transmission.IsTransmitted = true; TransmissionData.WriteTransmissionData(copyPath, transmission); }
@@ -92,14 +93,25 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
                 catch (Exception ex) { links.Add(new { type.Name, Error = ex.Message }); }
             }
             Progress("Collecting inventory");
+            if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "acceptance")
+            {
+                string finalReport = report!;
+                try { report = finalReport + ".apply.json"; TestDetailing(ui); }
+                finally { report = finalReport; }
+                TestInteractive(ui); return;
+            }
+            if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "interactive") { TestInteractive(ui); return; }
             if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "apply") { TestDetailing(ui); return; }
             var sheets = new FilteredElementCollector(doc).OfClass(typeof(ViewSheet)).Cast<ViewSheet>().ToList();
             var placed = new HashSet<ElementId>(sheets.SelectMany(s => s.GetAllPlacedViews()));
             var nameFilters = (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VIEW_NAME_FILTER") ?? "")
                 .Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+            var matchingSheets = sheets.Where(s => nameFilters.Any(f => s.Name.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
+            var matchingPlaced = new HashSet<ElementId>(matchingSheets.SelectMany(s => s.GetAllPlacedViews()));
+            foreach (ViewSheet sheet in matchingSheets) Export(doc, sheet, "reference");
             var views = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
-                .Where(v => !v.IsTemplate && (nameFilters.Length == 0 ? placed.Contains(v.Id) : nameFilters.Any(f => v.Name.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0))
-                    && v.ViewType != ViewType.Legend && v.ViewType != ViewType.Schedule).ToList();
+                .Where(v => !v.IsTemplate && (nameFilters.Length == 0 ? placed.Contains(v.Id) : matchingPlaced.Contains(v.Id) || nameFilters.Any(f => v.Name.IndexOf(f, StringComparison.OrdinalIgnoreCase) >= 0))
+                    && v.ViewType != ViewType.DrawingSheet && v.ViewType != ViewType.Legend && v.ViewType != ViewType.Schedule).ToList();
             var details = new List<object>();
             foreach (View view in views)
             {
@@ -121,6 +133,9 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             Write(new {
                 FatalError = (string?)null, Model = model, Links = links,
                 Sheets = sheets.Select(s => new { Id = s.Id.Value, s.SheetNumber, s.Name, Params = Parameters(s), Views = s.GetAllPlacedViews().Select(id => id.Value).ToArray() }).ToList(),
+                Viewports = new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>()
+                    .Select(p => new { Id = p.Id.Value, ViewId = p.ViewId.Value, SheetId = p.SheetId.Value,
+                        Number = p.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)?.AsString(), Center = Point(p.GetBoxCenter()) }).ToList(),
                 Views = details,
                 AnnotationTypes = new FilteredElementCollector(doc).WhereElementIsElementType().Where(e => e.Category?.CategoryType == CategoryType.Annotation)
                     .Select(e => new { Id = e.Id.Value, e.Name, Class = e.GetType().Name, Family = (e as FamilySymbol)?.FamilyName, Category = e.Category?.Name, Params = Parameters(e) }).ToList(),
@@ -148,9 +163,11 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             };
             else if (e is Dimension dim) data = new {
                 Value = dim.Value, dim.ValueOverride, dim.Above, dim.Below, dim.Prefix, dim.Suffix,
+                TextPosition = SafePoint(() => dim.TextPosition),
                 Curve = dim.Curve == null ? null : new { Start = SafePoint(() => dim.Curve.GetEndPoint(0)), End = SafePoint(() => dim.Curve.GetEndPoint(1)), Origin = dim.Curve is Line line ? Point(line.Origin) : null },
                 References = dim.References.Cast<Reference>().Select(r => ReferenceInfo(doc, r)).ToList(),
-                Segments = dim.Segments.Cast<DimensionSegment>().Select(s => new { s.Value, s.ValueOverride, s.Above, s.Below, s.Prefix, s.Suffix, Origin = SafePoint(() => s.Origin) }).ToList()
+                Segments = dim.Segments.Cast<DimensionSegment>().Select(s => new { s.Value, s.ValueOverride, s.Above, s.Below, s.Prefix, s.Suffix,
+                    Origin = SafePoint(() => s.Origin), TextPosition = SafePoint(() => s.TextPosition) }).ToList()
             };
             else if (e is TextNote note) data = new { note.Text, Position = Point(note.Coord) };
             else if (e is CurveElement curve) data = new { Start = Point(curve.GeometryCurve.GetEndPoint(0)), End = Point(curve.GeometryCurve.GetEndPoint(1)), Style = curve.LineStyle.Name };
@@ -159,7 +176,9 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
                 Start = family.Location is LocationCurve lc ? SafePoint(() => lc.Curve.GetEndPoint(0)) : null,
                 End = family.Location is LocationCurve lc2 ? SafePoint(() => lc2.Curve.GetEndPoint(1)) : null,
                 BasisX = Point(family.GetTransform().BasisX), BasisY = Point(family.GetTransform().BasisY), BasisZ = Point(family.GetTransform().BasisZ),
-                TransformOrigin = Point(family.GetTransform().Origin), Params = Parameters(family) };
+                TransformOrigin = Point(family.GetTransform().Origin), Params = Parameters(family),
+                Leaders = family is AnnotationSymbol annotation ? annotation.GetLeaders().Cast<Leader>()
+                    .Select(l => new { Anchor = SafePoint(() => l.Anchor), Elbow = SafePoint(() => l.Elbow), End = SafePoint(() => l.End) }).ToList() : null };
         }
         catch (Exception ex) { data = new { Error = ex.Message }; }
         return new { Id = e.Id.Value, e.Name, Class = e.GetType().Name, Category = e.Category?.Name, TypeId = e.GetTypeId().Value, GroupId = e.GroupId.Value, Data = data };

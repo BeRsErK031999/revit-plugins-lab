@@ -10,6 +10,57 @@ namespace TrueBIM.Revit.VerticalDetailingHarness;
 
 public sealed partial class VerticalDetailingHarnessApplication
 {
+    private void TestInteractive(UIDocument ui)
+    {
+        Document doc = ui.Document;
+        var views = (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VIEWS") ?? "").Split(',')
+            .Select(s => (View)doc.GetElement(new ElementId(long.Parse(s)))).ToList();
+        bool applyOnly = Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "acceptance";
+        if (applyOnly) views = views.Take(1).ToList();
+        var assembly = System.Reflection.Assembly.LoadFile(Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_PAYLOAD")!);
+        Type serviceType = assembly.GetType("TrueBIM.App.Modules.RebarDetailing.RebarDetailingService", true)!;
+        object service = Activator.CreateInstance(serviceType)!;
+        Type windowType = assembly.GetType("TrueBIM.App.Modules.RebarDetailing.RebarDetailingWindow", true)!;
+        object templateToken = CheckTemplateToken(doc, views[0]);
+        object lowerBreaks = CheckLowerBreakMirroring(doc, views[0]);
+        string modelBefore = ModelFingerprint(doc), commentsBefore = CommentsFingerprint(doc);
+        var annotationsBefore = views.Select(AnnotationFingerprint).ToList();
+        bool cancelUnchanged = false, appliedSucceeded = false;
+        object? applied = null, chosen = null, measured = null;
+        for (int pass = applyOnly ? 1 : 0; pass < 2; pass++)
+        {
+            object rows = serviceType.GetMethod("Inspect")!.Invoke(service, new object[] { views });
+            var window = (System.Windows.Window)Activator.CreateInstance(windowType, doc, rows, service)!;
+            new System.Windows.Interop.WindowInteropHelper(window).Owner = ui.Application.MainWindowHandle;
+            Progress(pass == 0 ? "Interactive: inspect options, then cancel" : "Interactive: configure and apply");
+            bool accepted = window.ShowDialog() == true;
+            if (pass == 0)
+            {
+                cancelUnchanged = !accepted && modelBefore == ModelFingerprint(doc) && commentsBefore == CommentsFingerprint(doc)
+                    && annotationsBefore.SequenceEqual(views.Select(AnnotationFingerprint));
+                if (!cancelUnchanged) break;
+            }
+            else if (accepted)
+            {
+                object selected = windowType.GetProperty("SelectedViews")!.GetValue(window)!;
+                object options = windowType.GetProperty("Options")!.GetValue(window)!;
+                chosen = options.GetType().GetProperties().Where(p => p.PropertyType == typeof(string) || p.PropertyType == typeof(bool) || p.PropertyType.IsEnum)
+                    .ToDictionary(p => p.Name, p => p.GetValue(options)?.ToString());
+                applied = serviceType.GetMethod("Apply")!.Invoke(service, new[] { (object)doc, selected, options });
+                var results = ((System.Collections.IEnumerable)applied).Cast<object>().ToList();
+                appliedSucceeded = results.Count > 0 && results.All(r => (bool)r.GetType().GetProperty("Succeeded")!.GetValue(r)!);
+                measured = views.Select(v => new { v.Name, Layout = MeasureLayout(doc, v),
+                    Annotations = new FilteredElementCollector(doc).OwnedByView(v.Id).WhereElementIsNotElementType()
+                        .Where(e => e is AnnotationSymbol || e is SpotDimension).Select(e => Annotation(doc, e)).ToList() }).ToList();
+                foreach (View view in views) Export(doc, view, "interactive-after");
+            }
+        }
+        Write(new { FatalError = (string?)null, Mode = "interactive", CancellationChecked = !applyOnly, CancelUnchanged = applyOnly ? (bool?)null : cancelUnchanged,
+            AppliedSucceeded = appliedSucceeded, Options = chosen, Results = applied, Measured = measured, TemplateToken = templateToken,
+            LowerBreaks = lowerBreaks, Assembly = assembly.Location });
+        Progress("Done");
+    }
+
     private void TestDetailing(UIDocument ui)
     {
         Document doc = ui.Document;
@@ -18,6 +69,10 @@ public sealed partial class VerticalDetailingHarnessApplication
             ? requestedVariant : DetailingVariant.Straight;
         string ids = Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VIEWS") ?? "2310980,2568691";
         var views = ids.Split(',').Select(s => (View)doc.GetElement(new ElementId(long.Parse(s)))).ToList();
+        var viewVariants = (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VIEW_VARIANTS") ?? "")
+            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split(':'))
+            .ToDictionary(p => long.Parse(p[0]), p => (DetailingVariant)Enum.Parse(typeof(DetailingVariant), p[1]));
+        DetailingVariant VariantFor(View view) => viewVariants.TryGetValue(view.Id.Value, out var selectedVariant) ? selectedVariant : variant;
         var snapshot = ModelFingerprint(doc);
         var originalComments = new FilteredElementCollector(doc).WhereElementIsNotElementType()
             .Where(e => e is Rebar || e is RebarInSystem).ToDictionary(e => e.Id, e => e.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "");
@@ -31,12 +86,13 @@ public sealed partial class VerticalDetailingHarnessApplication
         var preview = CapturePreview(doc, views);
         var tests = new List<object>();
         bool quantityDisabledSafe = false;
+        bool customNotesSafe = false, emptyNotesSafe = false, textCommentSafe = false;
         foreach (View view in views)
         {
             Progress("Testing " + view.Id + " " + view.Name);
             Export(doc, view, "before");
             DetailingGeometry geometry = DetailingGeometry.Read(doc, view);
-            DetailingOptions options = new() { Variant = variant };
+            DetailingOptions options = new() { Variant = VariantFor(view) };
             options.TagTypeId = service.PreferredType(new[] { view }, service.Types(doc, "tag"), "tag");
             options.DimensionTypeId = service.PreferredType(new[] { view }, service.Types(doc, "dimension"), "dimension");
             options.SpotTypeId = service.PreferredType(new[] { view }, service.Types(doc, "spot"), "spot");
@@ -55,6 +111,8 @@ public sealed partial class VerticalDetailingHarnessApplication
             var first = service.Apply(doc, new[] { view }, options).Single();
             Progress("First: " + first);
             Export(doc, view, "after");
+            object? leaderProbe = view.Id == views[0].Id && Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_LEADER_PROBE") == "1"
+                ? ProbeNoteLeaders(doc, view) : null;
             var plannedHeads = first.ExpectedTagHeads.Select(pair => new { Id = pair.Key.Value, Expected = Point(pair.Value),
                 Actual = Point(((IndependentTag)doc.GetElement(pair.Key)).TagHeadPosition),
                 ErrorMm = pair.Value.DistanceTo(((IndependentTag)doc.GetElement(pair.Key)).TagHeadPosition) * 304.8 }).ToList();
@@ -63,9 +121,57 @@ public sealed partial class VerticalDetailingHarnessApplication
             bool repeatStable = second != null && firstAnnotations == AnnotationFingerprint(view);
             File.WriteAllText(report + ".fingerprints-" + view.Id + ".json", new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new { First = firstAnnotations, Second = AnnotationFingerprint(view) }));
             bool protectedAnnotationSafe = ProtectedAnnotationCheck(doc, view, service, options);
+            if (view.Id == views[0].Id)
+            {
+                using TransactionGroup scenarios = new(doc, "Editable callouts and protected comment acceptance"); scenarios.Start();
+                View noteView;
+                using (Transaction duplicate = new(doc, "Create clean callout test view"))
+                {
+                    duplicate.Start(); noteView = (View)doc.GetElement(view.Duplicate(ViewDuplicateOption.Duplicate)); duplicate.Commit();
+                }
+                options.UpperNoteTop = "Плита QA Ё"; options.UpperNoteBottom = "Проверка строки";
+                options.LowerNoteTop = "Основание QA"; options.LowerNoteBottom = "";
+                Element? bar = geometry.Bars.FirstOrDefault(b => b.Link == null && !b.Element.Pinned && b.Element.GroupId == ElementId.InvalidElementId)?.Element;
+                if (bar != null)
+                {
+                    using Transaction comment = new(doc, "Set protected text comment"); comment.Start();
+                    bar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS).Set("Произвольный комментарий QA Ё"); comment.Commit();
+                }
+                var custom = service.Apply(doc, new[] { noteView }, options).Single();
+                var notes = new FilteredElementCollector(doc).OwnedByView(noteView.Id).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+                    .Where(e => e is AnnotationSymbol && RebarDetailingService.OwnedDetail(e)).ToList();
+                customNotesSafe = custom.Succeeded && notes.Any(n => n.LookupParameter("Верхняя строка")?.AsString() == "Плита QA Ё"
+                    && n.LookupParameter("Нижняя строка")?.AsString() == "Проверка строки")
+                    && notes.Any(n => n.LookupParameter("Верхняя строка")?.AsString() == "Основание QA"
+                    && string.IsNullOrWhiteSpace(n.LookupParameter("Нижняя строка")?.AsString()));
+                textCommentSafe = custom.Succeeded && bar?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() == "Произвольный комментарий QA Ё";
+                options.UpperNoteTop = options.UpperNoteBottom = options.LowerNoteTop = options.LowerNoteBottom = "";
+                var empty = service.Apply(doc, new[] { noteView }, options).Single();
+                emptyNotesSafe = empty.Succeeded && !new FilteredElementCollector(doc).OwnedByView(noteView.Id).OfClass(typeof(FamilyInstance))
+                    .Cast<FamilyInstance>().Any(e => e is AnnotationSymbol && RebarDetailingService.OwnedDetail(e));
+                scenarios.RollBack();
+            }
             var dimensions = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(Dimension)).Cast<Dimension>().Where(d => d is not SpotDimension).ToList();
             var formulaDimensions = dimensions.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2).ToList();
-            tests.Add(new { Id = view.Id.Value, view.Name, Options = new { Variant = variant.ToString(), Tag = options.TagTypeId.Value, Dimension = options.DimensionTypeId.Value, Spot = options.SpotTypeId.Value, Multi = options.MultiTypeId.Value },
+            if (view.Id == views[0].Id && Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_STYLE_PROBE") == "1")
+            {
+                foreach (int setting in new[] { 0, 1, 2 })
+                {
+                    using TransactionGroup witnessProbe = new(doc, "Equality witness diagnostic"); witnessProbe.Start();
+                    using (Transaction change = new(doc, "Change owned formula style"))
+                    {
+                        change.Start();
+                        foreach (DimensionType type in formulaDimensions.Select(d => d.DimensionType).GroupBy(t => t.Id).Select(g => g.First()))
+                        {
+                            Parameter parameter = type.get_Parameter(BuiltInParameter.EQUALITY_WITNESS_DISPLAY);
+                            parameter.Set(setting); doc.Regenerate(); Progress("Witness " + setting + ": " + parameter.AsValueString());
+                        }
+                        change.Commit();
+                    }
+                    Export(doc, view, "witness-" + setting); witnessProbe.RollBack();
+                }
+            }
+            tests.Add(new { Id = view.Id.Value, view.Name, Options = new { Variant = VariantFor(view).ToString(), Tag = options.TagTypeId.Value, Dimension = options.DimensionTypeId.Value, Spot = options.SpotTypeId.Value, Multi = options.MultiTypeId.Value },
                 EqualityFormulas = formulaDimensions.Select(d => new { Id = d.Id.Value, References = d.References.Size, d.NumberOfSegments, d.AreSegmentsEqual,
                     Segments = d.Segments.Cast<DimensionSegment>().Select(s => new { s.Value, s.Prefix, s.Suffix, s.ValueOverride }).ToList(),
                     Formula = d.DimensionType.GetEqualityFormula().Select(f => new { Label = f.LabelType.ToString(), f.Prefix, f.Suffix }).ToList() }).ToList(),
@@ -73,7 +179,10 @@ public sealed partial class VerticalDetailingHarnessApplication
                     && d.Segments.Cast<DimensionSegment>().All(s => string.IsNullOrEmpty(s.Prefix) && string.IsNullOrEmpty(s.ValueOverride))),
                 NoManualPitchText = dimensions.All(d => string.IsNullOrEmpty(d.Prefix) && d.Segments.Cast<DimensionSegment>().All(s => string.IsNullOrEmpty(s.Prefix))),
                 Probe = probe,
-                Bars = geometry.Bars.Select(b => new { Id = b.Element.Id.Value, b.Element.Name, Class = b.Element.GetType().Name, Link = b.Link?.Id.Value, Count = b.Positions.Count, Target = Point(b.Target), Reference = b.Reference.ConvertToStableRepresentation(doc) }).ToList(),
+                LeaderProbe = leaderProbe,
+                Bars = geometry.Bars.Select(b => new { Id = b.Element.Id.Value, b.Element.UniqueId, b.Element.Name, Host = b.Host.Value, Class = b.Element.GetType().Name, Link = b.Link?.Id.Value, Count = b.Positions.Count, Target = Point(b.Target), Reference = b.Reference.ConvertToStableRepresentation(doc),
+                    Bends = b.BendEndReferences.Select(a => new { Point = Point(a.Point), References = a.Candidates.Select(r => r.ConvertToStableRepresentation(doc)).ToList() }).ToList(),
+                    Segments = b.Segments.Select(s => new { Start = Point(s.Start), End = Point(s.End), s.BarIndex }).ToList() }).ToList(),
                 Faces = geometry.Faces.Select(f => new { f.HostKey, f.Horizontal, Point = Point(f.Point), Normal = Point(f.Normal) }).ToList(),
                 First = first, Second = second, RepeatStable = repeatStable, ProtectedAnnotationSafe = protectedAnnotationSafe,
                 PlannedHeads = plannedHeads, Layout = first.LayoutTrace,
@@ -83,6 +192,8 @@ public sealed partial class VerticalDetailingHarnessApplication
                 TagDiagnostics = TagDiagnostics(doc, view),
                 Annotations = new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType().Where(e => e.OwnerViewId == view.Id).Select(e => Annotation(doc, e)).ToList() });
         }
+        object? sixBars = CheckSixBars(doc, views[0], service, VariantFor(views[0]));
+        object lowerBreaks = CheckLowerBreakMirroring(doc, views[0]);
         Progress("Testing batch and undo");
         var beforeBatch = views.ToDictionary(v => v.Id, AnnotationFingerprint);
         string commentsBeforeBatch = CommentsFingerprint(doc);
@@ -98,7 +209,11 @@ public sealed partial class VerticalDetailingHarnessApplication
         using (TransactionGroup batch = new(doc, "Batch and undo acceptance"))
         {
             batch.Start();
-            var results = service.Apply(doc, views, batchOptions);
+            var results = views.GroupBy(VariantFor).SelectMany(group =>
+            {
+                batchOptions.Variant = group.Key;
+                return service.Apply(doc, group.ToList(), batchOptions);
+            }).ToList();
             batchSucceeded = results.Count == views.Count && results.All(r => r.Succeeded);
             batch.RollBack();
         }
@@ -113,7 +228,10 @@ public sealed partial class VerticalDetailingHarnessApplication
             HorizontalViewsRejected = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
                 .Where(v => !v.IsTemplate && (v.ViewType == ViewType.FloorPlan || v.ViewType == ViewType.EngineeringPlan)).All(v => !RebarDetailingService.Supports(v)),
             BatchSucceeded = batchSucceeded, BatchUndoStable = batchUndoStable, ModelUnchanged = snapshot == ModelFingerprint(doc) && commentsAllowed,
-            QuantityCommentChanges = commentChanges, QuantityCommentsAllowed = commentsAllowed, QuantityDisabledSafe = quantityDisabledSafe, Tests = tests,
+            QuantityCommentChanges = commentChanges, QuantityCommentsAllowed = commentsAllowed, QuantityDisabledSafe = quantityDisabledSafe,
+            CustomNotesSafe = customNotesSafe, EmptyNotesSafe = emptyNotesSafe, TextCommentSafe = textCommentSafe, Tests = tests,
+            SixBars = sixBars,
+            LowerBreaks = lowerBreaks,
             PlacedViews = new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>()
                 .Select(p => new { ViewId = p.ViewId.Value, Number = p.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)?.AsString(), Sheet = ((ViewSheet)doc.GetElement(p.SheetId)).SheetNumber }).ToList() });
         Progress("Done");

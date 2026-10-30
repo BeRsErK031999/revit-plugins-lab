@@ -225,11 +225,25 @@ internal sealed class DetailingGeometry
                     .OrderBy(reference => reference.ConvertToStableRepresentation(view.Document), StringComparer.Ordinal).ToList();
                 if (longitudinal && Math.Abs(centerline.Direction.DotProduct(frame.Right)) > 0.999 && centerline.Length > 50 / 304.8)
                 {
-                    foreach (int endpoint in new[] { 0, 1 })
+                    Line spine = curves.OfType<Line>().Where(c => Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999)
+                        .OrderByDescending(c => c.Length).First();
+                    int terminal = Math.Abs(frame.X(centerline.GetEndPoint(0)) - frame.X(spine.Origin))
+                        > Math.Abs(frame.X(centerline.GetEndPoint(1)) - frame.X(spine.Origin)) ? 0 : 1;
+                    foreach (int endpoint in new[] { terminal })
                     {
                         XYZ end = centerline.GetEndPoint(endpoint);
                         if (!frame.Contains(end)) continue;
-                        var ends = new List<Reference>();
+                        // The crossbar of a U-shaped bar joins a bend at both
+                        // ends; it is not a free L-shaped anchorage endpoint.
+                        if (curves.Any(other => !ReferenceEquals(other, centerline) && other.IsBound
+                            && (other.GetEndPoint(0).DistanceTo(end) < 0.1 / 304.8
+                                || other.GetEndPoint(1).DistanceTo(end) < 0.1 / 304.8))) continue;
+                        // Revit exposes a measurable cap line at a bar's free
+                        // end. A LINEAR/n endpoint alone can yield Value == -1.
+                        var ends = referenceLines.Where(line => Math.Abs(line.Direction.DotProduct(frame.Right)) < 0.001
+                            && Math.Abs(frame.X(line.Origin) - frame.X(end)) < 0.1 / 304.8
+                            && (frame.Flatten(line.Origin) - frame.Flatten(end)).GetLength() < 100 / 304.8)
+                            .Select(line => line.Reference).ToList();
                         foreach (Line match in matches.Where(line => line.IsBound))
                         foreach (int indexOfEnd in new[] { 0, 1 })
                         {

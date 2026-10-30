@@ -1,8 +1,9 @@
 param(
     [string] $SourceDirectory = 'C:\Users\Borodin_A\Desktop\Revit\Оформление вертикальных конструкций',
     [ValidateRange(30, 1800)][int] $TimeoutSeconds = 900,
-    [ValidateSet('audit','apply')][string] $Mode = 'apply',
+    [ValidateSet('audit','apply','interactive','acceptance')][string] $Mode = 'apply',
     [string] $ViewIds = '2310980,2568691',
+    [string] $ViewVariants = '',
     [string] $PreviewPayload = '',
     [string] $ViewNameFilter = '',
     [ValidateSet('Straight','BentSameSide','BentOppositeSides')][string] $Variant = 'Straight',
@@ -36,6 +37,7 @@ $previousViews = $env:TRUEBIM_VERTICAL_VIEWS
 $previousPayload = $env:TRUEBIM_VERTICAL_PAYLOAD
 $previousViewNameFilter = $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER
 $previousVariant = $env:TRUEBIM_VERTICAL_VARIANT
+$previousViewVariants = $env:TRUEBIM_VERTICAL_VIEW_VARIANTS
 $viewerProcess = $null
 try {
     [IO.File]::WriteAllText($manifestPath, $manifest)
@@ -46,6 +48,7 @@ try {
     $env:TRUEBIM_VERTICAL_PAYLOAD = $PreviewPayload
     $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER = $ViewNameFilter
     $env:TRUEBIM_VERTICAL_VARIANT = $Variant
+    $env:TRUEBIM_VERTICAL_VIEW_VARIANTS = $ViewVariants
     $launchArguments = if ($Viewer) { '/viewer' } else { '/nosplash' }
     $viewerProcess = Start-Process -FilePath 'C:\Program Files\Autodesk\Revit 2024\Revit.exe' -ArgumentList $launchArguments -WindowStyle Hidden -PassThru
     [pscustomobject]@{ ProcessId=$viewerProcess.Id; Report=$env:TRUEBIM_VERTICAL_REPORT; Manifest=$manifestPath; RunRoot=$runRoot; SourceHashes=$hashes } | ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
@@ -59,13 +62,18 @@ try {
     if (-not (Test-Path -LiteralPath $env:TRUEBIM_VERTICAL_REPORT)) { throw 'Revit did not produce a report; check startup dialogs.' }
     $report = Get-Content -LiteralPath $env:TRUEBIM_VERTICAL_REPORT -Raw | ConvertFrom-Json
     if ($report.FatalError) { throw $report.FatalError }
-    if ($Mode -eq 'apply') {
-        $failedViews = @($report.Tests | Where-Object { -not $_.First.Succeeded -or -not $_.Second.Succeeded -or -not $_.RepeatStable -or -not $_.ViewUnchanged -or -not $_.ProtectedAnnotationSafe -or -not $_.NativeEqualitySafe -or -not $_.NoManualPitchText -or $_.VisibleAnnotations -ne $_.OwnedAnnotations })
-        if (-not $report.ModelUnchanged -or -not $report.QuantityDisabledSafe -or -not $report.SelectionWorks -or -not $report.HorizontalViewsRejected -or -not $report.BatchSucceeded -or -not $report.BatchUndoStable -or $failedViews.Count -gt 0) {
+    if ($Mode -in @('apply','acceptance')) {
+        $applyReport = if ($Mode -eq 'acceptance') { Get-Content -LiteralPath ($env:TRUEBIM_VERTICAL_REPORT + '.apply.json') -Raw | ConvertFrom-Json } else { $report }
+        $failedViews = @($applyReport.Tests | Where-Object { -not $_.First.Succeeded -or -not $_.Second.Succeeded -or -not $_.RepeatStable -or -not $_.ViewUnchanged -or -not $_.ProtectedAnnotationSafe -or -not $_.NativeEqualitySafe -or -not $_.NoManualPitchText -or $_.VisibleAnnotations -ne $_.OwnedAnnotations })
+        if (-not $applyReport.ModelUnchanged -or -not $applyReport.QuantityDisabledSafe -or -not $applyReport.CustomNotesSafe -or -not $applyReport.EmptyNotesSafe -or -not $applyReport.TextCommentSafe -or -not $applyReport.SelectionWorks -or -not $applyReport.HorizontalViewsRejected -or -not $applyReport.BatchSucceeded -or -not $applyReport.BatchUndoStable -or $failedViews.Count -gt 0) {
             throw "Native acceptance failed. Views: $($failedViews.Name -join ', '). See $env:TRUEBIM_VERTICAL_REPORT"
         }
-        if ($PreviewPayload -and -not $report.Preview.Rendered) { throw 'Preview window was not rendered.' }
+        if ($PreviewPayload -and -not $applyReport.Preview.Rendered) { throw 'Preview window was not rendered.' }
+        if ($applyReport.SixBars -and -not $applyReport.SixBars.Passed) { throw 'Six irregular bars acceptance failed; see report.' }
+        if (-not $applyReport.LowerBreaks.Passed) { throw 'Lower break mirror acceptance failed; see report.' }
     }
+    if ($Mode -eq 'interactive' -and (-not $report.CancelUnchanged -or -not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive acceptance failed; see report.' }
+    if ($Mode -eq 'acceptance' -and (-not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive application failed; see report.' }
     Write-Output "Report: $env:TRUEBIM_VERTICAL_REPORT"
 }
 finally {
@@ -78,6 +86,7 @@ finally {
     $env:TRUEBIM_VERTICAL_PAYLOAD = $previousPayload
     $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER = $previousViewNameFilter
     $env:TRUEBIM_VERTICAL_VARIANT = $previousVariant
+    $env:TRUEBIM_VERTICAL_VIEW_VARIANTS = $previousViewVariants
     foreach ($file in $originals) {
         if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $hashes[$file.FullName]) { throw "Original changed: $($file.FullName)" }
     }

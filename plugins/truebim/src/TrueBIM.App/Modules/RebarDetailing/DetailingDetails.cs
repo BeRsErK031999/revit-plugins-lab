@@ -164,7 +164,11 @@ public sealed partial class RebarDetailingService
             XYZ middle = (start + end) / 2, direction = (end - start).Normalize();
             if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName.StartsWith("(Узел) Область обрыва", StringComparison.Ordinal)
                 && f.Location is LocationCurve curve && curve.Curve is Line line && Math.Abs(line.Direction.DotProduct(direction)) > 0.999
-                && frame.Flatten(line.Evaluate(0.5, true)).DistanceTo(middle) < frame.Paper(2))) return;
+                && (frame.Flatten(line.Evaluate(0.5, true)).DistanceTo(middle) < frame.Paper(2)
+                    || (Math.Abs(direction.DotProduct(frame.Up)) > 0.999
+                        && Math.Abs(frame.Y(line.Evaluate(0.5, true)) - frame.Y(middle)) < frame.Paper(2)
+                        && Math.Abs(frame.X(line.Evaluate(0.5, true)) - frame.X(middle)) < frame.Paper(15)
+                        && Math.Abs(line.Length - start.DistanceTo(end)) < frame.Paper(2))))) return;
             FamilySymbol? symbol = Symbol(1);
             if (symbol == null) return;
             FamilyInstance detail = doc.Create.NewFamilyInstance(Line.CreateBound(reverse ? end : start, reverse ? start : end), symbol, view);
@@ -204,20 +208,38 @@ public sealed partial class RebarDetailingService
         void AddNote(string upper, string lower, XYZ head, XYZ target)
         {
             if (string.IsNullOrWhiteSpace(upper) && string.IsNullOrWhiteSpace(lower)) return;
+            string Compact(string value) => string.Concat(value.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
+            string requestedText = Compact(upper + lower);
             if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName == "(Аннотация) Выноска" && f.Location is LocationPoint p
-                && frame.Flatten(p.Point).DistanceTo(head) < frame.Paper(15))
+                && (frame.Flatten(p.Point).DistanceTo(head) < frame.Paper(15)
+                    || (frame.Flatten(p.Point).DistanceTo(head) < frame.Paper(80)
+                        && Compact((f.LookupParameter("Верхняя строка")?.AsString() ?? "")
+                            + (f.LookupParameter("Нижняя строка")?.AsString() ?? "")) == requestedText)
+                    || (frame.Flatten(p.Point).DistanceTo(head) < frame.Paper(80) && string.IsNullOrWhiteSpace(lower)
+                        && Compact(f.LookupParameter("Верхняя строка")?.AsString() ?? "") == Compact(upper))))
                 || preserved.OfType<TextNote>().Any(n => n.Text.Trim() == (upper + "\n" + lower).Trim() && frame.Flatten(n.Coord).DistanceTo(head) < frame.Paper(15))) return;
             FamilySymbol? symbol = symbols.FirstOrDefault(s => s.FamilyName == "(Аннотация) Выноска" && s.Name == "• Без указателя");
             if (symbol == null) { result.Notes.Add("Для подписей плит загрузите семейство «(Аннотация) Выноска»."); return; }
             if (!symbol.IsActive) symbol.Activate();
             double width = Math.Max(20, Math.Max(upper.Length, lower.Length) * 1.5 + 2);
             FamilyInstance note = doc.Create.NewFamilyInstance(head, symbol, view);
-            note.LookupParameter("Верхняя строка")?.Set(upper); note.LookupParameter("Нижняя строка")?.Set(lower);
+            // An empty string restores the family's default label in Revit.
+            // A whitespace value keeps the requested line visually empty.
+            note.LookupParameter("Верхняя строка")?.Set(string.IsNullOrWhiteSpace(upper) ? " " : upper);
+            note.LookupParameter("Нижняя строка")?.Set(string.IsNullOrWhiteSpace(lower) ? " " : lower);
             SetLength(note, "Длина полки", width / 304.8);
             if (note is AnnotationSymbol annotation)
             {
-                annotation.addLeader(); doc.Regenerate();
-                var leader = annotation.GetLeaders().Cast<Leader>().Last(); leader.End = target; leader.Elbow = head - frame.Right * frame.Paper(width / 2);
+                doc.Regenerate();
+                if (annotation.GetLeaders().Count == 0) annotation.addLeader();
+                doc.Regenerate();
+                foreach (Leader leader in annotation.GetLeaders())
+                {
+                    leader.End = target;
+                    // A straight native leader attaches to the family's shelf.
+                    // A guessed elbow can leave the anchor below an empty label.
+                    leader.Elbow = leader.Anchor;
+                }
             }
             MarkDetail(note, "note"); result.Details++;
         }
