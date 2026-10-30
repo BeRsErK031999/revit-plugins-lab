@@ -410,6 +410,15 @@ public static class TrueBimRibbon
             $"{CommandNamespace}.{nameof(RebarSplitCommandAvailability)}"),
         new(
             KrPanelName,
+            "TrueBIM_RebarDetailing",
+            "Оформление\nвертикальных сечений",
+            $"{CommandNamespace}.{nameof(RebarDetailingCommand)}",
+            TrueBimIcon.RebarSplit,
+            "Оформляет готовые вертикальные сечения армирования: прямые и Г-образные.",
+            "Выберите виды на листе, в диспетчере проекта или откройте один вид. Проверьте список и типы аннотаций. Создаются марки арматуры, размеры и высотные отметки без изменения конструкций и стержней.",
+            $"{CommandNamespace}.{nameof(RebarDetailingCommandAvailability)}"),
+        new(
+            KrPanelName,
             "TrueBIM_RebarFill",
             "Заполнятор\nарматуры",
             $"{CommandNamespace}.{nameof(RebarFillCommand)}",
@@ -599,6 +608,7 @@ public static class TrueBimRibbon
                 MenuItem("TrueBIM_Lintels", prefix: "КР"),
                 MenuItem("TrueBIM_RebarSplit", prefix: "КР"),
                 MenuItem("TrueBIM_RebarFill", prefix: "КР"),
+                MenuItem("TrueBIM_RebarDetailing", prefix: "КР"),
                 MenuItem("TrueBIM_CollapseScheduleColumns", prefix: "КР"),
                 MenuItem("TrueBIM_VoltageDropCalculation", beginsGroup: true, prefix: "ЭОМ"),
                 MenuItem("TrueBIM_ElectricalSchematic", prefix: "ЭОМ")

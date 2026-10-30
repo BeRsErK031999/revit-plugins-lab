@@ -1,0 +1,64 @@
+using Autodesk.Revit.DB;
+
+namespace TrueBIM.App.Modules.RebarDetailing;
+
+public enum DetailingVariant { Straight, BentSameSide, BentOppositeSides }
+
+public sealed class DetailingOptions
+{
+    public DetailingVariant Variant { get; set; } = DetailingVariant.Straight;
+    public string UpperNoteTop { get; set; } = "Плита";
+    public string UpperNoteBottom { get; set; } = "перекрытия";
+    public string LowerNoteTop { get; set; } = "Фундаментная плита";
+    public string LowerNoteBottom { get; set; } = "{том}";
+    public bool Tags { get; set; } = true;
+    public bool ConcreteDimensions { get; set; } = true;
+    public bool BarDimensions { get; set; } = true;
+    public bool Elevations { get; set; } = true;
+    public bool ReplaceExisting { get; set; } = true;
+    public bool WriteQuantities { get; set; } = true;
+    public bool Details { get; set; } = true;
+    public ElementId TagTypeId { get; set; } = ElementId.InvalidElementId;
+    public ElementId DimensionTypeId { get; set; } = ElementId.InvalidElementId;
+    public ElementId SpotTypeId { get; set; } = ElementId.InvalidElementId;
+    public ElementId MultiTypeId { get; set; } = ElementId.InvalidElementId;
+}
+
+public sealed class DetailingType
+{
+    public ElementId Id { get; }
+    public string Name { get; }
+    public DetailingType(ElementId id, string name) { Id = id; Name = name; }
+}
+
+public sealed class DetailingViewRow
+{
+    public View View { get; }
+    public bool Selected { get; set; } = true;
+    public string Name => View.Name;
+    public int Scale => View.Scale;
+    public string Kind => "Вертикальное сечение";
+    public int Bars { get; internal set; }
+    public int Hosts { get; internal set; }
+    public int Existing { get; internal set; }
+    public string Status { get; internal set; } = "Готов к оформлению";
+    public DetailingViewRow(View view) { View = view; }
+}
+
+public sealed class DetailingResult
+{
+    public string ViewName { get; internal set; } = "";
+    public bool Succeeded { get; internal set; }
+    public int Tags { get; internal set; }
+    public int Dimensions { get; internal set; }
+    public int Elevations { get; internal set; }
+    public int Removed { get; internal set; }
+    public int QuantityWrites { get; internal set; }
+    public int Details { get; internal set; }
+    internal Dictionary<ElementId, XYZ> ExpectedTagHeads { get; } = new();
+    internal List<string> LayoutTrace { get; } = new();
+    public List<string> Notes { get; } = new();
+    public override string ToString() => Succeeded
+        ? $"{ViewName}: марки {Tags}, размеры {Dimensions}, отметки {Elevations}, детали {Details}; записано количеств {QuantityWrites}, удалено {Removed}." + (Notes.Count == 0 ? "" : "\n" + string.Join("\n", Notes.Distinct()))
+        : $"{ViewName}: изменения отменены. " + string.Join("; ", Notes.Distinct());
+}
