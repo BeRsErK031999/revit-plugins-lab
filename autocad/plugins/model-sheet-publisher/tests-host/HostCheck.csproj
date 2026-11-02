@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net48</TargetFramework><LangVersion>latest</LangVersion><PlatformTarget>x64</PlatformTarget></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="ModelSheetPublisher"><HintPath>../src/bin/Release/net48/ModelSheetPublisher.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcCoreMgd"><HintPath>C:\Program Files\Autodesk\AutoCAD 2021\AcCoreMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcDbMgd"><HintPath>C:\Program Files\Autodesk\AutoCAD 2021\AcDbMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AcMgd"><HintPath>C:\Program Files\Autodesk\AutoCAD 2021\AcMgd.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AdWindows"><HintPath>C:\Program Files\Autodesk\AutoCAD 2021\AdWindows.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="PresentationCore" /><Reference Include="PresentationFramework" /><Reference Include="WindowsBase" />
+  </ItemGroup>
+</Project>

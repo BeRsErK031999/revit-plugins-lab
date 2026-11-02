@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/Models.cs" Link="Models.cs" />
+    <Compile Include="../src/QueueStore.cs" Link="QueueStore.cs" />
+    <Compile Include="../src/RectangleGeometry.cs" Link="RectangleGeometry.cs" />
+    <Compile Include="../src/TilePlanner.cs" Link="TilePlanner.cs" />
+    <Compile Include="../src/OutputCommitter.cs" Link="OutputCommitter.cs" />
+  </ItemGroup>
+</Project>

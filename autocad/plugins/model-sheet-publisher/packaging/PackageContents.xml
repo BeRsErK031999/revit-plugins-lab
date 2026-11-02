@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" ProductType="Application" Name="Model Sheet Publisher" AppVersion="0.2.0" Description="Model-space sheets to PDF for AutoCAD 2021-2026" Author="Model Sheet Publisher" ProductCode="{D99B8A03-1816-43B2-B2A9-F2C8992A56C3}" UpgradeCode="{3CE45C13-3D46-443B-8457-575FBF3BD34A}">
+  <CompanyDetails Name="Model Sheet Publisher" />
+  <Components>
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R24.0" SeriesMax="R24.3" />
+    <ComponentEntry AppName="ModelSheetPublisher" AppDescription="Model sheets to PDF (2021-2024)" ModuleName="./Contents/Windows/net48/ModelSheetPublisher.dll" LoadOnAutoCADStartup="True" LoadOnCommandInvocation="True">
+      <Commands GroupName="ModelSheetPublisher"><Command Global="MSPUBLISH" Local="MSPUBLISH" /></Commands>
+    </ComponentEntry>
+  </Components>
+  <Components>
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.1" />
+    <ComponentEntry AppName="ModelSheetPublisher" AppDescription="Model sheets to PDF (2025-2026)" ModuleName="./Contents/Windows/net8.0-windows/ModelSheetPublisher.dll" LoadOnAutoCADStartup="True" LoadOnCommandInvocation="True">
+      <Commands GroupName="ModelSheetPublisher"><Command Global="MSPUBLISH" Local="MSPUBLISH" /></Commands>
+    </ComponentEntry>
+  </Components>
+</ApplicationPackage>

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF Condition="'$(TargetFramework)' == 'net8.0-windows'">true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>ModelSheetPublisher</AssemblyName>
+    <Version>0.2.0</Version>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**</DefaultItemExcludes>
+    <AutoCADApiVersion Condition="'$(AutoCADApiVersion)' == '' and '$(TargetFramework)' == 'net48'">24.0.0</AutoCADApiVersion>
+    <AutoCADApiVersion Condition="'$(AutoCADApiVersion)' == '' and '$(TargetFramework)' == 'net8.0-windows'">25.0.1</AutoCADApiVersion>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Autodesk reference assemblies are build inputs only. The installed AutoCAD supplies its own runtime. -->
+    <PackageReference Include="AutoCAD.NET" Version="$(AutoCADApiVersion)" PrivateAssets="all" IncludeAssets="compile;build;buildTransitive" />
+    <PackageReference Include="PDFsharp-gdi" Version="6.2.3" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(IncludeTestHarness)' == 'false'">
+    <Compile Remove="Probe.cs" />
+  </ItemGroup>
+</Project>

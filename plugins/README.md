@@ -2,6 +2,8 @@
 
 Each folder in this directory should represent one Revit add-in product or prototype.
 
+AutoCAD plugins and automation are maintained separately in [`autocad/`](../autocad/README.md).
+
 Recommended plugin layout:
 
 ```text

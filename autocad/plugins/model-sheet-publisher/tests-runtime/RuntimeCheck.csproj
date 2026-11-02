@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks><OutputType>Exe</OutputType><LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms><UseWPF Condition="'$(TargetFramework)' == 'net8.0-windows'">true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget><AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../src/ModelSheetPublisher.csproj" AdditionalProperties="IncludeTestHarness=false" />
+    <PackageReference Include="PDFsharp-gdi" Version="6.2.3" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" Condition="'$(TargetFramework)' == 'net48'" />
+  </ItemGroup>
+</Project>
