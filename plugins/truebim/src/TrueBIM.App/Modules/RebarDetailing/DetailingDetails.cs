@@ -120,6 +120,13 @@ public sealed partial class RebarDetailingService
                 return;
             }
             int kind = points.Count - 1;
+            // The second arm of family 2 cannot draw its masking polygon at
+            // 5 mm on paper (250 mm at M50). Native family trials accept 6 mm.
+            // Extend only the free end; keep the corner on the 250 mm contour.
+            if (kind == 2 && points[1].DistanceTo(points[2]) < frame.Paper(6))
+                points[2] = points[1] + (points[2] - points[1]).Normalize() * frame.Paper(6);
+            result.LayoutTrace.Add("break " + kind + ": " + string.Join("; ", points.Skip(1).Select((p, i) =>
+                (p.DistanceTo(points[i]) * 304.8).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))));
             XYZ point = kind == 2 ? points[1] : points[2];
             XYZ desiredX = (points[0] - points[1]).Normalize();
             if (preserved.OfType<FamilyInstance>().Any(f => f.Symbol.FamilyName == "(Узел) Область обрыва • " + kind

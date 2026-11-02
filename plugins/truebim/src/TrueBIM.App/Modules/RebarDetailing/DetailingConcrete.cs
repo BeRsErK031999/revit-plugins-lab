@@ -12,12 +12,13 @@ internal sealed class DetailingSolid
 internal sealed partial class DetailingGeometry
 {
     public List<DetailingSolid> Solids { get; } = new();
+    public DetailingRect? PlannedBreakBoundary { get; set; }
     private IReadOnlyList<IReadOnlyList<(double X, double Y)>>? breaks;
 
     public IReadOnlyList<IReadOnlyList<(double X, double Y)>> Breaks(DetailingFrame frame)
     {
         if (breaks != null) return breaks;
-        var box = frame.BreakBoundary;
+        var box = PlannedBreakBoundary ?? frame.BreakBoundary;
         var corners = new[] { (X: box.Left, Y: box.Top), (X: box.Left, Y: box.Bottom),
             (X: box.Right, Y: box.Bottom), (X: box.Right, Y: box.Top) };
         var intervals = new List<(int Side, double Start, double End)>();

@@ -58,8 +58,9 @@ public sealed partial class RebarDetailingService
                         AddChain(entries, origin, direction, horizontal, !horizontal);
                     }
                 }
-                if (!options.ConcreteDimensions) continue;
-                var concrete = faces.Select(f => new ChainReference { Point = f.Point, Face = f }).ToList();
+                if (!options.ConcreteDimensions && (horizontal || !options.BarDimensions)) continue;
+                var concrete = options.ConcreteDimensions ? faces.Select(f => new ChainReference { Point = f.Point, Face = f }).ToList()
+                    : new List<ChainReference>();
                 if (!horizontal)
                 {
                     // Different slab heights on the two sides use the outside
@@ -70,8 +71,24 @@ public sealed partial class RebarDetailingService
                     {
                         double low = frame.Y(slabLevels.First().Point), high = frame.Y(slabLevels.Last().Point);
                         concrete.RemoveAll(p => frame.Y(p.Point) > low + 0.1 / 304.8 && frame.Y(p.Point) < high - 0.1 / 304.8);
-                        concrete.Add(new ChainReference { Point = slabLevels.First().Point, Face = slabLevels.First() });
+                        if (options.ConcreteDimensions) concrete.Add(new ChainReference { Point = slabLevels.First().Point, Face = slabLevels.First() });
                         concrete.Add(new ChainReference { Point = slabLevels.Last().Point, Face = slabLevels.Last() });
+                    }
+                    else if (!options.ConcreteDimensions && faces.Count > 0)
+                    {
+                        var wallTop = faces.OrderBy(f => frame.Y(f.Point)).Last();
+                        concrete.Add(new ChainReference { Point = wallTop.Point, Face = wallTop });
+                    }
+                    if (options.BarDimensions)
+                    {
+                        // Straight bars use the upper cap; bent bars use their
+                        // upper horizontal edge, not the tangent or bar axis.
+                        var upper = bars.Where(b => !IsPin(b) && Longitudinal(frame, b))
+                            .SelectMany(b => options.Variant == DetailingVariant.Straight ? b.EndReferences : b.TopReferences)
+                            .OrderByDescending(a => Math.Round(frame.Y(a.Point) * 304.8, 1)).ThenBy(a => frame.X(a.Point)).FirstOrDefault();
+                        if (upper != null) concrete.Add(new ChainReference { Point = upper.Point, Axis = upper });
+                        else if (bars.Any(b => Longitudinal(frame, b)))
+                            result.Notes.Add("Верхняя привязка: в обрезке нет доступной ссылки на верх вертикального стержня.");
                     }
                 }
                 XYZ concreteOrigin = horizontal ? frame.Point(bounds.Left, layout.Bottom - frame.Paper(options.BarDimensions ? 16 : 8))

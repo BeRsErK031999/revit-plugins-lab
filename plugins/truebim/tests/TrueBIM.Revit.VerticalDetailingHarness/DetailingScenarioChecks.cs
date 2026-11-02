@@ -59,6 +59,7 @@ public sealed partial class VerticalDetailingHarnessApplication
         Progress("Testing native corner breaks against actual transient solid intersections");
         var results = new List<object>();
         bool passed = true;
+        foreach (bool shortArms in new[] { false, true })
         foreach (bool onRight in new[] { false, true })
         foreach (bool onTop in new[] { false, true })
         {
@@ -72,10 +73,16 @@ public sealed partial class VerticalDetailingHarnessApplication
             DetailingGeometry geometry = DetailingGeometry.Read(doc, view);
             DetailingOptions options = new();
             var boundary = frame.BreakBoundary;
+            if (shortArms)
+            {
+                boundary = new DetailingRect(boundary.Left, boundary.Bottom, boundary.Left + 500 / 304.8, boundary.Bottom + 1200 / 304.8);
+                geometry.PlannedBreakBoundary = boundary;
+            }
+            double verticalArm = (shortArms ? 499.872 : 300) / 304.8;
             double left = onRight ? boundary.CenterX : boundary.Left - 1;
             double right = onRight ? boundary.Right + 1 : boundary.CenterX;
-            double bottom = onTop ? boundary.Top - 300 / 304.8 : boundary.Bottom - 1;
-            double top = onTop ? boundary.Top + 1 : boundary.Bottom + 300 / 304.8;
+            double bottom = onTop ? boundary.Top - verticalArm : boundary.Bottom - 1;
+            double top = onTop ? boundary.Top + 1 : boundary.Bottom + verticalArm;
             var vertices = new[] { frame.Point(left, bottom), frame.Point(right, bottom), frame.Point(right, top), frame.Point(left, top) }
                 .Select(p => p + frame.Normal * (frame.CutDepth - 1)).ToList();
             CurveLoop loop = new();
@@ -87,6 +94,7 @@ public sealed partial class VerticalDetailingHarnessApplication
             using (Transaction create = new(doc, "Place native one-sided break"))
             {
                 create.Start();
+                create.SetFailureHandlingOptions(create.GetFailureHandlingOptions().SetFailuresPreprocessor(new FamilyProbeFailures()).SetClearAfterRollback(true));
                 typeof(RebarDetailingService).GetMethod("Details", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
                     .Invoke(null, new object[] { doc, view, frame, geometry, options, result });
                 create.Commit();
@@ -99,13 +107,13 @@ public sealed partial class VerticalDetailingHarnessApplication
             var path = geometry.Breaks(frame).Single();
             bool correct = axes.Count == 1 && path.Count == 3 && breaks.All(f =>
                 Math.Abs(f.LookupParameter("Длина линии 1").AsDouble() - frame.Point(path[0].X, path[0].Y).DistanceTo(frame.Point(path[1].X, path[1].Y))) < 0.1 / 304.8
-                && Math.Abs(f.LookupParameter("Длина линии 2").AsDouble() - frame.Point(path[1].X, path[1].Y).DistanceTo(frame.Point(path[2].X, path[2].Y))) < 0.1 / 304.8
+                && Math.Abs(f.LookupParameter("Длина линии 2").AsDouble() - Math.Max(frame.Paper(6), frame.Point(path[1].X, path[1].Y).DistanceTo(frame.Point(path[2].X, path[2].Y)))) < 0.1 / 304.8
                 && frame.Flatten(((LocationPoint)f.Location).Point).DistanceTo(frame.Point(path[1].X, path[1].Y)) < 0.1 / 304.8
                 && f.GetTransform().BasisX.Normalize().DotProduct((frame.Point(path[0].X, path[0].Y) - frame.Point(path[1].X, path[1].Y)).Normalize()) > 0.999
                 && (-f.GetTransform().BasisY).Normalize().DotProduct((frame.Point(path[2].X, path[2].Y) - frame.Point(path[1].X, path[1].Y)).Normalize()) > 0.999);
             passed &= correct;
-            Export(doc, view, (onTop ? "upper" : "lower") + (onRight ? "-break-right" : "-break-left"));
-            results.Add(new { OnRight = onRight, OnTop = onTop, Passed = correct, Axes = axes });
+            Export(doc, view, (shortArms ? "short-" : "") + (onTop ? "upper" : "lower") + (onRight ? "-break-right" : "-break-left"));
+            results.Add(new { ShortArms = shortArms, OnRight = onRight, OnTop = onTop, Passed = correct, Axes = axes });
             scenario.RollBack();
         }
         return new { Passed = passed, Fixture = "Transient native solids intersect the perimeter on two sides; source model unchanged", Cases = results };

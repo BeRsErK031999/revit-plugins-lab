@@ -87,6 +87,7 @@ public sealed partial class VerticalDetailingHarnessApplication
             && service.ResolveViews(doc, views.Select(v => v.Id).ToList(), views[0]).Count == views.Count
             && (viewportIds.Count == 0 || service.ResolveViews(doc, viewportIds, views[0]).Count == viewportIds.Count);
         var before = views.ToDictionary(v => v.Id.Value, v => ViewFingerprint(v));
+        var beforeCrops = views.ToDictionary(v => v.Id.Value, CropCoordinates);
         var preview = CapturePreview(doc, views);
         var tests = new List<object>();
         bool quantityDisabledSafe = false;
@@ -114,6 +115,8 @@ public sealed partial class VerticalDetailingHarnessApplication
             if (probe != null) File.WriteAllText(report + ".probe-" + view.Id + ".json", new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue }.Serialize(probe));
             var first = service.Apply(doc, new[] { view }, options).Single();
             Progress("First: " + first);
+            File.WriteAllText(report + ".first-" + view.Id + ".json",
+                new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue }.Serialize(first));
             Export(doc, view, "after");
             object? leaderProbe = view.Id == views[0].Id && Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_LEADER_PROBE") == "1"
                 ? ProbeNoteLeaders(doc, view) : null;
@@ -121,6 +124,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                 Actual = Point(((IndependentTag)doc.GetElement(pair.Key)).TagHeadPosition),
                 ErrorMm = pair.Value.DistanceTo(((IndependentTag)doc.GetElement(pair.Key)).TagHeadPosition) * 304.8 }).ToList();
             var firstAnnotations = AnnotationFingerprint(view);
+            var firstCrop = CropCoordinates(view);
             var second = first.Succeeded ? service.Apply(doc, new[] { view }, options).Single() : null;
             bool repeatStable = second != null && firstAnnotations == AnnotationFingerprint(view);
             File.WriteAllText(report + ".fingerprints-" + view.Id + ".json", new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new { First = firstAnnotations, Second = AnnotationFingerprint(view) }));
@@ -197,6 +201,10 @@ public sealed partial class VerticalDetailingHarnessApplication
                 Faces = geometry.Faces.Select(f => new { f.HostKey, f.Horizontal, Point = Point(f.Point), Normal = Point(f.Normal) }).ToList(),
                 First = first, Second = second, RepeatStable = repeatStable, ProtectedAnnotationSafe = protectedAnnotationSafe,
                 Supplement4 = first.Succeeded ? MeasureSupplement4(doc, view, options) : null,
+                Supplement5 = first.Succeeded ? MeasureSupplement5(doc, view, options) : null,
+                CropBefore = beforeCrops[view.Id.Value], CropAfter = CropCoordinates(view),
+                CropExpandedOnly = CropExpandedOnly(beforeCrops[view.Id.Value], CropCoordinates(view)),
+                RepeatCropStable = firstCrop.SequenceEqual(CropCoordinates(view)),
                 PlannedHeads = plannedHeads, Layout = first.LayoutTrace,
                 ViewUnchanged = before[view.Id.Value] == ViewFingerprint(view),
                 VisibleAnnotations = new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType().Count(e => e.OwnerViewId == view.Id && (e is Dimension || e is IndependentTag || RebarDetailingService.OwnedDetail(e))),
@@ -206,8 +214,10 @@ public sealed partial class VerticalDetailingHarnessApplication
         }
         object? sixBars = CheckSixBars(doc, views[0], service, VariantFor(views[0]));
         object lowerBreaks = CheckLowerBreakMirroring(doc, views[0]);
+        var supplement5Options = views.Select(v => CheckSupplement5Options(doc, v, service, VariantFor(v))).ToList();
         Progress("Testing batch and undo");
         var beforeBatch = views.ToDictionary(v => v.Id, AnnotationFingerprint);
+        var beforeBatchCrops = views.ToDictionary(v => v.Id, CropCoordinates);
         string commentsBeforeBatch = CommentsFingerprint(doc);
         DetailingOptions batchOptions = new()
         {
@@ -230,14 +240,15 @@ public sealed partial class VerticalDetailingHarnessApplication
             foreach (var batchResult in results) Progress("Batch: " + batchResult);
             batch.RollBack();
         }
-        bool batchUndoStable = views.All(v => beforeBatch[v.Id] == AnnotationFingerprint(v)) && commentsBeforeBatch == CommentsFingerprint(doc);
+        bool batchUndoStable = views.All(v => beforeBatch[v.Id] == AnnotationFingerprint(v)
+            && beforeBatchCrops[v.Id].SequenceEqual(CropCoordinates(v))) && commentsBeforeBatch == CommentsFingerprint(doc);
         var commentChanges = originalComments.Select(pair => new { Id = pair.Key.Value, Before = pair.Value,
             After = doc.GetElement(pair.Key).get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "" })
             .Where(change => change.Before != change.After).ToList();
         bool commentsAllowed = commentChanges.All(change => eligibleComments.Contains(new ElementId(change.Id))
             && (change.Before.Length == 0 || System.Text.RegularExpressions.Regex.IsMatch(change.Before, @"^\s*\d+\s*шт\.?\s*$"))
             && System.Text.RegularExpressions.Regex.IsMatch(change.After, @"^\d+ шт\.$"));
-        Write(new { FatalError = (string?)null, Mode = "apply", Preview = preview, SelectionWorks = selectionWorks,
+        Write(new { FatalError = (string?)null, Mode = "apply", Preview = preview, SelectionWorks = selectionWorks, Supplement5Options = supplement5Options,
             HorizontalViewsRejected = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>()
                 .Where(v => !v.IsTemplate && (v.ViewType == ViewType.FloorPlan || v.ViewType == ViewType.EngineeringPlan)).All(v => !RebarDetailingService.Supports(v)),
             BatchSucceeded = batchSucceeded, BatchUndoStable = batchUndoStable, ModelUnchanged = snapshot == ModelFingerprint(doc) && commentsAllowed,
@@ -268,7 +279,21 @@ public sealed partial class VerticalDetailingHarnessApplication
             var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
             using (var file = File.Create(Path.Combine(Path.GetDirectoryName(report)!, "preview-window.png"))) encoder.Save(file);
             var selected = (IReadOnlyList<View>)windowType.GetProperty("SelectedViews")!.GetValue(window)!;
-            return new { Rendered = true, Views = selected.Count, window.ActualWidth, window.ActualHeight, Assembly = assembly.Location };
+            Type guideType = assembly.GetType("TrueBIM.App.Modules.RebarDetailing.RebarDetailingGuideWindow", true)!;
+            var guide = (System.Windows.Window)Activator.CreateInstance(guideType)!;
+            try
+            {
+                guide.Owner = window; guide.Show(); guide.UpdateLayout();
+                var guideBitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)guide.ActualWidth, (int)guide.ActualHeight,
+                    96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                guideBitmap.Render(guide);
+                var guideEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                guideEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(guideBitmap));
+                using var guideFile = File.Create(Path.Combine(Path.GetDirectoryName(report)!, "preview-guide.png"));
+                guideEncoder.Save(guideFile);
+            }
+            finally { guide.Close(); }
+            return new { Rendered = true, GuideRendered = true, Views = selected.Count, window.ActualWidth, window.ActualHeight, Assembly = assembly.Location };
         }
         finally { window.Close(); }
     }
@@ -325,7 +350,7 @@ public sealed partial class VerticalDetailingHarnessApplication
     }
 
     private static string ViewFingerprint(View v) => string.Join("|", v.ViewTemplateId, v.Scale, v.CropBoxActive, v.CropBoxVisible,
-        v.CropBox.Min.ToString(), v.CropBox.Max.ToString(), v.CropBox.Transform.Origin.ToString(),
+        v.CropBox.Min.Z.ToString(), v.CropBox.Max.Z.ToString(), v.CropBox.Transform.Origin.ToString(),
         string.Join(",", new FilteredElementCollector(v.Document, v.Id).WhereElementIsNotElementType()
             .Where(e => e.OwnerViewId == v.Id && !RebarDetailingService.OwnedDetail(e) && (e is CurveElement || e is TextNote || e is FamilyInstance))
             .OrderBy(e => e.Id.Value).Select(e => e.UniqueId)));

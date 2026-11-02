@@ -93,6 +93,12 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
                 catch (Exception ex) { links.Add(new { type.Name, Error = ex.Message }); }
             }
             Progress("Collecting inventory");
+            if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_FAMILY_PROBE") == "1")
+            {
+                InspectBreakFamily(doc);
+                if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_FAMILY_ONLY") == "1")
+                { Write(new { FatalError = (string?)null, Mode = "family-probe" }); return; }
+            }
             if (Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "acceptance")
             {
                 string finalReport = report!;

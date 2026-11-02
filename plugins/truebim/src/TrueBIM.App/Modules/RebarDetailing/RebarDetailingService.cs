@@ -98,7 +98,7 @@ public sealed partial class RebarDetailingService
             ValidateVariant(frame, geometry, options);
             // Revit geometry handles can become invalid after deleting old
             // annotations or regenerating. Cache numeric perimeter paths first.
-            if (options.Details) geometry.Breaks(frame);
+            if (options.Details) PlanBreakBoundary(frame, geometry, options);
             List<XYZ> points = geometry.Bars.SelectMany(b => b.Segments.SelectMany(s => new[] { s.Start, s.End })).ToList();
             if (points.Count == 0) points.AddRange(geometry.Bars.SelectMany(b => b.Positions));
             double minX = points.Min(frame.X), maxX = points.Max(frame.X), minY = points.Min(frame.Y), maxY = points.Max(frame.Y);
@@ -128,6 +128,10 @@ public sealed partial class RebarDetailingService
             stage = "Шпильки и выноска";
             if (options.Pins) PlacePins(doc, view, frame, geometry, options, result);
             doc.Regenerate();
+            stage = "Обрезка вида и выноски";
+            if (options.Details) FitModelCropToBreaks(doc, view, frame, geometry);
+            AlignDetailNotes(doc, view, frame, options);
+            doc.Regenerate();
             stage = "Шаг и привязки арматуры";
             CombinedDimensions(doc, view, frame, geometry, options, result);
             doc.Regenerate();
@@ -154,6 +158,7 @@ public sealed partial class RebarDetailingService
         {
             if (transaction.GetStatus() == TransactionStatus.Started) transaction.RollBack();
             result.Tags = result.Dimensions = result.Elevations = result.Removed = result.Details = result.Pins = result.QuantityWrites = 0;
+            result.ExpectedTagHeads.Clear();
             result.Notes.Add(stage + ": " + ex.Message);
         }
         return result;

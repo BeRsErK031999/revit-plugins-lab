@@ -17,6 +17,7 @@ internal sealed class DetailingBar
     public XYZ Distribution { get; set; } = XYZ.Zero;
     public List<DetailingAxis> DimensionReferences { get; } = new();
     public List<DetailingAxis> EndReferences { get; } = new();
+    public List<DetailingAxis> TopReferences { get; } = new();
     public List<DetailingAxis> BendEndReferences { get; } = new();
     public List<DetailingSegment> Segments { get; } = new();
     public double Spacing { get; set; }
@@ -225,6 +226,21 @@ internal sealed partial class DetailingGeometry
                     .OrderBy(reference => reference.ConvertToStableRepresentation(view.Document), StringComparer.Ordinal).ToList();
                 if (longitudinal && Math.Abs(centerline.Direction.DotProduct(frame.Right)) > 0.999 && centerline.Length > 50 / 304.8)
                 {
+                    // The upper tie is measured to the visible top edge, not
+                    // the axis (a 16 mm bar differs by 8 mm).
+                    Element barType = e.Document.GetElement(e.GetTypeId());
+                    double diameter = barType?.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER)?.AsDouble() ?? 0;
+#if REVIT2023_OR_GREATER
+                    diameter = barType?.get_Parameter(BuiltInParameter.REBAR_MODEL_BAR_DIAMETER)?.AsDouble() ?? diameter;
+#endif
+                    double radius = diameter / 2;
+                    XYZ upperPoint = clipped + frame.Up * radius;
+                    var upperEdges = referenceLines.Where(line => Math.Abs(line.Direction.DotProduct(frame.Right)) > 0.999999
+                        && Math.Abs(frame.Y(line.Origin) - frame.Y(upperPoint)) < 0.1 / 304.8)
+                        .OrderBy(line => Math.Abs(frame.Z(line.Origin) - frame.Z(centerline.Origin)))
+                        .Select(line => line.Reference).ToList();
+                    if (upperEdges.Count > 0)
+                        bar.TopReferences.Add(new DetailingAxis { Point = upperPoint, Direction = frame.Right, Candidates = upperEdges });
                     Line spine = curves.OfType<Line>().Where(c => Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999)
                         .OrderByDescending(c => c.Length).First();
                     int terminal = Math.Abs(frame.X(centerline.GetEndPoint(0)) - frame.X(spine.Origin))

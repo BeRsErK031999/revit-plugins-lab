@@ -72,6 +72,8 @@ try {
         if ($applyReport.SixBars -and -not $applyReport.SixBars.Passed) { throw 'Six irregular bars acceptance failed; see report.' }
         if (-not $applyReport.LowerBreaks.Passed) { throw 'Lower break mirror acceptance failed; see report.' }
         if (@($applyReport.Tests | Where-Object { $_.Supplement4 -and -not $_.Supplement4.Passed }).Count -gt 0) { throw 'Supplement 4 native acceptance failed; see report.' }
+        if (@($applyReport.Tests | Where-Object { -not $_.Supplement5.Passed -or -not $_.CropExpandedOnly -or -not $_.RepeatCropStable }).Count -gt 0) { throw 'Supplement 5 crop, callout or upper-reference acceptance failed; see report.' }
+        if (@($applyReport.Supplement5Options | Where-Object { -not $_.Passed }).Count -gt 0) { throw 'Supplement 5 disabled options acceptance failed; see report.' }
     }
     if ($Mode -eq 'interactive' -and (-not $report.CancelUnchanged -or -not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive acceptance failed; see report.' }
     if ($Mode -eq 'acceptance' -and (-not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive application failed; see report.' }

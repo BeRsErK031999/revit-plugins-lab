@@ -56,8 +56,10 @@ public sealed class RebarDetailingWindow : TrueBimWindow
             DialogResult = true;
         });
         Button cancel = TrueBimUi.CreateSecondaryButton("Отмена", TrueBimIcon.Close); cancel.IsCancel = true;
+        Button help = TrueBimUi.CreateSecondaryButton("Методичка", TrueBimIcon.Help, (_, _) => new RebarDetailingGuideWindow { Owner = this }.ShowDialog());
+        help.ToolTip = "Как подготовить и оформить вертикальные сечения";
         ApplyTrueBimShell(TrueBimUi.CreateHeader(Title, "Готовые вертикальные сечения · стены, пилоны, колонны", TrueBimIcon.RebarSplit),
-            null, body, new TextBlock { Text = "Типы подбираются по оформлению выбранных видов. При ошибке все изменения проблемного вида отменяются.", TextWrapping = TextWrapping.Wrap }, TrueBimUi.CreateFooter(null, run, cancel));
+            null, body, new TextBlock { Text = "Обрезка может расшириться для полного отображения обрывов. При ошибке все изменения проблемного вида отменяются.", TextWrapping = TextWrapping.Wrap }, TrueBimUi.CreateFooter(null, help, run, cancel));
         void Add(string label, string kind, ComboBox combo)
         {
             var types = service.Types(doc, kind); combo.ItemsSource = types;
