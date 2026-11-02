@@ -60,7 +60,7 @@ internal sealed class DetailingFace
     public DetailingRect Bounds { get; set; }
 }
 
-internal sealed class DetailingGeometry
+internal sealed partial class DetailingGeometry
 {
     public List<DetailingBar> Bars { get; } = new();
     public List<DetailingFace> Faces { get; } = new();
@@ -333,6 +333,9 @@ internal sealed class DetailingGeometry
             }
             else if (item is Solid solid && solid.Volume > 1e-9)
             {
+                // Own a detached copy: geometry children borrowed from a Revit
+                // GeometryElement can expire after regeneration or collection.
+                Solids.Add(new DetailingSolid { Solid = SolidUtils.CreateTransformed(solid, Transform.Identity), Transform = transform, HostKey = host });
                 foreach (Face face in solid.Faces)
                 {
                     if (face is not PlanarFace plane || face.Reference == null) continue;

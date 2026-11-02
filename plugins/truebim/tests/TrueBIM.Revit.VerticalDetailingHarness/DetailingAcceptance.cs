@@ -63,6 +63,10 @@ public sealed partial class VerticalDetailingHarnessApplication
 
     private void TestDetailing(UIDocument ui)
     {
+        AppDomain.CurrentDomain.FirstChanceException += (_, args) =>
+        {
+            if (args.Exception.Message.Contains("A managed exception was thrown")) Progress(args.Exception.ToString());
+        };
         Document doc = ui.Document;
         RebarDetailingService service = new();
         DetailingVariant variant = Enum.TryParse(Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_VARIANT"), out DetailingVariant requestedVariant)
@@ -130,6 +134,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                     duplicate.Start(); noteView = (View)doc.GetElement(view.Duplicate(ViewDuplicateOption.Duplicate)); duplicate.Commit();
                 }
                 options.UpperNoteTop = "Плита QA Ё"; options.UpperNoteBottom = "Проверка строки";
+                options.Pins = false;
                 options.LowerNoteTop = "Основание QA"; options.LowerNoteBottom = "";
                 Element? bar = geometry.Bars.FirstOrDefault(b => b.Link == null && !b.Element.Pinned && b.Element.GroupId == ElementId.InvalidElementId)?.Element;
                 if (bar != null)
@@ -138,6 +143,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                     bar.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS).Set("Произвольный комментарий QA Ё"); comment.Commit();
                 }
                 var custom = service.Apply(doc, new[] { noteView }, options).Single();
+                Progress("Custom notes: " + custom);
                 var notes = new FilteredElementCollector(doc).OwnedByView(noteView.Id).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
                     .Where(e => e is AnnotationSymbol && RebarDetailingService.OwnedDetail(e)).ToList();
                 customNotesSafe = custom.Succeeded && notes.Any(n => n.LookupParameter("Верхняя строка")?.AsString() == "Плита QA Ё"
@@ -147,9 +153,11 @@ public sealed partial class VerticalDetailingHarnessApplication
                 textCommentSafe = custom.Succeeded && bar?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() == "Произвольный комментарий QA Ё";
                 options.UpperNoteTop = options.UpperNoteBottom = options.LowerNoteTop = options.LowerNoteBottom = "";
                 var empty = service.Apply(doc, new[] { noteView }, options).Single();
+                Progress("Empty notes: " + empty);
                 emptyNotesSafe = empty.Succeeded && !new FilteredElementCollector(doc).OwnedByView(noteView.Id).OfClass(typeof(FamilyInstance))
                     .Cast<FamilyInstance>().Any(e => e is AnnotationSymbol && RebarDetailingService.OwnedDetail(e));
                 scenarios.RollBack();
+                options.Pins = true;
             }
             var dimensions = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(Dimension)).Cast<Dimension>().Where(d => d is not SpotDimension).ToList();
             var formulaDimensions = dimensions.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2).ToList();
@@ -182,9 +190,13 @@ public sealed partial class VerticalDetailingHarnessApplication
                 LeaderProbe = leaderProbe,
                 Bars = geometry.Bars.Select(b => new { Id = b.Element.Id.Value, b.Element.UniqueId, b.Element.Name, Host = b.Host.Value, Class = b.Element.GetType().Name, Link = b.Link?.Id.Value, Count = b.Positions.Count, Target = Point(b.Target), Reference = b.Reference.ConvertToStableRepresentation(doc),
                     Bends = b.BendEndReferences.Select(a => new { Point = Point(a.Point), References = a.Candidates.Select(r => r.ConvertToStableRepresentation(doc)).ToList() }).ToList(),
+                    b.Shape, b.Spacing, TypeId = b.Element.GetTypeId().Value, Rows = b.Positions.Select(p => new[] { new DetailingFrame(view).X(p), new DetailingFrame(view).Y(p) }).ToList(),
+                    Axes = b.DimensionReferences.Select(a => new { Point = Point(a.Point), Direction = Point(a.Direction), Stable = a.Reference.ConvertToStableRepresentation(doc) }).ToList(),
                     Segments = b.Segments.Select(s => new { Start = Point(s.Start), End = Point(s.End), s.BarIndex }).ToList() }).ToList(),
+                BreakPaths = geometry.Breaks(new DetailingFrame(view)).Select(path => path.Select(p => new[] { p.X, p.Y }).ToList()).ToList(),
                 Faces = geometry.Faces.Select(f => new { f.HostKey, f.Horizontal, Point = Point(f.Point), Normal = Point(f.Normal) }).ToList(),
                 First = first, Second = second, RepeatStable = repeatStable, ProtectedAnnotationSafe = protectedAnnotationSafe,
+                Supplement4 = first.Succeeded ? MeasureSupplement4(doc, view, options) : null,
                 PlannedHeads = plannedHeads, Layout = first.LayoutTrace,
                 ViewUnchanged = before[view.Id.Value] == ViewFingerprint(view),
                 VisibleAnnotations = new FilteredElementCollector(doc, view.Id).WhereElementIsNotElementType().Count(e => e.OwnerViewId == view.Id && (e is Dimension || e is IndependentTag || RebarDetailingService.OwnedDetail(e))),
@@ -215,6 +227,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                 return service.Apply(doc, group.ToList(), batchOptions);
             }).ToList();
             batchSucceeded = results.Count == views.Count && results.All(r => r.Succeeded);
+            foreach (var batchResult in results) Progress("Batch: " + batchResult);
             batch.RollBack();
         }
         bool batchUndoStable = views.All(v => beforeBatch[v.Id] == AnnotationFingerprint(v)) && commentsBeforeBatch == CommentsFingerprint(doc);

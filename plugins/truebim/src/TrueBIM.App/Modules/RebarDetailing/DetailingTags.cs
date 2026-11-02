@@ -13,6 +13,7 @@ public sealed partial class RebarDetailingService
         public List<(Reference Reference, XYZ Point)> Targets { get; } = new();
         public DetailingRect Box { get; set; }
         public bool Inline { get; set; }
+        public bool CountedTransverse { get; set; }
         public bool CornerCount { get; set; }
         public bool OutsidePlanField { get; set; }
     }
@@ -44,18 +45,27 @@ public sealed partial class RebarDetailingService
             candidates.Add((bar, tag));
         }
         var labels = new List<LabelGroup>();
-        string MarkKey((DetailingBar Bar, IndependentTag Tag) item) => DetailingGeometry.Key(item.Bar.Host, item.Bar.Link) + "|" + item.Tag.TagText;
-        var irregularMarks = new HashSet<string>(candidates.GroupBy(p => MarkKey(p) + "|" + p.Bar.Shape)
-            .Where(g => !g.Any(p => p.Bar.Segments.Any(s => Math.Abs(s.Direction.DotProduct(frame.Up)) > 0.999))
-                && DetailingSectionLayout.HasIrregularPitch(g.SelectMany(p => p.Bar.DimensionReferences).Select(a => frame.Y(a.Point) * 304.8)))
-            .Select(g => g.Key));
+        string MarkKey((DetailingBar Bar, IndependentTag Tag) item) => DetailingGeometry.Key(item.Bar.Host, item.Bar.Link)
+            + "|" + item.Tag.TagText + "|" + item.Bar.Shape + "|" + item.Bar.Element.GetTypeId();
+        var transverseGroups = new Dictionary<DetailingBar, int>();
+        int nextGroup = 0;
+        foreach (var family in candidates.Where(p => !Longitudinal(frame, p.Bar)).GroupBy(MarkKey))
+        {
+            var items = family.ToList();
+            foreach (var group in DetailingBarGroups.Create(items.Select((p, i) => (i,
+                (IReadOnlyList<double>)p.Bar.Positions.Select(point => frame.Y(point) * 304.8).ToList()))))
+            {
+                foreach (int index in group) transverseGroups[items[index].Bar] = nextGroup;
+                nextGroup++;
+            }
+        }
         foreach (var group in candidates.GroupBy(p =>
         {
             string comment = p.Bar.Element.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
             if (comment.Length > 0 && !Regex.IsMatch(comment, @"^\s*\d+\s*шт\.?\s*$", RegexOptions.IgnoreCase)
                 && (comment.StartsWith("ш.", StringComparison.OrdinalIgnoreCase) || comment.StartsWith("шаг", StringComparison.OrdinalIgnoreCase)))
                 return MarkKey(p) + "|comment|" + comment;
-            if (irregularMarks.Contains(MarkKey(p) + "|" + p.Bar.Shape)) return MarkKey(p) + "|" + p.Bar.Shape + "|count";
+            if (frame.Vertical && transverseGroups.TryGetValue(p.Bar, out int transverse)) return MarkKey(p) + "|array|" + transverse;
             double pitch = p.Bar.Spacing;
             if (pitch < 0.1 / 304.8)
             {
@@ -71,15 +81,17 @@ public sealed partial class RebarDetailingService
             foreach (var duplicate in items.Skip(1)) doc.Delete(duplicate.Tag.Id);
             DetailingBar representative = label.Bars[0];
             bool perMetre = label.Bars.Any(b => b.Element.Name.IndexOf("п.м.", StringComparison.OrdinalIgnoreCase) >= 0);
-            bool longitudinal = label.Bars.Any(b => b.Segments.Any(s => Math.Abs(s.Direction.DotProduct(frame.Vertical ? frame.Up : frame.Normal)) > 0.999));
+            bool longitudinal = label.Bars.Any(b => Longitudinal(frame, b));
             bool shortSystem = representative.Element is RebarInSystem && geometry.Bars.Any(b => b.Host == representative.Host
                 && b.Link?.Id == representative.Link?.Id && b.Element.GetTypeId() == representative.Element.GetTypeId()
                 && (b.Element.get_Parameter(BuiltInParameter.REBAR_ELEM_LENGTH)?.AsDouble() ?? 0)
                     > (representative.Element.get_Parameter(BuiltInParameter.REBAR_ELEM_LENGTH)?.AsDouble() ?? 0) + 200 / 304.8);
             int quantity = label.Bars.Sum(b => b.VisibleIndices.Count);
-            bool irregular = DetailingSectionLayout.HasIrregularPitch(label.Bars.SelectMany(b => b.DimensionReferences).Select(a => frame.Y(a.Point) * 304.8));
-            bool counted = !perMetre && ((!frame.Vertical && longitudinal && (representative.Element is Rebar || shortSystem || representative.Spacing < 0.1 / 304.8))
-                || (frame.Vertical && !longitudinal && (quantity <= 3 || irregular)));
+            var rows = DetailingBarGroups.Unique(label.Bars.SelectMany(b => b.Positions).Select(p => frame.Y(p) * 304.8));
+            bool regular = rows.Count >= 3 && !DetailingSectionLayout.HasIrregularPitch(rows);
+            bool counted = (frame.Vertical && !longitudinal && !regular)
+                || (!frame.Vertical && !perMetre && longitudinal && (representative.Element is Rebar || shortSystem || representative.Spacing < 0.1 / 304.8));
+            label.CountedTransverse = frame.Vertical && !longitudinal && counted;
             string comments = representative.Element.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.AsString() ?? "";
             bool textComment = comments.Length > 0 && !Regex.IsMatch(comments, @"^\s*\d+\s*шт\.?\s*$", RegexOptions.IgnoreCase);
             if (counted && options.WriteQuantities)
@@ -95,7 +107,7 @@ public sealed partial class RebarDetailingService
                     if (previous != value) { parameter.Set(value); result.QuantityWrites++; }
                 }
             }
-            label.Inline = frame.Vertical && perMetre;
+            label.Inline = frame.Vertical && !longitudinal && regular;
             label.CornerCount = !frame.Vertical && counted && representative.Element is Rebar && representative.ShapeName.EndsWith("000", StringComparison.Ordinal);
             label.OutsidePlanField = !frame.Vertical && !counted && longitudinal && representative.Element is RebarInSystem && !textComment
                 && geometry.Bars.GroupBy(b => DetailingGeometry.Key(b.Host, b.Link)).Select(g => LabelHostRegion(frame, geometry, g.ToList()))
@@ -120,10 +132,10 @@ public sealed partial class RebarDetailingService
                 else label.Targets.Add((bar.Reference, bar.Target));
             }
             if (label.Targets.Count == 0) label.Targets.Add((representative.Reference, representative.Target));
-            if (label.CornerCount || label.OutsidePlanField)
+            if (label.CornerCount || label.OutsidePlanField || label.CountedTransverse)
             {
                 var lowest = label.Bars.SelectMany(b => b.Positions.Select((point, index) => (Reference: b.PositionReferences[index], Point: point)))
-                    .OrderBy(p => Math.Round(frame.Y(p.Point) * 304.8, 1)).ThenBy(p => frame.X(p.Point)).First();
+                    .OrderBy(p => Math.Round(frame.Y(p.Point) * 304.8, 1)).ThenByDescending(p => frame.X(p.Point)).First();
                 label.Targets.Clear();
                 label.Targets.Add(lowest);
             }
@@ -159,7 +171,7 @@ public sealed partial class RebarDetailingService
             if (label.Inline)
             {
                 var field = Region(frame, label.Bars);
-                var section = Sections(frame, geometry, options).First(s => s.HostKey == hostKey);
+                var section = Sections(frame, geometry, options).First(s => s.Bars.Contains(label.Bars[0]));
                 var boundary = SectionAnnotationBoundary(doc, view, frame, section);
                 label.Tag.TagHeadPosition = frame.Point(boundary.Left - frame.Paper(6), field.CenterY);
                 result.ExpectedTagHeads[label.Tag.Id] = label.Tag.TagHeadPosition;
@@ -189,7 +201,7 @@ public sealed partial class RebarDetailingService
             var request = new DetailingLabelRequest { Id = i, X = frame.X(target) / unit, Y = frame.Y(target) / unit,
                 Width = width / unit, Height = height / unit, Host = Paper(host), PreferredSide = side, OnlyPreferredSide = true };
             request.Targets.AddRange(label.Targets.Select(t => (frame.X(t.Point) / unit, frame.Y(t.Point) / unit)));
-            if (hasTicks && !label.CornerCount && !label.OutsidePlanField && label.Bars.Count >= 2)
+            if (hasTicks && !label.CornerCount && !label.OutsidePlanField && !label.CountedTransverse && label.Bars.Count >= 2)
             {
                 XYZ along = frame.Vertical ? frame.Up : frame.Right;
                 XYZ across = frame.Vertical ? frame.Right : frame.Up;
@@ -265,7 +277,7 @@ public sealed partial class RebarDetailingService
             XYZ head = frame.Point(placement.Bounds.Left * unit - label.Box.Left, placement.Bounds.Bottom * unit - label.Box.Bottom);
             tag.TagHeadPosition = head;
             doc.Regenerate();
-            if (!label.CornerCount && !label.OutsidePlanField && TryTagTick(doc, view, frame, label, head, out XYZ tickEnd))
+            if (!label.CornerCount && !label.OutsidePlanField && !label.CountedTransverse && TryTagTick(doc, view, frame, label, head, out XYZ tickEnd))
             {
                 label.Targets.Clear(); label.Targets.Add((label.Bars[0].Reference, tickEnd)); result.Dimensions++;
                 ElementId tagType = tag.GetTypeId();

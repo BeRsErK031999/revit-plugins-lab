@@ -96,6 +96,9 @@ public sealed partial class RebarDetailingService
                 throw new InvalidOperationException("Выберите линейный размерный стиль.");
             DetailingFrame frame = new(view);
             ValidateVariant(frame, geometry, options);
+            // Revit geometry handles can become invalid after deleting old
+            // annotations or regenerating. Cache numeric perimeter paths first.
+            if (options.Details) geometry.Breaks(frame);
             List<XYZ> points = geometry.Bars.SelectMany(b => b.Segments.SelectMany(s => new[] { s.Start, s.End })).ToList();
             if (points.Count == 0) points.AddRange(geometry.Bars.SelectMany(b => b.Positions));
             double minX = points.Min(frame.X), maxX = points.Max(frame.X), minY = points.Min(frame.Y), maxY = points.Max(frame.Y);
@@ -122,6 +125,8 @@ public sealed partial class RebarDetailingService
             }
             stage = "Обрывы и подписи плит";
             if (options.Details) Details(doc, view, frame, geometry, options, result);
+            stage = "Шпильки и выноска";
+            if (options.Pins) PlacePins(doc, view, frame, geometry, options, result);
             doc.Regenerate();
             stage = "Шаг и привязки арматуры";
             CombinedDimensions(doc, view, frame, geometry, options, result);
@@ -148,7 +153,7 @@ public sealed partial class RebarDetailingService
         catch (Exception ex)
         {
             if (transaction.GetStatus() == TransactionStatus.Started) transaction.RollBack();
-            result.Tags = result.Dimensions = result.Elevations = result.Removed = result.Details = result.QuantityWrites = 0;
+            result.Tags = result.Dimensions = result.Elevations = result.Removed = result.Details = result.Pins = result.QuantityWrites = 0;
             result.Notes.Add(stage + ": " + ex.Message);
         }
         return result;
@@ -162,7 +167,7 @@ public sealed partial class RebarDetailingService
         var owned = new FilteredElementCollector(view.Document).OwnedByView(view.Id).WhereElementIsNotElementType().ToList();
         var multi = owned.OfType<MultiReferenceAnnotation>().ToList();
         var children = new HashSet<ElementId>(multi.SelectMany(m => new[] { m.TagId, m.DimensionId }));
-        return owned.Where(e => !children.Contains(e.Id) && (OwnedDetail(e) ? options.Details : e is SpotDimension ? options.Elevations
+        return owned.Where(e => !children.Contains(e.Id) && (OwnedDetail(e) ? DetailRole(e).StartsWith("pin", StringComparison.Ordinal) ? options.Pins : options.Details : e is SpotDimension ? options.Elevations
             : e is Dimension dimension ? IsRebarDimension(dimension) ? options.BarDimensions : options.ConcreteDimensions
             : e is IndependentTag ? options.Tags && e.Category?.Id == new ElementId(BuiltInCategory.OST_RebarTags)
             : e is MultiReferenceAnnotation && options.BarDimensions && options.Tags)).ToList();
@@ -363,6 +368,7 @@ public sealed partial class RebarDetailingService
         double minX, DetailingResult result)
     {
         if (doc.GetElement(options.SpotTypeId) is not DimensionType) throw new InvalidOperationException("Выберите тип высотной отметки.");
+        var placedLevels = new HashSet<double>();
         foreach (var section in Sections(frame, geometry, options))
         {
             var levels = section.Faces.Where(f => !f.Horizontal && Math.Abs(f.Normal.Z) > 0.999).OrderBy(f => frame.Y(f.Point)).ToList();
@@ -378,6 +384,7 @@ public sealed partial class RebarDetailingService
             double lastY = double.NegativeInfinity;
             foreach (var face in selected)
             {
+                if (!placedLevels.Add(Math.Round(face.Point.Z * 304.8, 1))) continue;
                 double y = Math.Max(frame.Y(face.Point), lastY + frame.Paper(5)); lastY = y;
                 XYZ origin = frame.Flatten(face.Point);
                 XYZ end = frame.Point(layout.Left - frame.Paper(24), y), bend = end + frame.Right * frame.Paper(10);

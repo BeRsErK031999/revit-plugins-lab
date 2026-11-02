@@ -18,6 +18,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
     private readonly TextBox upperTop = new() { Text = "Плита" }, upperBottom = new() { Text = "перекрытия" },
         lowerTop = new() { Text = "Фундаментная плита" }, lowerBottom = new() { Text = "{том}" };
     private readonly CheckBox details = Check("Обрывы, швы и подписи плит"), quantities = Check("Записать количество в «Комментарии» арматуры");
+    private readonly CheckBox pins = Check("Шпильки Ш1 А240");
     public RebarDetailingWindow(Document doc, IReadOnlyList<DetailingViewRow> rows, RebarDetailingService service)
     {
         this.rows = rows;
@@ -26,7 +27,8 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         Grid body = new(); body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition());
         StackPanel settings = new();
         WrapPanel choices = new() { Margin = new Thickness(0, 0, 0, 8) };
-        foreach (CheckBox option in new[] { tags, concrete, bars, spots, details }) choices.Children.Add(option);
+        pins.ToolTip = "Элементы узла через один горизонтальный стержень снизу вверх. A = толщина стены − 50 мм.";
+        foreach (CheckBox option in new[] { tags, concrete, bars, spots, details, pins }) choices.Children.Add(option);
         settings.Children.Add(choices);
         Add("Резервная марка арматуры", "tag", tagType); Add("Линейный размер", "dimension", dimType);
         Add("Резервная высотная отметка", "spot", spotType);
@@ -49,7 +51,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         {
             table.CommitEdit(); table.CommitEdit(DataGridEditingUnit.Row, true);
             if (!rows.Any(r => r.Selected)) { MessageBox.Show(this, "Отметьте хотя бы один вид.", Title); return; }
-            if (!tags.IsChecked.GetValueOrDefault() && !concrete.IsChecked.GetValueOrDefault() && !bars.IsChecked.GetValueOrDefault() && !spots.IsChecked.GetValueOrDefault() && !details.IsChecked.GetValueOrDefault())
+            if (!tags.IsChecked.GetValueOrDefault() && !concrete.IsChecked.GetValueOrDefault() && !bars.IsChecked.GetValueOrDefault() && !spots.IsChecked.GetValueOrDefault() && !details.IsChecked.GetValueOrDefault() && !pins.IsChecked.GetValueOrDefault())
             { MessageBox.Show(this, "Включите хотя бы один вид оформления.", Title); return; }
             DialogResult = true;
         });
@@ -80,7 +82,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
     }
     public IReadOnlyList<View> SelectedViews => rows.Where(r => r.Selected).Select(r => r.View).ToList();
     public DetailingOptions Options => new() { Tags = tags.IsChecked == true, ConcreteDimensions = concrete.IsChecked == true, BarDimensions = bars.IsChecked == true, Elevations = spots.IsChecked == true,
-        ReplaceExisting = replace.IsChecked == true, Details = details.IsChecked == true, WriteQuantities = quantities.IsChecked == true,
+        ReplaceExisting = replace.IsChecked == true, Details = details.IsChecked == true, Pins = pins.IsChecked == true, WriteQuantities = quantities.IsChecked == true,
         Variant = (DetailingVariant)variant.SelectedIndex, UpperNoteTop = upperTop.Text, UpperNoteBottom = upperBottom.Text,
         LowerNoteTop = lowerTop.Text, LowerNoteBottom = lowerBottom.Text,
         TagTypeId = Id(tagType), DimensionTypeId = Id(dimType), SpotTypeId = Id(spotType) };

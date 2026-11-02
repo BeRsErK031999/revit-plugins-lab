@@ -38,8 +38,11 @@ public sealed class DetailingChainPlan
         {
             if (unique.Count == 0 || point.PositionMm - unique[unique.Count - 1].PositionMm > toleranceMm) { unique.Add(point); continue; }
             DetailingChainPoint previous = unique[unique.Count - 1];
+            var preferred = !point.Boundary && point.Id < previous.Id ? point : previous;
             if (!previous.Boundary && !point.Boundary && previous.RunKey != point.RunKey)
-                unique[unique.Count - 1] = new DetailingChainPoint(previous.Id, previous.PositionMm, previous.RunKey, true);
+                unique[unique.Count - 1] = new DetailingChainPoint(preferred.Id, preferred.PositionMm, preferred.RunKey, true);
+            else if (!previous.Boundary && !point.Boundary)
+                unique[unique.Count - 1] = preferred;
         }
         List<DetailingChainSection> sections = new();
         if (!equality)

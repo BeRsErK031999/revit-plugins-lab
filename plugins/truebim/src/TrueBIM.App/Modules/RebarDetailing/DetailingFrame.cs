@@ -24,6 +24,21 @@ internal sealed class DetailingFrame
     public XYZ Point(double x, double y) => Origin + Right * x + Up * y;
     public XYZ Flatten(XYZ p) => Point(X(p), Y(p));
 
+    public double CutDepth => Z(crop.Transform.OfPoint(new XYZ(0, 0, crop.Max.Z))) - 0.5 / 304.8;
+    public DetailingRect BreakBoundary
+    {
+        get
+        {
+            XYZ a = crop.Transform.OfPoint(crop.Min), b = crop.Transform.OfPoint(crop.Max);
+            // The project break families have a 4 mm zigzag. Keep the complete
+            // symbol inside the model crop, which clips detail components too.
+            double insetX = Math.Min(Paper(5), Math.Abs(X(b) - X(a)) / 10);
+            double insetY = Math.Min(Paper(5), Math.Abs(Y(b) - Y(a)) / 10);
+            return new DetailingRect(Math.Min(X(a), X(b)) + insetX, Math.Min(Y(a), Y(b)) + insetY,
+                Math.Max(X(a), X(b)) - insetX, Math.Max(Y(a), Y(b)) - insetY);
+        }
+    }
+
     public bool Contains(XYZ p, double tolerance = 0.002)
     {
         if (!View.CropBoxActive) return true;

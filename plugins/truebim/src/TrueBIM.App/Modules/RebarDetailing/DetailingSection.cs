@@ -105,13 +105,12 @@ public sealed partial class RebarDetailingService
                     outerLeft = Math.Min(left, bent.Left); outerRight = Math.Max(right, bent.Right);
                 }
             }
-            bool slabLeft = upper.Any(h => h.Bounds.Left < left - 1 / 304.8);
-            bool slabRight = upper.Any(h => h.Bounds.Right > right + 1 / 304.8);
+            var breakPoints = options.Details ? geometry.Breaks(frame).SelectMany(p => p).ToList() : new List<(double X, double Y)>();
             sections.Add(new DetailingSection { HostKey = group.Key, Bars = bars, Faces = faces, UpperSlabs = upper, LowerConcrete = lower,
                 Wall = new DetailingRect(left, bottom, right, top), Reinforcement = reinforcement, LowerLeft = lowerLeft, LowerRight = lowerRight,
-                BreakLeft = outerLeft - (options.Details && (lowerLeft || slabLeft) ? frame.Paper(5) : 0),
-                BreakRight = outerRight + (options.Details && (lowerRight || slabRight) ? frame.Paper(5) : 0),
-                BreakBottom = options.Details ? Math.Min(bottom - frame.Paper(6), reinforcement.Bottom - frame.Paper(2)) : Math.Min(bottom, reinforcement.Bottom) });
+                BreakLeft = breakPoints.Count > 0 ? Math.Min(left, breakPoints.Min(p => p.X)) : outerLeft,
+                BreakRight = breakPoints.Count > 0 ? Math.Max(right, breakPoints.Max(p => p.X)) : outerRight,
+                BreakBottom = breakPoints.Count > 0 ? Math.Min(bottom, breakPoints.Min(p => p.Y)) : Math.Min(bottom, reinforcement.Bottom) });
         }
         return sections;
     }

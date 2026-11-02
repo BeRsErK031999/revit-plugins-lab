@@ -2,6 +2,8 @@ namespace TrueBIM.App.Modules.RebarDetailing;
 
 public static class DetailingSectionLayout
 {
+    public static double PinLengthMm(double wallThicknessMm) => wallThicknessMm - 50;
+
     public static int LowerBreakKind(bool concreteLeft, bool concreteRight) => concreteLeft && concreteRight ? 3 : concreteLeft || concreteRight ? 2 : 1;
 
     public static DetailingVariant VariantForBends(IEnumerable<double> offsetsMm, double toleranceMm = 50)

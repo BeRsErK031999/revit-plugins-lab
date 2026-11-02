@@ -71,13 +71,17 @@ try {
         if ($PreviewPayload -and -not $applyReport.Preview.Rendered) { throw 'Preview window was not rendered.' }
         if ($applyReport.SixBars -and -not $applyReport.SixBars.Passed) { throw 'Six irregular bars acceptance failed; see report.' }
         if (-not $applyReport.LowerBreaks.Passed) { throw 'Lower break mirror acceptance failed; see report.' }
+        if (@($applyReport.Tests | Where-Object { $_.Supplement4 -and -not $_.Supplement4.Passed }).Count -gt 0) { throw 'Supplement 4 native acceptance failed; see report.' }
     }
     if ($Mode -eq 'interactive' -and (-not $report.CancelUnchanged -or -not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive acceptance failed; see report.' }
     if ($Mode -eq 'acceptance' -and (-not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive application failed; see report.' }
     Write-Output "Report: $env:TRUEBIM_VERTICAL_REPORT"
 }
 finally {
-    if ($viewerProcess -and -not $viewerProcess.HasExited) { Stop-Process -Id $viewerProcess.Id -Force }
+    if ($viewerProcess -and -not $viewerProcess.HasExited) {
+        Stop-Process -Id $viewerProcess.Id -Force
+        if (-not $viewerProcess.WaitForExit(30000)) { Write-Warning 'Harness Revit is still releasing its assemblies.' }
+    }
     if (Test-Path -LiteralPath $manifestPath) { Remove-Item -LiteralPath $manifestPath -Force }
     $env:TRUEBIM_VERTICAL_REPORT = $previousReport
     $env:TRUEBIM_VERTICAL_MODEL = $previousModel

@@ -22,7 +22,7 @@ public sealed partial class VerticalDetailingHarnessApplication
         }
         RebarDetailingService service = new();
         var options = new DetailingOptions { Tags = false, ConcreteDimensions = false, BarDimensions = false, Elevations = false,
-            WriteQuantities = false, UpperNoteBottom = "см. {том}", LowerNoteBottom = "см. {том}" };
+            WriteQuantities = false, Pins = false, UpperNoteBottom = "см. {том}", LowerNoteBottom = "см. {том}" };
         var result = service.Apply(doc, new[] { view }, options).Single();
         var texts = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
             .Where(f => f is AnnotationSymbol && RebarDetailingService.OwnedDetail(f))
@@ -56,10 +56,11 @@ public sealed partial class VerticalDetailingHarnessApplication
 
     private object CheckLowerBreakMirroring(Document doc, View original)
     {
-        Progress("Testing native lower break families with one-sided projected concrete fixtures");
+        Progress("Testing native corner breaks against actual transient solid intersections");
         var results = new List<object>();
         bool passed = true;
         foreach (bool onRight in new[] { false, true })
+        foreach (bool onTop in new[] { false, true })
         {
             using TransactionGroup scenario = new(doc, "Lower break mirror acceptance"); scenario.Start();
             View view;
@@ -70,18 +71,18 @@ public sealed partial class VerticalDetailingHarnessApplication
             DetailingFrame frame = new(view);
             DetailingGeometry geometry = DetailingGeometry.Read(doc, view);
             DetailingOptions options = new();
-            var sectionsMethod = typeof(RebarDetailingService).GetMethod("Sections", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-            var sections = (List<DetailingSection>)sectionsMethod.Invoke(null, new object[] { frame, geometry, options })!;
-            var section = sections.First(s => s.LowerConcrete.Count > 0 && s.Faces.Count(f => f.Horizontal) >= 2);
-            // Only the input projection is narrowed. Native model geometry is
-            // untouched; the actual family placement/mirror API runs in Revit.
-            foreach (var host in section.LowerConcrete)
-            {
-                var b = host.Bounds;
-                double middle = (section.Wall.Left + section.Wall.Right) / 2;
-                host.Bounds = onRight ? new DetailingRect(middle, b.Bottom, b.Right, b.Top)
-                    : new DetailingRect(b.Left, b.Bottom, middle, b.Top);
-            }
+            var boundary = frame.BreakBoundary;
+            double left = onRight ? boundary.CenterX : boundary.Left - 1;
+            double right = onRight ? boundary.Right + 1 : boundary.CenterX;
+            double bottom = onTop ? boundary.Top - 300 / 304.8 : boundary.Bottom - 1;
+            double top = onTop ? boundary.Top + 1 : boundary.Bottom + 300 / 304.8;
+            var vertices = new[] { frame.Point(left, bottom), frame.Point(right, bottom), frame.Point(right, top), frame.Point(left, top) }
+                .Select(p => p + frame.Normal * (frame.CutDepth - 1)).ToList();
+            CurveLoop loop = new();
+            for (int index = 0; index < 4; index++) loop.Append(Line.CreateBound(vertices[index], vertices[(index + 1) % 4]));
+            geometry.Solids.Clear();
+            geometry.Solids.Add(new DetailingSolid { HostKey = "fixture", Transform = Transform.Identity,
+                Solid = GeometryCreationUtilities.CreateExtrusionGeometry(new[] { loop }, frame.Normal, 2) });
             var result = new DetailingResult();
             using (Transaction create = new(doc, "Place native one-sided break"))
             {
@@ -95,17 +96,19 @@ public sealed partial class VerticalDetailingHarnessApplication
             var axes = breaks.Select(f => new { Id = f.Id.Value, Horizontal = f.GetTransform().BasisY.DotProduct(frame.Right),
                 Vertical = f.GetTransform().BasisX.DotProduct(frame.Up), f.Mirrored,
                 PlacementX = frame.X(((LocationPoint)f.Location).Point) }).ToList();
-            // Revit stores this view-based family's mirror state separately;
-            // BasisY remains negative in both cases. Check its native flag and
-            // the actual placement edge, then inspect both exported views.
-            bool correct = axes.Count == 1 && axes.All(a => Math.Abs(a.Horizontal + 1) < 1e-6 && Math.Abs(a.Vertical - 1) < 1e-6
-                && a.Mirrored == onRight && Math.Abs(a.PlacementX - (onRight ? section.Wall.Left : section.Wall.Right)) < 0.1 / 304.8);
+            var path = geometry.Breaks(frame).Single();
+            bool correct = axes.Count == 1 && path.Count == 3 && breaks.All(f =>
+                Math.Abs(f.LookupParameter("Длина линии 1").AsDouble() - frame.Point(path[0].X, path[0].Y).DistanceTo(frame.Point(path[1].X, path[1].Y))) < 0.1 / 304.8
+                && Math.Abs(f.LookupParameter("Длина линии 2").AsDouble() - frame.Point(path[1].X, path[1].Y).DistanceTo(frame.Point(path[2].X, path[2].Y))) < 0.1 / 304.8
+                && frame.Flatten(((LocationPoint)f.Location).Point).DistanceTo(frame.Point(path[1].X, path[1].Y)) < 0.1 / 304.8
+                && f.GetTransform().BasisX.Normalize().DotProduct((frame.Point(path[0].X, path[0].Y) - frame.Point(path[1].X, path[1].Y)).Normalize()) > 0.999
+                && (-f.GetTransform().BasisY).Normalize().DotProduct((frame.Point(path[2].X, path[2].Y) - frame.Point(path[1].X, path[1].Y)).Normalize()) > 0.999);
             passed &= correct;
-            Export(doc, view, onRight ? "lower-break-right" : "lower-break-left");
-            results.Add(new { OnRight = onRight, Passed = correct, Axes = axes });
+            Export(doc, view, (onTop ? "upper" : "lower") + (onRight ? "-break-right" : "-break-left"));
+            results.Add(new { OnRight = onRight, OnTop = onTop, Passed = correct, Axes = axes });
             scenario.RollBack();
         }
-        return new { Passed = passed, Fixture = "Projected concrete bounds narrowed; source model unchanged", Cases = results };
+        return new { Passed = passed, Fixture = "Transient native solids intersect the perimeter on two sides; source model unchanged", Cases = results };
     }
 
     private object ProbeNoteLeaders(Document doc, View view)

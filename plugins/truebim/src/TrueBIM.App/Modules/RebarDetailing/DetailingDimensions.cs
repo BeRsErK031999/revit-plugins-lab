@@ -39,7 +39,7 @@ public sealed partial class RebarDetailingService
                         .Where(axis => horizontal ? Math.Abs(axis.Direction.DotProduct(frame.Up)) > 0.999
                             : Math.Abs(axis.Direction.DotProduct(frame.Normal)) > 0.999 || Math.Abs(axis.Direction.DotProduct(frame.Right)) > 0.999)
                         .Select(axis => new ChainReference { Point = axis.Point, Axis = axis, Run = bar.Element.GetTypeId() + "|" + bar.Shape }))
-                        .OrderBy(p => Coordinate(p.Point)).ToList();
+                        .OrderBy(p => Math.Round(Coordinate(p.Point) * 304.8, 1)).ThenBy(p => frame.X(p.Point)).ToList();
                     if (!horizontal && faces.Count >= 2)
                         entries.RemoveAll(p => Coordinate(p.Point) < Coordinate(faces.First().Point) - 0.1 / 304.8
                             || Coordinate(p.Point) > Coordinate(faces.Last().Point) + 0.1 / 304.8);
@@ -73,44 +73,10 @@ public sealed partial class RebarDetailingService
                         concrete.Add(new ChainReference { Point = slabLevels.First().Point, Face = slabLevels.First() });
                         concrete.Add(new ChainReference { Point = slabLevels.Last().Point, Face = slabLevels.Last() });
                     }
-                    double highest = concrete.Count == 0 ? double.PositiveInfinity : concrete.Max(p => frame.Y(p.Point));
-                    var exposed = bars.SelectMany(b => b.EndReferences).Where(a => frame.Y(a.Point) > highest + 1 / 304.8)
-                        .OrderByDescending(a => frame.Y(a.Point)).FirstOrDefault();
-                    if (exposed != null) concrete.Add(new ChainReference { Point = exposed.Point, Axis = exposed });
                 }
                 XYZ concreteOrigin = horizontal ? frame.Point(bounds.Left, layout.Bottom - frame.Paper(options.BarDimensions ? 16 : 8))
                     : frame.Point(layout.Left - frame.Paper(options.BarDimensions ? 16 : 8), bounds.Bottom);
                 AddChain(concrete, concreteOrigin, direction, horizontal, false);
-            }
-            if (options.BarDimensions && options.Variant != DetailingVariant.Straight)
-            {
-                // The top row measures the bent ends against their vertical legs
-                // and the wall faces; opposing bends include both sides in one row.
-                var bent = bars.SelectMany(b => b.BendEndReferences.Select(a => new ChainReference { Point = a.Point, Axis = a, Run = b.Shape }))
-                    .Concat(bars.SelectMany(b => b.DimensionReferences.Where(a => Math.Abs(a.Direction.DotProduct(frame.Up)) > 0.999)
-                        .Select(a => new ChainReference { Point = a.Point, Axis = a, Run = b.Shape })))
-                    .Concat(section.Faces.Where(f => f.Horizontal).Select(f => new ChainReference { Point = f.Point, Face = f })).ToList();
-                if (bars.Any(b => b.BendEndReferences.Count > 0))
-                {
-                    double row = Math.Max(bounds.Top, section.Wall.Top) + frame.Paper(8);
-                    // Keep existing manual slab notes intact and place the new
-                    // top dimension above them if they occupy its normal row.
-                    var notes = new FilteredElementCollector(doc).OwnedByView(view.Id).WhereElementIsNotElementType()
-                        .Where(e => (e is AnnotationSymbol || e is TextNote) && !OwnedDetail(e))
-                        .Select(e => e.get_BoundingBox(view)).Where(b => b != null).Select(b =>
-                        {
-                            var corners = new List<XYZ>();
-                            for (int x = 0; x < 2; x++) for (int y = 0; y < 2; y++) for (int z = 0; z < 2; z++)
-                                corners.Add(b!.Transform.OfPoint(new XYZ(x == 0 ? b.Min.X : b.Max.X,
-                                    y == 0 ? b.Min.Y : b.Max.Y, z == 0 ? b.Min.Z : b.Max.Z)));
-                            return new DetailingRect(corners.Min(frame.X), corners.Min(frame.Y), corners.Max(frame.X), corners.Max(frame.Y));
-                        }).OrderBy(b => b.Bottom).ToList();
-                    foreach (var note in notes)
-                        if (note.Right >= bent.Min(p => frame.X(p.Point)) && note.Left <= bent.Max(p => frame.X(p.Point))
-                            && note.Top >= row - frame.Paper(3) && note.Bottom <= row + frame.Paper(3))
-                            row = note.Top + frame.Paper(4);
-                    AddChain(bent, frame.Point(bounds.Left, row), frame.Right, true, false);
-                }
             }
 
             void AddChain(List<ChainReference> entries, XYZ origin, XYZ direction, bool horizontal, bool equality)
@@ -184,4 +150,8 @@ public sealed partial class RebarDetailingService
 
     private static bool IsPin(DetailingBar bar) => (bar.Element.LookupParameter("• Деталь • Арматура. Префикс")?.AsString() ?? "") == "Ш"
         || bar.ShapeName.IndexOf("Ш1", StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private static bool Longitudinal(DetailingFrame frame, DetailingBar bar) => bar.Segments.Any(s =>
+        Math.Abs(s.Direction.DotProduct(frame.Vertical ? frame.Up : frame.Normal)) > 0.999
+        && (!frame.Vertical || s.Start.DistanceTo(s.End) > 500 / 304.8));
 }
