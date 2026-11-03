@@ -72,7 +72,10 @@ public sealed class PrintManagerService
             printManager = document.PrintManager;
             snapshot = PrintManagerSnapshot.Capture(printManager);
             printManager.SelectNewPrintDriver(printerName);
-            printManager.PrintToFile = false;
+            if (printManager.IsVirtual == VirtualPrinterType.None)
+            {
+                printManager.PrintToFile = false;
+            }
 
             if (!string.IsNullOrWhiteSpace(printSetupName))
             {
@@ -233,7 +236,10 @@ public sealed class PrintManagerService
                     printManager.PrintSetup.CurrentPrintSetting = PrintSetting;
                 }
 
-                printManager.PrintToFile = PrintToFile;
+                if (PrintToFile || printManager.IsVirtual == VirtualPrinterType.None)
+                {
+                    printManager.PrintToFile = PrintToFile;
+                }
                 printManager.PrintRange = PrintRange;
                 printManager.Apply();
                 logger.Info($"Restored Revit print settings for document '{documentTitle}' after driver job.");

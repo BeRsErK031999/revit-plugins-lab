@@ -2152,22 +2152,25 @@ public sealed class PrintWindow : TrueBimWindow
         string failureMessage = failureMessages.Count > 0
             ? "\n\nОшибки:\n" + string.Join("\n", failureMessages.Take(3))
             : string.Empty;
-        TaskDialog.Show(
+        MessageBox.Show(
+            this,
+            $"Отправлено листов в принтер: {printedSheetCount}\nОшибок: {failureCount}{failureMessage}",
             WindowTitle,
-            $"Отправлено листов в принтер: {printedSheetCount}\nОшибок: {failureCount}{failureMessage}");
+            MessageBoxButton.OK,
+            failureCount == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
         UpdateExportState();
     }
 
-    private static bool ConfirmPdfDriverPrint(string printerName)
+    private bool ConfirmPdfDriverPrint(string printerName)
     {
-        TaskDialog confirmation = new(WindowTitle)
-        {
-            MainInstruction = $"Отправить листы в PDF-драйвер «{printerName}»?",
-            MainContent = "Драйвер может открыть собственный диалог или запросить путь и имя файла. Для предсказуемого пакетного PDF используйте режим «Экспорт».",
-            CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
-            DefaultButton = TaskDialogResult.No
-        };
-        return confirmation.Show() == TaskDialogResult.Yes;
+        return MessageBox.Show(
+            this,
+            $"Отправить листы в PDF-драйвер «{printerName}»?\n\n" +
+            "Драйвер может открыть собственный диалог или запросить путь и имя файла. Для предсказуемого пакетного PDF используйте режим «Экспорт».",
+            WindowTitle,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
     }
 
     private void StartExportInRevitContext()
