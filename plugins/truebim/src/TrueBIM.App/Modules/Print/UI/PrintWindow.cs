@@ -102,11 +102,10 @@ public sealed class PrintWindow : TrueBimWindow
         DisplayMemberPath = nameof(PrintSetupOption.DisplayName),
         Height = 32,
         MinWidth = 220,
-        ToolTip = "Сохраненная настройка печати Revit. По умолчанию используется текущая настройка каждого документа."
+        ToolTip = "Авто выбирает бумагу и ориентацию для каждого листа при масштабе 100%."
     };
     private readonly TextBlock printerWarningText = new()
     {
-        Text = "PDF-драйвер может открыть собственный диалог или запросить имя файла. Для управляемого PDF используйте режим «Экспорт».",
         TextWrapping = TextWrapping.Wrap,
         VerticalAlignment = VerticalAlignment.Center,
         Foreground = TrueBimBrushes.Warning
@@ -140,6 +139,11 @@ public sealed class PrintWindow : TrueBimWindow
         Content = "Растровая обработка (иначе векторная)",
         ToolTip = "Принудительно растрировать PDF вместо векторного вывода."
     };
+    private readonly CheckBox driverPdfInput = new()
+    {
+        Content = "PDF", IsChecked = true,
+        ToolTip = "Сохранить результат выбранного PDF-принтера в указанную папку."
+    };
     private readonly CheckBox pdfInput = new()
     {
         Content = "PDF",
@@ -148,7 +152,7 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly CheckBox combinePdfInput = new()
     {
         Content = "Один PDF",
-        ToolTip = "Объединить выбранные листы каждого документа-источника в один PDF."
+        ToolTip = "Включено — общий PDF для каждого документа. Выключено — отдельный PDF для каждого листа."
     };
     private readonly CheckBox dwgInput = new()
     {
@@ -190,6 +194,9 @@ public sealed class PrintWindow : TrueBimWindow
     private readonly TextBlock operationProgressCurrentText = new();
     private readonly ProgressBar operationProgressBar = new();
     private readonly List<UIElement> detailedSettingsRows = [];
+    private readonly List<UIElement> cadSettingsRows = [];
+    private StackPanel? formatActionPanel;
+    private Button? fileSettingsButton;
     private readonly List<UIElement> exportModeRows = [];
     private readonly List<UIElement> printerModeRows = [];
     private UIElement? printerWarningRow;
@@ -211,6 +218,7 @@ public sealed class PrintWindow : TrueBimWindow
     private UIElement? operationSettingsPanel;
     private PrintOperationProgressTracker? operationProgressTracker;
     private string operationProgressName = string.Empty;
+    private string? completedPrintMessage;
     private PrintSheetRow? sheetSelectionAnchor;
 
     private const string WindowTitle = "Печать и экспорт";
@@ -597,7 +605,7 @@ public sealed class PrintWindow : TrueBimWindow
         modeRow.Children.Add(operationModeInput);
         TextBlock modeExplanation = new()
         {
-            Text = "Экспорт — файлы PDF/DWG/DXF/DWF; печать — задание установленному принтеру.",
+            Text = "Печать использует выбранный драйвер. В экспорте доступны форматы PDF, DWG, DXF и DWF.",
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(16, 0, 0, 0),
@@ -624,11 +632,7 @@ public sealed class PrintWindow : TrueBimWindow
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0)
         });
-        printerInput.SelectionChanged += (_, _) =>
-        {
-            UpdatePrinterWarning();
-            UpdateExportState();
-        };
+        printerInput.SelectionChanged += (_, _) => UpdateOperationModeState();
         Grid.SetColumn(printerInput, 1);
         printerRow.Children.Add(printerInput);
         TextBlock printSetupLabel = new()
@@ -639,7 +643,7 @@ public sealed class PrintWindow : TrueBimWindow
         };
         Grid.SetColumn(printSetupLabel, 2);
         printerRow.Children.Add(printSetupLabel);
-        printSetupInput.SelectionChanged += (_, _) => UpdateExportState();
+        printSetupInput.SelectionChanged += (_, _) => UpdateOperationModeState();
         Grid.SetColumn(printSetupInput, 3);
         printerRow.Children.Add(printSetupInput);
         Button printerSettingsButton = CreateActionButton("Настройки...", TrueBimIcon.Settings, isEnabled: true);
@@ -869,6 +873,7 @@ public sealed class PrintWindow : TrueBimWindow
             Grid.SetRow(cadSetupRow, rowIndex++);
             root.Children.Add(cadSetupRow);
             RegisterDetailedSettingsRow(cadSetupRow);
+            cadSettingsRows.Add(cadSetupRow);
 
             Grid dwgProfileRow = new()
             {
@@ -913,6 +918,7 @@ public sealed class PrintWindow : TrueBimWindow
             Grid.SetRow(dwgProfileRow, rowIndex++);
             root.Children.Add(dwgProfileRow);
             RegisterDetailedSettingsRow(dwgProfileRow);
+            cadSettingsRows.Add(dwgProfileRow);
         }
 
         DockPanel actionRow = new()
@@ -927,6 +933,7 @@ public sealed class PrintWindow : TrueBimWindow
                 HorizontalAlignment = HorizontalAlignment.Left
             };
 
+            driverPdfInput.Margin = new Thickness(0, 0, 16, 0);
             pdfInput.Margin = new Thickness(0, 0, 16, 0);
             combinePdfInput.Margin = new Thickness(0, 0, 16, 0);
             dwgInput.Margin = new Thickness(0, 0, 16, 0);
@@ -934,6 +941,8 @@ public sealed class PrintWindow : TrueBimWindow
             dwfInput.Margin = new Thickness(0, 0, 16, 0);
             keepDwgSheetsWholeInput.Margin = new Thickness(0, 0, 16, 0);
             openExportFolderInput.Margin = new Thickness(0, 0, 16, 0);
+            driverPdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
+            driverPdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             pdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             pdfInput.Unchecked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
             combinePdfInput.Checked += (_, _) => UpdatePdfOptionsStateUnlessApplyingPreset();
@@ -946,6 +955,7 @@ public sealed class PrintWindow : TrueBimWindow
             dwfInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
             keepDwgSheetsWholeInput.Checked += (_, _) => UpdateExportStateUnlessApplyingPreset();
             keepDwgSheetsWholeInput.Unchecked += (_, _) => UpdateExportStateUnlessApplyingPreset();
+            formatActions.Children.Add(driverPdfInput);
             formatActions.Children.Add(pdfInput);
             formatActions.Children.Add(combinePdfInput);
             formatActions.Children.Add(dwgInput);
@@ -954,14 +964,16 @@ public sealed class PrintWindow : TrueBimWindow
             formatActions.Children.Add(dwfInput);
             formatActions.Children.Add(openExportFolderInput);
 
-            Button settingsButton = CreateActionButton("Настройки...", TrueBimIcon.Settings, isEnabled: true);
+            Button settingsButton = CreateActionButton("Файлы...", TrueBimIcon.Settings, isEnabled: true);
             settingsButton.Margin = new Thickness(0, 0, TrueBimTheme.Spacing16, 0);
             settingsButton.ToolTip = "Настройки PDF, DWG и имён файлов по параметрам Revit.";
             settingsButton.Click += (_, _) => OpenExportSettings();
+            fileSettingsButton = settingsButton;
             formatActions.Children.Add(settingsButton);
 
             DockPanel.SetDock(formatActions, Dock.Left);
             actionRow.Children.Add(formatActions);
+            formatActionPanel = formatActions;
             exportModeRows.Add(formatActions);
         }
 
@@ -1008,13 +1020,15 @@ public sealed class PrintWindow : TrueBimWindow
         StackPanel panel = new() { Margin = new Thickness(20) };
         ComboBox printer = new() { ItemsSource = printerInput.ItemsSource,
             DisplayMemberPath = printerInput.DisplayMemberPath, SelectedItem = printerInput.SelectedItem };
+        ComboBox paper = new() { ItemsSource = printSetupInput.ItemsSource,
+            DisplayMemberPath = printSetupInput.DisplayMemberPath, SelectedItem = printSetupInput.SelectedItem };
         ComboBox color = new() { ItemsSource = GetPdfColorModeOptions(), DisplayMemberPath = "Value",
             SelectedValuePath = "Key", SelectedValue = GetSelectedPdfColorMode() };
         ComboBox quality = new() { ItemsSource = GetPdfRasterQualityOptions(), DisplayMemberPath = "Value",
             SelectedValuePath = "Key", SelectedValue = GetSelectedPdfRasterQuality() };
         ComboBox processing = new() { ItemsSource = new[] { "Векторная обработка", "Растровая обработка" },
             SelectedIndex = forceRasterPdfInput.IsChecked == true ? 1 : 0 };
-        foreach (var entry in new[] { ("Принтер", printer), ("Цвета", color),
+        foreach (var entry in new[] { ("Принтер", printer), ("Бумага / масштаб", paper), ("Цвета", color),
             ("Тип обработки", processing), ("Качество растра", quality) })
         {
             panel.Children.Add(new TextBlock { Text = entry.Item1, Margin = new Thickness(0, 8, 0, 4) });
@@ -1024,8 +1038,8 @@ public sealed class PrintWindow : TrueBimWindow
         panel.Children.Add(new TextBlock
         {
             Text = "Цвета, обработка и качество применяются к выбранным листам из этого окна. " +
-                "Бумага, масштаб и ориентация берутся из выбранной настройки Revit. " +
-                "Для PDF с автоматическими именами, папкой и объединением выберите режим «Экспорт».",
+                "В режиме «Авто по листу» плагин выбирает формат и ориентацию. Если точного формата нет, " +
+                "лист печатается по центру ближайшей большей бумаги при 100%.",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 16)
         });
         StackPanel buttons = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -1038,6 +1052,7 @@ public sealed class PrintWindow : TrueBimWindow
         dialog.Content = panel;
         if (dialog.ShowDialog() != true) return;
         printerInput.SelectedItem = printer.SelectedItem;
+        printSetupInput.SelectedItem = paper.SelectedItem;
         pdfColorModeInput.SelectedValue = color.SelectedValue;
         pdfRasterQualityInput.SelectedValue = quality.SelectedValue;
         forceRasterPdfInput.IsChecked = processing.SelectedIndex == 1;
@@ -1057,6 +1072,7 @@ public sealed class PrintWindow : TrueBimWindow
         };
         StackPanel panel = new() { Margin = new Thickness(16) };
         List<(UIElement Row, Panel Parent, int Index)> originalParents = detailedSettingsRows
+            .Where(row => !IsFolderPdf || !cadSettingsRows.Contains(row))
             .Select(row => (Row: row, Parent: (Panel)VisualTreeHelper.GetParent(row)))
             .Select(item => (item.Row, item.Parent, item.Parent.Children.IndexOf(item.Row))).ToList();
         try
@@ -1109,6 +1125,7 @@ public sealed class PrintWindow : TrueBimWindow
     {
         if (!isApplyingPreset)
         {
+            ApplyOperationModeVisibility();
             UpdatePdfOptionsState();
         }
     }
@@ -1124,8 +1141,7 @@ public sealed class PrintWindow : TrueBimWindow
     private void UpdateOperationModeState()
     {
         ApplyOperationModeVisibility();
-        ResetExportStatuses();
-        UpdateExportState();
+        UpdatePdfOptionsState();
     }
 
     private void ApplyOperationModeVisibility()
@@ -1138,7 +1154,17 @@ public sealed class PrintWindow : TrueBimWindow
 
         foreach (UIElement row in exportModeRows)
         {
-            row.Visibility = printToPrinter ? Visibility.Collapsed : Visibility.Visible;
+            row.Visibility = printToPrinter && !IsFolderPdf ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        if (IsDriverPdf && formatActionPanel is not null) formatActionPanel.Visibility = Visibility.Visible;
+        if (fileSettingsButton is not null) fileSettingsButton.Visibility = printToPrinter && !IsFolderPdf ? Visibility.Collapsed : Visibility.Visible;
+        driverPdfInput.Visibility = IsDriverPdf ? Visibility.Visible : Visibility.Collapsed;
+        pdfInput.Visibility = printToPrinter ? Visibility.Collapsed : Visibility.Visible;
+        combinePdfInput.IsEnabled = OutputPdf;
+        foreach (UIElement control in new UIElement[] { dwgInput, dxfInput, dwfInput, keepDwgSheetsWholeInput, openExportFolderInput })
+        {
+            control.Visibility = printToPrinter ? Visibility.Collapsed : Visibility.Visible;
         }
 
         foreach (UIElement row in detailedSettingsRows)
@@ -1148,7 +1174,7 @@ public sealed class PrintWindow : TrueBimWindow
 
         if (fileNameColumn is not null)
         {
-            fileNameColumn.Visibility = printToPrinter ? Visibility.Collapsed : Visibility.Visible;
+            fileNameColumn.Visibility = printToPrinter && !IsFolderPdf ? Visibility.Collapsed : Visibility.Visible;
         }
 
         UpdatePrinterWarning();
@@ -1161,6 +1187,10 @@ public sealed class PrintWindow : TrueBimWindow
             return;
         }
 
+        printerWarningText.Foreground = IsFolderPdf ? TrueBimBrushes.TextSecondary : TrueBimBrushes.Warning;
+        printerWarningText.Text = IsFolderPdf
+            ? "Драйвер печатает в выбранную папку. Снимите «Один PDF» для отдельных файлов."
+            : "При печати через драйвер он может запросить имя файла.";
         printerWarningRow.Visibility = GetSelectedOperationMode() == PrintOperationMode.Printer
             && GetSelectedPrinter()?.IsPdfDriver == true
                 ? Visibility.Visible
@@ -1370,7 +1400,7 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void UpdatePdfOptionsState()
     {
-        bool exportPdf = pdfInput.IsChecked == true;
+        bool exportPdf = OutputPdf;
         bool combinePdf = combinePdfInput.IsChecked == true;
         combinePdfInput.IsEnabled = exportPdf;
         combinedPdfNameInput.IsEnabled = exportPdf && combinePdf;
@@ -1394,10 +1424,10 @@ public sealed class PrintWindow : TrueBimWindow
     {
         operationModeInput.ItemsSource = new[]
         {
-            new PrintOperationModeOption(PrintOperationMode.Export, "Экспорт в файлы"),
-            new PrintOperationModeOption(PrintOperationMode.Printer, "Печать на принтер")
+            new PrintOperationModeOption(PrintOperationMode.Printer, "Печать на принтер"),
+            new PrintOperationModeOption(PrintOperationMode.Export, "Экспорт в файлы")
         };
-        operationModeInput.SelectedValue = PrintOperationMode.Export;
+        operationModeInput.SelectedValue = PrintOperationMode.Printer;
 
         printerOptions.Clear();
         try
@@ -1430,6 +1460,7 @@ public sealed class PrintWindow : TrueBimWindow
             ?? printerOptions.FirstOrDefault();
 
         printSetupOptions.Clear();
+        printSetupOptions.Add(PrintSetupOption.Automatic);
         try
         {
             foreach (PrintSetupOption option in printManagerService.GetPrintSetups(document))
@@ -1787,13 +1818,13 @@ public sealed class PrintWindow : TrueBimWindow
         IReadOnlyDictionary<string, string> combinedPdfFileNamesBySourceId)
     {
         string exportFolder = exportFolderInput.Text;
-        if (pdfInput.IsChecked == true
+        if (OutputPdf
             && pdfMode is PrintPdfExportMode.SeparateFiles or PrintPdfExportMode.SeparateAndCombined)
         {
             yield return Path.Combine(exportFolder, PrintPdfExportService.NormalizePdfFileName(row.FileNamePreview));
         }
 
-        if (pdfInput.IsChecked == true
+        if (OutputPdf
             && pdfMode is PrintPdfExportMode.CombinedFile or PrintPdfExportMode.SeparateAndCombined)
         {
             yield return Path.Combine(
@@ -1801,17 +1832,17 @@ public sealed class PrintWindow : TrueBimWindow
                 PrintPdfExportService.BuildCombinedPdfFileName(combinedPdfFileNamesBySourceId[row.Sheet.SourceId]));
         }
 
-        if (dwgInput.IsChecked == true)
+        if (OutputDwg)
         {
             yield return Path.Combine(exportFolder, PrintCadExportService.NormalizeCadFileName(row.FileNamePreview, PrintCadExportFormat.Dwg));
         }
 
-        if (dxfInput.IsChecked == true)
+        if (OutputDxf)
         {
             yield return Path.Combine(exportFolder, PrintCadExportService.NormalizeCadFileName(row.FileNamePreview, PrintCadExportFormat.Dxf));
         }
 
-        if (dwfInput.IsChecked == true)
+        if (OutputDwf)
         {
             yield return Path.Combine(exportFolder, PrintCadExportService.NormalizeCadFileName(row.FileNamePreview, PrintCadExportFormat.Dwf));
         }
@@ -1851,7 +1882,7 @@ public sealed class PrintWindow : TrueBimWindow
     private void UpdateCombinedPdfNamePreview(
         IReadOnlyDictionary<string, PrintFileNamePreview> previews)
     {
-        bool useCombinedPdf = pdfInput.IsChecked == true
+        bool useCombinedPdf = OutputPdf
             && combinePdfInput.IsChecked == true;
         if (!useCombinedPdf)
         {
@@ -1883,18 +1914,19 @@ public sealed class PrintWindow : TrueBimWindow
             return;
         }
 
-        bool printToPrinter = GetSelectedOperationMode() == PrintOperationMode.Printer;
+        bool printToPrinter = GetSelectedOperationMode() == PrintOperationMode.Printer && !IsFolderPdf;
         List<PrintSheetRow> selectedRows = sheetRows
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
         int estimatedTotalCount = printToPrinter
             ? selectedRows.Count
             : CalculateExportProgressCount(selectedRows);
+        bool printing = GetSelectedOperationMode() == PrintOperationMode.Printer;
         BeginOperationProgress(
-            printToPrinter ? "Печать" : "Экспорт",
+            printing ? "Печать" : "Экспорт",
             estimatedTotalCount,
             printToPrinter ? PrintOperationProgressUnit.Sheet : PrintOperationProgressUnit.File);
-        statusText.Text = printToPrinter
+        statusText.Text = printing
             ? "Печать поставлена в очередь Revit."
             : "Экспорт поставлен в очередь Revit.";
         Action operation = printToPrinter ? StartPrintInRevitContext : StartExportInRevitContext;
@@ -1924,11 +1956,11 @@ public sealed class PrintWindow : TrueBimWindow
         return PrintOperationProgressTracker.CalculateExportFileCount(
             selectedRows.Count,
             selectedSourceCount,
-            pdfInput.IsChecked == true,
+            OutputPdf,
             GetSelectedPdfMode(),
-            dwgInput.IsChecked == true,
-            dxfInput.IsChecked == true,
-            dwfInput.IsChecked == true);
+            OutputDwg,
+            OutputDxf,
+            OutputDwf);
     }
 
     private void BeginOperationProgress(
@@ -1988,8 +2020,9 @@ public sealed class PrintWindow : TrueBimWindow
         operationProgressTitleText.Text = operationProgressName == "Печать"
             ? "Печать завершена"
             : "Экспорт завершён";
-        operationProgressCurrentText.Text = "Операция завершена. Можно продолжать работу.";
-        operationProgressCurrentText.ToolTip = null;
+        operationProgressCurrentText.Text = completedPrintMessage ?? "Операция завершена. Можно продолжать работу.";
+        operationProgressCurrentText.ToolTip = completedPrintMessage;
+        completedPrintMessage = null;
         isOperationRunning = false;
         sheetGrid.IsEnabled = true;
         if (operationSettingsPanel is not null)
@@ -2101,6 +2134,7 @@ public sealed class PrintWindow : TrueBimWindow
         }
 
         int printedSheetCount = 0;
+        List<string> substitutions = new();
         int failureCount = printability.RejectedRows.Count;
         List<string> failureMessages = printability.RejectedRows
             .Select(row => $"Лист {row.SheetNumber}: не прошел проверку печати")
@@ -2132,7 +2166,8 @@ public sealed class PrintWindow : TrueBimWindow
                 printSetupName,
                 logger,
                 HandleOperationProgress,
-                GetSelectedPdfSettings());
+                GetSelectedPdfSettings(),
+                Equals(printSetupInput.SelectedItem, PrintSetupOption.Automatic));
             printedSheetCount += result.PrintedSheetCount;
             failureCount += result.Failures.Count;
             HashSet<long> failedIds = result.Failures
@@ -2143,18 +2178,26 @@ public sealed class PrintWindow : TrueBimWindow
                 row.ExportStatus = failedIds.Contains(row.Sheet.ElementId)
                     ? "Ошибка печати"
                     : "Напечатан";
+                if (result.LargerPaper.TryGetValue(row.Sheet.ElementId, out string? actualPaper))
+                {
+                    row.ExportStatus += $" · {actualPaper}";
+                    substitutions.Add($"Лист {row.SheetNumber} — {actualPaper}");
+                }
             }
 
             failureMessages.AddRange(result.Failures.Select(failure =>
                 $"{source.SourceName}, лист {failure.Item.SheetNumber}: {failure.Message}"));
         }
 
+        string paperMessage = substitutions.Count > 0
+            ? $"\n\nНа большей бумаге при 100%: {substitutions.Count}\n" + string.Join("\n", substitutions.Take(5))
+            : string.Empty;
         string failureMessage = failureMessages.Count > 0
             ? "\n\nОшибки:\n" + string.Join("\n", failureMessages.Take(3))
             : string.Empty;
         MessageBox.Show(
             this,
-            $"Отправлено листов в принтер: {printedSheetCount}\nОшибок: {failureCount}{failureMessage}",
+            $"Отправлено листов в принтер: {printedSheetCount}\nОшибок: {failureCount}{failureMessage}{paperMessage}",
             WindowTitle,
             MessageBoxButton.OK,
             failureCount == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -2180,10 +2223,10 @@ public sealed class PrintWindow : TrueBimWindow
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
         string formats = GetSelectedFormatsText();
-        bool exportPdf = pdfInput.IsChecked == true;
-        bool exportDwg = dwgInput.IsChecked == true;
-        bool exportDxf = dxfInput.IsChecked == true;
-        bool exportDwf = dwfInput.IsChecked == true;
+        bool exportPdf = OutputPdf;
+        bool exportDwg = OutputDwg;
+        bool exportDxf = OutputDxf;
+        bool exportDwf = OutputDwf;
         PrintPdfExportMode pdfMode = GetSelectedPdfMode();
         bool combinePdf = exportPdf && combinePdfInput.IsChecked == true;
         PrintPdfExportSettings pdfSettings = GetSelectedPdfSettings();
@@ -2266,13 +2309,14 @@ public sealed class PrintWindow : TrueBimWindow
             row => row,
             _ => new List<string>());
         List<string> exportedFiles = new();
+        List<string> substitutions = new();
         int failureCount = printability.RejectedRows.Count;
         List<string> failureMessages = printability.RejectedRows
             .Select(row => $"Лист {row.SheetNumber}: не прошел проверку печати")
             .ToList();
         foreach (PrintSheetRow row in selectedRows)
         {
-            row.ExportStatus = "Экспорт: в очереди";
+            row.ExportStatus = IsFolderPdf ? "Печать: в очереди" : "Экспорт: в очереди";
         }
 
         IReadOnlyList<IGrouping<string, PrintSheetRow>> rowGroups = selectedRows
@@ -2305,20 +2349,19 @@ public sealed class PrintWindow : TrueBimWindow
 
             if (exportPdf)
             {
-                PrintPdfExportResult result = pdfExportService.Export(
-                    source.Document,
-                    exportFolderInput.Text,
-                    sourceRows
-                        .Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview))
-                        .ToList(),
-                    pdfMode,
-                    sourceCombinedPdfName,
-                    pdfSettings,
-                    logger,
-                    HandleOperationProgress);
+                var items = sourceRows.Select(row => new PrintPdfExportItem(row.Sheet.ElementId, row.FileNamePreview)).ToList();
+                PrintPdfExportResult result = IsFolderPdf
+                    ? new PrintDriverPdfService().Print(source.Document, exportFolderInput.Text, items, combinePdf,
+                        sourceCombinedPdfName, GetSelectedPrinter()!.Name, GetSelectedPrintSetupName(),
+                        Equals(printSetupInput.SelectedItem, PrintSetupOption.Automatic), pdfSettings, logger, HandleOperationProgress)
+                    : pdfExportService.Export(source.Document, exportFolderInput.Text, items, pdfMode,
+                        sourceCombinedPdfName, pdfSettings, logger, HandleOperationProgress);
                 exportedFiles.AddRange(result.ExportedFiles);
                 failureCount += result.Failures.Count;
                 ApplyPdfStatus(rowStatuses, sourceRows, result);
+                foreach (var row in sourceRows)
+                    if (result.LargerPaper.TryGetValue(row.Sheet.ElementId, out var paper))
+                        substitutions.Add($"Лист {row.SheetNumber} — {paper}");
                 failureMessages.AddRange(result.Failures.Select(failure => $"PDF {source.SourceName} {failure.Item.FileName}: {failure.Message}"));
             }
 
@@ -2391,10 +2434,20 @@ public sealed class PrintWindow : TrueBimWindow
             exportedFiles,
             failureCount,
             failureMessages);
+        if (IsFolderPdf && failureCount == 0)
+        {
+            string paperNote = substitutions.Count == 0 ? string.Empty
+                : $" На большей бумаге при 100%: {substitutions.Count}. Размер указан в строке листа.";
+            completedPrintMessage = $"Файлов: {exportedFiles.Count}. Папка: {exportFolderInput.Text}.{paperNote}";
+            return;
+        }
         TaskDialog summaryDialog = new(WindowTitle)
         {
-            MainInstruction = summary.MainInstruction,
-            MainContent = summary.MainContent,
+            MainInstruction = IsFolderPdf
+                ? (failureCount == 0 ? "Печать в PDF завершена" : "Ошибки печати в PDF")
+                : summary.MainInstruction,
+            MainContent = summary.MainContent + (substitutions.Count == 0 ? string.Empty
+                : $"\n\nНа большей бумаге при 100%: {substitutions.Count}\n" + string.Join("\n", substitutions.Take(5))),
             CommonButtons = TaskDialogCommonButtons.Close
         };
         if (!string.IsNullOrWhiteSpace(summary.ExpandedContent))
@@ -2421,7 +2474,7 @@ public sealed class PrintWindow : TrueBimWindow
     private void OpenExportFolderAfterCompletion(int exportedFileCount)
     {
         if (!PrintExportCompletionPolicy.ShouldOpenExportFolder(
-                openExportFolderInput.IsChecked == true,
+                !IsFolderPdf && openExportFolderInput.IsChecked == true,
                 exportedFileCount))
         {
             return;
@@ -2459,7 +2512,8 @@ public sealed class PrintWindow : TrueBimWindow
             .ToHashSet();
         foreach (PrintSheetRow row in rows)
         {
-            rowStatuses[row].Add(failedIds.Contains(row.Sheet.ElementId) ? "PDF ошибка" : "PDF готов");
+            rowStatuses[row].Add(failedIds.Contains(row.Sheet.ElementId) ? "PDF ошибка"
+                : result.LargerPaper.TryGetValue(row.Sheet.ElementId, out string? paper) ? $"PDF · {paper}" : "PDF готов");
         }
     }
 
@@ -2495,7 +2549,7 @@ public sealed class PrintWindow : TrueBimWindow
         int hiddenPlaceholderCount = includePlaceholdersInput.IsChecked == true
             ? 0
             : loadedSheets.Count(sheet => sheet.IsPlaceholder);
-        if (GetSelectedOperationMode() == PrintOperationMode.Printer)
+        if (GetSelectedOperationMode() == PrintOperationMode.Printer && !IsFolderPdf)
         {
             PrintPrinterOption? printer = GetSelectedPrinter();
             printerInput.IsEnabled = printerOptions.Count > 0;
@@ -2535,35 +2589,35 @@ public sealed class PrintWindow : TrueBimWindow
         }
 
         exportButton.Content = IconFactory.CreateButtonContent(
-            TrueBimIcon.Export,
-            "Экспортировать",
+            IsFolderPdf ? TrueBimIcon.Print : TrueBimIcon.Export,
+            IsFolderPdf ? "Печатать" : "Экспортировать",
             Colors.White);
         int duplicateSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameDuplicate);
         int truncatedSelectedCount = sheetRows.Count(row => row.IsSelected && row.IsFileNameTruncated);
         int unknownTokenCount = sheetRows.Count(row => row.HasUnknownFileNameTokens);
-        bool hasFormat = pdfInput.IsChecked == true
-            || dwgInput.IsChecked == true
-            || dxfInput.IsChecked == true
-            || dwfInput.IsChecked == true;
+        bool hasFormat = OutputPdf
+            || OutputDwg
+            || OutputDxf
+            || OutputDwf;
         bool hasFolder = !string.IsNullOrWhiteSpace(exportFolderInput.Text);
         List<PrintSheetRow> selectedRows = sheetRows
             .Where(row => row.IsSelected && row.CanBePrinted)
             .ToList();
-        bool useCombinedPdf = pdfInput.IsChecked == true
+        bool useCombinedPdf = OutputPdf
             && combinePdfInput.IsChecked == true;
         IReadOnlyDictionary<string, PrintFileNamePreview> combinedPdfPreviews = useCombinedPdf
             ? BuildCombinedFileNamePreviews(combinedPdfNameInput.Text, selectedRows)
             : new Dictionary<string, PrintFileNamePreview>(StringComparer.Ordinal);
         bool combinedPdfMaskHasUnknownTokens = combinedPdfPreviews.Values.Any(preview => preview.HasUnknownTokens);
         string? duplicateCombinedPdfFileName = FindDuplicateCombinedPdfFileName(combinedPdfPreviews);
-        bool exportsPerSheetFiles = dwgInput.IsChecked == true
-            || dxfInput.IsChecked == true
-            || dwfInput.IsChecked == true
-            || pdfInput.IsChecked == true && combinePdfInput.IsChecked != true;
-        combinePdfInput.IsEnabled = pdfInput.IsChecked == true;
-        keepDwgSheetsWholeInput.IsEnabled = dwgInput.IsChecked == true;
-        dwgSetupInput.IsEnabled = dwgInput.IsChecked == true && cadExportSetupOptions.Count > 1;
-        dxfSetupInput.IsEnabled = dxfInput.IsChecked == true && cadExportSetupOptions.Count > 1;
+        bool exportsPerSheetFiles = OutputDwg
+            || OutputDxf
+            || OutputDwf
+            || OutputPdf && combinePdfInput.IsChecked != true;
+        combinePdfInput.IsEnabled = OutputPdf;
+        keepDwgSheetsWholeInput.IsEnabled = OutputDwg;
+        dwgSetupInput.IsEnabled = OutputDwg && cadExportSetupOptions.Count > 1;
+        dxfSetupInput.IsEnabled = OutputDxf && cadExportSetupOptions.Count > 1;
         UpdateCombinedPdfNamePreview(combinedPdfPreviews);
         foreach (PrintSheetRow row in sheetRows)
         {
@@ -2607,7 +2661,8 @@ public sealed class PrintWindow : TrueBimWindow
             ? string.Empty
             : $" Всего выбрано: {selectedTotalCount}.";
         string formatText = $" Форматы: {GetSelectedFormatsText()}.";
-        statusText.Text = $"Режим: экспорт. Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{combinedPdfMaskText}";
+        string modeLabel = IsFolderPdf ? $"печать в PDF · {GetSelectedPrinter()?.Name}" : "экспорт";
+        statusText.Text = $"Режим: {modeLabel}. Листов: {sheetRows.Count}. Печатаемых: {printableCount}. Выбрано: {selectedCount}.{selectedTotalText}{sourceText}{formatText}{hiddenText}{duplicateText}{truncatedText}{unknownTokenText}{combinedPdfMaskText}";
         ApplyOperationRunningState();
     }
 
@@ -2629,6 +2684,16 @@ public sealed class PrintWindow : TrueBimWindow
             : PrintOperationMode.Export;
     }
 
+    private bool IsDriverPdf => GetSelectedOperationMode() == PrintOperationMode.Printer &&
+        GetSelectedPrinter()?.IsPdfDriver == true;
+
+    private bool IsFolderPdf => IsDriverPdf && driverPdfInput.IsChecked == true;
+
+    private bool OutputPdf => IsDriverPdf ? IsFolderPdf : pdfInput.IsChecked == true;
+    private bool OutputDwg => GetSelectedOperationMode() == PrintOperationMode.Export && dwgInput.IsChecked == true;
+    private bool OutputDxf => GetSelectedOperationMode() == PrintOperationMode.Export && dxfInput.IsChecked == true;
+    private bool OutputDwf => GetSelectedOperationMode() == PrintOperationMode.Export && dwfInput.IsChecked == true;
+
     private PrintPrinterOption? GetSelectedPrinter()
     {
         return printerInput.SelectedItem as PrintPrinterOption;
@@ -2644,22 +2709,22 @@ public sealed class PrintWindow : TrueBimWindow
     private string GetSelectedFormatsText()
     {
         List<string> formats = new();
-        if (pdfInput.IsChecked == true)
+        if (OutputPdf)
         {
             formats.Add(combinePdfInput.IsChecked == true ? "PDF (один файл)" : "PDF");
         }
 
-        if (dwgInput.IsChecked == true)
+        if (OutputDwg)
         {
             formats.Add(keepDwgSheetsWholeInput.IsChecked == true ? "DWG (целый лист)" : "DWG (с внешними ссылками)");
         }
 
-        if (dxfInput.IsChecked == true)
+        if (OutputDxf)
         {
             formats.Add("DXF");
         }
 
-        if (dwfInput.IsChecked == true)
+        if (OutputDwf)
         {
             formats.Add("DWF");
         }
@@ -2701,7 +2766,7 @@ public sealed class PrintWindow : TrueBimWindow
     private string GetSelectedCadSetupsText()
     {
         List<string> setupDisplays = new();
-        if (dwgInput.IsChecked == true)
+        if (OutputDwg)
         {
             string dwgDisplay = PrintCadExportSetupService.GetSelectionDisplayName(
                 PrintCadExportFormat.Dwg,
@@ -2714,14 +2779,14 @@ public sealed class PrintWindow : TrueBimWindow
                 : $"{dwgDisplay}, внешние ссылки, {profileDisplay}");
         }
 
-        if (dxfInput.IsChecked == true)
+        if (OutputDxf)
         {
             setupDisplays.Add(PrintCadExportSetupService.GetSelectionDisplayName(
                 PrintCadExportFormat.Dxf,
                 dxfSetupInput.SelectedItem as PrintCadExportSetupOption));
         }
 
-        if (dwfInput.IsChecked == true)
+        if (OutputDwf)
         {
             setupDisplays.Add("DWF: без CAD setup");
         }
@@ -2811,7 +2876,7 @@ public sealed class PrintWindow : TrueBimWindow
     private void SavePrintSettings()
     {
         printSettingsService?.Save(ReadCurrentPrintSettings());
-        SaveDwgProfileState();
+        if (GetSelectedOperationMode() == PrintOperationMode.Export) SaveDwgProfileState();
         SavePrintPresetSelection();
     }
 
@@ -2924,6 +2989,7 @@ public sealed class PrintWindow : TrueBimWindow
         }
 
         UpdateDwgProfileIndicator();
+        ApplyOperationModeVisibility();
         UpdatePdfOptionsState();
         UpdateFileNamePreviews();
         statusText.Text = $"Пресет применен: {normalizedPreset.Name}.";

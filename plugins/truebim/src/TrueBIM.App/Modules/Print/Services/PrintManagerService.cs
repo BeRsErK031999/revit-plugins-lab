@@ -36,7 +36,16 @@ public sealed class PrintManagerService
         string? printSetupName,
         ITrueBimLogger logger,
         Action<PrintOperationProgressStep>? progress = null,
-        PrintPdfExportSettings? settings = null)
+        PrintPdfExportSettings? settings = null,
+        bool automaticPaper = false)
+    {
+        return PrintCore(document, items, printerName, printSetupName, logger, progress, settings, automaticPaper, null);
+    }
+
+    internal PrintDriverResult PrintCore(
+        Document document, IReadOnlyList<PrintDriverJobItem> items, string printerName, string? printSetupName,
+        ITrueBimLogger logger, Action<PrintOperationProgressStep>? progress, PrintPdfExportSettings? settings,
+        bool automaticPaper, IReadOnlyDictionary<long, string>? outputPaths)
     {
         if (document is null)
         {
@@ -66,18 +75,34 @@ public sealed class PrintManagerService
         Autodesk.Revit.DB.PrintManager? printManager = null;
         PrintManagerSnapshot? snapshot = null;
         PrintParameters? modifiedParameters = null;
+        TransactionGroup? temporarySettings = null;
+        LayoutSnapshot? originalLayout = null;
+        AutoSheetPrintLayout? layout = null;
         (ColorDepthType Color, RasterQualityType Quality, HiddenLineViewsType Processing)? originalParameters = null;
         try
         {
             printManager = document.PrintManager;
             snapshot = PrintManagerSnapshot.Capture(printManager);
+            if (automaticPaper)
+            {
+                if (document.IsReadOnly || document.IsLinked)
+                    return FailAll(items, "Для автоподбора бумаги откройте модель отдельно или выберите экспорт PDF.");
+                temporarySettings = new TransactionGroup(document, "TrueBIM — временные настройки печати");
+                temporarySettings.Start();
+                originalLayout = LayoutSnapshot.Capture(printManager.PrintSetup.CurrentPrintSetting.PrintParameters);
+            }
             printManager.SelectNewPrintDriver(printerName);
             if (printManager.IsVirtual == VirtualPrinterType.None)
             {
                 printManager.PrintToFile = false;
             }
 
-            if (!string.IsNullOrWhiteSpace(printSetupName))
+            var blocks = automaticPaper ? PrintSheetCollectorService.CollectTitleBlocks(document) : null;
+            if (automaticPaper)
+            {
+                layout = new AutoSheetPrintLayout(document, printManager);
+            }
+            else if (!string.IsNullOrWhiteSpace(printSetupName))
             {
                 PrintSetting? printSetting = FindPrintSetting(document, printSetupName!);
                 if (printSetting is null)
@@ -89,29 +114,17 @@ public sealed class PrintManagerService
             }
 
             logger.Info($"Print driver job started for document '{document.Title}'. Printer: {printerName}. Print setup: {printSetupName ?? "current document setting"}. Range: selected sheets. Sheets: {items.Count}.");
-            if (settings is not null)
+            if (!automaticPaper && settings is not null)
             {
                 modifiedParameters = printManager.PrintSetup.CurrentPrintSetting.PrintParameters;
                 originalParameters = (modifiedParameters.ColorDepth, modifiedParameters.RasterQuality, modifiedParameters.HiddenLineViews);
-                modifiedParameters.ColorDepth = settings.ColorMode switch
-                {
-                    PrintPdfColorMode.BlackLine => ColorDepthType.BlackLine,
-                    PrintPdfColorMode.GrayScale => ColorDepthType.GrayScale,
-                    _ => ColorDepthType.Color
-                };
-                modifiedParameters.RasterQuality = settings.RasterQuality switch
-                {
-                    PrintPdfRasterQuality.Low => RasterQualityType.Low,
-                    PrintPdfRasterQuality.Medium => RasterQualityType.Medium,
-                    PrintPdfRasterQuality.Presentation => RasterQualityType.Presentation,
-                    _ => RasterQualityType.High
-                };
-                modifiedParameters.HiddenLineViews = settings.AlwaysUseRaster
-                    ? HiddenLineViewsType.RasterProcessing : HiddenLineViewsType.VectorProcessing;
+                ApplyRendering(modifiedParameters, settings);
                 printManager.Apply();
             }
 
             int printedSheetCount = 0;
+            Dictionary<long, string> largerPaper = new();
+            Dictionary<long, PrintPaperSize> expectedPaper = new();
             List<PrintDriverFailure> failures = new();
             foreach (PrintDriverJobItem item in items)
             {
@@ -129,10 +142,25 @@ public sealed class PrintManagerService
                         continue;
                     }
 
+                    PrintPaperMatch? paper = null;
+                    if (layout is not null)
+                    {
+                        var size = PrintSheetCollectorService.ReadPaperSize(sheet, blocks![item.ElementId])
+                            ?? throw new InvalidOperationException("Не удалось определить размер основной надписи. Для этого листа выберите настройку печати Revit.");
+                        paper = layout.Configure(size, settings);
+                        printManager.Apply();
+                        logger.Info($"Sheet {item.SheetNumber}: {size}, paper '{paper.Paper.Name}' {paper.OrientedSize}, zoom 100%, centered.");
+                    }
                     logger.Info($"Submitting sheet '{item.SheetNumber} - {item.SheetName}' (element id {item.ElementId}) to printer '{printerName}'.");
+                    using var fileJob = outputPaths is null ? null : new DriverOutputFile(outputPaths[item.ElementId]);
                     if (printManager.SubmitPrint(sheet))
                     {
                         printedSheetCount++;
+                        if (paper is not null) expectedPaper[item.ElementId] = paper.OrientedSize;
+                        if (paper is { IsExact: false })
+                        {
+                            largerPaper[item.ElementId] = $"{paper.Paper.Name} ({paper.OrientedSize}), 100%";
+                        }
                     }
                     else
                     {
@@ -154,7 +182,7 @@ public sealed class PrintManagerService
             }
 
             logger.Info($"Print driver job completed for document '{document.Title}'. Printer: {printerName}. Printed sheets: {printedSheetCount}; failures: {failures.Count}.");
-            return new PrintDriverResult(printedSheetCount, failures);
+            return new PrintDriverResult(printedSheetCount, failures) { LargerPaper = largerPaper, ExpectedPaper = expectedPaper };
         }
         catch (Exception exception)
         {
@@ -163,6 +191,28 @@ public sealed class PrintManagerService
         }
         finally
         {
+            try
+            {
+                if (temporarySettings?.GetStatus() == TransactionStatus.Started)
+                {
+                    if (originalLayout is not null && snapshot is not null && printManager is not null)
+                    {
+                        if (!string.Equals(printManager.PrinterName, snapshot.PrinterName, StringComparison.OrdinalIgnoreCase))
+                            printManager.SelectNewPrintDriver(snapshot.PrinterName);
+                        var setup = printManager.PrintSetup;
+                        setup.CurrentPrintSetting = setup.InSession;
+                        originalLayout.Apply(setup.CurrentPrintSetting.PrintParameters, printManager);
+                        SaveTemporaryLayout(document, setup);
+                        printManager.Apply();
+                    }
+                    temporarySettings.RollBack();
+                }
+            }
+            catch (Exception exception)
+            {
+                logger.Warning($"Could not roll back temporary print settings: {exception.Message}");
+            }
+            temporarySettings?.Dispose();
             if (modifiedParameters is not null && originalParameters.HasValue)
             {
                 try
@@ -179,8 +229,73 @@ public sealed class PrintManagerService
             if (printManager is not null && snapshot is not null)
             {
                 snapshot.Restore(printManager, logger, document.Title);
+                if (originalLayout is not null)
+                {
+                    try
+                    {
+                        var restored = document.PrintManager;
+                        var setup = restored.PrintSetup;
+                        if (setup.CurrentPrintSetting is not PrintSetting)
+                        {
+                            originalLayout.Apply(setup.CurrentPrintSetting.PrintParameters, restored);
+                            restored.Apply();
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.Warning($"Could not restore in-session print parameters: {exception.Message}");
+                    }
+                }
             }
         }
+    }
+
+    internal sealed record LayoutSnapshot(string Paper, PageOrientationType Orientation, PaperPlacementType Placement,
+        ZoomType ZoomType, int Zoom, ColorDepthType Color, RasterQualityType Quality, HiddenLineViewsType Lines)
+    {
+        public static LayoutSnapshot Capture(PrintParameters p) => new(p.PaperSize.Name, p.PageOrientation,
+            p.PaperPlacement, p.ZoomType, p.ZoomType == ZoomType.Zoom ? p.Zoom : 100,
+            p.ColorDepth, p.RasterQuality, p.HiddenLineViews);
+
+        public void Apply(PrintParameters p, PrintManager manager)
+        {
+            var paper = manager.PaperSizes.Cast<PaperSize>().FirstOrDefault(size => size.Name == Paper);
+            if (paper is not null) p.PaperSize = paper;
+            p.PageOrientation = Orientation;
+            p.PaperPlacement = Placement;
+            p.ZoomType = ZoomType;
+            if (ZoomType == ZoomType.Zoom) p.Zoom = Zoom;
+            p.ColorDepth = Color;
+            p.RasterQuality = Quality;
+            p.HiddenLineViews = Lines;
+        }
+    }
+
+    private static void SaveTemporaryLayout(Document document, PrintSetup setup)
+    {
+        using var tx = new Transaction(document, "TrueBIM — исходная настройка печати");
+        tx.Start();
+        if (!setup.SaveAs("TrueBIM-" + Guid.NewGuid().ToString("N")) || tx.Commit() != TransactionStatus.Committed)
+            throw new InvalidOperationException("Не удалось сохранить исходную настройку печати.");
+    }
+
+    internal static void ApplyRendering(PrintParameters parameters, PrintPdfExportSettings settings)
+    {
+        parameters.ColorDepth = settings.ColorMode switch
+        {
+            PrintPdfColorMode.BlackLine => ColorDepthType.BlackLine,
+            PrintPdfColorMode.GrayScale => ColorDepthType.GrayScale,
+            _ => ColorDepthType.Color
+        };
+        parameters.RasterQuality = settings.RasterQuality switch
+        {
+            PrintPdfRasterQuality.Low => RasterQualityType.Low,
+            PrintPdfRasterQuality.Medium => RasterQualityType.Medium,
+            PrintPdfRasterQuality.Presentation => RasterQualityType.Presentation,
+            _ => RasterQualityType.High
+        };
+        parameters.HiddenLineViews = settings.AlwaysUseRaster
+            ? HiddenLineViewsType.RasterProcessing : HiddenLineViewsType.VectorProcessing;
     }
 
     private static PrintSetting? FindPrintSetting(Document document, string printSetupName)

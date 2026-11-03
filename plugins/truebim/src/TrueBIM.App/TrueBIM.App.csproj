@@ -96,6 +96,9 @@
     <Using Remove="System.Drawing" />
     <Using Remove="System.Windows.Forms" />
     <PackageReference Include="ACadSharp" Version="3.6.35" />
+    <PackageReference Include="EasyHook" Version="2.7.7097" GeneratePathProperty="true" PrivateAssets="all" ExcludeAssets="all" NoWarn="NU1701" />
+    <None Include="../../installer/EasyHook-LICENSE.txt" Link="EasyHook-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(PkgEasyHook)/content/net40/EasyHook64.dll" Link="TrueBIM.PrintOutput.x64.dll" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="PdfPig" Version="0.1.15" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>

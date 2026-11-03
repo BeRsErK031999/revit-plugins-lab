@@ -254,6 +254,7 @@ public sealed class PrintPdfExportService
             Combine = true,
             FileName = Path.GetFileNameWithoutExtension(fileName),
             StopOnError = true,
+            PaperFormat = ExportPaperFormat.Default,
             ColorDepth = MapColorDepth(settings.ColorMode),
             RasterQuality = MapRasterQuality(settings.RasterQuality),
             AlwaysUseRaster = settings.AlwaysUseRaster

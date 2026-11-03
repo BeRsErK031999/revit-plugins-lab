@@ -106,7 +106,7 @@ public sealed class PrintSheetCollectorService
         HashSet<string> availableTitleBlockParameterNames = new(StringComparer.CurrentCultureIgnoreCase);
         HashSet<long> catalogedTitleBlockTypeIds = [];
         List<PrintSheetInfo> sheets = [];
-        IReadOnlyDictionary<long, FamilyInstance> titleBlocksBySheetId = CollectPrimaryTitleBlocks(document);
+        var titleBlocksBySheetId = CollectTitleBlocks(document);
 
         foreach (ViewSheet sheet in new FilteredElementCollector(document)
             .OfClass(typeof(ViewSheet))
@@ -114,10 +114,8 @@ public sealed class PrintSheetCollectorService
         {
             long sheetElementId = RevitElementIds.GetValue(sheet.Id);
             CollectParameterNames(sheet, availableSheetParameterNames);
-            FamilyInstance? titleBlock = !sheet.IsPlaceholder
-                && titleBlocksBySheetId.TryGetValue(sheetElementId, out FamilyInstance? primaryTitleBlock)
-                    ? primaryTitleBlock
-                    : null;
+            var blocks = titleBlocksBySheetId[sheetElementId];
+            FamilyInstance? titleBlock = blocks.FirstOrDefault();
             CollectTitleBlockParameterNames(
                 titleBlock,
                 availableTitleBlockParameterNames,
@@ -137,7 +135,7 @@ public sealed class PrintSheetCollectorService
                 ResolveGroupName(sheetParameters),
                 sheet.SheetNumber,
                 sheet.Name,
-                ResolveSheetFormat(sheet, titleBlock),
+                ResolveSheetFormat(sheet, blocks),
                 sheet.IsPlaceholder,
                 !sheet.IsPlaceholder,
                 sheetParameters,
@@ -177,18 +175,14 @@ public sealed class PrintSheetCollectorService
             : document.Title;
     }
 
-    private static IReadOnlyDictionary<long, FamilyInstance> CollectPrimaryTitleBlocks(Document document)
+    internal static ILookup<long, FamilyInstance> CollectTitleBlocks(Document document)
     {
         return new FilteredElementCollector(document)
             .OfCategory(BuiltInCategory.OST_TitleBlocks)
             .WhereElementIsNotElementType()
             .OfType<FamilyInstance>()
-            .GroupBy(instance => RevitElementIds.GetValue(instance.OwnerViewId))
-            .ToDictionary(
-                group => group.Key,
-                group => group.OrderBy(
-                    instance => instance.Name,
-                    StringComparer.CurrentCultureIgnoreCase).First());
+            .OrderBy(instance => instance.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToLookup(instance => RevitElementIds.GetValue(instance.OwnerViewId));
     }
 
     private static IReadOnlyDictionary<string, string> CollectParameters(
@@ -358,25 +352,22 @@ public sealed class PrintSheetCollectorService
         }
     }
 
-    private static string ResolveSheetFormat(ViewSheet sheet, FamilyInstance? titleBlock)
+    private static string ResolveSheetFormat(ViewSheet sheet, IEnumerable<FamilyInstance> blocks)
     {
         if (sheet.IsPlaceholder)
         {
             return "Заглушка";
         }
 
+        FamilyInstance? titleBlock = blocks.FirstOrDefault();
         if (titleBlock is null)
         {
             return "Без основной надписи";
         }
 
-        double? width = GetTitleBlockDimension(titleBlock, BuiltInParameter.SHEET_WIDTH);
-        double? height = GetTitleBlockDimension(titleBlock, BuiltInParameter.SHEET_HEIGHT);
-        if (width is > 0 && height is > 0)
+        if (ReadPaperSize(sheet, blocks) is { } size)
         {
-            double widthMillimeters = ConvertLengthFromInternalUnits(width.Value);
-            double heightMillimeters = ConvertLengthFromInternalUnits(height.Value);
-            return $"{Math.Round(widthMillimeters)} x {Math.Round(heightMillimeters)} мм";
+            return size.ToString();
         }
 
         string familyName = titleBlock.Symbol.FamilyName;
@@ -384,6 +375,30 @@ public sealed class PrintSheetCollectorService
         return string.IsNullOrWhiteSpace(familyName)
             ? typeName
             : $"{familyName}: {typeName}";
+    }
+
+    internal static PrintPaperSize? ReadPaperSize(ViewSheet sheet, IEnumerable<FamilyInstance> blocks)
+    {
+        var block = blocks.FirstOrDefault();
+        if (block is null) return null;
+        if (blocks.Skip(1).Any())
+        {
+            // SubmitPrint prints the whole sheet, including all title blocks on a composite sheet.
+            var outline = sheet.Outline;
+            double w = outline.Max.U - outline.Min.U;
+            double h = outline.Max.V - outline.Min.V;
+            return w > 0 && h > 0
+                ? new PrintPaperSize(ConvertLengthFromInternalUnits(w), ConvertLengthFromInternalUnits(h))
+                : null;
+        }
+
+        double? width = GetTitleBlockDimension(block, BuiltInParameter.SHEET_WIDTH);
+        double? height = GetTitleBlockDimension(block, BuiltInParameter.SHEET_HEIGHT);
+        if (width is not > 0 || height is not > 0) return null;
+        Transform axes = block.GetTransform();
+        return new PrintPaperSize(
+            ConvertLengthFromInternalUnits(width.Value * Math.Abs(axes.BasisX.X) + height.Value * Math.Abs(axes.BasisY.X)),
+            ConvertLengthFromInternalUnits(width.Value * Math.Abs(axes.BasisX.Y) + height.Value * Math.Abs(axes.BasisY.Y)));
     }
 
     private static double ConvertLengthFromInternalUnits(double internalLength)
