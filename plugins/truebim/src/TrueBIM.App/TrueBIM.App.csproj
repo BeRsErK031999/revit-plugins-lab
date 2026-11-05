@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net48;net8.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="'$(RevitVersion)' != '2027'">net48;net8.0-windows</TargetFrameworks>
+    <TargetFrameworks Condition="'$(RevitVersion)' == '2027'">net10.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
@@ -24,27 +25,27 @@
     <RevitApiRoot>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiRoot>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2020' or '$(RevitVersion)' == '2021' or '$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2020' or '$(RevitVersion)' == '2021' or '$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026' or '$(RevitVersion)' == '2027'">
     <DefineConstants>$(DefineConstants);REVIT2020_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026' or '$(RevitVersion)' == '2027'">
     <DefineConstants>$(DefineConstants);REVIT2022_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2021' or '$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2021' or '$(RevitVersion)' == '2022' or '$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026' or '$(RevitVersion)' == '2027'">
     <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2023' or '$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026' or '$(RevitVersion)' == '2027'">
     <DefineConstants>$(DefineConstants);REVIT2023_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2024' or '$(RevitVersion)' == '2025' or '$(RevitVersion)' == '2026' or '$(RevitVersion)' == '2027'">
     <DefineConstants>$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(RevitVersion)' == '2026'">
+  <PropertyGroup Condition="'$(RevitVersion)' == '2026' or '$(RevitVersion)' == '2027'">
     <DefineConstants>$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
@@ -55,6 +56,9 @@
     <Error
       Condition="'$(TargetFramework)' == 'net8.0-windows' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(RevitVersion)', '^(2025|2026)$'))"
       Text="TargetFramework net8.0-windows supports RevitVersion 2025-2026 only. Current RevitVersion='$(RevitVersion)'." />
+    <Error
+      Condition="'$(TargetFramework)' == 'net10.0-windows' and '$(RevitVersion)' != '2027'"
+      Text="TargetFramework net10.0-windows supports RevitVersion 2027 only." />
     <Error
       Condition="!Exists('$(RevitApiRoot)\RevitAPI.dll')"
       Text="RevitAPI.dll was not found for Revit $(RevitVersion) at '$(RevitApiRoot)\RevitAPI.dll'." />
@@ -74,7 +78,7 @@
     </Reference>
   </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' or '$(TargetFramework)' == 'net10.0-windows'">
     <Reference Include="RevitAPI">
       <HintPath>$(RevitApiRoot)\RevitAPI.dll</HintPath>
       <Private>false</Private>

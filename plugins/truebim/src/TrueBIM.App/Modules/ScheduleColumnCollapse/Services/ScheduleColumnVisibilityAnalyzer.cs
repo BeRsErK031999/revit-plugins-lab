@@ -1,10 +1,16 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using TrueBIM.App.Modules.ScheduleColumnCollapse.Models;
 
 namespace TrueBIM.App.Modules.ScheduleColumnCollapse.Services;
 
 public sealed class ScheduleColumnVisibilityAnalyzer
 {
+    public static bool IsConsumptionField(string fieldName)
+    {
+        return Regex.IsMatch(fieldName.TrimStart(), @"^Р\s*•\s*И[АЗ]", RegexOptions.CultureInvariant);
+    }
+
     public IReadOnlyList<ScheduleColumnVisibilityDecision> Analyze(IEnumerable<ScheduleColumnState> columns)
     {
         Guard.NotNull(columns, nameof(columns));
@@ -15,6 +21,14 @@ public sealed class ScheduleColumnVisibilityAnalyzer
     public ScheduleColumnVisibilityDecision AnalyzeColumn(ScheduleColumnState column)
     {
         Guard.NotNull(column, nameof(column));
+
+        if (!IsConsumptionField(column.FieldName))
+        {
+            return new ScheduleColumnVisibilityDecision(
+                column.FieldName,
+                ScheduleColumnVisibilityAction.Keep,
+                "Обрабатываются только поля Р • ИА… и Р • ИЗ…; видимость остальных полей сохранена.");
+        }
 
         if (!column.CanHide)
         {
@@ -63,7 +77,7 @@ public sealed class ScheduleColumnVisibilityAnalyzer
         for (int index = 0; index < column.CellTexts.Count; index++)
         {
             string cellText = column.CellTexts[index];
-            if (IsColumnLabel(cellText, column) || IsEmptyValue(cellText))
+            if (IsEmptyValue(cellText))
             {
                 continue;
             }
@@ -91,33 +105,6 @@ public sealed class ScheduleColumnVisibilityAnalyzer
     private static bool IsEmptyValue(string? text)
     {
         return string.IsNullOrWhiteSpace(text) || text!.Trim() is "-" or "–" or "—";
-    }
-
-    private static bool IsColumnLabel(string? text, ScheduleColumnState column)
-    {
-        return TextEquals(text, column.ColumnHeading) || TextEquals(text, column.FieldName);
-    }
-
-    private static bool TextEquals(string? left, string? right)
-    {
-        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
-        {
-            return false;
-        }
-
-        return string.Equals(
-            NormalizeTextForComparison(left!),
-            NormalizeTextForComparison(right!),
-            StringComparison.CurrentCultureIgnoreCase);
-    }
-
-    private static string NormalizeTextForComparison(string text)
-    {
-        return text
-            .Trim()
-            .Replace('\u00a0', ' ')
-            .Replace('\u202f', ' ')
-            .Replace('\u2212', '-');
     }
 
     private static bool TryParseDisplayedNumber(string? text, out decimal value)

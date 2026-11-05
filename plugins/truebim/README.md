@@ -1,5 +1,9 @@
 # TrueBIM
 
+Версия **0.2.51** исправляет «Свернуть ВРС»: обрабатываются только поля `Р • ИА…` и `Р • ИЗ…`. Многострочная шапка исключается из анализа значений, нулевые столбцы скрываются, ненулевые показываются; видимость остальных полей сохраняется. [Проверка на модели пользователя](docs/schedule-collapse-validation-2026-11-05.md).
+
+Версия **0.2.50** добавляет три команды АР: «Отделка полов», «Отделка стен» и «Отделка потолков» — создание геометрии по помещениям, сопоставление типов, стены из RVT-связей и перенос проёмов. [Инструкция и ограничения](docs/geometric-finishes.md), [проверки](docs/geometric-finishes-validation-2026-11-05.md). Установщик содержит отдельные сборки Revit **2019–2027**; в 2019–2021 потолки моделируются перекрытиями.
+
 TrueBIM is planned as a modular Revit add-in platform.
 
 The first installed module is `sheet-numbering`. The app also contains core ribbon commands that do not require a separate module manifest.
@@ -25,7 +29,7 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 - Версия **0.2.40**: компактная лента TrueBIM — «Быстрый доступ», «Виды», «Инструменты» и «Помощь». Все команды сохранены. Навигация и проверки: [компактная лента](docs/compact-ribbon.md).
 
 - `sheet-numbering` - sheet numbering and renumbering tools (`Нумератор листов`).
-- `schedule-column-collapse` - normalizes a schedule by showing non-zero columns and hiding zero-only numeric columns (`Свернуть ВРС`).
+- `schedule-column-collapse` - shows non-zero and hides zero-only numeric columns named `Р • ИА…` / `Р • ИЗ…`, preserving other fields (`Свернуть ВРС`).
 - `print` - sheet batch print/export module (`Печать`) for PDF, DWG, and DXF export with filename templates, CAD export setups, multi-document sheet sources, saved settings, and Revit 2022/2025 preflight coverage.
 
 ## Core ribbon commands
@@ -63,12 +67,13 @@ The first installed module is `sheet-numbering`. The app also contains core ribb
 
 ## Target Revit versions
 
-Release installer targets: Revit 2019, 2020, 2021, 2022, 2023, 2024, 2025, and 2026.
+Release installer targets: Revit 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, and 2027.
 
 Technical targets:
 
 - Revit 2019-2024: `net48`, `RevitAPI.dll`, and `RevitAPIUI.dll` from the matching Revit version.
 - Revit 2025-2026: `net8.0-windows`, `RevitAPI.dll`, and `RevitAPIUI.dll` from the matching Revit version.
+- Revit 2027: `net10.0-windows` and .NET SDK 10; pass `-DotNet10Path` and `-RevitApiRoots @{'2027'='...API directory...'}` to `scripts/build-installer.ps1`. The script isolates the SDK 10 restore files from SDK 8 builds.
 
 ## Build And Package
 

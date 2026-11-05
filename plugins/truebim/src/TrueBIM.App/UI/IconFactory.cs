@@ -62,7 +62,10 @@ public enum TrueBimIcon
     Up,
     Down,
     Move,
-    SelectionBox
+    SelectionBox,
+    FloorFinishing,
+    WallFinishing,
+    CeilingFinishing
 }
 
 internal static class IconFactory
@@ -189,6 +192,9 @@ internal static class IconFactory
     {
         return icon switch
         {
+            TrueBimIcon.FloorFinishing => "M1,9 L8,5 L15,9 L8,13 Z M1,10.5 L8,14.5 L15,10.5 L15,12 L8,16 L1,12 Z M1,1 L2.5,1 L2.5,7 L1,8 Z M13.5,1 L15,1 L15,8 L13.5,7 Z",
+            TrueBimIcon.WallFinishing => "M2,2 L12,2 L12,14 L2,14 Z M3.5,3.5 L10.5,3.5 L10.5,5 L3.5,5 Z M3.5,7 L10.5,7 L10.5,8.5 L3.5,8.5 Z M13,3 L15,4 L15,13 L13,14 Z M6,10 L8,10 L8,14 L6,14 Z",
+            TrueBimIcon.CeilingFinishing => "M1,5 L8,1 L15,5 L8,9 Z M1,6.5 L8,10.5 L15,6.5 L15,8 L8,12 L1,8 Z M1,9 L2.5,10 L2.5,15 L1,15 Z M13.5,10 L15,9 L15,15 L13.5,15 Z",
             TrueBimIcon.SelectionBox => "M0,0 L5,0 L5,1.5 L1.5,1.5 L1.5,5 L0,5 Z M11,0 L16,0 L16,5 L14.5,5 L14.5,1.5 L11,1.5 Z M0,11 L1.5,11 L1.5,14.5 L5,14.5 L5,16 L0,16 Z M14.5,11 L16,11 L16,16 L11,16 L11,14.5 L14.5,14.5 Z M8,3 L13,5.5 L13,10.5 L8,13 L3,10.5 L3,5.5 Z M8,4.5 L4.5,6.2 L8,8 L11.5,6.2 Z M4.5,7.7 L4.5,9.6 L7.3,11 L7.3,9.1 Z M8.7,9.1 L8.7,11 L11.5,9.6 L11.5,7.7 Z",
             TrueBimIcon.App => "M2,2 L14,2 L14,14 L2,14 Z M4,4 L12,4 L12,12 L4,12 Z M6,6 L10,6 L10,8 L6,8 Z M6,9 L11,9 L11,10.5 L6,10.5 Z",
             TrueBimIcon.Logs => "M3,2 L12,2 L12,14 L3,14 Z M5,5 L10,5 L10,6 L5,6 Z M5,8 L10,8 L10,9 L5,9 Z M5,11 L9,11 L9,12 L5,12 Z",

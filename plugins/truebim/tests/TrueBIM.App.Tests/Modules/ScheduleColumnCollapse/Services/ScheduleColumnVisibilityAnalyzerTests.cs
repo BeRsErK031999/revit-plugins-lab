@@ -9,11 +9,53 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     private readonly ScheduleColumnVisibilityAnalyzer analyzer = new();
 
     [Theory]
+    [InlineData("Р • ИА • А240 ø6")]
+    [InlineData("Р • ИЗ • С255 -4x25")]
+    [InlineData("Р\u00a0•\u00a0ИА • Итого")]
+    [InlineData("Р•ИЗ • Итого")]
+    public void AnalyzeColumn_AppliesToConsumptionParameterNames(string fieldName)
+    {
+        Assert.Equal(ScheduleColumnVisibilityAction.Hide,
+            analyzer.AnalyzeColumn(NumericColumn(false, ["0.0"]) with { FieldName = fieldName }).Action);
+        Assert.Equal(ScheduleColumnVisibilityAction.Show,
+            analyzer.AnalyzeColumn(NumericColumn(true, ["2.5"]) with { FieldName = fieldName }).Action);
+    }
+
+    [Theory]
+    [InlineData("Р • Высота строки")]
+    [InlineData("· Деталь · Код проката")]
+    [InlineData("· Деталь · Коэффициент нахлеста")]
+    [InlineData("Всего")]
+    [InlineData("Р • ИБ • Масса")]
+    [InlineData("Р - ИА • А240 ø6")]
+    [InlineData("Копия Р • ИА • А240 ø6")]
+    public void AnalyzeColumn_PreservesUnrelatedNumericFieldsEvenWithConsumptionHeading(string fieldName)
+    {
+        foreach (bool hidden in new[] { false, true })
+        foreach (string value in new[] { "0", "500.1", "" })
+        {
+            ScheduleColumnState column = NumericColumn(hidden, [value]) with
+            {
+                FieldName = fieldName,
+                ColumnHeading = "Р • ИА • А240 ø6"
+            };
+            Assert.Equal(ScheduleColumnVisibilityAction.Keep, analyzer.AnalyzeColumn(column).Action);
+        }
+    }
+
+    [Fact]
+    public void AnalyzeColumn_DoesNotDiscardBodyValueEqualToNumericHeading()
+    {
+        ScheduleColumnState column = NumericColumn(true, ["-10"]) with { ColumnHeading = "-10" };
+        Assert.Equal(ScheduleColumnVisibilityAction.Show, analyzer.AnalyzeColumn(column).Action);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void AnalyzeColumn_HidesZeroNumericColumnRegardlessOfInitialVisibility(bool isHidden)
     {
-        ScheduleColumnState column = NumericColumn(isHidden, ["ф12", "0.0", "0,0", "0", "−0,0"]);
+        ScheduleColumnState column = NumericColumn(isHidden, ["0.0", "0,0", "0", "−0,0"]);
 
         Assert.Equal(ScheduleColumnVisibilityAction.Hide, analyzer.AnalyzeColumn(column).Action);
     }
@@ -25,7 +67,7 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     [InlineData(true, "1\u202f234,5")]
     public void AnalyzeColumn_ShowsNonZeroNumericColumnRegardlessOfInitialVisibility(bool isHidden, string value)
     {
-        ScheduleColumnState column = NumericColumn(isHidden, ["ф12", "0.0", value, "0.0"]);
+        ScheduleColumnState column = NumericColumn(isHidden, ["0.0", value, "0.0"]);
 
         Assert.Equal(ScheduleColumnVisibilityAction.Show, analyzer.AnalyzeColumn(column).Action);
     }
@@ -35,25 +77,25 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     [InlineData(true)]
     public void AnalyzeColumn_HidesEmptyNumericColumnIncludingSuppressedZeros(bool isHidden)
     {
-        ScheduleColumnState column = NumericColumn(isHidden, ["ф12", "", " ", "\u00a0", "—", "–", "-"]);
+        ScheduleColumnState column = NumericColumn(isHidden, ["", " ", "\u00a0", "—", "–", "-"]);
 
         Assert.Equal(ScheduleColumnVisibilityAction.Hide, analyzer.AnalyzeColumn(column).Action);
     }
 
     [Fact]
-    public void AnalyzeColumn_HidesNumericColumnWithOnlyAHeading()
+    public void AnalyzeColumn_HidesNumericColumnWithNoBodyValues()
     {
-        ScheduleColumnState column = NumericColumn(true, ["ф12"]);
+        ScheduleColumnState column = NumericColumn(true, []);
 
         Assert.Equal(ScheduleColumnVisibilityAction.Hide, analyzer.AnalyzeColumn(column).Action);
     }
 
     [Theory]
-    [InlineData("Итого A400", "Итого")]
-    [InlineData("Прокат марки C255 -10", "-10")]
+    [InlineData("Р • ИА • Итого A400", "Итого")]
+    [InlineData("Р • ИЗ • Прокат марки C255 -10", "-10")]
     public void AnalyzeColumn_DoesNotCountHeadingAsANonZeroValue(string fieldName, string heading)
     {
-        ScheduleColumnState column = NumericColumn(true, [heading, "0.0", "0.0"]) with
+        ScheduleColumnState column = NumericColumn(true, ["0.0", "0.0"]) with
         {
             FieldName = fieldName,
             ColumnHeading = heading
@@ -96,7 +138,7 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     [InlineData(true)]
     public void AnalyzeColumn_PreservesOriginalVisibilityWhenNumericValuesCannotBeRead(bool isHidden)
     {
-        ScheduleColumnState column = NumericColumn(isHidden, ["ф12", "0,0", "<Различные>"]);
+        ScheduleColumnState column = NumericColumn(isHidden, ["0,0", "<Различные>"]);
 
         Assert.Equal(ScheduleColumnVisibilityAction.Keep, analyzer.AnalyzeColumn(column).Action);
     }
@@ -106,9 +148,9 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     [InlineData(0.5, ScheduleColumnVisibilityAction.Show)]
     public void AnalyzeColumn_UsesRevitParsedValuesForCellsWithUnits(double value, ScheduleColumnVisibilityAction expected)
     {
-        ScheduleColumnState column = NumericColumn(true, ["ф12", "0,0 кг", $"{value} кг"]) with
+        ScheduleColumnState column = NumericColumn(true, ["0,0 кг", $"{value} кг"]) with
         {
-            ParsedNumericValues = [null, 0.0, value]
+            ParsedNumericValues = [0.0, value]
         };
 
         Assert.Equal(expected, analyzer.AnalyzeColumn(column).Action);
@@ -125,7 +167,7 @@ public sealed class ScheduleColumnVisibilityAnalyzerTests
     private static ScheduleColumnState NumericColumn(bool isHidden, IReadOnlyList<string> cellTexts)
     {
         return new ScheduleColumnState(
-            FieldName: "Р - ИА • A240 ф12",
+            FieldName: "Р • ИА • A240 ф12",
             ColumnHeading: "ф12",
             IsHidden: isHidden,
             CanHide: true,

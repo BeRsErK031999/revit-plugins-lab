@@ -10,12 +10,14 @@ param(
 
     [string] $Revit2026ApiRoot = "",
 
+    [string] $DotNet10Path = "",
+
     [hashtable] $RevitApiRoots = @{}
 )
 
 $ErrorActionPreference = "Stop"
 
-$revitYears = @("2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026")
+$revitYears = @("2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027")
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $repoRootPath = [System.IO.Path]::GetFullPath([string] $repoRoot)
 $trueBimRoot = Join-Path $repoRootPath "plugins\truebim"
@@ -220,7 +222,7 @@ $results = New-Object System.Collections.Generic.List[object]
 $skipped = New-Object System.Collections.Generic.List[string]
 
 foreach ($year in $revitYears) {
-    $framework = if ($year -in @("2025", "2026")) { "net8.0-windows" } else { "net48" }
+    $framework = if ($year -eq "2027") { "net10.0-windows" } elseif ($year -in @("2025", "2026")) { "net8.0-windows" } else { "net48" }
     $revitApiRoot = if ($RevitApiRoots.ContainsKey($year)) {
         [System.IO.Path]::GetFullPath([string]$RevitApiRoots[$year])
     }
@@ -261,7 +263,23 @@ foreach ($year in $revitYears) {
     New-Item -ItemType Directory -Path $tempOutputDir -Force | Out-Null
     New-Item -ItemType Directory -Path $tempObjDir -Force | Out-Null
 
-    & $dotnetPath build $projectPath `
+    $buildSdk = $dotnetPath
+    $extensionArguments = @()
+    $sdkLocationPushed = $false
+    if ($year -eq '2027') {
+        $extensionArguments = @("-p:MSBuildProjectExtensionsPath=$tempObjDir\")
+        if ($DotNet10Path) { $buildSdk = [IO.Path]::GetFullPath($DotNet10Path) }
+        $sdk10Versions = @(& $buildSdk --list-sdks | Where-Object { $_ -match '^10\.' } | ForEach-Object { ($_ -split ' ')[0] })
+        if ($sdk10Versions.Count -eq 0) { throw 'Revit 2027 requires .NET SDK 10. Pass -DotNet10Path with the path to dotnet.exe.' }
+        $sdkWork = Join-Path $buildTempRoot 'sdk10'
+        New-Item -ItemType Directory -Path $sdkWork -Force | Out-Null
+        @{ sdk = @{ version = $sdk10Versions[-1]; rollForward = 'latestPatch' } } | ConvertTo-Json | Set-Content (Join-Path $sdkWork 'global.json')
+        Push-Location -LiteralPath $sdkWork
+        $sdkLocationPushed = $true
+    }
+    try {
+    & $buildSdk build $projectPath `
+        @extensionArguments `
         --configuration $Configuration `
         --framework $framework `
         --nologo `
@@ -276,6 +294,8 @@ foreach ($year in $revitYears) {
     if ($LASTEXITCODE -ne 0) {
         throw "Build failed for Revit $year ($framework)."
     }
+    }
+    finally { if ($sdkLocationPushed) { Pop-Location } }
 
     $appAssembly = Join-Path $tempOutputDir "TrueBIM.App.dll"
     if (-not (Test-Path -LiteralPath $appAssembly)) {

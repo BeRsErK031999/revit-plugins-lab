@@ -100,7 +100,7 @@ public sealed class ScheduleColumnCollapseService
 
             return new ScheduleColumnCollapseResult(
                 Succeeded: true,
-                Message: "Спецификация обновлена: ненулевые числовые столбцы показаны, нулевые и пустые скрыты.",
+                Message: "Спецификация обновлена: в полях Р • ИА… и Р • ИЗ… ненулевые столбцы показаны, нулевые и пустые скрыты. Видимость остальных полей сохранена.",
                 ScheduleId: targetSchedule.Id,
                 ScheduleName: targetSchedule.Name,
                 HiddenColumnCount: hiddenColumnCount,
@@ -316,10 +316,16 @@ public sealed class ScheduleColumnCollapseService
         // Roll this back before applying decisions: Keep must preserve the original state.
         using SubTransaction readingTransaction = new(document);
         readingTransaction.Start();
+        // Revit includes grouped/multi-row column headers in SectionType.Body.
+        // Remove them structurally for inspection, then restore them by rollback.
+        // Comparing text to ColumnHeading cannot exclude the parent headers.
+        definition.ShowHeaders = false;
+        definition.ShowTitle = false;
         foreach (ScheduleFieldId fieldId in fieldIds)
         {
             ScheduleField field = definition.GetField(fieldId);
-            if (field.IsHidden && IsNumericField(field) && !serviceFieldIds.Contains(fieldId))
+            if (field.IsHidden && ScheduleColumnVisibilityAnalyzer.IsConsumptionField(field.GetName())
+                && IsNumericField(field) && !serviceFieldIds.Contains(fieldId))
             {
                 TrySetHidden(field, isHidden: false);
             }
@@ -350,7 +356,8 @@ public sealed class ScheduleColumnCollapseService
             List<string> cellTexts = new();
             if (!field.IsHidden)
             {
-                if (isNumeric && body.NumberOfRows > 0)
+                if (isNumeric && ScheduleColumnVisibilityAnalyzer.IsConsumptionField(field.GetName())
+                    && !serviceFieldIds.Contains(fieldId) && body.NumberOfRows > 0)
                 {
                     for (int rowNumber = body.FirstRowNumber; rowNumber <= body.LastRowNumber; rowNumber++)
                     {

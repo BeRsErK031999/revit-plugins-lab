@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.2.49"
+#define AppVersion "0.2.51"
 #define Publisher "TrueBIM"
 
 #ifndef ExcludeRevit2019
@@ -66,6 +66,14 @@
     #error Missing dist\revit\2026\TrueBIM.addin. Run build-installer.ps1 first.
   #endif
 #endif
+#ifndef ExcludeRevit2027
+  #if !FileExists("..\..\..\dist\revit\2027\TrueBIM.App.dll")
+    #error Missing dist\revit\2027\TrueBIM.App.dll. Run build-installer.ps1 first.
+  #endif
+  #if !FileExists("..\..\..\dist\revit\2027\TrueBIM.addin")
+    #error Missing dist\revit\2027\TrueBIM.addin. Run build-installer.ps1 first.
+  #endif
+#endif
 
 [Setup]
 AppId={{8F8E8CC7-D3C9-49BA-8F40-AD0F2F8D32F7}
@@ -123,6 +131,9 @@ Name: "revit2025"; Description: "Revit 2025"; Types: full
 #ifndef ExcludeRevit2026
 Name: "revit2026"; Description: "Revit 2026"; Types: full
 #endif
+#ifndef ExcludeRevit2027
+Name: "revit2027"; Description: "Revit 2027"; Types: full
+#endif
 
 [Files]
 #ifndef ExcludeRevit2019
@@ -148,6 +159,9 @@ Source: "..\..\..\dist\revit\2025\*"; DestDir: "{app}\2025"; Excludes: "*.pdb"; 
 #endif
 #ifndef ExcludeRevit2026
 Source: "..\..\..\dist\revit\2026\*"; DestDir: "{app}\2026"; Excludes: "*.pdb"; Check: ShouldInstallYear('2026'); Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
+#ifndef ExcludeRevit2027
+Source: "..\..\..\dist\revit\2027\*"; DestDir: "{app}\2027"; Excludes: "*.pdb"; Check: ShouldInstallYear('2027'); Flags: ignoreversion recursesubdirs createallsubdirs
 #endif
 
 [InstallDelete]
@@ -222,15 +236,25 @@ Type: filesandordirs; Name: "{app}\2025\Assets"; Check: ShouldInstallYear('2025'
 Type: filesandordirs; Name: "{app}\2025\Docs"; Check: ShouldInstallYear('2025')
 Type: filesandordirs; Name: "{app}\2025\tools"; Check: ShouldInstallYear('2025')
 Type: files; Name: "{app}\2026\*.dll"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2027\*.dll"; Check: ShouldInstallYear('2027')
 Type: files; Name: "{app}\2026\*.pdb"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2027\*.pdb"; Check: ShouldInstallYear('2027')
 Type: files; Name: "{app}\2026\TrueBIM.addin"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2027\TrueBIM.addin"; Check: ShouldInstallYear('2027')
 Type: files; Name: "{app}\2026\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2027\TrueBIM.App.deps.json"; Check: ShouldInstallYear('2027')
 Type: files; Name: "{app}\2026\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{app}\2027\TrueBIM.App.runtimeconfig.json"; Check: ShouldInstallYear('2027')
 Type: filesandordirs; Name: "{app}\2026\Core"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2027\Core"; Check: ShouldInstallYear('2027')
 Type: filesandordirs; Name: "{app}\2026\Modules"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2027\Modules"; Check: ShouldInstallYear('2027')
 Type: filesandordirs; Name: "{app}\2026\Assets"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2027\Assets"; Check: ShouldInstallYear('2027')
 Type: filesandordirs; Name: "{app}\2026\Docs"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2027\Docs"; Check: ShouldInstallYear('2027')
 Type: filesandordirs; Name: "{app}\2026\tools"; Check: ShouldInstallYear('2026')
+Type: filesandordirs; Name: "{app}\2027\tools"; Check: ShouldInstallYear('2027')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"; Check: ShouldInstallYear('2019')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2020\TrueBIM.addin"; Check: ShouldInstallYear('2020')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2021\TrueBIM.addin"; Check: ShouldInstallYear('2021')
@@ -239,6 +263,7 @@ Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"; Che
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"; Check: ShouldInstallYear('2024')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"; Check: ShouldInstallYear('2025')
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2026\TrueBIM.addin"; Check: ShouldInstallYear('2026')
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2027\TrueBIM.addin"; Check: ShouldInstallYear('2027')
 
 [UninstallDelete]
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2019\TrueBIM.addin"
@@ -249,6 +274,7 @@ Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2023\TrueBIM.addin"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2024\TrueBIM.addin"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2025\TrueBIM.addin"
 Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2026\TrueBIM.addin"
+Type: files; Name: "{userappdata}\Autodesk\Revit\Addins\2027\TrueBIM.addin"
 Type: filesandordirs; Name: "{app}\2019"
 Type: filesandordirs; Name: "{app}\2020"
 Type: filesandordirs; Name: "{app}\2021"
@@ -257,6 +283,7 @@ Type: filesandordirs; Name: "{app}\2023"
 Type: filesandordirs; Name: "{app}\2024"
 Type: filesandordirs; Name: "{app}\2025"
 Type: filesandordirs; Name: "{app}\2026"
+Type: filesandordirs; Name: "{app}\2027"
 Type: dirifempty; Name: "{app}"
 
 [Code]
@@ -286,6 +313,9 @@ begin
 #endif
 #ifndef ExcludeRevit2026
   if Year = '2026' then Result := True;
+#endif
+#ifndef ExcludeRevit2027
+  if Year = '2027' then Result := True;
 #endif
 end;
 
@@ -348,5 +378,6 @@ begin
     SaveManifest('2024');
     SaveManifest('2025');
     SaveManifest('2026');
+    SaveManifest('2027');
   end;
 end;
