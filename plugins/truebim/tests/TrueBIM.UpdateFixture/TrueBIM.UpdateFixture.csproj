@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>TrueBIM-Setup-99.0.0</AssemblyName>
+    <Version>99.0.0</Version>
+    <!-- Inno Setup pads product/version resources with spaces. -->
+    <Product>TrueBIM     </Product>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+</Project>

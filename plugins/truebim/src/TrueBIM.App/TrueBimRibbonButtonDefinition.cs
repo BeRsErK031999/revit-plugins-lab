@@ -557,6 +557,15 @@ public static class TrueBimRibbon
             "Открывает локальный файл логов TrueBIM.",
             "Быстрый доступ к truebim.log для диагностики ошибок и передачи логов в поддержку."),
         new(
+            HelpPanelName,
+            "TrueBIM_CheckForUpdates",
+            "Проверить обновления",
+            $"{CommandNamespace}.{nameof(CheckForUpdatesCommand)}",
+            TrueBimIcon.Refresh,
+            "Проверяет новую версию TrueBIM в W:\\Shared\\RevitPlugins.",
+            "Копирует установщик на компьютер и проверяет целостность. Установка начинается после сохранения моделей и закрытия всех окон Revit.",
+            AvailabilityClassName: $"{CommandNamespace}.{nameof(CheckForUpdatesAvailability)}"),
+        new(
             KrPanelName,
             "TrueBIM_CollapseScheduleColumns",
             "Свернуть\nВРС",
@@ -641,7 +650,7 @@ public static class TrueBimRibbon
                 MenuItem("TrueBIM_ElectricalSchematic", prefix: "ЭОМ")
             ])
         ]),
-        new(HelpPanelName, [InPanel("TrueBIM_OpenLogs", HelpPanelName)])
+        new(HelpPanelName, [InPanel("TrueBIM_CheckForUpdates", HelpPanelName), InPanel("TrueBIM_OpenLogs", HelpPanelName)], IsStacked: true)
     ];
 
     public static IReadOnlyList<TrueBimRibbonButtonDefinition> Buttons { get; } =

@@ -333,7 +333,7 @@ public sealed class AppRibbonButtonDefinitionTests
             [TrueBimRibbon.QuickAccessPanelName] = 3,
             [TrueBimRibbon.BimViewsPanelName] = 4,
             [TrueBimRibbon.ToolsPanelName] = 4,
-            [TrueBimRibbon.HelpPanelName] = 1
+            [TrueBimRibbon.HelpPanelName] = 2
         };
 
         foreach (string panelName in TrueBimRibbon.PanelNames)
@@ -379,13 +379,13 @@ public sealed class AppRibbonButtonDefinitionTests
     }
 
     [Fact]
-    public void CompactRibbon_StacksQuickAccessAndViewsOnly()
+    public void CompactRibbon_StacksQuickAccessViewsAndHelp()
     {
         var stacks = TrueBimRibbon.Panels.Where(panel => panel.IsStacked).ToArray();
-        Assert.Equal(new[] { TrueBimRibbon.QuickAccessPanelName, TrueBimRibbon.BimViewsPanelName }, stacks.Select(panel => panel.Name));
+        Assert.Equal(new[] { TrueBimRibbon.QuickAccessPanelName, TrueBimRibbon.BimViewsPanelName, TrueBimRibbon.HelpPanelName }, stacks.Select(panel => panel.Name));
         foreach (TrueBimRibbonPanelDefinition stack in stacks)
         {
-            Assert.Equal(stack.Name == TrueBimRibbon.BimViewsPanelName ? 4 : 3, stack.Buttons.Count);
+            Assert.Equal(stack.Name == TrueBimRibbon.BimViewsPanelName ? 4 : stack.Name == TrueBimRibbon.HelpPanelName ? 2 : 3, stack.Buttons.Count);
             Assert.All(stack.Buttons, button => Assert.DoesNotContain('\n', button.Text));
         }
     }

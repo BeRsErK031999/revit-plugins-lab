@@ -29,6 +29,13 @@ $buildTempRoot = Join-Path $trueBimRoot "obj\installer-build"
 $installerScriptPath = Join-Path $trueBimRoot "installer\TrueBIM.iss"
 $defaultInstallRoot = Join-Path $env:APPDATA "TrueBIM"
 
+[xml] $releaseProperties = Get-Content -LiteralPath (Join-Path $trueBimRoot 'Version.props') -Raw
+$releaseVersion = [string] $releaseProperties.Project.PropertyGroup.Version
+$installerVersionMatch = [regex]::Match((Get-Content -LiteralPath $installerScriptPath -Raw), '#define AppVersion "([^"]+)"')
+if (-not $installerVersionMatch.Success -or $installerVersionMatch.Groups[1].Value -ne $releaseVersion) {
+    throw 'Version.props and TrueBIM.iss must declare the same release version.'
+}
+
 . (Join-Path $PSScriptRoot "resolve-dotnet-sdk.ps1")
 $dotnetPath = Resolve-DotNetSdk
 
@@ -218,6 +225,11 @@ Remove-DirectorySafe -Path $buildTempRoot
 New-Item -ItemType Directory -Path $distRevitRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $distInstallerRoot -Force | Out-Null
 
+$updaterOutput = Join-Path $buildTempRoot 'updater'
+& $dotnetPath build (Join-Path $trueBimRoot 'src\TrueBIM.Updater\TrueBIM.Updater.csproj') --configuration $Configuration --nologo --verbosity:minimal --output $updaterOutput
+if ($LASTEXITCODE -ne 0) { throw 'Updater build failed.' }
+if (-not (Test-Path -LiteralPath (Join-Path $updaterOutput 'TrueBIM.Updater.exe'))) { throw 'Updater output is missing.' }
+
 $results = New-Object System.Collections.Generic.List[object]
 $skipped = New-Object System.Collections.Generic.List[string]
 
@@ -305,6 +317,10 @@ foreach ($year in $revitYears) {
     $distYearRoot = Join-Path $distRevitRoot $year
     New-Item -ItemType Directory -Path $distYearRoot -Force | Out-Null
     Copy-Item -Path (Join-Path $tempOutputDir "*") -Destination $distYearRoot -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $updaterOutput 'TrueBIM.Updater.exe') -Destination $distYearRoot
+    if (Test-Path -LiteralPath (Join-Path $updaterOutput 'TrueBIM.Updater.exe.config')) {
+        Copy-Item -LiteralPath (Join-Path $updaterOutput 'TrueBIM.Updater.exe.config') -Destination $distYearRoot
+    }
 
     $printModuleRoot = Join-Path $trueBimRoot "modules\print"
     $sheetNumberingModuleRoot = Join-Path $trueBimRoot "modules\sheet-numbering"

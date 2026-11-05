@@ -18,5 +18,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TrueBIM.App\TrueBIM.App.csproj" />
+    <ProjectReference Include="..\TrueBIM.UpdateFixture\TrueBIM.UpdateFixture.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" GlobalPropertiesToRemove="TargetFramework" />
   </ItemGroup>
+  <Target Name="CopyUpdateFixture" AfterTargets="Build">
+    <Copy SourceFiles="../TrueBIM.UpdateFixture/bin/$(Configuration)/net48/TrueBIM-Setup-99.0.0.exe" DestinationFolder="$(OutDir)UpdateFixture" />
+  </Target>
 </Project>
