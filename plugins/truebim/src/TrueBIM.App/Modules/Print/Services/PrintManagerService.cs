@@ -199,10 +199,7 @@ public sealed class PrintManagerService
                     {
                         if (!string.Equals(printManager.PrinterName, snapshot.PrinterName, StringComparison.OrdinalIgnoreCase))
                             printManager.SelectNewPrintDriver(snapshot.PrinterName);
-                        var setup = printManager.PrintSetup;
-                        setup.CurrentPrintSetting = setup.InSession;
-                        originalLayout.Apply(setup.CurrentPrintSetting.PrintParameters, printManager);
-                        SaveTemporaryLayout(document, setup);
+                        RestoreTemporaryLayout(document, printManager, originalLayout);
                         printManager.Apply();
                     }
                     temporarySettings.RollBack();
@@ -271,10 +268,13 @@ public sealed class PrintManagerService
         }
     }
 
-    private static void SaveTemporaryLayout(Document document, PrintSetup setup)
+    private static void RestoreTemporaryLayout(Document document, Autodesk.Revit.DB.PrintManager manager, LayoutSnapshot originalLayout)
     {
         using var tx = new Transaction(document, "TrueBIM — исходная настройка печати");
         tx.Start();
+        var setup = manager.PrintSetup;
+        setup.CurrentPrintSetting = setup.InSession;
+        originalLayout.Apply(setup.CurrentPrintSetting.PrintParameters, manager);
         if (!setup.SaveAs("TrueBIM-" + Guid.NewGuid().ToString("N")) || tx.Commit() != TransactionStatus.Committed)
             throw new InvalidOperationException("Не удалось сохранить исходную настройку печати.");
     }

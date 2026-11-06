@@ -9,7 +9,7 @@ internal sealed class AutoSheetPrintLayout
     private readonly Document document;
     private readonly PrintSetup setup;
     private readonly IPrintSetting original;
-    private readonly Dictionary<(string Name, bool Rotate), IPrintSetting> settingsByPaper = new();
+    private readonly Dictionary<(string Name, bool Rotate), PrintSetting> settingsByPaper = new();
     private readonly Dictionary<string, PaperSize> revitPapers;
     private readonly List<PrinterPaper> driverPapers;
     public AutoSheetPrintLayout(Document document, PrintManager manager)
@@ -35,7 +35,15 @@ internal sealed class AutoSheetPrintLayout
         var key = (match.Paper.Name, match.Rotate);
         if (settingsByPaper.TryGetValue(key, out var existing))
         {
-            setup.CurrentPrintSetting = existing;
+            if (setup.CurrentPrintSetting is not PrintSetting current || current.Id != existing.Id)
+            {
+                // Switching back to a different named preset modifies the Revit document.
+                using var tx = new Transaction(document, "TrueBIM — выбор формата листа");
+                tx.Start();
+                setup.CurrentPrintSetting = existing;
+                if (tx.Commit() != TransactionStatus.Committed)
+                    throw new InvalidOperationException($"Revit не переключил формат бумаги на «{match.Paper.Name}».");
+            }
             return match;
         }
 
@@ -66,7 +74,6 @@ internal sealed class AutoSheetPrintLayout
             if ((changed && !setup.Save()) || tx.Commit() != TransactionStatus.Committed)
                 throw new InvalidOperationException("Revit не применил формат бумаги.");
         }
-        setup.CurrentPrintSetting = saved;
         var effective = saved.PrintParameters;
         if (effective.PaperSize.Name != match.Paper.Name || effective.ZoomType != ZoomType.Zoom ||
             effective.Zoom != 100 || effective.PaperPlacement != PaperPlacementType.Center ||
