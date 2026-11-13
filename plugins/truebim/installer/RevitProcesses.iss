@@ -30,6 +30,15 @@ begin
     if GetArrayLength(Snapshot) > 0 then Services := RevitProcessServices;
     for I := 0 to GetArrayLength(Snapshot) - 1 do
     begin
+      if Snapshot[I].OwnerSid = '' then
+      begin
+        { Keep an unknown process in this session as a manual-close blocker.
+          Do not query/terminate it or discard the known-own processes. }
+        N := GetArrayLength(Processes);
+        SetArrayLength(Processes, N + 1);
+        Processes[N] := Snapshot[I];
+        continue;
+      end;
       Items := Services.ExecQuery('SELECT ProcessId, Name, CreationDate FROM Win32_Process WHERE ProcessId = ' + Snapshot[I].Id);
       if Items.Count = 0 then continue; { Exited after the snapshot. }
       Item := Items.ItemIndex(0);
@@ -54,13 +63,24 @@ var
 begin
   Result := '';
   for I := 0 to GetArrayLength(Processes) - 1 do
+  begin
     Result := Result + Processes[I].Name + ' — PID ' + Processes[I].Id +
-      ', сеанс ' + IntToStr(Processes[I].SessionId) + #13#10;
+      ', сеанс ' + IntToStr(Processes[I].SessionId);
+    if Processes[I].OwnerSid = '' then
+      Result := Result + ' (владелец недоступен; закройте вручную)';
+    Result := Result + #13#10;
+  end;
+end;
+
+function CanTerminateRevitProcess(const Process: TRevitProcess): Boolean;
+begin
+  Result := (Process.OwnerSid <> '') and (Process.Created <> '');
 end;
 
 function RefreshRevitProcesses: Boolean;
 var
   Error: String;
+  I: Integer;
 begin
   Result := False;
   if not ReadRevitProcesses(RevitProcesses, Error) then
@@ -70,9 +90,12 @@ begin
     RevitCloseButton.Enabled := False;
     exit;
   end;
-  Result := GetArrayLength(RevitProcesses) = 0;
-  RevitCloseButton.Enabled := not Result;
-  RevitProcessList.Text := DescribeRevitProcesses(RevitProcesses);
+  Error := InstallationFileError;
+  Result := (GetArrayLength(RevitProcesses) = 0) and (Error = '');
+  RevitCloseButton.Enabled := False;
+  for I := 0 to GetArrayLength(RevitProcesses) - 1 do
+    if CanTerminateRevitProcess(RevitProcesses[I]) then RevitCloseButton.Enabled := True;
+  RevitProcessList.Text := DescribeRevitProcesses(RevitProcesses) + Error;
 end;
 
 procedure ContinueAfterRevitClosed;
@@ -91,7 +114,7 @@ procedure CloseRevitProcessesClick(Sender: TObject);
 var
   Services, Item, Owner: Variant;
   Confirmed: TRevitProcesses;
-  I, Attempt, Code: Integer;
+  I, N, Attempt, Code: Integer;
   Errors: String;
 begin
   { Refresh before confirmation. Never terminate a process that was not listed. }
@@ -102,7 +125,14 @@ begin
   end;
   if not RevitCloseButton.Enabled then
     exit;
-  Confirmed := RevitProcesses;
+  SetArrayLength(Confirmed, 0);
+  for I := 0 to GetArrayLength(RevitProcesses) - 1 do
+    if CanTerminateRevitProcess(RevitProcesses[I]) then
+    begin
+      N := GetArrayLength(Confirmed);
+      SetArrayLength(Confirmed, N + 1);
+      Confirmed[N] := RevitProcesses[I];
+    end;
   if MsgBox('Завершить перечисленные процессы Revit вашей учётной записи и продолжить установку?' + #13#10#13#10 +
       DescribeRevitProcesses(Confirmed) + #13#10 +
       'Все операции в этих процессах, включая расчёты, печать и синхронизацию, будут прерваны.' + #13#10 +
@@ -183,9 +213,11 @@ begin
   Result := '';
   if ReadRevitProcesses(Processes, Error) then
   begin
-    if GetArrayLength(Processes) = 0 then
-      exit;
-    Result := 'Перед установкой закройте Revit вашей учётной записи:' + #13#10 + DescribeRevitProcesses(Processes);
+    if GetArrayLength(Processes) > 0 then
+      Result := 'Перед установкой закройте Revit вашей учётной записи или текущего сеанса:' + #13#10 + DescribeRevitProcesses(Processes);
+    Error := InstallationFileError;
+    if Error <> '' then Result := Result + #13#10 + Error;
+    if Result = '' then exit;
   end
   else
     Result := Error;
@@ -203,9 +235,9 @@ begin
     Info.SetBounds(ScaleX(12), ScaleY(12), ScaleX(516), ScaleY(74));
     Info.AutoSize := False;
     Info.WordWrap := True;
-    Info.Caption := 'Показаны только процессы Revit вашей учётной записи, включая другие её сеансы.' + #13#10 +
-      'Сохраните модели и закройте их либо используйте кнопку завершения. Несохранённые изменения будут потеряны.' + #13#10 +
-      'Установка выполняется только для вас. Revit других пользователей не затрагивается.';
+    Info.Caption := 'Закройте Revit своей учётной записи во всех сеансах. Сначала сохраните модели.' + #13#10 +
+      'Кнопка завершает только процессы с подтверждённым владельцем. Несохранённые изменения будут потеряны.' + #13#10 +
+      'При недоступном владельце в текущем сеансе закройте процесс вручную. Чужие процессы не завершаются.';
 
     RevitProcessList := TNewMemo.Create(RevitCloseForm);
     RevitProcessList.Parent := RevitCloseForm;

@@ -87,7 +87,7 @@ internal sealed class UpdateForm : Form
                 new Progress<int>(count =>
                 {
                     if (!IsDisposed && !cancellation.IsCancellationRequested)
-                        status.Text = $"Процессов Revit вашей учётной записи: {count}.\r\nСохраните модели и закройте Revit во всех своих сеансах. Затем начнётся установка только для вас.";
+                        status.Text = $"Процессов Revit, ожидающих закрытия: {count}.\r\nСохраните модели и закройте Revit во всех своих сеансах. Затем начнётся установка только для вас.";
                 }), cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             using FileStream verified = package.OpenVerifiedInstaller(installer);

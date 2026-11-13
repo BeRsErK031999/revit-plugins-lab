@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.2.55"
+#define AppVersion "0.2.56"
 #define Publisher "TrueBIM"
 
 #ifndef ExcludeRevit2019
@@ -289,7 +289,7 @@ Type: filesandordirs; Name: "{app}\2027"
 Type: dirifempty; Name: "{app}"
 
 [Code]
-#include "RevitProcesses.iss"
+#include "InstallFileAccess.iss"
 
 function IsPackagedYear(Year: String): Boolean;
 begin
@@ -327,6 +327,28 @@ function ShouldInstallYear(Year: String): Boolean;
 begin
   Result := IsPackagedYear(Year) and WizardIsComponentSelected('revit' + Year);
 end;
+
+function InstallationFileError: String;
+var
+  Year: Integer;
+  YearText: String;
+begin
+  Result := '';
+  try
+    for Year := 2019 to 2027 do
+    begin
+      YearText := IntToStr(Year);
+      if not ShouldInstallYear(YearText) then continue;
+      CheckInstallFolder(ExpandConstant('{app}\' + YearText));
+      CheckInstallFile(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\' + YearText + '\TrueBIM.addin'));
+    end;
+  except
+    Result := GetExceptionMessage;
+    Log(Result);
+  end;
+end;
+
+#include "RevitProcesses.iss"
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin

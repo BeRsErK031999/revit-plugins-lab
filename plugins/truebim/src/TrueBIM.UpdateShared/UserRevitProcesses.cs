@@ -35,12 +35,14 @@ public static class UserRevitProcesses
         using Process current = Process.GetCurrentProcess();
         if (!snapshot.Any(process => process.ProcessId == current.Id && process.OwnerSid == sid))
             throw new IOException("Windows не вернула текущего пользователя в списке процессов. Повторите проверку.");
-        return FilterForUser(snapshot, sid);
+        return FilterForUser(snapshot, sid, current.SessionId);
     }
 
     // One profile contains the add-in files for all sessions of the same SID.
-    // SessionId is diagnostic only: other sessions of this user must still block an update.
-    public static IReadOnlyList<UserProcessIdentity> FilterForUser(IEnumerable<UserProcessIdentity> processes, string currentSid)
+    // Known owners are compared across all sessions. An unavailable owner blocks
+    // only in this session; the installer also checks the target profile's files
+    // before deleting/copying anything, covering inaccessible processes elsewhere.
+    public static IReadOnlyList<UserProcessIdentity> FilterForUser(IEnumerable<UserProcessIdentity> processes, string currentSid, int currentSessionId)
     {
         if (string.IsNullOrWhiteSpace(currentSid)) throw new InvalidOperationException("Не удалось определить пользователя Windows.");
         List<UserProcessIdentity> result = new();
@@ -48,9 +50,10 @@ public static class UserRevitProcesses
         {
             if (!string.Equals(process.Name, "Revit.exe", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(process.Name, "RevitCoreConsole.exe", StringComparison.OrdinalIgnoreCase)) continue;
-            if (string.IsNullOrWhiteSpace(process.OwnerSid))
-                throw new IOException($"Не удалось определить владельца {process.Name} (PID {process.ProcessId}). Повторите проверку.");
-            if (string.Equals(process.OwnerSid, currentSid, StringComparison.OrdinalIgnoreCase)) result.Add(process);
+            bool blocks = string.IsNullOrWhiteSpace(process.OwnerSid)
+                ? process.SessionId == currentSessionId
+                : string.Equals(process.OwnerSid, currentSid, StringComparison.OrdinalIgnoreCase);
+            if (blocks) result.Add(process);
         }
         return result;
     }

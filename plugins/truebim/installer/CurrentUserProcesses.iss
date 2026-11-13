@@ -66,19 +66,25 @@ begin
     (CompareText(Name, 'RevitCoreConsole.exe') = 0);
 end;
 
-function IsCurrentUserRevitProcess(Name, OwnerSid, CurrentSid: String): Boolean;
+function IsBlockingRevitProcess(Name, OwnerSid, CurrentSid: String;
+  SessionId, CurrentSessionId: LongWord): Boolean;
 begin
   if CurrentSid = '' then RaiseException('Не удалось определить текущего пользователя Windows.');
   Result := False;
   if not IsRevitProcessName(Name) then exit;
-  if OwnerSid = '' then RaiseException('Не удалось определить владельца процесса ' + Name + '.');
-  Result := CompareText(OwnerSid, CurrentSid) = 0;
+  { Missing SID is normal for inaccessible terminal-server processes. A process
+    in this session still blocks, but must never be offered for termination.
+    Other sessions with unknown owners are covered by the profile file check. }
+  if OwnerSid = '' then
+    Result := SessionId = CurrentSessionId
+  else
+    Result := CompareText(OwnerSid, CurrentSid) = 0;
 end;
 
 procedure ReadCurrentUserRevitSnapshot(var Processes: TRevitProcesses);
 var
   Buffer: UINT_PTR;
-  Count, I, OwnPid: LongWord;
+  Count, I, OwnPid, CurrentSessionId: LongWord;
   Item: TWtsProcessInfo;
   CurrentSid, Name, OwnerSid: String;
   N: Integer;
@@ -88,6 +94,7 @@ begin
     RaiseException('Не удалось получить процессы пользователя: ' + SysErrorMessage(DLLGetLastError));
   try
     CurrentSid := '';
+    CurrentSessionId := 0;
     OwnPid := CurrentProcessId;
     if Count = 0 then RaiseException('Windows вернула пустой список процессов.');
     for I := 0 to Count - 1 do
@@ -96,6 +103,7 @@ begin
       if Item.ProcessId = OwnPid then
       begin
         CurrentSid := ReadOwnerSid(Item.UserSid);
+        CurrentSessionId := Item.SessionId;
         break;
       end;
     end;
@@ -106,7 +114,10 @@ begin
       Name := ReadNativeString(Item.ProcessName);
       if not IsRevitProcessName(Name) then continue;
       OwnerSid := ReadOwnerSid(Item.UserSid);
-      if not IsCurrentUserRevitProcess(Name, OwnerSid, CurrentSid) then continue;
+      if OwnerSid = '' then
+        Log('Revit owner unavailable: ' + Name + ' PID ' + IntToStr(Item.ProcessId) +
+          ', session ' + IntToStr(Item.SessionId) + ', current session ' + IntToStr(CurrentSessionId));
+      if not IsBlockingRevitProcess(Name, OwnerSid, CurrentSid, Item.SessionId, CurrentSessionId) then continue;
       N := GetArrayLength(Processes);
       SetArrayLength(Processes, N + 1);
       Processes[N].Id := IntToStr(Item.ProcessId);

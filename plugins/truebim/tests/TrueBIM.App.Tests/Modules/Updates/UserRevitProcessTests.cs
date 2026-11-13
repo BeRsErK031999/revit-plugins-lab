@@ -23,21 +23,50 @@ public sealed class UserRevitProcessTests
             new(6, 3, "AutodeskService.exe", OwnSid),
             new(7, 0, "System", null)
         };
-        Assert.Equal(new[] { 1, 2, 5 }, UserRevitProcesses.FilterForUser(snapshot, OwnSid).Select(process => process.ProcessId));
-        Assert.Equal(new[] { 3, 4 }, UserRevitProcesses.FilterForUser(snapshot, OtherSid).Select(process => process.ProcessId));
+        Assert.Equal(new[] { 1, 2, 5 }, UserRevitProcesses.FilterForUser(snapshot, OwnSid, 3).Select(process => process.ProcessId));
+        Assert.Equal(new[] { 3, 4 }, UserRevitProcesses.FilterForUser(snapshot, OtherSid, 9).Select(process => process.ProcessId));
     }
 
     [Fact]
     public void ForeignRevitAloneDoesNotBlockInstallation()
     {
-        Assert.Empty(UserRevitProcesses.FilterForUser(new[] { new UserProcessIdentity(1, 8, "Revit.exe", OtherSid) }, OwnSid));
+        Assert.Empty(UserRevitProcesses.FilterForUser(new[] { new UserProcessIdentity(1, 8, "Revit.exe", OtherSid) }, OwnSid, 3));
     }
 
     [Fact]
-    public void DoesNotAssumeAnUnknownOwnerIsAnotherUser()
+    public void MissingCurrentUserFailsClosed()
     {
-        Assert.Throws<IOException>(() => UserRevitProcesses.FilterForUser(new[] { new UserProcessIdentity(1, 3, "Revit.exe", null) }, OwnSid));
-        Assert.Throws<InvalidOperationException>(() => UserRevitProcesses.FilterForUser(Array.Empty<UserProcessIdentity>(), ""));
+        Assert.Throws<InvalidOperationException>(() => UserRevitProcesses.FilterForUser(Array.Empty<UserProcessIdentity>(), "", 3));
+    }
+
+    [Theory]
+    [InlineData("Revit.exe", null, 3, true)]
+    [InlineData("RevitCoreConsole.exe", "", 3, true)]
+    [InlineData("Revit.exe", null, 7, false)]
+    [InlineData("RevitCoreConsole.exe", "", 7, false)]
+    [InlineData("Revit.exe", OwnSid, 7, true)]
+    [InlineData("RevitCoreConsole.exe", OwnSid, 7, true)]
+    [InlineData("Revit.exe", OtherSid, 3, false)]
+    [InlineData("Revit.exe", OtherSid, 7, false)]
+    [InlineData("Unrelated.exe", null, 3, false)]
+    public void TerminalSessionPolicy(string name, string? owner, int session, bool blocks)
+    {
+        UserProcessIdentity process = new(100, session, name, owner);
+        Assert.Equal(blocks ? 1 : 0, UserRevitProcesses.FilterForUser(new[] { process }, OwnSid, 3).Count);
+    }
+
+    [Fact]
+    public void UnknownRemoteOwnerDoesNotHideOwnProcessesOrFailTheSnapshot()
+    {
+        UserProcessIdentity[] snapshot =
+        {
+            new(1, 7, "Revit.exe", null),
+            new(2, 3, "Revit.exe", OwnSid),
+            new(3, 9, "RevitCoreConsole.exe", OwnSid),
+            new(4, 3, "RevitCoreConsole.exe", null),
+            new(5, 4, "Revit.exe", OtherSid)
+        };
+        Assert.Equal(new[] { 2, 3, 4 }, UserRevitProcesses.FilterForUser(snapshot, OwnSid, 3).Select(process => process.ProcessId));
     }
 
     [Fact]
