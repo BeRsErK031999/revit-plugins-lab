@@ -1,5 +1,5 @@
 #define AppName "TrueBIM"
-#define AppVersion "0.2.53"
+#define AppVersion "0.2.54"
 #define Publisher "TrueBIM"
 
 #ifndef ExcludeRevit2019
@@ -289,6 +289,8 @@ Type: filesandordirs; Name: "{app}\2027"
 Type: dirifempty; Name: "{app}"
 
 [Code]
+#include "RevitProcesses.iss"
+
 function IsPackagedYear(Year: String): Boolean;
 begin
   Result := False;
@@ -333,22 +335,6 @@ begin
   begin
     MsgBox('Выберите хотя бы одну версию Revit.', mbError, MB_OK);
     Result := False;
-  end;
-end;
-
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-var
-  Locator, Services, Processes: Variant;
-begin
-  Result := '';
-  try
-    Locator := CreateOleObject('WbemScripting.SWbemLocator');
-    Services := Locator.ConnectServer('', 'root\CIMV2');
-    Processes := Services.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE Name = ''Revit.exe''');
-    if Processes.Count > 0 then
-      Result := 'Сохраните модели и закройте все окна Revit перед установкой TrueBIM. Установщик не закрывает Revit автоматически.';
-  except
-    Result := 'Не удалось проверить, закрыт ли Revit. Установка TrueBIM остановлена; обратитесь к администратору компьютера.';
   end;
 end;
 
