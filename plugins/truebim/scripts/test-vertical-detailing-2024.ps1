@@ -1,7 +1,8 @@
 param(
     [string] $SourceDirectory = 'C:\Users\Borodin_A\Desktop\Revit\Оформление вертикальных конструкций',
+    [string] $ModelFileName = 'D114_Р_КР_КЖ03.2.1_rvt24.rvt',
     [ValidateRange(30, 1800)][int] $TimeoutSeconds = 900,
-    [ValidateSet('audit','apply','interactive','acceptance')][string] $Mode = 'apply',
+    [ValidateSet('audit','apply','interactive','acceptance','supplement6')][string] $Mode = 'apply',
     [string] $ViewIds = '2310980,2568691',
     [string] $ViewVariants = '',
     [string] $PreviewPayload = '',
@@ -26,7 +27,8 @@ foreach ($file in $originals) {
     $hashes[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
     Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $runRoot $file.Name)
 }
-$modelCopy = Join-Path $runRoot 'D114_Р_КР_КЖ03.2.1_rvt24.rvt'
+$modelCopy = Join-Path $runRoot $ModelFileName
+if (-not (Test-Path -LiteralPath $modelCopy -PathType Leaf)) { throw "Model copy not found: $ModelFileName" }
 $manifestPath = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2024\TrueBIM.VerticalDetailingHarness.$runId.addin"
 $assembly = [Security.SecurityElement]::Escape((Join-Path $harnessRoot 'bin\Release\net48\TrueBIM.Revit.VerticalDetailingHarness.dll'))
 $manifest = '<?xml version="1.0" encoding="utf-8"?><RevitAddIns><AddIn Type="Application"><Name>TrueBIM Vertical Detailing Audit</Name><Assembly>' + $assembly + '</Assembly><AddInId>3A2241B6-A5EC-4268-A945-AF9C03999E31</AddInId><FullClassName>TrueBIM.Revit.VerticalDetailingHarness.VerticalDetailingHarnessApplication</FullClassName><VendorId>TRBM</VendorId></AddIn></RevitAddIns>'
@@ -62,18 +64,20 @@ try {
     if (-not (Test-Path -LiteralPath $env:TRUEBIM_VERTICAL_REPORT)) { throw 'Revit did not produce a report; check startup dialogs.' }
     $report = Get-Content -LiteralPath $env:TRUEBIM_VERTICAL_REPORT -Raw | ConvertFrom-Json
     if ($report.FatalError) { throw $report.FatalError }
-    if ($Mode -in @('apply','acceptance')) {
+    if ($Mode -in @('apply','acceptance','supplement6')) {
         $applyReport = if ($Mode -eq 'acceptance') { Get-Content -LiteralPath ($env:TRUEBIM_VERTICAL_REPORT + '.apply.json') -Raw | ConvertFrom-Json } else { $report }
         $failedViews = @($applyReport.Tests | Where-Object { -not $_.First.Succeeded -or -not $_.Second.Succeeded -or -not $_.RepeatStable -or -not $_.ViewUnchanged -or -not $_.ProtectedAnnotationSafe -or -not $_.NativeEqualitySafe -or -not $_.NoManualPitchText -or $_.VisibleAnnotations -ne $_.OwnedAnnotations })
         if (-not $applyReport.ModelUnchanged -or -not $applyReport.QuantityDisabledSafe -or -not $applyReport.CustomNotesSafe -or -not $applyReport.EmptyNotesSafe -or -not $applyReport.TextCommentSafe -or -not $applyReport.SelectionWorks -or -not $applyReport.HorizontalViewsRejected -or -not $applyReport.BatchSucceeded -or -not $applyReport.BatchUndoStable -or $failedViews.Count -gt 0) {
             throw "Native acceptance failed. Views: $($failedViews.Name -join ', '). See $env:TRUEBIM_VERTICAL_REPORT"
         }
         if ($PreviewPayload -and -not $applyReport.Preview.Rendered) { throw 'Preview window was not rendered.' }
+        if ($PreviewPayload -and -not $applyReport.Preview.SessionSettings.Passed) { throw 'Session settings acceptance failed.' }
         if ($applyReport.SixBars -and -not $applyReport.SixBars.Passed) { throw 'Six irregular bars acceptance failed; see report.' }
         if (-not $applyReport.LowerBreaks.Passed) { throw 'Lower break mirror acceptance failed; see report.' }
         if (@($applyReport.Tests | Where-Object { $_.Supplement4 -and -not $_.Supplement4.Passed }).Count -gt 0) { throw 'Supplement 4 native acceptance failed; see report.' }
         if (@($applyReport.Tests | Where-Object { -not $_.Supplement5.Passed -or -not $_.CropExpandedOnly -or -not $_.RepeatCropStable }).Count -gt 0) { throw 'Supplement 5 crop, callout or upper-reference acceptance failed; see report.' }
         if (@($applyReport.Supplement5Options | Where-Object { -not $_.Passed }).Count -gt 0) { throw 'Supplement 5 disabled options acceptance failed; see report.' }
+        if (@($applyReport.Tests | Where-Object { -not $_.Supplement6.Passed }).Count -gt 0) { throw 'Supplement 6 linked reinforcement or elevation fallback acceptance failed; see report.' }
     }
     if ($Mode -eq 'interactive' -and (-not $report.CancelUnchanged -or -not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive acceptance failed; see report.' }
     if ($Mode -eq 'acceptance' -and (-not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive application failed; see report.' }

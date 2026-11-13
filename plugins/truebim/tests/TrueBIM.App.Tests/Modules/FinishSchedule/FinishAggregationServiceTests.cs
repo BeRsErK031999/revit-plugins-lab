@@ -229,6 +229,30 @@ public sealed class FinishAggregationServiceTests
     }
 
     [Fact]
+    public void NameMode_RepeatedNamesKeepBothRoomAreasWithoutAddingNumbers()
+    {
+        FinishScheduleSettings settings = Settings() with
+        {
+            RoomIdentifier = new RoomIdentifierSettings(RoomIdentifierMode.Name, null)
+        };
+        FinishAggregationResult result = Build(
+            settings,
+            [
+                new FinishRoomCandidateSnapshot(1, 1, 20, true, null, number: "17", name: "Спальня"),
+                new FinishRoomCandidateSnapshot(2, 1, 20, true, null, number: "18", name: "Спальня")
+            ],
+            [Element(11, 1011), Element(12, 1012)],
+            [Type(1011, "Paint"), Type(1012, "Paint")],
+            [Occurrence(1, 11, 1.25), Occurrence(2, 12, 2.75)]);
+
+        FinishAggregatedGroup group = Assert.Single(result.Groups);
+        Assert.Equal("Спальня, Спальня", group.Output.RoomList);
+        Assert.Equal([1L, 2L], group.RoomIds);
+        Assert.Equal(4, Assert.Single(group.Walls.Items).AreaSquareMeters);
+        Assert.Same(result.RoomOutputs[1], result.RoomOutputs[2]);
+    }
+
+    [Fact]
     public void WhitespaceNewlinesAndCase_AreNormalizedForComparison()
     {
         FinishAggregationResult result = Build(

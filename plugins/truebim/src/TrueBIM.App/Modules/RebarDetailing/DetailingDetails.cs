@@ -77,8 +77,11 @@ public sealed partial class RebarDetailingService
         var preserved = new FilteredElementCollector(doc).OwnedByView(view.Id).WhereElementIsNotElementType().Where(e => !OwnedDetail(e)).ToList();
         var symbols = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>().ToList();
         var createdBreaks = new HashSet<string>();
+        var sections = Sections(frame, geometry, options);
+        var lowerSlabs = sections.SelectMany(s => s.LowerConcrete).Where(h => h.Element is Floor
+            || h.Element.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation)).ToList();
         foreach (var path in geometry.Breaks(frame)) AddPerimeterBreak(path);
-        foreach (var section in Sections(frame, geometry, options))
+        foreach (var section in sections)
         {
             double left = section.Wall.Left, right = section.Wall.Right, bottom = section.Wall.Bottom, top = section.Wall.Top;
             if (section.Faces.Count(f => f.Horizontal) < 2 || section.Faces.Count(f => !f.Horizontal) < 2) continue;
@@ -112,6 +115,17 @@ public sealed partial class RebarDetailingService
         {
             if (path.Count < 2) return;
             var points = path.Select(p => frame.Point(p.X, p.Y)).ToList();
+            // The free vertical ends of a lower slab break project 80 model
+            // millimetres below the slab. The masking region is not the datum.
+            ExtendLowerEnd(0, 1); ExtendLowerEnd(points.Count - 1, points.Count - 2);
+            void ExtendLowerEnd(int index, int neighbour)
+            {
+                XYZ point = points[index], adjacent = points[neighbour];
+                if (Math.Abs(frame.X(point) - frame.X(adjacent)) > 0.1 / 304.8 || frame.Y(point) >= frame.Y(adjacent)) return;
+                var slab = lowerSlabs.FirstOrDefault(h => Math.Abs(frame.Y(point) - h.Bounds.Bottom) < 0.1 / 304.8
+                    && frame.X(point) >= h.Bounds.Left && frame.X(point) <= h.Bounds.Right);
+                if (slab != null) points[index] -= frame.Up * (80 / 304.8);
+            }
             if (points.Count == 2) { AddBreak(points[0], points[1], false); return; }
             if (points.Count > 4)
             {
@@ -120,6 +134,11 @@ public sealed partial class RebarDetailingService
                 return;
             }
             int kind = points.Count - 1;
+            // Family 2 has asymmetric masking constraints: 464/300 mm fails
+            // while 300/464 mm is valid. Assign its shorter leg to line 1;
+            // reversing the path preserves the corner and both free ends.
+            bool reversed = kind == 2 && points[0].DistanceTo(points[1]) > points[1].DistanceTo(points[2]);
+            if (reversed) points.Reverse();
             // The second arm of family 2 cannot draw its masking polygon at
             // 5 mm on paper (250 mm at M50). Native family trials accept 6 mm.
             // Extend only the free end; keep the corner on the 250 mm contour.
@@ -141,7 +160,9 @@ public sealed partial class RebarDetailingService
             XYZ axis = detail.GetTransform().BasisX;
             double angle = Math.Atan2(frame.Normal.DotProduct(axis.CrossProduct(desiredX)), axis.DotProduct(desiredX));
             if (Math.Abs(angle) > 1e-8) ElementTransformUtils.RotateElement(doc, detail.Id, Line.CreateBound(point, point + frame.Normal), angle);
-            if (kind == 2)
+            // The perimeter has a fixed winding. Reversing it changes the
+            // handedness, so the reversed two-leg family needs no reflection.
+            if (kind == 2 && !reversed)
                 ElementTransformUtils.MirrorElements(doc, new[] { detail.Id }, Plane.CreateByNormalAndOrigin((points[2] - points[1]).Normalize(), point), false);
             MarkDetail(detail, "break"); result.Details++;
         }
@@ -164,6 +185,27 @@ public sealed partial class RebarDetailingService
             // versions expose it as read-only instead of a writable parameter.
             var length = detail.GetParameters("Длина").FirstOrDefault(p => p.StorageType == StorageType.Double && !p.IsReadOnly);
             length?.Set(start.DistanceTo(end));
+            if (Math.Abs(direction.DotProduct(frame.Up)) > 0.999)
+            {
+                double lowerY = Math.Min(frame.Y(start), frame.Y(end));
+                var slab = lowerSlabs.FirstOrDefault(h => Math.Abs(lowerY - (h.Bounds.Bottom - 80 / 304.8)) < 0.1 / 304.8
+                    && frame.X(middle) >= h.Bounds.Left && frame.X(middle) <= h.Bounds.Right);
+                if (slab != null && detail.Location is LocationCurve placement)
+                {
+                    doc.Regenerate();
+                    var graphics = BreakGraphicPoints(detail, view);
+                    if (graphics.Count > 0)
+                    {
+                        double shift = lowerY - graphics.Min(frame.Y);
+                        if (Math.Abs(shift) > 0.01 / 304.8)
+                        {
+                            XYZ a = placement.Curve.GetEndPoint(0), b = placement.Curve.GetEndPoint(1);
+                            if (frame.Y(a) < frame.Y(b)) a += frame.Up * shift; else b += frame.Up * shift;
+                            placement.Curve = Line.CreateBound(a, b);
+                        }
+                    }
+                }
+            }
             MarkDetail(detail, "break"); result.Details++;
         }
         void AddJoint(XYZ start, XYZ end)

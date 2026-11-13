@@ -100,6 +100,7 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
             room.get_Parameter(BuiltInParameter.ROOM_FINISH_FLOOR).Set("2,00\r\n10,00");
             transaction.Commit();
         }
+        RoomIdentifierChecks.Run(document, new TestLogger(Progress), Check);
         FinishRoomScheduleBuilder builder = new(metadata, new TestLogger(Progress));
         FinishRoomSchedulePlan plan = Plan("Finish regression");
         Check(!new FilteredElementCollector(document).OfClass(typeof(ViewSchedule))

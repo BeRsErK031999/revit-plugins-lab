@@ -163,6 +163,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                 scenarios.RollBack();
                 options.Pins = true;
             }
+            var supplement6 = CheckSupplement6(doc, view, options);
             var dimensions = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(Dimension)).Cast<Dimension>().Where(d => d is not SpotDimension).ToList();
             var formulaDimensions = dimensions.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2).ToList();
             if (view.Id == views[0].Id && Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_STYLE_PROBE") == "1")
@@ -184,6 +185,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                 }
             }
             tests.Add(new { Id = view.Id.Value, view.Name, Options = new { Variant = VariantFor(view).ToString(), Tag = options.TagTypeId.Value, Dimension = options.DimensionTypeId.Value, Spot = options.SpotTypeId.Value, Multi = options.MultiTypeId.Value },
+                Supplement6 = supplement6,
                 EqualityFormulas = formulaDimensions.Select(d => new { Id = d.Id.Value, References = d.References.Size, d.NumberOfSegments, d.AreSegmentsEqual,
                     Segments = d.Segments.Cast<DimensionSegment>().Select(s => new { s.Value, s.Prefix, s.Suffix, s.ValueOverride }).ToList(),
                     Formula = d.DimensionType.GetEqualityFormula().Select(f => new { Label = f.LabelType.ToString(), f.Prefix, f.Suffix }).ToList() }).ToList(),
@@ -293,7 +295,9 @@ public sealed partial class VerticalDetailingHarnessApplication
                 guideEncoder.Save(guideFile);
             }
             finally { guide.Close(); }
-            return new { Rendered = true, GuideRendered = true, Views = selected.Count, window.ActualWidth, window.ActualHeight, Assembly = assembly.Location };
+            var settings = CheckSessionSettings(windowType, doc, rows, service);
+            return new { Rendered = true, GuideRendered = true, SessionSettings = settings, Views = selected.Count,
+                window.ActualWidth, window.ActualHeight, Assembly = assembly.Location };
         }
         finally { window.Close(); }
     }

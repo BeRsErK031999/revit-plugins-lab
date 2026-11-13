@@ -172,7 +172,8 @@ public sealed partial class RebarDetailingService
         var owned = new FilteredElementCollector(view.Document).OwnedByView(view.Id).WhereElementIsNotElementType().ToList();
         var multi = owned.OfType<MultiReferenceAnnotation>().ToList();
         var children = new HashSet<ElementId>(multi.SelectMany(m => new[] { m.TagId, m.DimensionId }));
-        return owned.Where(e => !children.Contains(e.Id) && (OwnedDetail(e) ? DetailRole(e).StartsWith("pin", StringComparison.Ordinal) ? options.Pins : options.Details : e is SpotDimension ? options.Elevations
+        return owned.Where(e => !children.Contains(e.Id) && (OwnedDetail(e) ? DetailRole(e) == "elevation-reference" ? options.Elevations
+            : DetailRole(e).StartsWith("pin", StringComparison.Ordinal) ? options.Pins : options.Details : e is SpotDimension ? options.Elevations
             : e is Dimension dimension ? IsRebarDimension(dimension) ? options.BarDimensions : options.ConcreteDimensions
             : e is IndependentTag ? options.Tags && e.Category?.Id == new ElementId(BuiltInCategory.OST_RebarTags)
             : e is MultiReferenceAnnotation && options.BarDimensions && options.Tags)).ToList();
@@ -224,7 +225,8 @@ public sealed partial class RebarDetailingService
 
     private static void ArrangeDimensionText(DetailingFrame frame, IEnumerable<Dimension> dimensions)
     {
-        var all = dimensions.Where(d => d.Curve is Line).ToList();
+        var all = dimensions.Where(d => d.Curve is Line
+            && (d.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 2.5 / 304.8) > 0).ToList();
         var numeric = all.Where(d => d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() != 2).ToList();
         foreach (var row in numeric.GroupBy(d =>
         {
@@ -243,55 +245,57 @@ public sealed partial class RebarDetailingService
                     var segments = d.Segments.Cast<DimensionSegment>().ToList();
                     string text = segments.Count + "×" + Math.Round((segments.FirstOrDefault()?.Value ?? 0) * 304.8) + "="
                         + Math.Round(segments.Sum(s => s.Value ?? 0) * 304.8);
-                    double height = d.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() * frame.View.Scale ?? frame.Paper(2.5);
-                    return new { Center = segments.Count == 0 ? 0 : (segments.First().Origin + segments.Last().Origin).DotProduct(direction) / 2,
-                        Width = text.Length * height * 0.65 };
+                    return (Center: segments.Count == 0 ? 0 : (segments.First().Origin + segments.Last().Origin).DotProduct(direction) / 2,
+                        Width: DimensionTextWidth(frame, d.DimensionType, text));
                 }).ToList();
             var labels = new List<DimensionLabel>();
             foreach (var dimension in row)
             {
-                double textHeight = dimension.DimensionType.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() * frame.View.Scale ?? frame.Paper(2.5);
-                double Width(double value) => Math.Max(frame.Paper(2), Math.Round(value * 304.8).ToString(System.Globalization.CultureInfo.InvariantCulture).Length * textHeight * 0.65);
                 if (dimension.NumberOfSegments < 2)
                 {
                     if (!dimension.IsTextPositionAdjustable() || !dimension.Value.HasValue) continue;
+                    dimension.ResetTextPosition();
                     labels.Add(new DimensionLabel { Position = dimension.TextPosition, Origin = dimension.Origin,
-                        Length = dimension.Value.Value, Width = Width(dimension.Value.Value), Move = p => dimension.TextPosition = p });
+                        Length = dimension.Value.Value, Width = DimensionTextWidth(frame, dimension.DimensionType, dimension.ValueString), Move = p => dimension.TextPosition = p });
                     continue;
                 }
                 foreach (DimensionSegment segment in dimension.Segments)
                 {
                     if (!segment.IsTextPositionAdjustable() || !segment.Value.HasValue) continue;
+                    segment.ResetTextPosition();
                     labels.Add(new DimensionLabel { Position = segment.TextPosition, Origin = segment.Origin,
-                        Length = segment.Value.Value, Width = Width(segment.Value.Value), Move = p => segment.TextPosition = p });
+                        Length = segment.Value.Value, Width = DimensionTextWidth(frame, dimension.DimensionType, segment.ValueString), Move = p => segment.TextPosition = p });
                 }
             }
             labels = labels.OrderBy(l => l.Origin.DotProduct(direction)).ToList();
-            var centers = labels.Select(l => l.Position.DotProduct(direction)).ToArray();
+            var placements = DetailingDimensionTextLayout.Place(labels.Select(l =>
+                new DetailingDimensionLabel(l.Origin.DotProduct(direction), l.Length, l.Width)).ToList(), formulas,
+                frame.Paper(0.15), frame.Paper(row.Key.Horizontal ? 0.15 : 0.65));
             for (int index = 0; index < labels.Count; index++)
             {
                 var label = labels[index];
-                if (label.Length >= label.Width + frame.Paper(0.5)) continue;
-                if (index == 0) centers[index] = label.Origin.DotProduct(direction) - label.Length / 2 - label.Width / 2 - frame.Paper(1);
-                else if (index == labels.Count - 1) centers[index] = label.Origin.DotProduct(direction) + label.Length / 2 + label.Width / 2 + frame.Paper(1);
-            }
-            // Cover and transition dimensions are separate native objects, but
-            // their labels must be spaced together with the adjoining numeric run.
-            for (int index = centers.Length - 2; index >= 0; index--)
-                centers[index] = Math.Min(centers[index], centers[index + 1] - (labels[index].Width + labels[index + 1].Width) / 2 - frame.Paper(1.2));
-            for (int index = 0; index < labels.Count; index++)
-            {
-                var label = labels[index];
-                double shift = centers[index] - label.Position.DotProduct(direction);
+                double shift = placements[index].Center - label.Position.DotProduct(direction);
                 XYZ position = label.Position + direction * shift;
-                // A short cover/transition label may overlap an adjacent native
-                // equality formula. Move its text across the row, keeping the
-                // dimension line at its required offset and the formula intact.
-                if (formulas.Any(f => Math.Abs(centers[index] - f.Center) < (label.Width + f.Width) / 2 + frame.Paper(1.2)))
-                    position += across * (frame.Paper(4) - (position - label.Origin).DotProduct(across));
+                if (placements[index].Row > 0)
+                    position += across * (-frame.Paper(4 * placements[index].Row) - (position - label.Origin).DotProduct(across));
                 if (position.DistanceTo(label.Position) > frame.Paper(0.01)) label.Move(position);
             }
         }
+    }
+    private static double DimensionTextWidth(DetailingFrame frame, DimensionType type, string text)
+    {
+        double height = type.get_Parameter(BuiltInParameter.TEXT_SIZE)?.AsDouble() ?? 2.5 / 304.8;
+        if (height <= 0 || string.IsNullOrEmpty(text)) return 0;
+        string font = type.get_Parameter(BuiltInParameter.TEXT_FONT)?.AsString() ?? "Arial";
+        var face = new System.Windows.Media.Typeface(new System.Windows.Media.FontFamily(font),
+            type.get_Parameter(BuiltInParameter.TEXT_STYLE_ITALIC)?.AsInteger() == 1 ? System.Windows.FontStyles.Italic : System.Windows.FontStyles.Normal,
+            type.get_Parameter(BuiltInParameter.TEXT_STYLE_BOLD)?.AsInteger() == 1 ? System.Windows.FontWeights.Bold : System.Windows.FontWeights.Normal,
+            System.Windows.FontStretches.Normal);
+        double caps = face.TryGetGlyphTypeface(out var glyph) && glyph.CapsHeight > 0.1 ? glyph.CapsHeight : 0.7;
+        var measured = new System.Windows.Media.FormattedText(text ?? "", System.Globalization.CultureInfo.CurrentCulture,
+            System.Windows.FlowDirection.LeftToRight, face, height * 304.8 * 96 / 25.4 / caps, System.Windows.Media.Brushes.Black, 1.0);
+        double scale = type.get_Parameter(BuiltInParameter.TEXT_WIDTH_SCALE)?.AsDouble() ?? 1;
+        return measured.WidthIncludingTrailingWhitespace * 25.4 / 96 / 304.8 * frame.View.Scale * scale;
     }
     private static Reference ResolveAxis(Document doc, View view, DetailingAxis axis, DetailingFace? face, XYZ origin, XYZ direction, ElementId type, DetailingAxis? anchor = null)
     {
@@ -374,13 +378,13 @@ public sealed partial class RebarDetailingService
     {
         if (doc.GetElement(options.SpotTypeId) is not DimensionType) throw new InvalidOperationException("Выберите тип высотной отметки.");
         var placedLevels = new HashSet<double>();
-        foreach (var section in Sections(frame, geometry, options))
+        foreach (var section in DimensionSections(frame, geometry, options))
         {
-            var levels = section.Faces.Where(f => !f.Horizontal && Math.Abs(f.Normal.Z) > 0.999).OrderBy(f => frame.Y(f.Point)).ToList();
+            var levels = geometry.ElevationFaces.Where(f => f.HostKey == section.HostKey && Math.Abs(f.Normal.Z) > 0.999).OrderBy(f => frame.Y(f.Point)).ToList();
             if (levels.Count == 0) continue;
             var selected = new List<DetailingFace> { levels.First() };
             var keys = new HashSet<string>(section.UpperSlabs.Select(h => h.Key));
-            var slabLevels = geometry.Faces.Where(f => keys.Contains(f.HostKey) && !f.Horizontal && Math.Abs(f.Normal.Z) > 0.999)
+            var slabLevels = geometry.ElevationFaces.Where(f => keys.Contains(f.HostKey) && Math.Abs(f.Normal.Z) > 0.999)
                 .OrderBy(f => frame.Y(f.Point)).ToList();
             if (slabLevels.Count > 0) { selected.Add(slabLevels.First()); selected.Add(slabLevels.Last()); }
             else selected.Add(levels.Last());
@@ -389,19 +393,56 @@ public sealed partial class RebarDetailingService
             double lastY = double.NegativeInfinity;
             foreach (var face in selected)
             {
-                if (!placedLevels.Add(Math.Round(face.Point.Z * 304.8, 1))) continue;
+                double levelKey = Math.Round(face.Point.Z * 304.8, 1);
+                if (placedLevels.Contains(levelKey)) continue;
                 double y = Math.Max(frame.Y(face.Point), lastY + frame.Paper(5)); lastY = y;
                 XYZ origin = frame.Flatten(face.Point);
                 XYZ end = frame.Point(layout.Left - frame.Paper(24), y), bend = end + frame.Right * frame.Paper(10);
-                SpotDimension spot = doc.Create.NewSpotElevation(view, Reference.ParseFromStableRepresentation(doc, face.Reference.ConvertToStableRepresentation(doc)), origin, bend, end, face.Point, true);
+                SpotDimension spot = CreateElevation(doc, view, frame, face, layout, origin, bend, end, result);
                 bool upperSurface = face == selected.First() || (slabLevels.Count > 0 && Math.Abs(face.Point.Z - slabLevels.Last().Point.Z) < 0.1 / 304.8);
                 string style = upperSurface ? "(ПСК) Стрелка Вверх • 5" : "(ПСК) Стрелка Вниз • 5";
                 var standard = new FilteredElementCollector(doc).OfClass(typeof(DimensionType)).Cast<DimensionType>()
                     .FirstOrDefault(t => t.StyleType == DimensionStyleType.SpotElevation && t.Name == style);
-                spot.ChangeTypeId(standard?.Id ?? options.SpotTypeId); result.Elevations++;
+                spot.ChangeTypeId(standard?.Id ?? options.SpotTypeId); result.Elevations++; placedLevels.Add(levelKey);
             }
         }
         if (result.Elevations == 0) result.Notes.Add("Высотные отметки: в обрезке нет горизонтальных граней бетона.");
+    }
+    private static SpotDimension CreateElevation(Document doc, View view, DetailingFrame frame, DetailingFace face,
+        DetailingRect boundary, XYZ origin, XYZ bend, XYZ end, DetailingResult result)
+    {
+        // Failed native references must leave neither an invalid spot nor a
+        // deferred failure in the transaction before trying the detail line.
+        using (SubTransaction probe = new(doc))
+        {
+            probe.Start();
+            try
+            {
+                if (face.Reference == null) throw new InvalidOperationException("У грани нет доступной ссылки.");
+                var reference = Reference.ParseFromStableRepresentation(doc, face.Reference.ConvertToStableRepresentation(doc));
+                var native = doc.Create.NewSpotElevation(view, reference, origin, bend, end, face.Point, true);
+                doc.Regenerate();
+                if (native == null || native.get_BoundingBox(view) == null) throw new InvalidOperationException("Недоступная грань для отметки.");
+                probe.Commit(); return native;
+            }
+            catch { if (probe.GetStatus() == TransactionStatus.Started) probe.RollBack(); }
+        }
+        const string styleName = "Линия_высотная";
+        Category lines = doc.Settings.Categories.get_Item(BuiltInCategory.OST_Lines);
+        Category? category = lines.SubCategories.Cast<Category>().FirstOrDefault(c => c.Name == styleName);
+        category ??= doc.Settings.Categories.NewSubcategory(lines, styleName);
+        double half = 0.5 / 304.8;
+        XYZ point = face.ElevationLinePoints.FirstOrDefault(p => frame.X(p) - half >= boundary.Left && frame.X(p) + half <= boundary.Right)
+            ?? throw new InvalidOperationException("Высотная отметка: между обрывами нет участка грани для линии длиной 1 мм.");
+        DetailCurve line = doc.Create.NewDetailCurve(view, Line.CreateBound(point - frame.Right * half, point + frame.Right * half));
+        line.LineStyle = category.GetGraphicsStyle(GraphicsStyleType.Projection);
+        MarkDetail(line, "elevation-reference");
+        doc.Regenerate();
+        Reference lineReference = line.GeometryCurve.Reference ?? new Reference(line);
+        var spot = doc.Create.NewSpotElevation(view, lineReference, point, bend, end, point, true);
+        if (spot == null) throw new InvalidOperationException("Revit не создал отметку по линии детализации.");
+        result.Notes.Add($"Высотная отметка {face.Point.Z * 304.8:0.###} мм: добавлена опорная линия «{styleName}» длиной 1 мм.");
+        return spot;
     }
     private sealed class FailureHandler : IFailuresPreprocessor
     {

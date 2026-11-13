@@ -16,6 +16,7 @@ public sealed partial class RebarDetailingService
         public bool CountedTransverse { get; set; }
         public bool CornerCount { get; set; }
         public bool OutsidePlanField { get; set; }
+        public Dimension? ArrayDimension { get; set; }
     }
 
     private static ElementId TagStyle(Document doc, string name, ElementId fallback)
@@ -26,6 +27,9 @@ public sealed partial class RebarDetailingService
         DetailingOptions options, DetailingResult result)
     {
         var markType = TagStyle(doc, "(Без полки) Марка", options.TagTypeId);
+        var arrayDimensions = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(Dimension)).Cast<Dimension>()
+            .Where(d => d is not SpotDimension && d.get_Parameter(BuiltInParameter.DIM_DISPLAY_EQ)?.AsInteger() == 2
+                && d.Curve is Line line && Math.Abs(line.Direction.DotProduct(frame.Up)) > 0.999).ToList();
         var candidates = new List<(DetailingBar Bar, IndependentTag Tag)>();
         foreach (DetailingBar bar in geometry.Bars)
         {
@@ -89,6 +93,14 @@ public sealed partial class RebarDetailingService
             int quantity = label.Bars.Sum(b => b.VisibleIndices.Count);
             var rows = DetailingBarGroups.Unique(label.Bars.SelectMany(b => b.Positions).Select(p => frame.Y(p) * 304.8));
             bool regular = rows.Count >= 3 && !DetailingSectionLayout.HasIrregularPitch(rows);
+            var barIds = new HashSet<ElementId>(label.Bars.Select(b => b.Element.Id));
+            var matchingArrays = arrayDimensions.Where(d => d.References.Cast<Reference>().All(r => barIds.Contains(r.ElementId))).ToList();
+            // A native array may have a short end interval outside the main
+            // equality chain. Its single mark still belongs beside that chain.
+            bool nativeArray = label.Bars.Count == 1 && representative.VisibleIndices.Count >= 3
+                && Math.Abs(representative.Distribution.DotProduct(frame.Up)) > 1 / 304.8 && representative.Spacing > 0;
+            label.ArrayDimension = !longitudinal && (regular || nativeArray) && matchingArrays.Count == 1 ? matchingArrays[0] : null;
+            regular |= label.ArrayDimension != null;
             bool counted = (frame.Vertical && !longitudinal && !regular)
                 || (!frame.Vertical && !perMetre && longitudinal && (representative.Element is Rebar || shortSystem || representative.Spacing < 0.1 / 304.8));
             label.CountedTransverse = frame.Vertical && !longitudinal && counted;
@@ -173,7 +185,9 @@ public sealed partial class RebarDetailingService
                 var field = Region(frame, label.Bars);
                 var section = Sections(frame, geometry, options).First(s => s.Bars.Contains(label.Bars[0]));
                 var boundary = SectionAnnotationBoundary(doc, view, frame, section);
-                label.Tag.TagHeadPosition = frame.Point(boundary.Left - frame.Paper(6), field.CenterY);
+                double y = label.ArrayDimension == null ? field.CenterY : label.ArrayDimension.Segments.Cast<DimensionSegment>()
+                    .Select(s => frame.Y(s.Origin)).Average();
+                label.Tag.TagHeadPosition = frame.Point(boundary.Left - frame.Paper(6), y);
                 result.ExpectedTagHeads[label.Tag.Id] = label.Tag.TagHeadPosition;
                 doc.Regenerate();
                 result.Tags++; continue;

@@ -20,6 +20,15 @@ internal sealed class DetailingSection
 
 public sealed partial class RebarDetailingService
 {
+    private static List<DetailingSection> DimensionSections(DetailingFrame frame, DetailingGeometry geometry, DetailingOptions options)
+    {
+        var sections = Sections(frame, geometry, options);
+        // Reinforcement in a supporting slab can form a separate group. That
+        // group must not add its thickness or bottom elevation a second time.
+        var supports = new HashSet<string>(sections.SelectMany(s => s.LowerConcrete).Select(h => h.Key));
+        return sections.Where(s => !supports.Contains(s.HostKey)).ToList();
+    }
+
     private static void ValidateVariant(DetailingFrame frame, DetailingGeometry geometry, DetailingOptions options)
     {
         var offsets = new List<double>();

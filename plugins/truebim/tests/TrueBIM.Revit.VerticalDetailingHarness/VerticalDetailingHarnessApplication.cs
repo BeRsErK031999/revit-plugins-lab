@@ -11,6 +11,7 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
 {
     private string? report;
     private bool finished;
+    private bool openingCopy;
 
     public Result OnStartup(UIControlledApplication application)
     {
@@ -19,6 +20,7 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
         {
             application.DialogBoxShowing += OnDialog;
             application.Idling += Run;
+            application.ControlledApplication.FailuresProcessing += OnOpeningFailures;
             Progress("Harness loaded");
         }
         return Result.Succeeded;
@@ -28,7 +30,38 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
     {
         application.Idling -= Run;
         application.DialogBoxShowing -= OnDialog;
+        application.ControlledApplication.FailuresProcessing -= OnOpeningFailures;
         return Result.Succeeded;
+    }
+
+    private void OnOpeningFailures(object? sender, Autodesk.Revit.DB.Events.FailuresProcessingEventArgs args)
+    {
+        if (!openingCopy) return;
+        var accessor = args.GetFailuresAccessor();
+        var doc = accessor.GetDocument();
+        bool resolved = false;
+        foreach (var failure in accessor.GetFailureMessages())
+        {
+            var definition = failure.GetFailureDefinitionId();
+            if (definition != BuiltInFailures.DimensionFailures.DimensionReferencesInvalid
+                && definition != BuiltInFailures.DimensionFailures.SpotDimensionReferencesNoLongerHorizontal
+                && definition != BuiltInFailures.DimensionFailures.SpotElevationMissesReference
+                && definition != BuiltInFailures.DimensionFailures.SpotElevationLostEdgeReferences
+                && definition != BuiltInFailures.DimensionFailures.SpotDimensionFormerSetMoribundCall) continue;
+            var ids = failure.GetFailingElementIds();
+            if (ids.Count == 0 || ids.Any(id => doc.GetElement(id) is not Dimension && doc.GetElement(id) is not MultiReferenceAnnotation)) continue;
+            var resolution = failure.HasResolutionOfType(FailureResolutionType.DetachElements) ? FailureResolutionType.DetachElements
+                : failure.HasResolutionOfType(FailureResolutionType.DeleteElements) ? FailureResolutionType.DeleteElements : FailureResolutionType.Invalid;
+            if (resolution == FailureResolutionType.Invalid)
+            {
+                Progress("Opening dimension resolutions: " + string.Join(",", Enum.GetValues(typeof(FailureResolutionType)).Cast<FailureResolutionType>().Where(failure.HasResolutionOfType)));
+                continue;
+            }
+            Progress("Opening copy: removing invalid dimension references, ids " + string.Join(",", ids));
+            failure.SetCurrentResolutionType(resolution);
+            accessor.ResolveFailure(failure); resolved = true;
+        }
+        if (resolved) args.SetProcessingResult(FailureProcessingResult.ProceedWithCommit);
     }
 
     private void OnDialog(object? sender, DialogBoxShowingEventArgs args)
@@ -38,6 +71,8 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             Progress("Dialog: " + dialog.DialogId + " " + dialog.Message);
             if (dialog.DialogId == "TaskDialog_License_Current_Status_Demo_Mode")
                 dialog.OverrideResult((int)TaskDialogResult.Close);
+            if (openingCopy && dialog.DialogId == "TaskDialog_Unresolved_References")
+                dialog.OverrideResult(1002);
         }
     }
 
@@ -73,7 +108,10 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             BasicFileInfo info = BasicFileInfo.Extract(model);
             OpenOptions options = new();
             if (info.IsWorkshared) options.DetachFromCentralOption = DetachFromCentralOption.DetachAndDiscardWorksets;
-            UIDocument ui = app.OpenAndActivateDocument(ModelPathUtils.ConvertUserVisiblePathToModelPath(model), options, false);
+            UIDocument ui;
+            openingCopy = true;
+            try { ui = app.OpenAndActivateDocument(ModelPathUtils.ConvertUserVisiblePathToModelPath(model), options, false); }
+            finally { openingCopy = false; }
             Document doc = ui.Document;
             Progress("Opened " + doc.Title);
             List<object> links = new();
@@ -83,7 +121,7 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
                 if (!local.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)) local += ".rvt";
                 try
                 {
-                    if (File.Exists(local))
+                    if (File.Exists(local) && !RevitLinkType.IsLoaded(doc, type.Id))
                     {
                         Progress("Reloading link " + local);
                         type.LoadFrom(ModelPathUtils.ConvertUserVisiblePathToModelPath(local), new WorksetConfiguration(WorksetConfigurationOption.OpenAllWorksets));
@@ -136,6 +174,9 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
             var rebarDocuments = new List<Document> { doc };
             rebarDocuments.AddRange(new FilteredElementCollector(doc).OfClass(typeof(RevitLinkInstance)).Cast<RevitLinkInstance>()
                 .Select(l => l.GetLinkDocument()).Where(d => d != null));
+            bool supplement6 = Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODE") == "supplement6";
+            string outputReport = report!;
+            if (supplement6) report = outputReport + ".inventory.json";
             Write(new {
                 FatalError = (string?)null, Model = model, Links = links,
                 Sheets = sheets.Select(s => new { Id = s.Id.Value, s.SheetNumber, s.Name, Params = Parameters(s), Views = s.GetAllPlacedViews().Select(id => id.Value).ToArray() }).ToList(),
@@ -152,6 +193,15 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
                         .Select(e => new { Id = e.Id.Value, e.Name, Class = e.GetType().Name, Params = Parameters(e) }).ToList()
                 }).ToList()
             });
+            report = outputReport;
+            if (supplement6)
+            {
+                var samples = views.Where(TrueBIM.App.Modules.RebarDetailing.RebarDetailingService.Supports)
+                    .Where(v => v.Name.IndexOf("копия", StringComparison.OrdinalIgnoreCase) < 0).ToList();
+                if (samples.Count == 0) throw new InvalidOperationException("No original section views on the requested sheet");
+                Environment.SetEnvironmentVariable("TRUEBIM_VERTICAL_VIEWS", string.Join(",", samples.Select(v => v.Id.Value)));
+                TestDetailing(ui); return;
+            }
             Progress("Done");
         }
         catch (Exception ex) { Progress(ex.ToString()); Write(new { FatalError = ex.ToString() }); }

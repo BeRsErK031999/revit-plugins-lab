@@ -59,12 +59,14 @@ internal sealed class DetailingFace
     public string HostKey { get; set; } = "";
     public bool Horizontal { get; set; }
     public DetailingRect Bounds { get; set; }
+    public List<XYZ> ElevationLinePoints { get; } = new();
 }
 
 internal sealed partial class DetailingGeometry
 {
     public List<DetailingBar> Bars { get; } = new();
     public List<DetailingFace> Faces { get; } = new();
+    public List<DetailingFace> ElevationFaces { get; } = new();
     public List<DetailingHost> Hosts { get; } = new();
     public List<string> Notes { get; } = new();
     public int HostCount { get; private set; }
@@ -101,6 +103,9 @@ internal sealed partial class DetailingGeometry
         {
             if (e is Rebar || e is RebarInSystem)
             {
+                // Linked reinforcement is context only, including bends outside
+                // the host wall. It must not affect any detailing decision.
+                if (link != null) continue;
                 if (!frame.Intersects(e.get_BoundingBox(null), transform)) continue;
                 try { ReadBar(e, view, frame, link, transform); }
                 catch (Exception ex) { Notes.Add($"Арматура {e.Id}: {ex.Message}"); }
@@ -207,7 +212,9 @@ internal sealed partial class DetailingGeometry
             bool dimensionAdded = false;
             bool longitudinal = curves.OfType<Line>().Any(c => Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999 && c.Length > 500 / 304.8);
             foreach (Line centerline in curves.OfType<Line>().Where(c => c.IsBound)
-                .OrderByDescending(c => longitudinal && Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999).ThenByDescending(c => c.Length))
+                .OrderByDescending(c => longitudinal && Math.Abs(c.Direction.DotProduct(frame.Up)) > 0.999)
+                .ThenByDescending(c => !longitudinal && Math.Abs(c.Direction.DotProduct(frame.Normal)) > 0.999)
+                .ThenBy(c => longitudinal ? 0 : frame.X(c.Evaluate(0.5, true))).ThenByDescending(c => c.Length))
             {
                 XYZ? clipped = frame.Clip(centerline.GetEndPoint(0), centerline.GetEndPoint(1));
                 if (clipped == null) continue;
@@ -354,7 +361,7 @@ internal sealed partial class DetailingGeometry
                 Solids.Add(new DetailingSolid { Solid = SolidUtils.CreateTransformed(solid, Transform.Identity), Transform = transform, HostKey = host });
                 foreach (Face face in solid.Faces)
                 {
-                    if (face is not PlanarFace plane || face.Reference == null) continue;
+                    if (face is not PlanarFace plane) continue;
                     XYZ normal = transform.OfVector(plane.FaceNormal).Normalize();
                     bool horizontal = Math.Abs(normal.DotProduct(frame.Right)) > 0.999;
                     if (!horizontal && Math.Abs(normal.DotProduct(frame.Up)) < 0.999) continue;
@@ -381,9 +388,32 @@ internal sealed partial class DetailingGeometry
                     }
                     if (point == null) continue;
                     if (facePoints.Count == 0) facePoints.Add(point);
-                    Faces.Add(new DetailingFace { Reference = link == null ? face.Reference : face.Reference.CreateLinkReference(link),
+                    var detailFace = new DetailingFace { Reference = face.Reference == null ? null! : link == null ? face.Reference : face.Reference.CreateLinkReference(link),
                         Point = point, Normal = normal, HostKey = host, Horizontal = horizontal,
-                        Bounds = new DetailingRect(facePoints.Min(frame.X), facePoints.Min(frame.Y), facePoints.Max(frame.X), facePoints.Max(frame.Y)) });
+                        Bounds = new DetailingRect(facePoints.Min(frame.X), facePoints.Min(frame.Y), facePoints.Max(frame.X), facePoints.Max(frame.Y)) };
+                    if (!horizontal)
+                    {
+                        double half = 0.5 / 304.8;
+                        double left = Math.Max(frame.BreakBoundary.Left, detailFace.Bounds.Left) + half;
+                        double right = Math.Min(frame.BreakBoundary.Right, detailFace.Bounds.Right) - half;
+                        // A broad face can cover the whole crop without an edge
+                        // in it. Test real face UVs, including holes, instead of
+                        // assuming its bounding rectangle is concrete.
+                        if (facePoints.Count == 1) { left = frame.BreakBoundary.Left + half; right = frame.BreakBoundary.Right - half; }
+                        if (right >= left)
+                        foreach (double x in new[] { Math.Max(left, Math.Min(right, frame.X(point))), (left + right) / 2, left, right })
+                        {
+                            XYZ center = frame.Point(x, frame.Y(point)) + frame.Normal * frame.CutDepth;
+                            bool inside = new[] { -half, 0, half }.All(dx =>
+                            {
+                                var projected = plane.Project(transform.Inverse.OfPoint(center + frame.Right * dx));
+                                return projected != null && plane.IsInside(projected.UVPoint);
+                            });
+                            if (inside) detailFace.ElevationLinePoints.Add(frame.Flatten(center));
+                        }
+                    }
+                    if (detailFace.Reference != null) Faces.Add(detailFace);
+                    if (!horizontal) ElevationFaces.Add(detailFace);
                 }
             }
         }

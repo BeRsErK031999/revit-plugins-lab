@@ -86,7 +86,8 @@ public sealed class FinishElementCollector
                     ReadBounds(room),
                     values,
                     room.Number,
-                    room.Name));
+                    // Room.Name includes the number; the name identifier must use the separate parameter.
+                    room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? string.Empty));
             }
             catch (Exception exception)
             {

@@ -14,7 +14,13 @@ public sealed partial class RebarDetailingService
                 s.UpperSlabs.Select(h => h.Bounds.Top).DefaultIfEmpty(s.Wall.Top).Max())));
         var bars = new DetailingRect(sections.Min(s => s.Reinforcement.Left), sections.Min(s => s.Reinforcement.Bottom),
             sections.Max(s => s.Reinforcement.Right), sections.Max(s => s.Reinforcement.Top));
-        geometry.PlannedBreakBoundary = DetailingBoundsPlan.Around(concrete, bars, 250 / 304.8);
+        var boundary = DetailingBoundsPlan.Around(concrete, bars, 250 / 304.8);
+        var lowerSlabs = sections.SelectMany(s => s.LowerConcrete).Where(h => h.Element is Floor
+            || h.Element.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation)).ToList();
+        if (lowerSlabs.Count > 0)
+            boundary = new DetailingRect(boundary.Left, Math.Min(boundary.Bottom, lowerSlabs.Min(h => h.Bounds.Bottom) - 80 / 304.8),
+                boundary.Right, boundary.Top);
+        geometry.PlannedBreakBoundary = boundary;
         geometry.Breaks(frame);
     }
 

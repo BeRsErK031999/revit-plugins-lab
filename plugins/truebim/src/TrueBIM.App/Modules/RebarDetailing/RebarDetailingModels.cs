@@ -23,6 +23,7 @@ public sealed class DetailingOptions
     public ElementId DimensionTypeId { get; set; } = ElementId.InvalidElementId;
     public ElementId SpotTypeId { get; set; } = ElementId.InvalidElementId;
     public ElementId MultiTypeId { get; set; } = ElementId.InvalidElementId;
+    internal DetailingOptions Copy() => (DetailingOptions)MemberwiseClone();
 }
 
 public sealed class DetailingType

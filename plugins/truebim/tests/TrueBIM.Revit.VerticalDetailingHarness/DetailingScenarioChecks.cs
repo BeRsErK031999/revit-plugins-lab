@@ -91,13 +91,15 @@ public sealed partial class VerticalDetailingHarnessApplication
             geometry.Solids.Add(new DetailingSolid { HostKey = "fixture", Transform = Transform.Identity,
                 Solid = GeometryCreationUtilities.CreateExtrusionGeometry(new[] { loop }, frame.Normal, 2) });
             var result = new DetailingResult();
+            var failures = new FamilyProbeFailures();
+            TransactionStatus status;
             using (Transaction create = new(doc, "Place native one-sided break"))
             {
                 create.Start();
-                create.SetFailureHandlingOptions(create.GetFailureHandlingOptions().SetFailuresPreprocessor(new FamilyProbeFailures()).SetClearAfterRollback(true));
+                create.SetFailureHandlingOptions(create.GetFailureHandlingOptions().SetFailuresPreprocessor(failures).SetClearAfterRollback(true));
                 typeof(RebarDetailingService).GetMethod("Details", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
                     .Invoke(null, new object[] { doc, view, frame, geometry, options, result });
-                create.Commit();
+                status = create.Commit();
             }
             var breaks = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
                 .Where(f => f.Symbol.FamilyName == "(Узел) Область обрыва • 2").ToList();
@@ -106,14 +108,22 @@ public sealed partial class VerticalDetailingHarnessApplication
                 PlacementX = frame.X(((LocationPoint)f.Location).Point) }).ToList();
             var path = geometry.Breaks(frame).Single();
             bool correct = axes.Count == 1 && path.Count == 3 && breaks.All(f =>
-                Math.Abs(f.LookupParameter("Длина линии 1").AsDouble() - frame.Point(path[0].X, path[0].Y).DistanceTo(frame.Point(path[1].X, path[1].Y))) < 0.1 / 304.8
-                && Math.Abs(f.LookupParameter("Длина линии 2").AsDouble() - Math.Max(frame.Paper(6), frame.Point(path[1].X, path[1].Y).DistanceTo(frame.Point(path[2].X, path[2].Y)))) < 0.1 / 304.8
-                && frame.Flatten(((LocationPoint)f.Location).Point).DistanceTo(frame.Point(path[1].X, path[1].Y)) < 0.1 / 304.8
-                && f.GetTransform().BasisX.Normalize().DotProduct((frame.Point(path[0].X, path[0].Y) - frame.Point(path[1].X, path[1].Y)).Normalize()) > 0.999
-                && (-f.GetTransform().BasisY).Normalize().DotProduct((frame.Point(path[2].X, path[2].Y) - frame.Point(path[1].X, path[1].Y)).Normalize()) > 0.999);
+            {
+                XYZ corner = frame.Point(path[1].X, path[1].Y);
+                XYZ first = frame.Point(path[0].X, path[0].Y) - corner, second = frame.Point(path[2].X, path[2].Y) - corner;
+                // Family axes may be reversed; verify the actual contour and
+                // both outward legs instead of one parameter assignment.
+                bool Matches(XYZ a, XYZ b) => Math.Abs(f.LookupParameter("Длина линии 1").AsDouble() - a.GetLength()) < 0.1 / 304.8
+                    && Math.Abs(f.LookupParameter("Длина линии 2").AsDouble() - Math.Max(frame.Paper(6), b.GetLength())) < 0.1 / 304.8
+                    && f.GetTransform().BasisX.Normalize().DotProduct(a.Normalize()) > 0.999
+                    && (f.Mirrored ? -f.GetTransform().BasisY : f.GetTransform().BasisY).Normalize().DotProduct(b.Normalize()) > 0.999;
+                return frame.Flatten(((LocationPoint)f.Location).Point).DistanceTo(corner) < 0.1 / 304.8
+                    && (Matches(first, second) || Matches(second, first));
+            });
             passed &= correct;
             Export(doc, view, (shortArms ? "short-" : "") + (onTop ? "upper" : "lower") + (onRight ? "-break-right" : "-break-left"));
-            results.Add(new { ShortArms = shortArms, OnRight = onRight, OnTop = onTop, Passed = correct, Axes = axes });
+            results.Add(new { ShortArms = shortArms, OnRight = onRight, OnTop = onTop, Passed = correct, Axes = axes,
+                Status = status.ToString(), failures.Errors, result.LayoutTrace });
             scenario.RollBack();
         }
         return new { Passed = passed, Fixture = "Transient native solids intersect the perimeter on two sides; source model unchanged", Cases = results };

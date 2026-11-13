@@ -11,6 +11,9 @@ namespace TrueBIM.App.Modules.RebarDetailing;
 
 public sealed class RebarDetailingWindow : TrueBimWindow
 {
+    // Process memory only: no file, project parameter or cross-document ids.
+    private static DetailingOptions? lastOptions;
+    private static string? lastTagType, lastDimensionType, lastSpotType;
     private readonly IReadOnlyList<DetailingViewRow> rows;
     private readonly CheckBox tags = Check("Марки арматуры"), concrete = Check("Размеры бетона"), bars = Check("Шаг и привязки арматуры"), spots = Check("Высотные отметки"), replace = Check("Заменить существующие размеры, отметки и марки арматуры");
     private readonly ComboBox tagType = Combo(), dimType = Combo(), spotType = Combo();
@@ -27,7 +30,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         Grid body = new(); body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition());
         StackPanel settings = new();
         WrapPanel choices = new() { Margin = new Thickness(0, 0, 0, 8) };
-        pins.ToolTip = "Элементы узла через один горизонтальный стержень снизу вверх. A = толщина стены − 50 мм.";
+        pins.ToolTip = "Элементы узла через один горизонтальный стержень снизу вверх. A = толщина стены − 50 мм, минимум 160 мм.";
         foreach (CheckBox option in new[] { tags, concrete, bars, spots, details, pins }) choices.Children.Add(option);
         settings.Children.Add(choices);
         Add("Резервная марка арматуры", "tag", tagType); Add("Линейный размер", "dimension", dimType);
@@ -38,6 +41,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         settings.Children.Add(new TextBlock { Text = "В каждой выноске: верхняя строка / нижняя строка. {том} — марка связанного тома; две пустые строки отключают выноску.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 4) });
         settings.Children.Add(replace);
         settings.Children.Add(quantities);
+        RestoreSettings();
         settings.Children.Add(new TextBlock { Text = "Марки подбираются по назначению стержней. Количество записывается только в пустые комментарии или вместо прежнего количества; текстовые комментарии сохраняются. Существующие ручные обрывы и подписи сохраняются.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 10) });
         body.Children.Add(settings);
         DataGrid table = new() { AutoGenerateColumns = false, ItemsSource = rows, CanUserAddRows = false, CanUserDeleteRows = false, Margin = new Thickness(0, 4, 0, 8) };
@@ -53,6 +57,10 @@ public sealed class RebarDetailingWindow : TrueBimWindow
             if (!rows.Any(r => r.Selected)) { MessageBox.Show(this, "Отметьте хотя бы один вид.", Title); return; }
             if (!tags.IsChecked.GetValueOrDefault() && !concrete.IsChecked.GetValueOrDefault() && !bars.IsChecked.GetValueOrDefault() && !spots.IsChecked.GetValueOrDefault() && !details.IsChecked.GetValueOrDefault() && !pins.IsChecked.GetValueOrDefault())
             { MessageBox.Show(this, "Включите хотя бы один вид оформления.", Title); return; }
+            lastOptions = Options.Copy();
+            lastTagType = (tagType.SelectedItem as DetailingType)?.Name;
+            lastDimensionType = (dimType.SelectedItem as DetailingType)?.Name;
+            lastSpotType = (spotType.SelectedItem as DetailingType)?.Name;
             DialogResult = true;
         });
         Button cancel = TrueBimUi.CreateSecondaryButton("Отмена", TrueBimIcon.Close); cancel.IsCancel = true;
@@ -81,6 +89,22 @@ public sealed class RebarDetailingWindow : TrueBimWindow
             fields.Children.Add(top); Grid.SetColumn(bottom, 1); fields.Children.Add(bottom); AddSetting(label, fields);
         }
         void AddColumn(string title, string path, double width) => table.Columns.Add(new DataGridTextColumn { Header = title, Binding = new Binding(path), Width = width, IsReadOnly = true });
+    }
+    private void RestoreSettings()
+    {
+        if (lastOptions == null) return;
+        var saved = lastOptions;
+        tags.IsChecked = saved.Tags; concrete.IsChecked = saved.ConcreteDimensions; bars.IsChecked = saved.BarDimensions;
+        spots.IsChecked = saved.Elevations; replace.IsChecked = saved.ReplaceExisting; details.IsChecked = saved.Details;
+        quantities.IsChecked = saved.WriteQuantities; pins.IsChecked = saved.Pins; variant.SelectedIndex = (int)saved.Variant;
+        upperTop.Text = saved.UpperNoteTop; upperBottom.Text = saved.UpperNoteBottom;
+        lowerTop.Text = saved.LowerNoteTop; lowerBottom.Text = saved.LowerNoteBottom;
+        RestoreType(tagType, lastTagType); RestoreType(dimType, lastDimensionType); RestoreType(spotType, lastSpotType);
+        static void RestoreType(ComboBox combo, string? name)
+        {
+            var match = combo.Items.Cast<DetailingType>().FirstOrDefault(t => t.Name == name);
+            if (match != null) combo.SelectedItem = match;
+        }
     }
     public IReadOnlyList<View> SelectedViews => rows.Where(r => r.Selected).Select(r => r.View).ToList();
     public DetailingOptions Options => new() { Tags = tags.IsChecked == true, ConcreteDimensions = concrete.IsChecked == true, BarDimensions = bars.IsChecked == true, Elevations = spots.IsChecked == true,

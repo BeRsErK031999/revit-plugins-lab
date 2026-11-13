@@ -21,9 +21,7 @@ public sealed partial class RebarDetailingService
     private static void CombinedDimensions(Document doc, View view, DetailingFrame frame, DetailingGeometry geometry,
         DetailingOptions options, DetailingResult result)
     {
-        if (options.BarDimensions && geometry.Bars.Any(b => b.Link != null))
-            result.Notes.Add("Арматура связей: марки расставлены; размерные цепочки создаются для арматуры текущего проекта.");
-        foreach (var section in Sections(frame, geometry, options))
+        foreach (var section in DimensionSections(frame, geometry, options))
         {
             var bars = section.Bars.Where(b => b.Link == null).ToList();
             var bounds = section.Reinforcement;
@@ -40,6 +38,12 @@ public sealed partial class RebarDetailingService
                             : Math.Abs(axis.Direction.DotProduct(frame.Normal)) > 0.999 || Math.Abs(axis.Direction.DotProduct(frame.Right)) > 0.999)
                         .Select(axis => new ChainReference { Point = axis.Point, Axis = axis, Run = bar.Element.GetTypeId() + "|" + bar.Shape }))
                         .OrderBy(p => Math.Round(Coordinate(p.Point) * 304.8, 1)).ThenBy(p => frame.X(p.Point)).ToList();
+                    // Never alternate between the left and right rows when
+                    // their elevations differ. The left chain belongs to the
+                    // left half of this host, even for a single closed tie.
+                    if (!horizontal)
+                        entries.RemoveAll(p => Math.Abs(p.Axis!.Direction.DotProduct(frame.Normal)) > 0.999
+                            && frame.X(p.Point) > section.Wall.CenterX + 0.1 / 304.8);
                     if (!horizontal && faces.Count >= 2)
                         entries.RemoveAll(p => Coordinate(p.Point) < Coordinate(faces.First().Point) - 0.1 / 304.8
                             || Coordinate(p.Point) > Coordinate(faces.Last().Point) + 0.1 / 304.8);

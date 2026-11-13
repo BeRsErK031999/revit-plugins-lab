@@ -23,8 +23,9 @@ public sealed partial class VerticalDetailingHarnessApplication
             double thickness = host?.Element is Wall wall ? wall.Width : section.Wall.Width;
             double lengthMm = pin.LookupParameter("A").AsDouble() * 304.8;
             double centerErrorMm = Math.Abs(section.Wall.CenterX - frame.X(point)) * 304.8;
-            return new { Id = pin.Id.Value, LengthMm = lengthMm, ExpectedLengthMm = thickness * 304.8 - 50, CenterErrorMm = centerErrorMm,
-                X = frame.X(point), Y = frame.Y(point), Correct = Math.Abs(lengthMm - (thickness * 304.8 - 50)) < 0.1 && centerErrorMm < 0.1 };
+            double expectedLength = Math.Max(160, thickness * 304.8 - 50);
+            return new { Id = pin.Id.Value, LengthMm = lengthMm, ExpectedLengthMm = expectedLength, CenterErrorMm = centerErrorMm,
+                X = frame.X(point), Y = frame.Y(point), Correct = Math.Abs(lengthMm - expectedLength) < 0.1 && centerErrorMm < 0.1 };
         }).ToList();
         var rowChecks = sections.Where(s => s.Faces.Count(f => f.Horizontal) >= 2).Select(section =>
         {
