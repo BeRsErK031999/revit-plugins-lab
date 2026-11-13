@@ -90,7 +90,7 @@ public sealed class UpdateWindow : TrueBimWindow
             package = await service.CheckAsync(lifetime.Token);
             availableVersion.Text = package.Version.ToString(3);
             status.Text = package.Version > SharedFolderUpdateService.CurrentVersion
-                ? "Доступна новая версия. После загрузки сохраните модели и закройте все окна Revit. Установка начнётся автоматически."
+                ? "Доступна новая версия. После загрузки сохраните модели и закройте Revit во всех сеансах своей учётной записи. Установка начнётся автоматически."
                 : "У вас установлена актуальная или более новая версия TrueBIM.";
         }
         catch (OperationCanceledException) { }
@@ -113,7 +113,7 @@ public sealed class UpdateWindow : TrueBimWindow
             lifetime.Token.ThrowIfCancellationRequested();
             prepared.StartHelper(components);
             logger.Info($"Prepared TrueBIM {package.Version} update from the shared release folder.");
-            status.Text = "Помощник обновления запущен. Сохраните модели и закройте все окна Revit. Помощник дождётся закрытия и установит новую версию; ожидание можно отменить в его окне.";
+            status.Text = "Помощник обновления запущен. Сохраните модели и закройте Revit во всех сеансах своей учётной записи. Помощник установит новую версию только для вас; ожидание можно отменить в его окне.";
             package = null;
             check.IsEnabled = false;
             update.IsEnabled = false;

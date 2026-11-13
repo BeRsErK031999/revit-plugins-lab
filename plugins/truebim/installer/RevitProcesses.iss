@@ -1,11 +1,5 @@
 ﻿{ Included inside [Code]. Shared with the payload-free installer test harness. }
-type
-  TRevitProcess = record
-    Id: String;
-    Name: String;
-    Created: String;
-  end;
-  TRevitProcesses = array of TRevitProcess;
+#include "CurrentUserProcesses.iss"
 
 var
   RevitCloseForm: TSetupForm;
@@ -25,23 +19,26 @@ end;
 function ReadRevitProcesses(var Processes: TRevitProcesses; var Error: String): Boolean;
 var
   Services, Items, Item: Variant;
-  I: Integer;
+  Snapshot: TRevitProcesses;
+  I, N: Integer;
 begin
   Result := False;
   Error := '';
   SetArrayLength(Processes, 0);
   try
-    Services := RevitProcessServices;
-    Items := Services.ExecQuery('SELECT ProcessId, Name, CreationDate FROM Win32_Process ' +
-      'WHERE Name = ''Revit.exe'' OR Name = ''RevitCoreConsole.exe''');
-    SetArrayLength(Processes, Items.Count);
-    for I := 0 to Items.Count - 1 do
+    ReadCurrentUserRevitSnapshot(Snapshot);
+    if GetArrayLength(Snapshot) > 0 then Services := RevitProcessServices;
+    for I := 0 to GetArrayLength(Snapshot) - 1 do
     begin
-      Item := Items.ItemIndex(I);
-      Processes[I].Id := IntToStr(Item.ProcessId);
-      Processes[I].Name := Item.Name;
+      Items := Services.ExecQuery('SELECT ProcessId, Name, CreationDate FROM Win32_Process WHERE ProcessId = ' + Snapshot[I].Id);
+      if Items.Count = 0 then continue; { Exited after the snapshot. }
+      Item := Items.ItemIndex(0);
+      if CompareText(String(Item.Name), Snapshot[I].Name) <> 0 then continue;
+      N := GetArrayLength(Processes);
+      SetArrayLength(Processes, N + 1);
+      Processes[N] := Snapshot[I];
       if not VarIsNull(Item.CreationDate) then
-        Processes[I].Created := Item.CreationDate;
+        Processes[N].Created := Item.CreationDate;
     end;
     Result := True;
   except
@@ -57,7 +54,8 @@ var
 begin
   Result := '';
   for I := 0 to GetArrayLength(Processes) - 1 do
-    Result := Result + Processes[I].Name + ' — PID ' + Processes[I].Id + #13#10;
+    Result := Result + Processes[I].Name + ' — PID ' + Processes[I].Id +
+      ', сеанс ' + IntToStr(Processes[I].SessionId) + #13#10;
 end;
 
 function RefreshRevitProcesses: Boolean;
@@ -91,7 +89,7 @@ end;
 
 procedure CloseRevitProcessesClick(Sender: TObject);
 var
-  Services, Item: Variant;
+  Services, Item, Owner: Variant;
   Confirmed: TRevitProcesses;
   I, Attempt, Code: Integer;
   Errors: String;
@@ -105,7 +103,7 @@ begin
   if not RevitCloseButton.Enabled then
     exit;
   Confirmed := RevitProcesses;
-  if MsgBox('Завершить все перечисленные процессы Revit и продолжить установку?' + #13#10#13#10 +
+  if MsgBox('Завершить перечисленные процессы Revit вашей учётной записи и продолжить установку?' + #13#10#13#10 +
       DescribeRevitProcesses(Confirmed) + #13#10 +
       'Все операции в этих процессах, включая расчёты, печать и синхронизацию, будут прерваны.' + #13#10 +
       'НЕСОХРАНЁННЫЕ ИЗМЕНЕНИЯ МОДЕЛЕЙ БУДУТ ПОТЕРЯНЫ.' + #13#10#13#10 +
@@ -129,6 +127,13 @@ begin
           if (String(Item.CreationDate) <> Confirmed[I].Created) or
              (String(Item.Name) <> Confirmed[I].Name) then
             RaiseException('Список процессов изменился. Повторите проверку.');
+          Owner := Item.ExecMethod_('GetOwnerSid');
+          if Integer(Owner.ReturnValue) <> 0 then
+            RaiseException('Не удалось подтвердить владельца процесса. Завершение отменено.');
+          if VarIsNull(Owner.Sid) then
+            RaiseException('Windows не вернула владельца процесса. Завершение отменено.');
+          if String(Owner.Sid) <> Confirmed[I].OwnerSid then
+            RaiseException('Владелец процесса изменился. Завершение отменено.');
           Code := Item.Terminate(0);
           Log('Terminate ' + Confirmed[I].Name + ' PID ' + Confirmed[I].Id + ': ' + IntToStr(Code));
           if Code <> 0 then
@@ -180,7 +185,7 @@ begin
   begin
     if GetArrayLength(Processes) = 0 then
       exit;
-    Result := 'Перед установкой закройте Revit:' + #13#10 + DescribeRevitProcesses(Processes);
+    Result := 'Перед установкой закройте Revit вашей учётной записи:' + #13#10 + DescribeRevitProcesses(Processes);
   end
   else
     Result := Error;
@@ -198,9 +203,9 @@ begin
     Info.SetBounds(ScaleX(12), ScaleY(12), ScaleX(516), ScaleY(74));
     Info.AutoSize := False;
     Info.WordWrap := True;
-    Info.Caption := 'Установке мешают процессы Revit, в том числе работающие без открытых окон.' + #13#10 +
-      'Сохраните модели и закройте Revit, затем нажмите «Проверить снова».' + #13#10 +
-      'Либо завершите все операции Revit кнопкой ниже. Несохранённые изменения будут потеряны.';
+    Info.Caption := 'Показаны только процессы Revit вашей учётной записи, включая другие её сеансы.' + #13#10 +
+      'Сохраните модели и закройте их либо используйте кнопку завершения. Несохранённые изменения будут потеряны.' + #13#10 +
+      'Установка выполняется только для вас. Revit других пользователей не затрагивается.';
 
     RevitProcessList := TNewMemo.Create(RevitCloseForm);
     RevitProcessList.Parent := RevitCloseForm;

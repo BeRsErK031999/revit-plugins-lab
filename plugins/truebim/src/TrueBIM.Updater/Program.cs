@@ -81,13 +81,13 @@ internal sealed class UpdateForm : Form
     {
         try
         {
-            status.Text = "Сохраните модели и закройте все окна Revit. Помощник дождётся закрытия; ожидание можно отменить.";
-            WriteLog("Waiting for all Revit processes to close.");
+            status.Text = "Сохраните модели и закройте Revit во всех сеансах вашей учётной записи. Revit других пользователей не мешает обновлению.";
+            WriteLog("Waiting for Revit processes owned by the current Windows user to close.");
             await UpdateInstallerLaunch.WaitUntilClosedAsync(UpdateInstallerLaunch.CountRevitProcesses,
                 new Progress<int>(count =>
                 {
                     if (!IsDisposed && !cancellation.IsCancellationRequested)
-                        status.Text = $"Открыто процессов Revit: {count}.\r\nСохраните модели и закройте все окна Revit. Затем начнётся установка.";
+                        status.Text = $"Процессов Revit вашей учётной записи: {count}.\r\nСохраните модели и закройте Revit во всех своих сеансах. Затем начнётся установка только для вас.";
                 }), cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             using FileStream verified = package.OpenVerifiedInstaller(installer);

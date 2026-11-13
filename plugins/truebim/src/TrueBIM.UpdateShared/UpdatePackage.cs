@@ -86,12 +86,7 @@ public static class UpdateInstallerLaunch
         "/SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /NORESTARTAPPLICATIONS /TYPE=custom /COMPONENTS="
         + ValidateComponents(components) + " /LOG=" + QuotePath(logPath);
 
-    public static int CountRevitProcesses()
-    {
-        Process[] processes = Process.GetProcessesByName("Revit");
-        try { return processes.Length; }
-        finally { foreach (Process process in processes) process.Dispose(); }
-    }
+    public static int CountRevitProcesses() => UserRevitProcesses.ReadCurrentUser().Count;
 
     public static async Task WaitUntilClosedAsync(Func<int> countProcesses, IProgress<int>? progress,
         CancellationToken cancellationToken, int pollMilliseconds = 1000)
