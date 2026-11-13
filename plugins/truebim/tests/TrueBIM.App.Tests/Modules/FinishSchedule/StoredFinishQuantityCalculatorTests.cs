@@ -47,11 +47,37 @@ public sealed class StoredFinishQuantityCalculatorTests
     }
 
     [Fact]
-    public void RepeatedNumberOnSameLevelIsReportedAsAmbiguous()
+    public void RepeatedNumberOnSameLevelCountsFullAreaOnce()
     {
         FinishQuantityResult result = Calculate("101", [Room(1, "101"), Room(2, "101")]);
-        Assert.Empty(result.Occurrences);
-        Assert.Contains("неоднозначна", Assert.Single(result.Warnings).Message);
+        Assert.Equal(5, Assert.Single(result.Occurrences).AreaSquareMeters);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Theory]
+    [InlineData(2, "101", 2)]
+    [InlineData(999, "101", 1)]
+    [InlineData(2, "102", 3)]
+    public void StoredPhysicalRoomIsUsedOnlyWhileItMatchesTheText(long assignedRoomId, string ownership, long expectedRoomId)
+    {
+        FinishQuantityResult result = new StoredFinishQuantityCalculator().Calculate(
+            [new StoredFinishElement(100, FinishPreviewCategory.Walls, 10, ownership, 5, assignedRoomId)],
+            [Room(1, "101"), Room(2, "101"), Room(3, "102")], RoomIdentifierSettings.ByNumber());
+        Assert.Equal(expectedRoomId, Assert.Single(result.Occurrences).RoomId);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void RepeatedNamesAndRepeatedInputElementsDoNotMultiplyArea()
+    {
+        StoredFinishElement element = new(100, FinishPreviewCategory.Walls, 10, "  ПОМЕЩЕНИЕ  ", 5);
+        FinishQuantityResult result = new StoredFinishQuantityCalculator().Calculate([element, element],
+            [new FinishRoomCandidateSnapshot(2, 10, 20, true, null, name: "Помещение"),
+             new FinishRoomCandidateSnapshot(1, 10, 20, true, null, name: "Помещение")],
+            new RoomIdentifierSettings(RoomIdentifierMode.Name, null));
+        Assert.Equal(1, Assert.Single(result.Occurrences).RoomId);
+        Assert.Equal(5, Assert.Single(result.Occurrences).AreaSquareMeters);
+        Assert.Empty(result.Warnings);
     }
 
     [Fact]

@@ -25,6 +25,10 @@ public sealed record RoomIdentifierSettings(
     RoomIdentifierMode Mode,
     ParameterReference? CustomParameter)
 {
+    public string SourceKey => Mode == RoomIdentifierMode.CustomParameter
+        ? "parameter:" + CustomParameter?.StableKey
+        : Mode.ToString();
+
     public static RoomIdentifierSettings ByNumber()
     {
         return new RoomIdentifierSettings(RoomIdentifierMode.Number, null);

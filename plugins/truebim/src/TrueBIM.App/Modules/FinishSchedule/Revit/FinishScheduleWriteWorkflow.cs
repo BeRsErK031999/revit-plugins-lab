@@ -101,7 +101,8 @@ public sealed class FinishScheduleWriteWorkflow
                 .Select(change => change.ElementId)
                 .Distinct()
                 .ToDictionary(id => id, id => DescribeElement(document, id)),
-            settings);
+            settings,
+            ownershipTargets.RoomAssignments);
         logger.Info(
             $"Finish Schedule write plan prepared. Rooms={preview.RoomCount}; Groups={preview.GroupCount}; "
             + $"RoomChanges={roomPlan.Changes.Count}; OwnershipChanges={ownershipPlan.Changes.Count}; "
@@ -197,7 +198,8 @@ public sealed class FinishScheduleWriteWorkflow
             stageTimer.Restart();
             FinishOwnershipApplyResult ownershipResult = ownershipWriter.Apply(
                 document,
-                preview.OwnershipPlan);
+                preview.OwnershipPlan,
+                preview.RoomAssignments);
             timings.Add(StopStage(FinishScheduleStageNames.OwnershipWrite, stageTimer));
             if (ownershipResult.SkippedCount > 0)
             {

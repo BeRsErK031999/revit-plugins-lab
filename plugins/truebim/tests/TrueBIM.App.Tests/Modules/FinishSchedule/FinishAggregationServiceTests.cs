@@ -246,10 +246,39 @@ public sealed class FinishAggregationServiceTests
             [Occurrence(1, 11, 1.25), Occurrence(2, 12, 2.75)]);
 
         FinishAggregatedGroup group = Assert.Single(result.Groups);
-        Assert.Equal("Спальня, Спальня", group.Output.RoomList);
+        Assert.Equal("Спальня", group.Output.RoomList);
         Assert.Equal([1L, 2L], group.RoomIds);
         Assert.Equal(4, Assert.Single(group.Walls.Items).AreaSquareMeters);
         Assert.Same(result.RoomOutputs[1], result.RoomOutputs[2]);
+    }
+
+    [Theory]
+    [InlineData(RoomIdentifierMode.Name)]
+    [InlineData(RoomIdentifierMode.Number)]
+    [InlineData(RoomIdentifierMode.CustomParameter)]
+    public void EqualIdentifiersMergeDifferentFinishesBeforeGrouping(RoomIdentifierMode mode)
+    {
+        ParameterReference custom = ParameterReference.Project("Zone", 99, ParameterBindingKind.Instance, ParameterStorageKind.String);
+        FinishScheduleSettings settings = Settings() with { RoomIdentifier = new RoomIdentifierSettings(mode, custom) };
+        FinishRoomCandidateSnapshot[] rooms = Enumerable.Range(1, 2).Select(id =>
+            new FinishRoomCandidateSnapshot(id, 1, 20, true, null, number: id == 1 ? " Общая  зона " : "ОБЩАЯ зона",
+                name: id == 1 ? " Общая  зона " : "ОБЩАЯ зона",
+                parameterValues: new Dictionary<string, FinishParameterValueSnapshot>
+                {
+                    [custom.StableKey] = new(id == 1 ? " Общая  зона " : "ОБЩАЯ зона", string.Empty)
+                })).ToArray();
+        FinishClassifiedElement[] elements = [Element(11, 1011), Element(12, 1012), Element(13, 1011)];
+        FinishTypeSnapshot[] types = [Type(1011, "Paint"), Type(1012, "Tile")];
+        FinishOccurrence[] occurrences = [Occurrence(1, 11, 1.25), Occurrence(2, 12, 2.75), Occurrence(2, 13, 3)];
+        FinishAggregationResult result = Build(settings, rooms, elements, types, occurrences);
+        FinishAggregatedGroup group = Assert.Single(result.Groups);
+        Assert.Equal("Общая зона", group.Output.RoomList);
+        Assert.Equal([1L, 2L], group.RoomIds);
+        Assert.Equal(4.25, group.Walls.Items.Single(item => item.Description.DisplayValue == "Paint").AreaSquareMeters);
+        Assert.Equal(2.75, group.Walls.Items.Single(item => item.Description.DisplayValue == "Tile").AreaSquareMeters);
+        Assert.Same(result.RoomOutputs[1], result.RoomOutputs[2]);
+        FinishAggregationResult reversed = Build(settings, rooms.Reverse(), elements.Reverse(), types.Reverse(), occurrences.Reverse());
+        Assert.Equal(group.Output, Assert.Single(reversed.Groups).Output);
     }
 
     [Fact]

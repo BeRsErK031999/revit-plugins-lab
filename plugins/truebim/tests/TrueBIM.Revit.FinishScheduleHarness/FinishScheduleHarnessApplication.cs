@@ -101,6 +101,8 @@ public sealed class FinishScheduleHarnessApplication : IExternalApplication
             transaction.Commit();
         }
         RoomIdentifierChecks.Run(document, new TestLogger(Progress), Check);
+        DuplicateRoomIdentifierChecks.Run(document, new TestLogger(Progress), Check);
+        if (Environment.GetEnvironmentVariable("TRUEBIM_FINISH_HARNESS_CASE") == "room-identifiers") return;
         FinishRoomScheduleBuilder builder = new(metadata, new TestLogger(Progress));
         FinishRoomSchedulePlan plan = Plan("Finish regression");
         Check(!new FilteredElementCollector(document).OfClass(typeof(ViewSchedule))

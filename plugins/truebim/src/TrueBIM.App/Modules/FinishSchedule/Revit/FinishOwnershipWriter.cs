@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using TrueBIM.App.Modules.FinishSchedule.Models;
 using TrueBIM.App.Modules.FinishSchedule.Services;
+using TrueBIM.App.Services;
 
 namespace TrueBIM.App.Modules.FinishSchedule.Revit;
 
@@ -36,7 +37,8 @@ public sealed class FinishOwnershipWriter
             targets.Issues);
     }
 
-    public FinishOwnershipApplyResult Apply(Document document, FinishWritePlan plan)
+    public FinishOwnershipApplyResult Apply(Document document, FinishWritePlan plan,
+        IReadOnlyList<FinishRoomAssignment>? roomAssignments = null)
     {
         if (document is null)
         {
@@ -48,7 +50,7 @@ public sealed class FinishOwnershipWriter
             throw new ArgumentNullException(nameof(plan));
         }
 
-        if (plan.Changes.Count == 0)
+        if (plan.Changes.Count == 0 && (roomAssignments is null || roomAssignments.Count == 0))
         {
             return new FinishOwnershipApplyResult(0, 0, []);
         }
@@ -93,6 +95,27 @@ public sealed class FinishOwnershipWriter
                     skippedCount++;
                     warnings.Add(
                         $"{change.Role}: элемент {change.ElementId} пропущен — {exception.Message}");
+                }
+            }
+
+            foreach (FinishRoomAssignment assignment in roomAssignments ?? [])
+            {
+                try
+                {
+                    Parameter parameter = RevitFinishParameterAccess.ResolveWritableParameter(document,
+                        new FinishParameterChange(assignment.ElementId, assignment.Reference, "Принадлежность",
+                            assignment.Identifier, assignment.Identifier, false));
+                    if (!FinishParameterValueComparison.AreEqual(parameter.AsString() ?? string.Empty, assignment.Identifier))
+                    {
+                        throw new InvalidOperationException("Значение принадлежности изменилось после предпросмотра.");
+                    }
+                    new FinishOwnershipMetadataService().Write(
+                        document.GetElement(RevitElementIds.Create(assignment.ElementId)), assignment);
+                }
+                catch (Exception exception)
+                {
+                    skippedCount++;
+                    warnings.Add($"Принадлежность: элемент {assignment.ElementId} пропущен — {exception.Message}");
                 }
             }
 

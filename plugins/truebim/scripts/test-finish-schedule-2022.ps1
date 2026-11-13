@@ -1,7 +1,8 @@
 param(
     [ValidateRange(30, 300)][int] $TimeoutSeconds = 180,
     [switch] $TrustTestAddinForThisRun,
-    [switch] $IsolateKukiForThisRun
+    [switch] $IsolateKukiForThisRun,
+    [ValidateSet('all', 'room-identifiers')][string] $Case = 'all'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +25,7 @@ $reportPath = Join-Path $reportRoot ('revit-2022-' + $runId + '.json')
 $assembly = [Security.SecurityElement]::Escape((Join-Path $harnessRoot 'bin\Release\net48\TrueBIM.Revit.FinishScheduleHarness.dll'))
 $manifest = '<?xml version="1.0" encoding="utf-8"?><RevitAddIns><AddIn Type="Application"><Name>TrueBIM Finish Regression</Name><Assembly>' + $assembly + '</Assembly><AddInId>96CA279B-0CB2-4D58-90F6-FEF27B615690</AddInId><FullClassName>TrueBIM.Revit.FinishScheduleHarness.FinishScheduleHarnessApplication</FullClassName><VendorId>TRBM</VendorId><VendorDescription>TrueBIM isolated regression test</VendorDescription></AddIn></RevitAddIns>'
 $previousReportVariable = $env:TRUEBIM_FINISH_HARNESS_REPORT
+$previousCaseVariable = $env:TRUEBIM_FINISH_HARNESS_CASE
 $regressionProcess = $null
 $trustKey = 'HKCU:\Software\Autodesk\Revit\Autodesk Revit 2022\CodeSigning'
 $trustName = '96ca279b-0cb2-4d58-90f6-fef27b615690'
@@ -48,6 +50,7 @@ try {
         $trustCreated = $true
     }
     $env:TRUEBIM_FINISH_HARNESS_REPORT = $reportPath
+    $env:TRUEBIM_FINISH_HARNESS_CASE = $Case
     $regressionProcess = Start-Process -FilePath $revitPath -ArgumentList '/viewer /language ENU' -WindowStyle Hidden -PassThru
     [pscustomobject]@{ProcessId=$regressionProcess.Id;Manifest=$manifestPath;Report=$reportPath;Started=(Get-Date).ToString('o')} |
         ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
@@ -71,4 +74,5 @@ finally {
     if ($kukiOverrideCreated) { Remove-Item -LiteralPath $kukiOverridePath -Force }
     if ($trustCreated) { Remove-ItemProperty -LiteralPath $trustKey -Name $trustName }
     $env:TRUEBIM_FINISH_HARNESS_REPORT = $previousReportVariable
+    $env:TRUEBIM_FINISH_HARNESS_CASE = $previousCaseVariable
 }

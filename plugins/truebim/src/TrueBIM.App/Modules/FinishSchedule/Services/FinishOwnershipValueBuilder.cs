@@ -40,6 +40,7 @@ public sealed class FinishOwnershipValueBuilder
         IReadOnlyDictionary<long, string> roomIdentifiers = roomSnapshots.Rooms
             .ToDictionary(room => room.RoomId, room => room.Identifier);
         List<FinishParameterTargetValue> targets = [];
+        List<FinishRoomAssignment> assignments = [];
         List<FinishWriteIssue> issues = [];
         foreach (FinishClassifiedElement element in elements)
         {
@@ -68,10 +69,13 @@ public sealed class FinishOwnershipValueBuilder
                 continue;
             }
 
-            string[] identifiers = quantities.Occurrences
+            long[] roomIds = quantities.Occurrences
                 .Where(occurrence => occurrence.ElementId == elementId
                     && occurrence.Category == element.Category)
-                .Select(occurrence => roomIdentifiers.TryGetValue(occurrence.RoomId, out string? identifier)
+                .Select(occurrence => occurrence.RoomId)
+                .Distinct().ToArray();
+            string[] identifiers = roomIds
+                .Select(roomId => roomIdentifiers.TryGetValue(roomId, out string? identifier)
                     ? identifier
                     : null)
                 .Where(identifier => !string.IsNullOrWhiteSpace(identifier))
@@ -97,9 +101,12 @@ public sealed class FinishOwnershipValueBuilder
                 value,
                 isRequired: true,
                 element.Category));
+            assignments.Add(new FinishRoomAssignment(elementId, reference, value,
+                settings.RoomIdentifier.SourceKey,
+                roomIds.Length == 1 && identifiers.Length == 1 ? roomIds[0] : null));
         }
 
-        return new FinishParameterTargetBuildResult(elements.Length, targets, issues);
+        return new FinishParameterTargetBuildResult(elements.Length, targets, issues, assignments);
     }
 
     private static ParameterReference? ResolveReference(

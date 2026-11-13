@@ -7,7 +7,8 @@ public sealed record StoredFinishElement(
     FinishPreviewCategory Category,
     long? LevelId,
     string? Ownership,
-    double AreaSquareMeters);
+    double AreaSquareMeters,
+    long? AssignedRoomId = null);
 
 /// <summary>Считает полную площадь по записанной принадлежности, без поиска геометрических контактов.</summary>
 public sealed class StoredFinishQuantityCalculator
@@ -35,19 +36,19 @@ public sealed class StoredFinishQuantityCalculator
                 continue;
             }
 
-            // A repeated number can be resolved on the element's level, but never by report scope or geometry.
-            FinishRoomCandidateSnapshot[] candidates = matches.Length == 1
+            // Automatic assignment retains the exact room independently of its display identifier.
+            // A stale assignment cannot override a changed text parameter or a renamed/deleted room.
+            FinishRoomCandidateSnapshot? assigned = element.AssignedRoomId.HasValue
+                ? matches.FirstOrDefault(room => room.ElementId == element.AssignedRoomId.Value)
+                : null;
+            FinishRoomCandidateSnapshot[] candidates = assigned is not null
+                ? [assigned]
+                : matches.Length == 1
                 ? matches
                 : matches.Where(room => room.LevelId == element.LevelId).ToArray();
-            if (candidates.Length != 1)
-            {
-                warnings.Add(UnresolvedOwnership(element,
-                    $"Записанная принадлежность «{identifier}» неоднозначна "
-                        + $"(ID помещений: {string.Join(", ", matches.Select(room => room.ElementId))})."));
-                continue;
-            }
-
-            long roomId = candidates[0].ElementId;
+            // Equal identifiers form one logical room. Attribute the element once to a stable
+            // physical member; aggregation combines all members and their different finishes.
+            long roomId = (candidates.Length > 0 ? candidates : matches).Min(room => room.ElementId);
             if (element.AreaSquareMeters <= 0 || double.IsNaN(element.AreaSquareMeters) || double.IsInfinity(element.AreaSquareMeters))
             {
                 warnings.Add(new FinishGeometryWarning(

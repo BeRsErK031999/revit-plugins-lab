@@ -39,7 +39,8 @@ public sealed class FinishAggregationFormatter
         }
 
         string roomList = string.Join(", ", roomIdentifiers
-            .OrderBy(identifier => identifier, NaturalStringComparer.Instance));
+            .OrderBy(identifier => identifier, NaturalStringComparer.Instance)
+            .Distinct(StringComparer.OrdinalIgnoreCase));
         return new FinishRoomGroupOutput(
             roomList,
             FormatCategory(walls),

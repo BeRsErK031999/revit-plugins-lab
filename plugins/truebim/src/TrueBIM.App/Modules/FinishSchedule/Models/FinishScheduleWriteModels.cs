@@ -74,12 +74,20 @@ public sealed record FinishParameterTargetValue
     public FinishPreviewCategory? Category { get; }
 }
 
+public sealed record FinishRoomAssignment(
+    long ElementId,
+    ParameterReference Reference,
+    string Identifier,
+    string IdentifierSourceKey,
+    long? RoomId);
+
 public sealed class FinishParameterTargetBuildResult
 {
     public FinishParameterTargetBuildResult(
         int targetElementCount,
         IEnumerable<FinishParameterTargetValue> targets,
-        IEnumerable<FinishWriteIssue> issues)
+        IEnumerable<FinishWriteIssue> issues,
+        IEnumerable<FinishRoomAssignment>? roomAssignments = null)
     {
         if (targetElementCount < 0)
         {
@@ -93,11 +101,14 @@ public sealed class FinishParameterTargetBuildResult
             .ThenBy(target => target.Reference.StableKey, StringComparer.Ordinal)
             .ToArray();
         Issues = FinishWriteOrdering.OrderIssues(issues);
+        RoomAssignments = (roomAssignments ?? []).OrderBy(item => item.ElementId).ToArray();
     }
 
     public int TargetElementCount { get; }
 
     public IReadOnlyList<FinishParameterTargetValue> Targets { get; }
+
+    public IReadOnlyList<FinishRoomAssignment> RoomAssignments { get; }
 
     public IReadOnlyList<FinishWriteIssue> Issues { get; }
 }
@@ -197,7 +208,8 @@ public sealed class FinishScheduleWritePreview
         FinishRoomSchedulePreflight? schedule = null,
         FinishSchedulePreviewResult? calculation = null,
         IReadOnlyDictionary<long, string>? elementLabels = null,
-        FinishScheduleSettings? settings = null)
+        FinishScheduleSettings? settings = null,
+        IEnumerable<FinishRoomAssignment>? roomAssignments = null)
     {
         if (groupCount < 0 || roomCount < 0)
         {
@@ -215,6 +227,7 @@ public sealed class FinishScheduleWritePreview
             []);
         Calculation = calculation;
         Settings = settings;
+        RoomAssignments = (roomAssignments ?? []).ToArray();
         ElementLabels = elementLabels ?? new Dictionary<long, string>();
         CalculationWarnings = (calculationWarnings ?? throw new ArgumentNullException(nameof(calculationWarnings)))
             .Distinct(StringComparer.Ordinal)
@@ -237,6 +250,8 @@ public sealed class FinishScheduleWritePreview
 
     public FinishScheduleSettings? Settings { get; }
 
+    public IReadOnlyList<FinishRoomAssignment> RoomAssignments { get; }
+
     public IReadOnlyDictionary<long, string> ElementLabels { get; }
 
     public IReadOnlyList<string> CalculationWarnings { get; }
@@ -245,7 +260,7 @@ public sealed class FinishScheduleWritePreview
 
     public int TotalChangeCount => RoomPlan.Changes.Count + OwnershipPlan.Changes.Count;
 
-    public bool RequiresTransaction => TotalChangeCount > 0 || Schedule.RequiresTransaction;
+    public bool RequiresTransaction => TotalChangeCount > 0 || RoomAssignments.Count > 0 || Schedule.RequiresTransaction;
 
     public bool CanApply => !Issues.Any(issue => issue.Severity == FinishWriteIssueSeverity.Critical);
 

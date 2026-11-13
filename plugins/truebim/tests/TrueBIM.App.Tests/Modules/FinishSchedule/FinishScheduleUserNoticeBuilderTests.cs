@@ -30,7 +30,7 @@ public sealed class FinishScheduleUserNoticeBuilderTests
     }
 
     [Fact]
-    public void BuildPreview_ExplainsEmptyAndAmbiguousStoredOwnershipSeparately()
+    public void BuildPreview_WarnsAboutEmptyOwnershipButAcceptsRepeatedIdentifiers()
     {
         FinishQuantityResult quantities = new StoredFinishQuantityCalculator().Calculate(
             [new StoredFinishElement(1, FinishPreviewCategory.Walls, 1, "", 5),
@@ -42,8 +42,8 @@ public sealed class FinishScheduleUserNoticeBuilderTests
             CreatePreview([], quantities.Warnings), FinishScheduleSettings.CreateDefault() with { WriteOwnership = false });
 
         Assert.Contains(notice.WarningItems, item => item.Contains("не заполнена") && item.Contains("Элементы: 1."));
-        Assert.Contains(notice.WarningItems, item => item.Contains("«101» неоднозначна") && item.Contains("100, 101")
-            && item.Contains("Элементы: 2."));
+        Assert.DoesNotContain(notice.WarningItems, item => item.Contains("неоднозначна") || item.Contains("Элементы: 2."));
+        Assert.Equal(2, Assert.Single(quantities.Occurrences).ElementId);
     }
 
     [Theory]

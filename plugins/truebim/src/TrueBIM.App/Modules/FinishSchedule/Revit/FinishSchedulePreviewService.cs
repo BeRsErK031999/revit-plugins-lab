@@ -73,7 +73,8 @@ public sealed class FinishSchedulePreviewService
 
         // Preview uses proposed parameter values; Apply reads them back after the assignment transaction.
         FinishQuantityResult stored = new StoredFinishQuantitySource(document, settings,
-            ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value)).Calculate(request);
+            ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value),
+            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId)).Calculate(request);
         FinishQuantityResult allQuantities = new(stored.Occurrences,
             stored.Warnings.Concat(geometry?.Warnings ?? []),
             geometry?.CacheMetrics, geometry?.Contacts);

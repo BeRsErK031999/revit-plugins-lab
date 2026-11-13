@@ -23,12 +23,31 @@ public sealed class FinishAggregationService
         }
 
         FinishAggregatedGroup[] groups = snapshots.Rooms
-            .Select(room => new KeyedRoom(keyBuilder.Create(room), room))
+            .GroupBy(room => room.Identifier, StringComparer.OrdinalIgnoreCase)
+            .Select(CreateLogicalRoom)
             .GroupBy(item => item.Key.Value, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal)
             .Select(CreateGroup)
             .ToArray();
         return new FinishAggregationResult(groups, snapshots.Warnings);
+    }
+
+    private KeyedRoom CreateLogicalRoom(IGrouping<string, RoomFinishSnapshot> group)
+    {
+        RoomFinishSnapshot[] rooms = group.OrderBy(room => room.RoomId).ToArray();
+        // Repeated identifiers represent one room in the report, including all of its finishes.
+        RoomFinishSnapshot combined = new(rooms[0].RoomId, rooms[0].Identifier,
+            Combine(rooms.Select(room => room.Walls)),
+            Combine(rooms.Select(room => room.Floors)),
+            Combine(rooms.Select(room => room.Ceilings)));
+        return new KeyedRoom(keyBuilder.Create(combined), combined, rooms.Select(room => room.RoomId).ToArray());
+    }
+
+    private static RoomFinishCategorySnapshot Combine(IEnumerable<RoomFinishCategorySnapshot> categories)
+    {
+        FinishAggregatedCategory combined = AggregateCategory(categories);
+        return new RoomFinishCategorySnapshot(combined.IsEnabled, combined.State,
+            combined.Items.Select(item => new RoomFinishItem(item.Description, item.AreaSquareMeters)));
     }
 
     private FinishAggregatedGroup CreateGroup(IGrouping<string, KeyedRoom> group)
@@ -47,7 +66,7 @@ public sealed class FinishAggregationService
         FinishRoomGroupOutput output = formatter.Format(identifiers, walls, floors, ceilings);
         return new FinishAggregatedGroup(
             orderedRooms[0].Key,
-            orderedRooms.Select(item => item.Room.RoomId),
+            orderedRooms.SelectMany(item => item.PhysicalRoomIds),
             identifiers,
             walls,
             floors,
@@ -85,5 +104,5 @@ public sealed class FinishAggregationService
         return new FinishAggregatedCategory(true, state, items);
     }
 
-    private sealed record KeyedRoom(FinishGroupKey Key, RoomFinishSnapshot Room);
+    private sealed record KeyedRoom(FinishGroupKey Key, RoomFinishSnapshot Room, IReadOnlyList<long> PhysicalRoomIds);
 }
