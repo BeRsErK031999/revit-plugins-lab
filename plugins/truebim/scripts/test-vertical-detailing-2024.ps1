@@ -6,6 +6,7 @@ param(
     [string] $ViewIds = '2310980,2568691',
     [string] $ViewVariants = '',
     [string] $PreviewPayload = '',
+    [string] $ModPlusFixtureDirectory = '',
     [string] $ViewNameFilter = '',
     [ValidateSet('Straight','BentSameSide','BentOppositeSides')][string] $Variant = 'Straight',
     [switch] $Viewer
@@ -32,6 +33,9 @@ if (-not (Test-Path -LiteralPath $modelCopy -PathType Leaf)) { throw "Model copy
 $manifestPath = Join-Path $env:APPDATA "Autodesk\Revit\Addins\2024\TrueBIM.VerticalDetailingHarness.$runId.addin"
 $assembly = [Security.SecurityElement]::Escape((Join-Path $harnessRoot 'bin\Release\net48\TrueBIM.Revit.VerticalDetailingHarness.dll'))
 $manifest = '<?xml version="1.0" encoding="utf-8"?><RevitAddIns><AddIn Type="Application"><Name>TrueBIM Vertical Detailing Audit</Name><Assembly>' + $assembly + '</Assembly><AddInId>3A2241B6-A5EC-4268-A945-AF9C03999E31</AddInId><FullClassName>TrueBIM.Revit.VerticalDetailingHarness.VerticalDetailingHarnessApplication</FullClassName><VendorId>TRBM</VendorId></AddIn></RevitAddIns>'
+if ($ModPlusFixtureDirectory) {
+    $manifest = $manifest.Replace('</RevitAddIns>', '<AddIn Type="Application"><Name>TrueBIM ModPlus Compatibility Fixture</Name><Assembly>' + $assembly + '</Assembly><AddInId>4d501f3a-7f5e-4f3b-8733-52586f2548b2</AddInId><FullClassName>TrueBIM.Revit.VerticalDetailingHarness.ModPlusCompatibilityFixtureApplication</FullClassName><VendorId>TRBM</VendorId></AddIn></RevitAddIns>')
+}
 $previousReport = $env:TRUEBIM_VERTICAL_REPORT
 $previousModel = $env:TRUEBIM_VERTICAL_MODEL
 $previousMode = $env:TRUEBIM_VERTICAL_MODE
@@ -40,6 +44,7 @@ $previousPayload = $env:TRUEBIM_VERTICAL_PAYLOAD
 $previousViewNameFilter = $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER
 $previousVariant = $env:TRUEBIM_VERTICAL_VARIANT
 $previousViewVariants = $env:TRUEBIM_VERTICAL_VIEW_VARIANTS
+$previousModPlus = $env:TRUEBIM_VERTICAL_MODPLUS
 $viewerProcess = $null
 try {
     [IO.File]::WriteAllText($manifestPath, $manifest)
@@ -51,6 +56,7 @@ try {
     $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER = $ViewNameFilter
     $env:TRUEBIM_VERTICAL_VARIANT = $Variant
     $env:TRUEBIM_VERTICAL_VIEW_VARIANTS = $ViewVariants
+    $env:TRUEBIM_VERTICAL_MODPLUS = $ModPlusFixtureDirectory
     $launchArguments = if ($Viewer) { '/viewer' } else { '/nosplash' }
     $viewerProcess = Start-Process -FilePath 'C:\Program Files\Autodesk\Revit 2024\Revit.exe' -ArgumentList $launchArguments -WindowStyle Hidden -PassThru
     [pscustomobject]@{ ProcessId=$viewerProcess.Id; Report=$env:TRUEBIM_VERTICAL_REPORT; Manifest=$manifestPath; RunRoot=$runRoot; SourceHashes=$hashes } | ConvertTo-Json | Set-Content (Join-Path $reportRoot 'active-harness.json')
@@ -75,9 +81,10 @@ try {
         if ($applyReport.SixBars -and -not $applyReport.SixBars.Passed) { throw 'Six irregular bars acceptance failed; see report.' }
         if (-not $applyReport.LowerBreaks.Passed) { throw 'Lower break mirror acceptance failed; see report.' }
         if (@($applyReport.Tests | Where-Object { $_.Supplement4 -and -not $_.Supplement4.Passed }).Count -gt 0) { throw 'Supplement 4 native acceptance failed; see report.' }
-        if (@($applyReport.Tests | Where-Object { -not $_.Supplement5.Passed -or -not $_.CropExpandedOnly -or -not $_.RepeatCropStable }).Count -gt 0) { throw 'Supplement 5 crop, callout or upper-reference acceptance failed; see report.' }
+        if (@($applyReport.Tests | Where-Object { -not $_.Supplement5.Passed -or -not $_.CropDepthPreserved -or -not $_.RepeatCropStable }).Count -gt 0) { throw 'Crop, callout or upper-reference acceptance failed; see report.' }
         if (@($applyReport.Supplement5Options | Where-Object { -not $_.Passed }).Count -gt 0) { throw 'Supplement 5 disabled options acceptance failed; see report.' }
         if (@($applyReport.Tests | Where-Object { -not $_.Supplement6.Passed }).Count -gt 0) { throw 'Supplement 6 linked reinforcement or elevation fallback acceptance failed; see report.' }
+        if ($ModPlusFixtureDirectory -and -not $applyReport.Supplement7.Passed) { throw 'Supplement 7 native acceptance failed; see report.' }
     }
     if ($Mode -eq 'interactive' -and (-not $report.CancelUnchanged -or -not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive acceptance failed; see report.' }
     if ($Mode -eq 'acceptance' -and (-not $report.AppliedSucceeded -or -not $report.TemplateToken.Passed -or -not $report.LowerBreaks.Passed)) { throw 'Interactive application failed; see report.' }
@@ -97,6 +104,7 @@ finally {
     $env:TRUEBIM_VERTICAL_VIEW_NAME_FILTER = $previousViewNameFilter
     $env:TRUEBIM_VERTICAL_VARIANT = $previousVariant
     $env:TRUEBIM_VERTICAL_VIEW_VARIANTS = $previousViewVariants
+    $env:TRUEBIM_VERTICAL_MODPLUS = $previousModPlus
     foreach ($file in $originals) {
         if ((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $hashes[$file.FullName]) { throw "Original changed: $($file.FullName)" }
     }

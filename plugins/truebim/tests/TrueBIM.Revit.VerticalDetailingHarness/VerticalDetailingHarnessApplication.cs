@@ -84,6 +84,7 @@ public sealed partial class VerticalDetailingHarnessApplication : IExternalAppli
         finished = true;
         try
         {
+            ModPlusCompatibilityFixtureApplication.InitializeWindow(app);
             string model = Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODEL")!;
             foreach (string copy in Directory.GetFiles(Path.GetDirectoryName(model)!, "*.rvt"))
             {

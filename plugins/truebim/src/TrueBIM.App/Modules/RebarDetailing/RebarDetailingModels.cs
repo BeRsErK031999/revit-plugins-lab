@@ -16,6 +16,7 @@ public sealed class DetailingOptions
     public bool BarDimensions { get; set; } = true;
     public bool Elevations { get; set; } = true;
     public bool ReplaceExisting { get; set; } = true;
+    public bool ClearView { get; set; }
     public bool WriteQuantities { get; set; } = true;
     public bool Details { get; set; } = true;
     public bool Pins { get; set; } = true;

@@ -21,7 +21,10 @@ public sealed partial class RebarDetailingService
                 && s.Start.DistanceTo(s.End) > 500 / 304.8)).ToList();
             var transverse = section.Bars.Where(b => !IsPin(b) && !vertical.Contains(b)).ToList();
             if (vertical.Count == 0 || transverse.Count == 0) continue;
-            var rows = DetailingBarGroups.Unique(transverse.SelectMany(b => b.Positions).Select(frame.Y)
+            var bundles = TransverseBundles(frame, transverse);
+            var targets = HasBundle(frame, bundles) ? bundles.Select(g => g[0].Point)
+                .Where(p => frame.X(p) <= section.Wall.CenterX + 0.1 / 304.8) : transverse.SelectMany(b => b.Positions);
+            var rows = DetailingBarGroups.Unique(targets.Select(frame.Y)
                 .Where(y => y >= section.Wall.Bottom - 0.1 / 304.8 && y <= section.Wall.Top + 0.1 / 304.8), 0.1 / 304.8);
             var host = geometry.Hosts.FirstOrDefault(h => h.Key == section.HostKey);
             double thickness = host?.Element is Wall wall ? wall.Width : section.Wall.Width;

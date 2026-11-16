@@ -205,7 +205,7 @@ public sealed partial class VerticalDetailingHarnessApplication
                 Supplement4 = first.Succeeded ? MeasureSupplement4(doc, view, options) : null,
                 Supplement5 = first.Succeeded ? MeasureSupplement5(doc, view, options) : null,
                 CropBefore = beforeCrops[view.Id.Value], CropAfter = CropCoordinates(view),
-                CropExpandedOnly = CropExpandedOnly(beforeCrops[view.Id.Value], CropCoordinates(view)),
+                CropDepthPreserved = CropDepthPreserved(beforeCrops[view.Id.Value], CropCoordinates(view)),
                 RepeatCropStable = firstCrop.SequenceEqual(CropCoordinates(view)),
                 PlannedHeads = plannedHeads, Layout = first.LayoutTrace,
                 ViewUnchanged = before[view.Id.Value] == ViewFingerprint(view),
@@ -216,6 +216,8 @@ public sealed partial class VerticalDetailingHarnessApplication
         }
         object? sixBars = CheckSixBars(doc, views[0], service, VariantFor(views[0]));
         object lowerBreaks = CheckLowerBreakMirroring(doc, views[0]);
+        object? supplement7 = Environment.GetEnvironmentVariable("TRUEBIM_VERTICAL_MODPLUS") is { Length: > 0 }
+            ? CheckSupplement7(ui, views[0], service, VariantFor(views[0])) : null;
         var supplement5Options = views.Select(v => CheckSupplement5Options(doc, v, service, VariantFor(v))).ToList();
         Progress("Testing batch and undo");
         var beforeBatch = views.ToDictionary(v => v.Id, AnnotationFingerprint);
@@ -257,6 +259,7 @@ public sealed partial class VerticalDetailingHarnessApplication
             QuantityCommentChanges = commentChanges, QuantityCommentsAllowed = commentsAllowed, QuantityDisabledSafe = quantityDisabledSafe,
             CustomNotesSafe = customNotesSafe, EmptyNotesSafe = emptyNotesSafe, TextCommentSafe = textCommentSafe, Tests = tests,
             SixBars = sixBars,
+            Supplement7 = supplement7,
             LowerBreaks = lowerBreaks,
             PlacedViews = new FilteredElementCollector(doc).OfClass(typeof(Viewport)).Cast<Viewport>()
                 .Select(p => new { ViewId = p.ViewId.Value, Number = p.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)?.AsString(), Sheet = ((ViewSheet)doc.GetElement(p.SheetId)).SheetNumber }).ToList() });
@@ -374,7 +377,7 @@ public sealed partial class VerticalDetailingHarnessApplication
         (e is FamilyInstance instance ? instance.GetTransform().BasisX + ":" + instance.GetTransform().BasisY + ":" + instance.GetTransform().BasisZ : "") + ":" +
         string.Join(";", e.Parameters.Cast<Parameter>().Where(p => p.HasValue && !p.IsReadOnly && p.StorageType != StorageType.ElementId && p.Definition.Name != "IfcGUID")
             .OrderBy(p => p.Id.Value).Select(p => p.Id + ":" + (p.StorageType == StorageType.String ? p.AsString()
-                : p.StorageType == StorageType.Double ? p.AsDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture) : p.AsInteger().ToString())));
+                : p.StorageType == StorageType.Double ? Math.Round(p.AsDouble(), 9).ToString("R", System.Globalization.CultureInfo.InvariantCulture) : p.AsInteger().ToString())));
     private static object TagDiagnostics(Document doc, View view)
     {
         var tags = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(IndependentTag)).Cast<IndependentTag>().ToList();

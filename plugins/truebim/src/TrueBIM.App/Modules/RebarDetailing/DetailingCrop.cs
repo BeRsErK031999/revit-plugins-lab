@@ -18,7 +18,7 @@ public sealed partial class RebarDetailingService
         var lowerSlabs = sections.SelectMany(s => s.LowerConcrete).Where(h => h.Element is Floor
             || h.Element.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation)).ToList();
         if (lowerSlabs.Count > 0)
-            boundary = new DetailingRect(boundary.Left, Math.Min(boundary.Bottom, lowerSlabs.Min(h => h.Bounds.Bottom) - 80 / 304.8),
+            boundary = new DetailingRect(boundary.Left, Math.Min(boundary.Bottom, lowerSlabs.Min(h => h.Bounds.Bottom) - frame.Paper(5.6)),
                 boundary.Right, boundary.Top);
         geometry.PlannedBreakBoundary = boundary;
         geometry.Breaks(frame);
@@ -59,7 +59,15 @@ public sealed partial class RebarDetailingService
         var local = points.Select(crop.Transform.Inverse.OfPoint).ToList();
         var current = new DetailingRect(crop.Min.X, crop.Min.Y, crop.Max.X, crop.Max.Y);
         var graphics = new DetailingRect(local.Min(p => p.X), local.Min(p => p.Y), local.Max(p => p.X), local.Max(p => p.Y));
-        var expanded = DetailingBoundsPlan.Expand(current, graphics, 30 / 304.8);
+        // Crop inside the mask, 6.2 paper mm from the break baseline (310 at M50).
+        // Fitting in both directions removes exposed slab edges after a large
+        // original crop. Preserve the visible zigzag and its free lower ends.
+        var boundary = geometry.PlannedBreakBoundary ?? frame.BreakBoundary;
+        var baselinePoints = new[] { frame.Point(boundary.Left, boundary.Bottom), frame.Point(boundary.Right, boundary.Top) }
+            .Select(crop.Transform.Inverse.OfPoint).ToList();
+        var baseline = new DetailingRect(baselinePoints.Min(p => p.X), baselinePoints.Min(p => p.Y),
+            baselinePoints.Max(p => p.X), baselinePoints.Max(p => p.Y));
+        var expanded = DetailingBoundsPlan.Fit(baseline, graphics, frame.Paper(6.2), frame.Paper(0.2));
         if (Math.Abs(expanded.Left - current.Left) + Math.Abs(expanded.Right - current.Right)
             + Math.Abs(expanded.Bottom - current.Bottom) + Math.Abs(expanded.Top - current.Top) < 0.01 / 304.8) return;
         using ViewCropRegionShapeManager manager = view.GetCropRegionShapeManager();

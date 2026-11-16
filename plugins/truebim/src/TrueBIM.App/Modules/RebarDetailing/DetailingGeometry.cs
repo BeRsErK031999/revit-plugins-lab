@@ -111,7 +111,8 @@ internal sealed partial class DetailingGeometry
                 catch (Exception ex) { Notes.Add($"Арматура {e.Id}: {ex.Message}"); }
             }
             else if (e is Wall || e is Floor || e.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralColumns)
-                || e.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation))
+                || e.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFoundation)
+                || e.Category?.Id == new ElementId(BuiltInCategory.OST_StructuralFraming))
             {
                 if (!frame.Intersects(e.get_BoundingBox(null), transform)) continue;
                 HostCount++;

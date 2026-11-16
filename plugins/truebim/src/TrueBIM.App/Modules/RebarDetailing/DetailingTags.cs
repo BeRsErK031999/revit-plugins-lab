@@ -17,6 +17,7 @@ public sealed partial class RebarDetailingService
         public bool CornerCount { get; set; }
         public bool OutsidePlanField { get; set; }
         public Dimension? ArrayDimension { get; set; }
+        public bool Bundled { get; set; }
     }
 
     private static ElementId TagStyle(Document doc, string name, ElementId fallback)
@@ -56,8 +57,11 @@ public sealed partial class RebarDetailingService
         foreach (var family in candidates.Where(p => !Longitudinal(frame, p.Bar)).GroupBy(MarkKey))
         {
             var items = family.ToList();
+            var bundles = TransverseBundles(frame, items.Select(p => p.Bar));
+            var bundleRows = bundles.SelectMany(g => g.Select(p => (p.Bar, Y: frame.Y(g[0].Point) * 304.8)))
+                .GroupBy(p => p.Bar).ToDictionary(g => g.Key, g => (IReadOnlyList<double>)g.Select(p => p.Y).ToList());
             foreach (var group in DetailingBarGroups.Create(items.Select((p, i) => (i,
-                (IReadOnlyList<double>)p.Bar.Positions.Select(point => frame.Y(point) * 304.8).ToList()))))
+                bundleRows.TryGetValue(p.Bar, out var rows) ? rows : (IReadOnlyList<double>)p.Bar.Positions.Select(point => frame.Y(point) * 304.8).ToList()))))
             {
                 foreach (int index in group) transverseGroups[items[index].Bar] = nextGroup;
                 nextGroup++;
@@ -91,7 +95,10 @@ public sealed partial class RebarDetailingService
                 && (b.Element.get_Parameter(BuiltInParameter.REBAR_ELEM_LENGTH)?.AsDouble() ?? 0)
                     > (representative.Element.get_Parameter(BuiltInParameter.REBAR_ELEM_LENGTH)?.AsDouble() ?? 0) + 200 / 304.8);
             int quantity = label.Bars.Sum(b => b.VisibleIndices.Count);
-            var rows = DetailingBarGroups.Unique(label.Bars.SelectMany(b => b.Positions).Select(p => frame.Y(p) * 304.8));
+            var labelBundles = TransverseBundles(frame, label.Bars);
+            label.Bundled = HasBundle(frame, labelBundles);
+            var rows = DetailingBarGroups.Unique(label.Bundled ? labelBundles.Select(g => frame.Y(g[0].Point) * 304.8)
+                : label.Bars.SelectMany(b => b.Positions).Select(p => frame.Y(p) * 304.8));
             bool regular = rows.Count >= 3 && !DetailingSectionLayout.HasIrregularPitch(rows);
             var barIds = new HashSet<ElementId>(label.Bars.Select(b => b.Element.Id));
             var matchingArrays = arrayDimensions.Where(d => d.References.Cast<Reference>().All(r => barIds.Contains(r.ElementId))).ToList();
@@ -151,6 +158,17 @@ public sealed partial class RebarDetailingService
                 label.Targets.Clear();
                 label.Targets.Add(lowest);
             }
+            if (label.Bundled)
+            {
+                double middle = label.ArrayDimension == null ? Region(frame, label.Bars).CenterY
+                    : label.ArrayDimension.Segments.Cast<DimensionSegment>().Select(s => frame.Y(s.Origin)).Average();
+                // One leader to the lower bar of the nearest bundle on the left
+                // face. The other bar remains part of the measured quantity.
+                double left = labelBundles.Min(g => frame.X(g[0].Point));
+                var target = labelBundles.Where(g => frame.X(g[0].Point) <= left + 1 / 304.8)
+                    .OrderBy(g => Math.Abs(frame.Y(g[0].Point) - middle)).ThenBy(g => frame.Y(g[0].Point)).First()[0];
+                label.Targets.Clear(); label.Targets.Add((target.Reference, target.Point));
+            }
             // The initial tag reference remains a leader in Revit even if only new
             // references receive explicit end points. Start with the chosen reference.
             doc.Delete(label.Tag.Id);
@@ -187,7 +205,20 @@ public sealed partial class RebarDetailingService
                 var boundary = SectionAnnotationBoundary(doc, view, frame, section);
                 double y = label.ArrayDimension == null ? field.CenterY : label.ArrayDimension.Segments.Cast<DimensionSegment>()
                     .Select(s => frame.Y(s.Origin)).Average();
+                if (label.Bundled) y = frame.Y(label.Targets[0].Point);
                 label.Tag.TagHeadPosition = frame.Point(boundary.Left - frame.Paper(6), y);
+                if (label.Bundled)
+                {
+                    label.Tag.HasLeader = true;
+                    label.Tag.LeaderEndCondition = LeaderEndCondition.Free;
+#if REVIT2022_OR_GREATER
+                    label.Tag.SetLeaderEnd(label.Targets[0].Reference, frame.Flatten(label.Targets[0].Point));
+                    label.Tag.SetLeaderElbow(label.Targets[0].Reference, frame.Point(boundary.Left - frame.Paper(5), y));
+#else
+                    label.Tag.LeaderEnd = frame.Flatten(label.Targets[0].Point);
+                    label.Tag.LeaderElbow = frame.Point(boundary.Left - frame.Paper(5), y);
+#endif
+                }
                 result.ExpectedTagHeads[label.Tag.Id] = label.Tag.TagHeadPosition;
                 doc.Regenerate();
                 result.Tags++; continue;

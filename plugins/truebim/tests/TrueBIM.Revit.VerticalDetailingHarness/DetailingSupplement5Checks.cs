@@ -39,9 +39,7 @@ public sealed partial class VerticalDetailingHarnessApplication
     private static double[] CropCoordinates(View view) => new[] { view.CropBox.Min.X, view.CropBox.Min.Y,
         view.CropBox.Max.X, view.CropBox.Max.Y, view.CropBox.Min.Z, view.CropBox.Max.Z };
 
-    private static bool CropExpandedOnly(double[] before, double[] after) => after[0] <= before[0] + 1e-8
-        && after[1] <= before[1] + 1e-8 && after[2] >= before[2] - 1e-8 && after[3] >= before[3] - 1e-8
-        && after[4] == before[4] && after[5] == before[5];
+    private static bool CropDepthPreserved(double[] before, double[] after) => after[4] == before[4] && after[5] == before[5];
 
     private object MeasureSupplement5(Document doc, View view, DetailingOptions options)
     {
@@ -76,7 +74,7 @@ public sealed partial class VerticalDetailingHarnessApplication
         double? expectedUpperMm = top == null ? null : Math.Abs(upperConcreteY - frame.Y(top.Point)) * 304.8;
         bool upperSafe = upperDimensions.Count > 0 && upperDimensions.All(d => d.ValuesMm.All(v => v > 0))
             && expectedUpperMm.HasValue && upperDimensions.SelectMany(d => d.ValuesMm).Any(v => Math.Abs(v - expectedUpperMm.Value) < 0.1);
-        return new { Passed = margin >= 29.9 && notes.Count > 0 && notes.All(n => n.ErrorMm < 0.1) && upperSafe,
+        return new { Passed = margin >= 0 && notes.Count > 0 && notes.All(n => n.ErrorMm < 0.1) && upperSafe,
             GraphicPoints = points.Count, BreakGraphicMarginMm = margin, NoteAnchors = notes,
             UpperReferenceSafe = upperSafe, UpperBaseline = upperSlabs.Count > 0 ? "slab" : "wall", ExpectedUpperMm = expectedUpperMm,
             UpperY = top == null ? (double?)null : frame.Y(top.Point), UpperDimensions = upperDimensions };

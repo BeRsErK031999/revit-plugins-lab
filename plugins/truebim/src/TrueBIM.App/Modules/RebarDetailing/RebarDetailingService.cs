@@ -70,6 +70,7 @@ public sealed partial class RebarDetailingService
     public IReadOnlyList<DetailingResult> Apply(Document doc, IEnumerable<View> views, DetailingOptions options)
     {
         List<DetailingResult> results = new();
+        using DetailingUpdaterScope updaters = new(doc);
         using TransactionGroup group = new(doc, "TrueBIM · Оформление вертикальных сечений");
         group.Start();
         foreach (View view in views) results.Add(ApplyView(doc, view, options));
@@ -88,9 +89,10 @@ public sealed partial class RebarDetailingService
             DetailingGeometry geometry = DetailingGeometry.Read(doc, view);
             result.Notes.AddRange(geometry.Notes);
             if (geometry.Bars.Count == 0) throw new InvalidOperationException("В границах вида нет видимой системной арматуры.");
-            List<Element> old = options.ReplaceExisting ? Annotations(view, options) : new();
+            List<Element> old = options.ClearView ? ClearableAnnotations(view)
+                : options.ReplaceExisting ? Annotations(view, options) : new();
             if (old.Any(e => e.Pinned || e.GroupId != ElementId.InvalidElementId || IsLocked(e)))
-                throw new InvalidOperationException("Размеры или марки закреплены, сгруппированы либо заблокированы. Снимите защиту вручную или отключите замену аннотаций.");
+                throw new InvalidOperationException("Элементы оформления закреплены, сгруппированы либо заблокированы. Снимите защиту вручную или отключите очистку и замену аннотаций.");
             if (options.Tags && doc.GetElement(options.TagTypeId) is not FamilySymbol) throw new InvalidOperationException("Выберите семейство марки арматуры.");
             if ((options.ConcreteDimensions || options.BarDimensions) && doc.GetElement(options.DimensionTypeId) is not DimensionType)
                 throw new InvalidOperationException("Выберите линейный размерный стиль.");
@@ -177,6 +179,18 @@ public sealed partial class RebarDetailingService
             : e is Dimension dimension ? IsRebarDimension(dimension) ? options.BarDimensions : options.ConcreteDimensions
             : e is IndependentTag ? options.Tags && e.Category?.Id == new ElementId(BuiltInCategory.OST_RebarTags)
             : e is MultiReferenceAnnotation && options.BarDimensions && options.Tags)).ToList();
+    }
+
+    private static List<Element> ClearableAnnotations(View view)
+    {
+        // Only view-owned drafting content. Model elements, reference views and
+        // annotations on other views are never candidates for a full cleanup.
+        var owned = new FilteredElementCollector(view.Document).OwnedByView(view.Id).WhereElementIsNotElementType().ToList();
+        var children = new HashSet<ElementId>(owned.OfType<MultiReferenceAnnotation>()
+            .SelectMany(m => new[] { m.TagId, m.DimensionId }));
+        return owned.Where(e => !children.Contains(e.Id) && (e is Dimension || e is IndependentTag
+            || e is MultiReferenceAnnotation || e is TextNote || e is DetailCurve || e is AnnotationSymbol
+            || e is FamilyInstance && e.Category?.Id == new ElementId(BuiltInCategory.OST_DetailComponents))).ToList();
     }
 
     private static bool IsRebarDimension(Dimension dimension) => dimension.References.Cast<Reference>().Any(reference =>

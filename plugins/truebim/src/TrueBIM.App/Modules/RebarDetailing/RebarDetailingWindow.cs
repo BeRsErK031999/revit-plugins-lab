@@ -22,6 +22,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         lowerTop = new() { Text = "Фундаментная плита" }, lowerBottom = new() { Text = "{том}" };
     private readonly CheckBox details = Check("Обрывы, швы и подписи плит"), quantities = Check("Записать количество в «Комментарии» арматуры");
     private readonly CheckBox pins = Check("Шпильки Ш1 А240");
+    private readonly CheckBox clear = Check("Очистить вид перед оформлением");
     public RebarDetailingWindow(Document doc, IReadOnlyList<DetailingViewRow> rows, RebarDetailingService service)
     {
         this.rows = rows;
@@ -30,7 +31,9 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         Grid body = new(); body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); body.RowDefinitions.Add(new RowDefinition());
         StackPanel settings = new();
         WrapPanel choices = new() { Margin = new Thickness(0, 0, 0, 8) };
-        pins.ToolTip = "Элементы узла через один горизонтальный стержень снизу вверх. A = толщина стены − 50 мм, минимум 160 мм.";
+        pins.ToolTip = "Элементы узла через один горизонтальный стержень или пучок снизу вверх. A = толщина стены − 50 мм, минимум 160 мм.";
+        clear.IsChecked = false;
+        clear.ToolTip = "Удалить размеры, отметки, марки, РШБ, шпильки, текст и детали выбранного вида, включая ручное оформление, затем создать включённые виды оформления. Закреплённые и сгруппированные элементы требуют снятия защиты.";
         foreach (CheckBox option in new[] { tags, concrete, bars, spots, details, pins }) choices.Children.Add(option);
         settings.Children.Add(choices);
         Add("Резервная марка арматуры", "tag", tagType); Add("Линейный размер", "dimension", dimType);
@@ -40,9 +43,10 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         AddNoteSettings("Выноска снизу", lowerTop, lowerBottom);
         settings.Children.Add(new TextBlock { Text = "В каждой выноске: верхняя строка / нижняя строка. {том} — марка связанного тома; две пустые строки отключают выноску.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 4) });
         settings.Children.Add(replace);
+        settings.Children.Add(clear);
         settings.Children.Add(quantities);
         RestoreSettings();
-        settings.Children.Add(new TextBlock { Text = "Марки подбираются по назначению стержней. Количество записывается только в пустые комментарии или вместо прежнего количества; текстовые комментарии сохраняются. Существующие ручные обрывы и подписи сохраняются.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 10) });
+        settings.Children.Add(new TextBlock { Text = "Марки подбираются по назначению стержней. Количество записывается только в пустые комментарии или вместо прежнего количества; текстовые комментарии сохраняются. Ручные детали и подписи сохраняются, если очистка вида выключена.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 5, 0, 10) });
         body.Children.Add(settings);
         DataGrid table = new() { AutoGenerateColumns = false, ItemsSource = rows, CanUserAddRows = false, CanUserDeleteRows = false, Margin = new Thickness(0, 4, 0, 8) };
         table.Columns.Add(new DataGridCheckBoxColumn { Header = "✓", Binding = new Binding(nameof(DetailingViewRow.Selected)) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged }, Width = 40 });
@@ -67,7 +71,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         Button help = TrueBimUi.CreateSecondaryButton("Методичка", TrueBimIcon.Help, (_, _) => new RebarDetailingGuideWindow { Owner = this }.ShowDialog());
         help.ToolTip = "Как подготовить и оформить вертикальные сечения";
         ApplyTrueBimShell(TrueBimUi.CreateHeader(Title, "Готовые вертикальные сечения · стены, пилоны, колонны", TrueBimIcon.RebarSplit),
-            null, body, new TextBlock { Text = "Обрезка может расшириться для полного отображения обрывов. При ошибке все изменения проблемного вида отменяются.", TextWrapping = TextWrapping.Wrap }, TrueBimUi.CreateFooter(null, help, run, cancel));
+            null, body, new TextBlock { Text = "Обрезка подгоняется под области обрыва. При ошибке все изменения проблемного вида, включая очистку, отменяются.", TextWrapping = TextWrapping.Wrap }, TrueBimUi.CreateFooter(null, help, run, cancel));
         void Add(string label, string kind, ComboBox combo)
         {
             var types = service.Types(doc, kind); combo.ItemsSource = types;
@@ -96,6 +100,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
         var saved = lastOptions;
         tags.IsChecked = saved.Tags; concrete.IsChecked = saved.ConcreteDimensions; bars.IsChecked = saved.BarDimensions;
         spots.IsChecked = saved.Elevations; replace.IsChecked = saved.ReplaceExisting; details.IsChecked = saved.Details;
+        clear.IsChecked = saved.ClearView;
         quantities.IsChecked = saved.WriteQuantities; pins.IsChecked = saved.Pins; variant.SelectedIndex = (int)saved.Variant;
         upperTop.Text = saved.UpperNoteTop; upperBottom.Text = saved.UpperNoteBottom;
         lowerTop.Text = saved.LowerNoteTop; lowerBottom.Text = saved.LowerNoteBottom;
@@ -108,7 +113,7 @@ public sealed class RebarDetailingWindow : TrueBimWindow
     }
     public IReadOnlyList<View> SelectedViews => rows.Where(r => r.Selected).Select(r => r.View).ToList();
     public DetailingOptions Options => new() { Tags = tags.IsChecked == true, ConcreteDimensions = concrete.IsChecked == true, BarDimensions = bars.IsChecked == true, Elevations = spots.IsChecked == true,
-        ReplaceExisting = replace.IsChecked == true, Details = details.IsChecked == true, Pins = pins.IsChecked == true, WriteQuantities = quantities.IsChecked == true,
+        ReplaceExisting = replace.IsChecked == true, ClearView = clear.IsChecked == true, Details = details.IsChecked == true, Pins = pins.IsChecked == true, WriteQuantities = quantities.IsChecked == true,
         Variant = (DetailingVariant)variant.SelectedIndex, UpperNoteTop = upperTop.Text, UpperNoteBottom = upperBottom.Text,
         LowerNoteTop = lowerTop.Text, LowerNoteBottom = lowerBottom.Text,
         TagTypeId = Id(tagType), DimensionTypeId = Id(dimType), SpotTypeId = Id(spotType) };

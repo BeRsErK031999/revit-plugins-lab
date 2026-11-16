@@ -76,9 +76,9 @@ public sealed partial class VerticalDetailingHarnessApplication
             .Select(f => new { X = frame.X(((LocationCurve)f.Location).Curve.Evaluate(0.5, true)),
                 Bottom = RebarDetailingService.BreakGraphicPoints(f, view).Select(frame.Y).DefaultIfEmpty(double.MaxValue).Min() })
             .SelectMany(f => lowerSlabs.Where(h => f.X >= h.Bounds.Left && f.X <= h.Bounds.Right
-                && Math.Abs(f.Bottom - h.Bounds.Bottom) < 200 / 304.8)
+                && Math.Abs(f.Bottom - h.Bounds.Bottom) < frame.Paper(8))
                 .Select(h => (h.Bounds.Bottom - f.Bottom) * 304.8)).ToList();
-        bool lowerEndsSafe = lowerSlabs.Count == 0 || lowerEnds.Count > 0 && lowerEnds.All(mm => Math.Abs(mm - 80) < 0.1);
+        bool lowerEndsSafe = lowerSlabs.Count == 0 || lowerEnds.Count > 0 && lowerEnds.All(mm => Math.Abs(mm - 5.6 * view.Scale) < 0.1);
         bool localBarsOnly = geometry.Bars.All(b => b.Link == null);
         bool localTagsOnly = new FilteredElementCollector(doc).OwnedByView(view.Id).OfClass(typeof(IndependentTag))
             .Cast<IndependentTag>().Where(t => t.Category?.Id == new ElementId(BuiltInCategory.OST_RebarTags))

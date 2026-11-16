@@ -115,8 +115,8 @@ public sealed partial class RebarDetailingService
         {
             if (path.Count < 2) return;
             var points = path.Select(p => frame.Point(p.X, p.Y)).ToList();
-            // The free vertical ends of a lower slab break project 80 model
-            // millimetres below the slab. The masking region is not the datum.
+            // Free ends project 5.6 paper millimetres below the slab (280 at M50).
+            // The visible curve, not the masking region, is the datum.
             ExtendLowerEnd(0, 1); ExtendLowerEnd(points.Count - 1, points.Count - 2);
             void ExtendLowerEnd(int index, int neighbour)
             {
@@ -124,7 +124,7 @@ public sealed partial class RebarDetailingService
                 if (Math.Abs(frame.X(point) - frame.X(adjacent)) > 0.1 / 304.8 || frame.Y(point) >= frame.Y(adjacent)) return;
                 var slab = lowerSlabs.FirstOrDefault(h => Math.Abs(frame.Y(point) - h.Bounds.Bottom) < 0.1 / 304.8
                     && frame.X(point) >= h.Bounds.Left && frame.X(point) <= h.Bounds.Right);
-                if (slab != null) points[index] -= frame.Up * (80 / 304.8);
+                if (slab != null) points[index] -= frame.Up * frame.Paper(5.6);
             }
             if (points.Count == 2) { AddBreak(points[0], points[1], false); return; }
             if (points.Count > 4)
@@ -188,7 +188,7 @@ public sealed partial class RebarDetailingService
             if (Math.Abs(direction.DotProduct(frame.Up)) > 0.999)
             {
                 double lowerY = Math.Min(frame.Y(start), frame.Y(end));
-                var slab = lowerSlabs.FirstOrDefault(h => Math.Abs(lowerY - (h.Bounds.Bottom - 80 / 304.8)) < 0.1 / 304.8
+                var slab = lowerSlabs.FirstOrDefault(h => Math.Abs(lowerY - (h.Bounds.Bottom - frame.Paper(5.6))) < 0.1 / 304.8
                     && frame.X(middle) >= h.Bounds.Left && frame.X(middle) <= h.Bounds.Right);
                 if (slab != null && detail.Location is LocationCurve placement)
                 {

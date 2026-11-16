@@ -10,6 +10,7 @@ public sealed partial class RebarDetailingService
         public DetailingAxis? Axis { get; set; }
         public DetailingFace? Face { get; set; }
         public string Run { get; set; } = "";
+        public DetailingBar? Bar { get; set; }
     }
 
     private static DetailingRect Region(DetailingFrame frame, IEnumerable<DetailingBar> bars)
@@ -36,7 +37,7 @@ public sealed partial class RebarDetailingService
                     var entries = bars.Where(bar => !IsPin(bar)).SelectMany(bar => bar.DimensionReferences
                         .Where(axis => horizontal ? Math.Abs(axis.Direction.DotProduct(frame.Up)) > 0.999
                             : Math.Abs(axis.Direction.DotProduct(frame.Normal)) > 0.999 || Math.Abs(axis.Direction.DotProduct(frame.Right)) > 0.999)
-                        .Select(axis => new ChainReference { Point = axis.Point, Axis = axis, Run = bar.Element.GetTypeId() + "|" + bar.Shape }))
+                        .Select(axis => new ChainReference { Point = axis.Point, Axis = axis, Bar = bar, Run = bar.Element.GetTypeId() + "|" + bar.Shape }))
                         .OrderBy(p => Math.Round(Coordinate(p.Point) * 304.8, 1)).ThenBy(p => frame.X(p.Point)).ToList();
                     // Never alternate between the left and right rows when
                     // their elevations differ. The left chain belongs to the
@@ -47,6 +48,13 @@ public sealed partial class RebarDetailingService
                     if (!horizontal && faces.Count >= 2)
                         entries.RemoveAll(p => Coordinate(p.Point) < Coordinate(faces.First().Point) - 0.1 / 304.8
                             || Coordinate(p.Point) > Coordinate(faces.Last().Point) + 0.1 / 304.8);
+                    if (!horizontal)
+                    {
+                        var lower = DetailingBarBundles.Create(entries.Select((p, i) =>
+                            (i, frame.X(p.Point) * 304.8, frame.Y(p.Point) * 304.8, BarDiameter(p.Bar!))))
+                            .Select(g => entries[g[0]]).ToList();
+                        entries = lower.OrderBy(p => frame.Y(p.Point)).ThenBy(p => frame.X(p.Point)).ToList();
+                    }
                     if (entries.Count >= 1)
                     {
                         double low = Coordinate(entries.First().Point), high = Coordinate(entries.Last().Point);
