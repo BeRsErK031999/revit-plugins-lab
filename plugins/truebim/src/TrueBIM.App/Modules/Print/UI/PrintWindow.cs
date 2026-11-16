@@ -1187,9 +1187,10 @@ public sealed class PrintWindow : TrueBimWindow
             return;
         }
 
-        printerWarningText.Foreground = IsFolderPdf ? TrueBimBrushes.TextSecondary : TrueBimBrushes.Warning;
+        printerWarningText.Foreground = IsFolderPdf && FolderPdfRoute != PrintFolderPdfRoute.Unsupported
+            ? TrueBimBrushes.TextSecondary : TrueBimBrushes.Warning;
         printerWarningText.Text = IsFolderPdf
-            ? "Драйвер печатает в выбранную папку. Снимите «Один PDF» для отдельных файлов."
+            ? PrintFolderPdfPolicy.GetMessage(FolderPdfRoute)
             : "При печати через драйвер он может запросить имя файла.";
         printerWarningRow.Visibility = GetSelectedOperationMode() == PrintOperationMode.Printer
             && GetSelectedPrinter()?.IsPdfDriver == true
@@ -2542,6 +2543,14 @@ public sealed class PrintWindow : TrueBimWindow
 
     private void UpdateExportState()
     {
+        if (IsFolderPdf && FolderPdfRoute == PrintFolderPdfRoute.Unsupported)
+        {
+            exportButton.IsEnabled = false;
+            exportButton.ToolTip = PrintFolderPdfPolicy.GetMessage(FolderPdfRoute);
+            statusText.Text = PrintFolderPdfPolicy.GetMessage(FolderPdfRoute);
+            return;
+        }
+
         int selectedCount = sheetRows.Count(row => row.IsSelected && row.CanBePrinted);
         IReadOnlyList<PrintSheetInfo> loadedSheets = GetAllLoadedSheets();
         int selectedTotalCount = sheetSelectionState.CountSelected(loadedSheets);
@@ -2688,6 +2697,9 @@ public sealed class PrintWindow : TrueBimWindow
         GetSelectedPrinter()?.IsPdfDriver == true;
 
     private bool IsFolderPdf => IsDriverPdf && driverPdfInput.IsChecked == true;
+
+    private PrintFolderPdfRoute FolderPdfRoute => PrintFolderPdfPolicy.GetRoute(GetSelectedPrinter()?.Name,
+        Equals(printSetupInput.SelectedItem, PrintSetupOption.Automatic), PrintFolderPdfPolicy.NativePdfAvailable);
 
     private bool OutputPdf => IsDriverPdf ? IsFolderPdf : pdfInput.IsChecked == true;
     private bool OutputDwg => GetSelectedOperationMode() == PrintOperationMode.Export && dwgInput.IsChecked == true;

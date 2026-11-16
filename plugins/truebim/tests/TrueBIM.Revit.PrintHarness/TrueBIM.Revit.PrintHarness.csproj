@@ -2,10 +2,15 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework><LangVersion>latest</LangVersion><Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings><UseWPF>true</UseWPF>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2024</RevitVersion>
+    <DefineConstants Condition="'$(RevitVersion)' == '2024'">$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="RevitAPI"><HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPI.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="RevitAPIUI"><HintPath>C:\Program Files\Autodesk\Revit 2024\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPI"><HintPath>C:\Program Files\Autodesk\Revit $(RevitVersion)\RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI"><HintPath>C:\Program Files\Autodesk\Revit $(RevitVersion)\RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="TrueBIM.Print.QA"><HintPath>$(PrintQaAssembly)</HintPath><Private>true</Private></Reference>
+    <Reference Include="UglyToad.PdfPig"><HintPath>$([System.IO.Path]::GetDirectoryName('$(PrintQaAssembly)'))/UglyToad.PdfPig.dll</HintPath></Reference>
+    <Reference Include="UglyToad.PdfPig.Core"><HintPath>$([System.IO.Path]::GetDirectoryName('$(PrintQaAssembly)'))/UglyToad.PdfPig.Core.dll</HintPath></Reference>
+    <Reference Include="System.Memory"><HintPath>$([System.IO.Path]::GetDirectoryName('$(PrintQaAssembly)'))/System.Memory.dll</HintPath></Reference>
   </ItemGroup>
 </Project>
