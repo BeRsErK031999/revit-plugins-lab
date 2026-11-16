@@ -16,6 +16,22 @@ public sealed class PrintDriverPdfService
         bool combined, string? combinedName, string printer, string? setup, bool automaticPaper,
         PrintPdfExportSettings settings, ITrueBimLogger logger, Action<PrintOperationProgressStep>? progress)
     {
+        var route = PrintFolderPdfPolicy.GetRoute(printer, automaticPaper, PrintFolderPdfPolicy.NativePdfAvailable);
+        if (route == PrintFolderPdfRoute.NativeExport)
+        {
+            logger.Info($"Folder PDF for '{printer}': using native Revit PDF export with automatic sheet size.");
+            return new PrintPdfExportService().Export(document, folder, items,
+                combined ? PrintPdfExportMode.CombinedFile : PrintPdfExportMode.SeparateFiles,
+                combinedName, settings, logger, progress);
+        }
+        if (route == PrintFolderPdfRoute.Unsupported)
+        {
+            string message = PrintFolderPdfPolicy.GetMessage(route);
+            logger.Warning(message);
+            return new PrintPdfExportResult(Array.Empty<string>(),
+                items.Select(item => new PrintPdfExportFailure(item, message)).ToList());
+        }
+
         var files = new List<string>();
         var failures = new List<PrintPdfExportFailure>();
         IReadOnlyDictionary<long, string> largerPaper = new Dictionary<long, string>();

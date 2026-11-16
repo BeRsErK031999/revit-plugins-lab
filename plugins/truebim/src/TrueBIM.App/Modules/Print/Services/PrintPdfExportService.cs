@@ -229,9 +229,12 @@ public sealed class PrintPdfExportService
         Directory.CreateDirectory(staging);
         try
         {
-            using PDFExportOptions options = CreateOptions(fileName, settings);
+            // Revit 2022 validates the complete export path against MAX_PATH.
+            // Keep its temporary basename short; publish under the requested name afterwards.
+            const string stagingFileName = "output.pdf";
+            using PDFExportOptions options = CreateOptions(stagingFileName, settings);
             if (!document.Export(staging, viewIds, options)) return false;
-            string produced = Path.Combine(staging, fileName);
+            string produced = Path.Combine(staging, stagingFileName);
             if (!File.Exists(produced) || new FileInfo(produced).Length == 0)
                 throw new IOException("Revit подтвердил экспорт, но файл PDF не создан: " + fileName);
             string destination = Path.Combine(folder, fileName);
@@ -255,6 +258,8 @@ public sealed class PrintPdfExportService
             FileName = Path.GetFileNameWithoutExtension(fileName),
             StopOnError = true,
             PaperFormat = ExportPaperFormat.Default,
+            ZoomType = ZoomType.Zoom,
+            ZoomPercentage = 100,
             ColorDepth = MapColorDepth(settings.ColorMode),
             RasterQuality = MapRasterQuality(settings.RasterQuality),
             AlwaysUseRaster = settings.AlwaysUseRaster
