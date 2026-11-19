@@ -2,6 +2,8 @@
 
 Workspace for Revit add-ins, AutoCAD plugins, Dynamo automation, and future product work.
 
+**Для разработчиков и ИИ-агентов** — [как работать вдвоём, проверять плагины и отправлять изменения](CONTRIBUTING.md).
+
 ## Repository structure
 
 - `docs/` - environment notes, Revit API notes, and development decisions.
@@ -10,22 +12,7 @@ Workspace for Revit add-ins, AutoCAD plugins, Dynamo automation, and future prod
 - `templates/` - reusable project templates and scaffolding notes.
 - `dynamo/` - Dynamo graphs, Python scripts, and Dynamo-specific notes.
 
-## Local environment snapshot
+## Revit products
 
-- Revit installed: 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025.
-- Git installed.
-- Visual Studio Build Tools 2022 installed.
-- VS Code installed.
-- .NET runtimes installed, including .NET 8 and .NET 9.
-- .NET SDK is not currently visible through `dotnet --list-sdks`.
-
-## Initial recommendation
-
-For Revit 2025 development, install the .NET 8 SDK and build add-ins as `net8.0-windows`.
-For Revit 2024 and older, prepare a separate target/build path for .NET Framework 4.8.
-
-## First product
-
-The first real product workspace is located at `plugins/truebim/`.
-
-TrueBIM is a modular Revit add-in platform. The first module is sheet numbering.
+- [TrueBIM](plugins/truebim/README.md) — modular Revit add-in, supported releases, and build instructions.
+- [Revit add-in products](plugins/README.md) — standalone add-ins and recommended project layout.
