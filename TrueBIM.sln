@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrueBIM.App", "plugins\true
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrueBIM.App.Tests", "plugins\truebim\tests\TrueBIM.App.Tests\TrueBIM.App.Tests.csproj", "{5CFA69A1-845B-41FB-A2FF-8AD8DBDACF91}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrueBIM.UpdateFixture", "plugins\truebim\tests\TrueBIM.UpdateFixture\TrueBIM.UpdateFixture.csproj", "{BD178154-09DD-430C-A124-92C6A8FEF9EF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +22,10 @@ Global
 		{5CFA69A1-845B-41FB-A2FF-8AD8DBDACF91}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5CFA69A1-845B-41FB-A2FF-8AD8DBDACF91}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5CFA69A1-845B-41FB-A2FF-8AD8DBDACF91}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BD178154-09DD-430C-A124-92C6A8FEF9EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BD178154-09DD-430C-A124-92C6A8FEF9EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BD178154-09DD-430C-A124-92C6A8FEF9EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BD178154-09DD-430C-A124-92C6A8FEF9EF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
