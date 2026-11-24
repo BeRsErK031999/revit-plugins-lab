@@ -50,6 +50,7 @@ public static class TrueBimRibbon
     public const string HelpPanelName = "Помощь";
     public const string ArPanelName = "АР";
     public const string KrPanelName = "КР";
+    public const string IosPanelName = "ИОС";
     public const string EomPanelName = "ЭОМ";
     public const string SsPanelName = "СС";
 
@@ -573,6 +574,13 @@ public static class TrueBimRibbon
             TrueBimIcon.ScheduleCollapse,
             "Показывает ненулевые и скрывает нулевые столбцы полей Р • ИА… и Р • ИЗ…. Остальные поля сохраняют видимость."),
         new(
+            IosPanelName,
+            "TrueBIM_SystemDesignation",
+            "Обозначение системы",
+            $"{CommandNamespace}.{nameof(SystemDesignationCommand)}",
+            TrueBimIcon.CopyParameters,
+            "Заполняет общий параметр «• Обозначение системы» у элементов вентиляции и трубопроводных систем."),
+        new(
             EomPanelName,
             "TrueBIM_VoltageDropCalculation",
             "Расчет\nпотери\nнапряжения",
@@ -633,7 +641,7 @@ public static class TrueBimRibbon
                 MenuItem("TrueBIM_ScheduleRegister")
             ]),
             Menu("TrueBIM_DisciplinesMenu", "Разделы", TrueBimIcon.Worksets,
-                "Инструменты разделов АР, КР и ЭОМ.",
+                "Инструменты разделов АР, КР, ИОС и ЭОМ.",
             [
                 MenuItem("TrueBIM_FloorFinishing", prefix: "АР"),
                 MenuItem("TrueBIM_WallFinishing", prefix: "АР"),
@@ -646,6 +654,7 @@ public static class TrueBimRibbon
                 MenuItem("TrueBIM_RebarFill", prefix: "КР"),
                 MenuItem("TrueBIM_RebarDetailing", prefix: "КР"),
                 MenuItem("TrueBIM_CollapseScheduleColumns", prefix: "КР"),
+                MenuItem("TrueBIM_SystemDesignation", beginsGroup: true, prefix: IosPanelName),
                 MenuItem("TrueBIM_VoltageDropCalculation", beginsGroup: true, prefix: "ЭОМ"),
                 MenuItem("TrueBIM_ElectricalSchematic", prefix: "ЭОМ")
             ])
