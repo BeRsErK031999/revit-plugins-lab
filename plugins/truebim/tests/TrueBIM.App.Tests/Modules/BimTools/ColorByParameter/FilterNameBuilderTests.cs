@@ -10,17 +10,13 @@ public sealed class FilterNameBuilderTests
     {
         FilterNameBuilder builder = new();
 
-        string name = builder.Build("Комментарии", "АР / Стена: 01?");
-
-        Assert.StartsWith(FilterNameBuilder.Prefix, name);
-        Assert.DoesNotContain("/", name);
-        Assert.DoesNotContain(":", name);
-        Assert.DoesNotContain("?", name);
+        string name = builder.Build("ADSK_Марка", "АР / Стена: 01");
+        Assert.Equal("［TB］ ADSK_Марка АР / Стена: 01", name);
         Assert.True(builder.IsOwnedFilterName(name));
     }
 
     [Fact]
-    public void BuildLimitsLongNames()
+    public void BuildPreservesBothLongComponents()
     {
         FilterNameBuilder builder = new();
         string longParameter = new('П', 120);
@@ -28,11 +24,21 @@ public sealed class FilterNameBuilderTests
 
         string name = builder.Build(longParameter, longValue);
 
-        Assert.True(name.Length <= FilterNameBuilder.MaxLength);
-        Assert.StartsWith(FilterNameBuilder.Prefix, name);
+        Assert.Equal($"［TB］ {longParameter} {longValue}", name);
     }
 
     [Theory]
+    [InlineData("A;B", "［TB］ Марка A_B")]
+    [InlineData("[?]", "［TB］ Марка ___")]
+    [InlineData("", "［TB］ Марка Пусто")]
+    public void BuildHandlesUnsupportedCharactersAndEmptyValues(string value, string expected)
+    {
+        Assert.Equal(expected, new FilterNameBuilder().Build("Марка", value));
+    }
+
+    [Theory]
+    [InlineData("［TB］ Марка В1", true)]
+    [InlineData("［TB］Прочее", false)]
     [InlineData("BIM_F_Комментарии_AABBCCDD", true)]
     [InlineData("BIM_Комментарии_AABBCCDD", false)]
     [InlineData("", false)]
