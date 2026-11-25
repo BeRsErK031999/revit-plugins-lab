@@ -193,6 +193,33 @@ public sealed class FinishScheduleWritePlanningTests
     }
 
     [Fact]
+    public void RoomGeometryFailureOnlyBlocksPossibleCandidatesOfThatRoom()
+    {
+        FinishRoomCandidateSnapshot failedRoom = new(1, 10, 100, true, new AxisAlignedBox3D(0, 0, 0, 10, 10, 8));
+        FinishRoomCandidateSnapshot adjacentRoom = new(2, 10, 100, true, new AxisAlignedBox3D(10, 0, 0, 20, 10, 8));
+        FinishRoomCandidateSnapshot upperRoom = new(3, 20, 100, true, new AxisAlignedBox3D(0, 0, 10, 10, 10, 18));
+        FinishClassifiedElement Wall(long id, AxisAlignedBox3D? bounds) =>
+            new(new FinishElementCandidateSnapshot(id, 50, FinishPhysicalCategory.Wall, bounds), FinishPreviewCategory.Walls);
+        FinishClassifiedElement[] walls =
+        [
+            Wall(100, new AxisAlignedBox3D(9, 1, 0, 11, 4, 6)),
+            Wall(101, new AxisAlignedBox3D(14, 1, 0, 15, 4, 6)),
+            Wall(102, new AxisAlignedBox3D(1, 1, 10, 2, 4, 16)),
+            Wall(103, null)
+        ];
+        FinishQuantityRequest scope = new([failedRoom, adjacentRoom, upperRoom], walls);
+        FinishQuantityResult quantities = new(
+            [Occurrence(2, 100), Occurrence(2, 101), Occurrence(3, 102)],
+            [new FinishGeometryWarning(FinishGeometryWarningCode.ProbeCreationFailed, "Invalid contour", RoomId: 1)]);
+        var result = new FinishOwnershipValueBuilder().Build(Settings(true), walls, quantities,
+            RoomSnapshots((1, "101"), (2, "102"), (3, "201")), scope);
+
+        Assert.Equal(new[] { (101L, "102"), (102L, "201") }, result.Targets.Select(target => (target.ElementId, target.Value)));
+        Assert.Equal(new long?[] { 100, 103 }, result.Issues.Select(issue => issue.ElementId));
+        Assert.All(result.Issues, issue => Assert.Equal(FinishWriteIssueCode.UnknownOwnership, issue.Code));
+    }
+
+    [Fact]
     public void OwnershipValueBuilder_DisabledSettingSkipsStageCompletely()
     {
         FinishParameterTargetBuildResult result = new FinishOwnershipValueBuilder().Build(

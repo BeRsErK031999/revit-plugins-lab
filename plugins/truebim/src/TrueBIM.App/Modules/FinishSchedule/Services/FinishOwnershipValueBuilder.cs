@@ -8,7 +8,15 @@ public sealed class FinishOwnershipValueBuilder
         FinishScheduleSettings settings,
         IEnumerable<FinishClassifiedElement> inScopeElements,
         FinishQuantityResult quantities,
-        RoomFinishSnapshotBuildResult roomSnapshots)
+        RoomFinishSnapshotBuildResult roomSnapshots) =>
+        Build(settings, inScopeElements, quantities, roomSnapshots, null);
+
+    public FinishParameterTargetBuildResult Build(
+        FinishScheduleSettings settings,
+        IEnumerable<FinishClassifiedElement> inScopeElements,
+        FinishQuantityResult quantities,
+        RoomFinishSnapshotBuildResult roomSnapshots,
+        FinishQuantityRequest? geometryRequest)
     {
         if (settings is null)
         {
@@ -42,6 +50,9 @@ public sealed class FinishOwnershipValueBuilder
         List<FinishParameterTargetValue> targets = [];
         List<FinishRoomAssignment> assignments = [];
         List<FinishWriteIssue> issues = [];
+        var blockingWarnings = quantities.Warnings.Where(FinishGeometryWarningClassifier.AffectsScheduleValue)
+            .ToLookup(warning => warning.ElementId);
+        var uncertainCandidates = FindRoomWarningCandidates(blockingWarnings[null], elements, geometryRequest);
         foreach (FinishClassifiedElement element in elements)
         {
             long elementId = element.Element.ElementId;
@@ -58,7 +69,8 @@ public sealed class FinishOwnershipValueBuilder
                 continue;
             }
 
-            if (HasUnknownOwnership(elementId, element.Category, quantities.Warnings))
+            if (uncertainCandidates.Contains(element)
+                || blockingWarnings[elementId].Any(warning => warning.Category is null || warning.Category == element.Category))
             {
                 issues.Add(new FinishWriteIssue(
                     FinishWriteIssueCode.UnknownOwnership,
@@ -122,16 +134,41 @@ public sealed class FinishOwnershipValueBuilder
         };
     }
 
-    private static bool HasUnknownOwnership(
-        long elementId,
-        FinishPreviewCategory category,
-        IEnumerable<FinishGeometryWarning> warnings)
+    private static HashSet<FinishClassifiedElement> FindRoomWarningCandidates(
+        IEnumerable<FinishGeometryWarning> warnings,
+        IReadOnlyList<FinishClassifiedElement> elements,
+        FinishQuantityRequest? geometryRequest)
     {
-        return warnings.Any(warning =>
-            (!warning.Category.HasValue || warning.Category == category)
-            && FinishGeometryWarningClassifier.AffectsScheduleValue(warning)
-            && (warning.ElementId == elementId
-                || (!warning.ElementId.HasValue && warning.RoomId.HasValue)));
+        var failures = warnings.Where(warning => warning.RoomId.HasValue)
+            .Select(warning => (RoomId: warning.RoomId!.Value, warning.Category)).Distinct().ToArray();
+        HashSet<FinishClassifiedElement> uncertain = [];
+        if (failures.Length == 0)
+            return uncertain;
+
+        var rooms = geometryRequest?.Rooms.ToDictionary(room => room.ElementId);
+        var search = geometryRequest is null ? null : new FinishRoomSearchBounds(geometryRequest.Rooms, geometryRequest.Elements);
+        var elementsByCategory = elements.ToLookup(element => element.Category);
+        foreach (var failure in failures)
+        {
+            FinishRoomCandidateSnapshot? room = null;
+            rooms?.TryGetValue(failure.RoomId, out room);
+            foreach (var category in elementsByCategory)
+            {
+                if (failure.Category.HasValue && failure.Category != category.Key)
+                    continue;
+                if (room?.Bounds is null)
+                {
+                    uncertain.UnionWith(category);
+                    continue;
+                }
+
+                var bounds = search!.Create(room, category.Key);
+                // An element without bounds cannot be ruled out. Preserve any existing assignment.
+                uncertain.UnionWith(category.Where(element => element.Element.Bounds is null
+                    || FinishRoomSearchBounds.Includes(room, element, bounds)));
+            }
+        }
+        return uncertain;
     }
 
     private static string GetCategoryName(FinishPreviewCategory category)

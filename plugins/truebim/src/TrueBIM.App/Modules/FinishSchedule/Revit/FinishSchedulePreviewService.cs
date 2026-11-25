@@ -66,7 +66,7 @@ public sealed class FinishSchedulePreviewService
                 new FinishDescriptionNormalizer()).Build(new RoomFinishSnapshotRequest(
                     settings, request.Rooms, build.Classification.Elements, collection.Types, geometry));
             ownershipTargets = new FinishOwnershipValueBuilder().Build(
-                settings, assignmentElements, geometry, identifiers);
+                settings, assignmentElements, geometry, identifiers, request);
             timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
             stageTimer.Restart();
         }

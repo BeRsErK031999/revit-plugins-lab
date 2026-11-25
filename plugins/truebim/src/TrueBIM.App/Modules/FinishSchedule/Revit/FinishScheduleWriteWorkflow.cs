@@ -82,7 +82,8 @@ public sealed class FinishScheduleWriteWorkflow
             settings,
             calculation.Build.InScopeElements,
             calculation.Quantities,
-            calculation.RoomSnapshots);
+            calculation.RoomSnapshots,
+            new FinishQuantityRequest(calculation.Collection.Rooms, calculation.Build.Classification.Elements));
         FinishWritePlan roomPlan = roomWriter.Plan(document, roomTargets);
         FinishWritePlan ownershipPlan = ownershipWriter.Plan(document, ownershipTargets);
         FinishRoomSchedulePlan schedulePlan = schedulePlanBuilder.Build(
