@@ -11,7 +11,7 @@ internal sealed class DesignationPlan
     public int Updated { get; private set; }
     public int Cleared { get; private set; }
 
-    public static DesignationPlan Prepare(Document doc, Dictionary<ElementId, Element> sources)
+    public static DesignationPlan Prepare(Document doc, Dictionary<ElementId, Element> sources, BuiltInParameter sourceParameter)
     {
         DesignationPlan plan = new();
         Dictionary<ElementId, string> cache = [];
@@ -32,7 +32,7 @@ internal sealed class DesignationPlan
                 continue;
             }
             if (!cache.TryGetValue(entry.Value.Id, out string? value))
-                cache.Add(entry.Value.Id, value = SystemDesignationValues.Read(entry.Value));
+                cache.Add(entry.Value.Id, value = SystemDesignationValues.Read(entry.Value, sourceParameter));
 
             if (string.Equals(target.AsString() ?? "", value, StringComparison.Ordinal))
                 plan.Unchanged++;
