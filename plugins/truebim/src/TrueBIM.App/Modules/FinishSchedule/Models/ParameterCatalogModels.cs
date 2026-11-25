@@ -53,7 +53,8 @@ public sealed class ParameterCatalogItem
         IEnumerable<long> categoryIds,
         int sampleCount,
         int writableSampleCount,
-        int readOnlySampleCount)
+        int readOnlySampleCount,
+        bool hasProjectBinding = false)
     {
         Reference = reference ?? throw new ArgumentNullException(nameof(reference));
         CategoryIds = (categoryIds ?? throw new ArgumentNullException(nameof(categoryIds)))
@@ -73,6 +74,7 @@ public sealed class ParameterCatalogItem
         SampleCount = sampleCount;
         WritableSampleCount = writableSampleCount;
         ReadOnlySampleCount = readOnlySampleCount;
+        HasProjectBinding = hasProjectBinding;
     }
 
     public ParameterReference Reference { get; }
@@ -84,6 +86,8 @@ public sealed class ParameterCatalogItem
     public int WritableSampleCount { get; }
 
     public int ReadOnlySampleCount { get; }
+
+    public bool HasProjectBinding { get; }
 
     public bool IsWritableForAllSamples => SampleCount > 0 && WritableSampleCount == SampleCount;
 
