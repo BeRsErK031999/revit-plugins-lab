@@ -7,8 +7,11 @@ namespace TrueBIM.App.Tests.Modules.BimTools.ColorByParameter;
 
 public sealed class ViewFilterServiceTests
 {
-    [Fact]
-    public void CreateOverrides_ColorsOnlySurfaceAndCutPatterns()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void CreateOverrides_ColorsSelectedPatternsAndLines(bool patterns, bool lines)
     {
         EnsureRevitApiLoaded();
         ColorRuleRow row = new(
@@ -18,14 +21,19 @@ public sealed class ViewFilterServiceTests
             "CreateOverrides",
             BindingFlags.Static | BindingFlags.NonPublic)!;
 
-        object settings = createOverrides.Invoke(null, [row, null])!;
-
-        Assert.False(GetBoolean(GetProperty(settings, "ProjectionLineColor"), "IsValid"));
-        Assert.False(GetBoolean(GetProperty(settings, "CutLineColor"), "IsValid"));
-        AssertColor(GetProperty(settings, "SurfaceForegroundPatternColor"), 17, 34, 51);
-        AssertColor(GetProperty(settings, "CutForegroundPatternColor"), 17, 34, 51);
-        Assert.True(GetBoolean(settings, "IsSurfaceForegroundPatternVisible"));
-        Assert.True(GetBoolean(settings, "IsCutForegroundPatternVisible"));
+        object settings = createOverrides.Invoke(null, [row, null, patterns, lines])!;
+        foreach (var (property, enabled) in new[] { ("ProjectionLineColor", lines), ("CutLineColor", lines),
+            ("SurfaceForegroundPatternColor", patterns), ("CutForegroundPatternColor", patterns) })
+        {
+            object color = GetProperty(settings, property);
+            if (enabled) AssertColor(color, 17, 34, 51);
+            else Assert.False(GetBoolean(color, "IsValid"));
+        }
+        if (patterns)
+        {
+            Assert.True(GetBoolean(settings, "IsSurfaceForegroundPatternVisible"));
+            Assert.True(GetBoolean(settings, "IsCutForegroundPatternVisible"));
+        }
     }
 
     private static void AssertColor(object color, byte red, byte green, byte blue)
