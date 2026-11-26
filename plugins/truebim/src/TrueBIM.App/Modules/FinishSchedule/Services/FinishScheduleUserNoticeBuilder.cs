@@ -219,10 +219,10 @@ public sealed class FinishScheduleUserNoticeBuilder
 
     private static string FormatRooms(FinishSchedulePreviewResult preview)
     {
-        string result = $"Помещения: рассчитано {preview.RoomScope.SelectedRooms.Count} из {preview.CollectedRooms}.";
+        string result = $"Размещённые помещения: рассчитано {preview.RoomScope.SelectedRooms.Count} из {preview.CollectedRooms}.";
         if (preview.RoomScope.InvalidRooms.Count > 0)
         {
-            result += $" Без корректной геометрии: {preview.RoomScope.InvalidRooms.Count}.";
+            result += $" Без расчётной площади или габаритов: {preview.RoomScope.InvalidRooms.Count}.";
         }
 
         return result;

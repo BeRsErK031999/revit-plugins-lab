@@ -92,7 +92,7 @@ public sealed class FinishSchedulePreviewBuilder
             .ThenBy(element => element.Category)
             .ToArray();
         FinishSchedulePreviewResult preview = new(
-            collection.Rooms.Count,
+            roomScope.SelectedRooms.Count + roomScope.InvalidRooms.Count + roomScope.OutsideScopeCount,
             roomScope,
             walls,
             floors,
@@ -129,7 +129,7 @@ public sealed class FinishSchedulePreviewBuilder
         List<string> warnings = [];
         if (roomScope.InvalidRooms.Count > 0)
         {
-            warnings.Add($"Невалидных помещений пропущено: {roomScope.InvalidRooms.Count}.");
+            warnings.Add($"Пропущено размещённых помещений без расчётной площади или габаритов: {roomScope.InvalidRooms.Count}.");
         }
 
         if (roomScope.MissingScopeValueCount > 0)

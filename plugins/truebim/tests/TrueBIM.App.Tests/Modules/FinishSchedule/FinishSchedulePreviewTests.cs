@@ -13,7 +13,8 @@ public sealed class FinishSchedulePreviewTests
         [
             Room(1, new AxisAlignedBox3D(0, 0, 0, 10, 10, 3)),
             Room(2, new AxisAlignedBox3D(20, 0, 0, 30, 10, 3)),
-            new FinishRoomCandidateSnapshot(3, 10, 0, true, null)
+            new FinishRoomCandidateSnapshot(3, 10, 0, true, null),
+            new FinishRoomCandidateSnapshot(4, 10, 0, false, null)
         ],
         [
             Element(101, 201, FinishPhysicalCategory.Wall, new AxisAlignedBox3D(1, 1, 0, 2, 2, 3)),
@@ -39,7 +40,8 @@ public sealed class FinishSchedulePreviewTests
         FinishSchedulePreviewResult result = build.Preview;
 
         Assert.Equal(2, result.RoomScope.SelectedRooms.Count);
-        Assert.Single(result.RoomScope.InvalidRooms);
+        Assert.Equal(3, result.CollectedRooms);
+        Assert.Equal(3L, Assert.Single(result.RoomScope.InvalidRooms).ElementId);
         Assert.Equal(new FinishPreviewCategoryCounts(2, 2, 1), result.Walls);
         Assert.Equal(new FinishPreviewCategoryCounts(2, 1, 1), result.Floors);
         Assert.Equal(new FinishPreviewCategoryCounts(2, 0, 0), result.Ceilings);
@@ -48,6 +50,22 @@ public sealed class FinishSchedulePreviewTests
         Assert.Equal(2, result.Index.PotentialRoomElementPairs);
         Assert.Equal([101L, 103L], build.InScopeElements.Select(element => element.Element.ElementId));
         Assert.NotEmpty(result.Warnings);
+    }
+
+    [Fact]
+    public void Build_OnlyUnplacedRoomsProducesNoRoomCountsOrWarnings()
+    {
+        FinishElementCollection collection = new(
+            [new FinishRoomCandidateSnapshot(1, -1, 0, false, null)], [], [], []);
+        FinishSchedulePreviewBuilder builder = new(new RoomScopeService(), new FinishClassificationService());
+
+        FinishSchedulePreviewResult result = builder.BuildDetailed(
+            collection, FinishScheduleSettings.CreateDefault()).Preview;
+
+        Assert.Equal(0, result.CollectedRooms);
+        Assert.Empty(result.RoomScope.SelectedRooms);
+        Assert.Empty(result.RoomScope.InvalidRooms);
+        Assert.Empty(result.Warnings);
     }
 
     [Fact]

@@ -92,7 +92,7 @@ public sealed class FinishScheduleUserNoticeBuilderTests
 
         Assert.Equal(FinishScheduleUserNoticeSeverity.Success, notice.Severity);
         Assert.Empty(notice.WarningItems);
-        Assert.Contains(notice.SummaryItems, item => item == "Помещения: рассчитано 2 из 2.");
+        Assert.Contains(notice.SummaryItems, item => item == "Размещённые помещения: рассчитано 2 из 2.");
         Assert.Contains(notice.SummaryItems, item => item.Contains("Полы: найдено элементов — 1", StringComparison.Ordinal));
         Assert.DoesNotContain(notice.SummaryItems, item => item.Contains("Spatial", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(notice.SummaryItems, item => item.Contains("cache", StringComparison.OrdinalIgnoreCase));

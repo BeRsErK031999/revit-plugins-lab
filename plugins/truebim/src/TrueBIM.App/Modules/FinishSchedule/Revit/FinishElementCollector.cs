@@ -74,6 +74,11 @@ public sealed class FinishElementCollector
         {
             try
             {
+                if (room.Location is null)
+                {
+                    continue;
+                }
+
                 IReadOnlyDictionary<string, FinishParameterValueSnapshot> values = ReadParameterValues(
                     room,
                     requestedParameters.OfType<ParameterReference>(),
@@ -82,7 +87,7 @@ public sealed class FinishElementCollector
                     RevitElementIds.GetValue(room.Id),
                     RevitElementIds.GetValue(room.LevelId),
                     room.Area,
-                    room.Location is not null,
+                    hasLocation: true,
                     ReadBounds(room),
                     values,
                     room.Number,

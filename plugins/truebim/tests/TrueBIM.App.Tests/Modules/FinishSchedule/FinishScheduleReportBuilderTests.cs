@@ -15,7 +15,7 @@ public sealed class FinishScheduleReportBuilderTests
             preview,
             FinishScheduleSettings.CreateDefault());
 
-        Assert.Contains("найдено 6; обработано 2; невалидных 1; вне scope 3", report);
+        Assert.Contains("Размещённые помещения: найдено 6; обработано 2; без расчётной площади или габаритов 1; вне области расчёта 3", report);
         Assert.Contains("проверено потенциальных пар 4", report);
         Assert.Contains("Сбор кандидатов: 12 мс", report);
         Assert.Contains("Type cache: entries 7", report);

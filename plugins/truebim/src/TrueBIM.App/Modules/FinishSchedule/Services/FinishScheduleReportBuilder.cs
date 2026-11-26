@@ -141,8 +141,8 @@ public sealed class FinishScheduleReportBuilder
                 : "Принадлежность: текущие параметры отделки; геометрический поиск отключён.");
         }
         report.AppendLine(
-            $"Помещения: найдено {preview.CollectedRooms}; обработано {preview.RoomScope.SelectedRooms.Count}; "
-                + $"невалидных {preview.RoomScope.InvalidRooms.Count}; вне scope {preview.RoomScope.OutsideScopeCount}.");
+            $"Размещённые помещения: найдено {preview.CollectedRooms}; обработано {preview.RoomScope.SelectedRooms.Count}; "
+                + $"без расчётной площади или габаритов {preview.RoomScope.InvalidRooms.Count}; вне области расчёта {preview.RoomScope.OutsideScopeCount}.");
         AppendCategory(report, "Стены", settings?.Walls.IsEnabled, preview.Walls, preview.Quantities?.Walls);
         AppendCategory(report, "Полы", settings?.Floors.IsEnabled, preview.Floors, preview.Quantities?.Floors);
         AppendCategory(report, "Потолки", settings?.Ceilings.IsEnabled, preview.Ceilings, preview.Quantities?.Ceilings);
