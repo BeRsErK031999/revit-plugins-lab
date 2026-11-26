@@ -6,6 +6,7 @@ namespace TrueBIM.App.Modules.RebarSplit.Revit;
 internal sealed class RebarSplitElementMap : Dictionary<ElementId, IReadOnlyList<ElementId>>
 {
     internal Dictionary<ElementId, IReadOnlyDictionary<int, ElementId>> BarPositions { get; } = new();
+    internal Func<ElementId, XYZ, ElementId?>? LocateTagHost { get; set; }
 
     internal ElementId Single(ElementId original) => TryGetValue(original, out IReadOnlyList<ElementId>? ids)
         ? ids.Count == 1 ? ids[0] : throw new InvalidOperationException($"Для элемента {original} нет единственной замены.")

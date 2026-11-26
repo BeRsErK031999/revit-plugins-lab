@@ -33,6 +33,14 @@ public sealed class AppRibbonButtonDefinitionTests
             "ведомости отделки"
         },
         {
+            "TrueBIM_SketchSplit",
+            TrueBimRibbon.ArPanelName,
+            "Разделить контуры",
+            $"TrueBIM.App.Commands.{nameof(SketchSplitCommand)}",
+            TrueBimIcon.FloorFinishing,
+            "участками эскиза"
+        },
+        {
             "TrueBIM_IsoFieldRebar",
             TrueBimRibbon.KrPanelName,
             "Армирование\nпо изополям",
