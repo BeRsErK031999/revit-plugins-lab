@@ -394,6 +394,14 @@ public static class TrueBimRibbon
             "От уровня, по верхней границе помещения или под перекрытием. В Revit 2019–2021 потолки моделируются перекрытиями; с Revit 2022 доступны системные потолки."),
         new(
             ArPanelName,
+            "TrueBIM_SketchSplit",
+            "Разделить контуры",
+            $"{CommandNamespace}.{nameof(SketchSplitCommand)}",
+            TrueBimIcon.FloorFinishing,
+            "Разделяет перекрытия и потолки с несколькими отдельными участками эскиза.",
+            "Сохраняет отверстия и проверяет геометрию и оформление. Revit 2022 и новее."),
+        new(
+            ArPanelName,
             "TrueBIM_FinishSchedule",
             "Ведомость\nотделки",
             $"{CommandNamespace}.{nameof(FinishScheduleCommand)}",
@@ -647,6 +655,7 @@ public static class TrueBimRibbon
                 MenuItem("TrueBIM_WallFinishing", prefix: "АР"),
                 MenuItem("TrueBIM_CeilingFinishing", prefix: "АР"),
                 MenuItem("TrueBIM_FinishSchedule", prefix: "АР"),
+                MenuItem("TrueBIM_SketchSplit", prefix: "АР"),
                 MenuItem("TrueBIM_Tep", prefix: "АР"),
                 MenuItem("TrueBIM_IsoFieldRebar", beginsGroup: true, prefix: "КР"),
                 MenuItem("TrueBIM_Lintels", prefix: "КР"),

@@ -13,7 +13,8 @@ internal sealed class RebarSplitAnnotationSnapshot
 
     private RebarSplitAnnotationSnapshot(List<string> warnings) => this.warnings = warnings;
 
-    internal static RebarSplitAnnotationSnapshot Capture(Document document, ISet<ElementId> affected, List<string> warnings)
+    internal static RebarSplitAnnotationSnapshot Capture(Document document, ISet<ElementId> affected, List<string> warnings,
+        bool viewDimensionsOnly = false)
     {
         RebarSplitAnnotationSnapshot result = new(warnings);
         foreach (Element annotation in new FilteredElementCollector(document).WhereElementIsNotElementType()
@@ -37,6 +38,8 @@ internal sealed class RebarSplitAnnotationSnapshot
         }
         foreach (Dimension dimension in new FilteredElementCollector(document).OfClass(typeof(Dimension)).Cast<Dimension>())
         {
+            if (viewDimensionsOnly && dimension.OwnerViewId == ElementId.InvalidElementId) continue;
+            if (viewDimensionsOnly && dimension is SpotDimension) continue; // Copied with its host by SketchSpotTransfer.
             if (multiDimensions.Contains(dimension.Id)) continue;
             List<Reference> references = dimension.References.Cast<Reference>().ToList();
             if (!references.Any(reference => affected.Contains(reference.ElementId))) continue;
@@ -136,7 +139,8 @@ internal sealed class RebarSplitAnnotationSnapshot
         Presentation presentation = Presentation.Capture(document, source);
         return new(source.Id, (doc, map) =>
         {
-            List<Reference> mapped = savedReferences.Select(reference => reference.Resolve(doc, map, true)).ToList();
+            List<Reference> mapped = savedReferences.Select((reference, index) =>
+                reference.Resolve(doc, map, true, leaders[index].End ?? head)).ToList();
             IndependentTag target = IndependentTag.Create(doc, type, view, mapped[0], hasLeader, orientation, head);
 #if REVIT2022_OR_GREATER
             if (mapped.Count > 1) target.AddReferences(mapped.Skip(1).ToList());
@@ -207,8 +211,12 @@ internal sealed class RebarSplitAnnotationSnapshot
         {
             MultiReferenceAnnotationOptions options = new((MultiReferenceAnnotationType)doc.GetElement(type))
             {
-                DimensionLineOrigin = origin, DimensionLineDirection = direction, DimensionPlaneNormal = normal,
-                DimensionStyleType = style, TagHasLeader = leader, TagHeadPosition = head
+                DimensionLineOrigin = origin,
+                DimensionLineDirection = direction,
+                DimensionPlaneNormal = normal,
+                DimensionStyleType = style,
+                TagHasLeader = leader,
+                TagHeadPosition = head
             };
             options.SetElementsToDimension(bars.SelectMany(id => map.TryGetValue(id, out IReadOnlyList<ElementId>? ids) ? ids : new[] { id }).ToList());
             if (extra.Count > 0)
@@ -331,13 +339,15 @@ internal sealed class RebarSplitAnnotationSnapshot
             return new(source.Id, source.UniqueId, stable, reference.ElementReferenceType, viewId, position, curve?.Clone(), plane?.Origin, plane?.FaceNormal);
         }
 
-        internal Reference Resolve(Document document, IReadOnlyDictionary<ElementId, IReadOnlyList<ElementId>> replacements, bool tag)
+        internal Reference Resolve(Document document, IReadOnlyDictionary<ElementId, IReadOnlyList<ElementId>> replacements, bool tag, XYZ? tagPoint = null)
         {
             if (!replacements.TryGetValue(Id, out IReadOnlyList<ElementId>? ids)) return Reference.ParseFromStableRepresentation(document, Stable);
             IEnumerable<ElementId> candidates = ids;
             if (tag)
             {
-                ElementId targetId = ids.FirstOrDefault() ?? throw new InvalidOperationException($"Элемент ссылки {Id} удалён без замены.");
+                ElementId targetId = (tagPoint is not null && replacements is RebarSplitElementMap tagMap
+                    ? tagMap.LocateTagHost?.Invoke(Id, tagPoint) : null)
+                    ?? ids.FirstOrDefault() ?? throw new InvalidOperationException($"Элемент ссылки {Id} удалён без замены.");
                 if (BarPosition >= 0 && replacements is RebarSplitElementMap map && map.BarPositions.TryGetValue(Id, out var positions))
                 {
                     if (!positions.TryGetValue(BarPosition, out ElementId? positionId))
