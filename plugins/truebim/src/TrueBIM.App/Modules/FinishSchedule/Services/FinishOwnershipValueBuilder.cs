@@ -140,7 +140,7 @@ public sealed class FinishOwnershipValueBuilder
         FinishQuantityRequest? geometryRequest)
     {
         var failures = warnings.Where(warning => warning.RoomId.HasValue)
-            .Select(warning => (RoomId: warning.RoomId!.Value, warning.Category)).Distinct().ToArray();
+            .Select(warning => (RoomId: warning.RoomId!.Value, warning.Category, warning.ProbeBounds)).Distinct().ToArray();
         HashSet<FinishClassifiedElement> uncertain = [];
         if (failures.Length == 0)
             return uncertain;
@@ -165,7 +165,8 @@ public sealed class FinishOwnershipValueBuilder
                 var bounds = search!.Create(room, category.Key);
                 // An element without bounds cannot be ruled out. Preserve any existing assignment.
                 uncertain.UnionWith(category.Where(element => element.Element.Bounds is null
-                    || FinishRoomSearchBounds.Includes(room, element, bounds)));
+                    || (FinishRoomSearchBounds.Includes(room, element, bounds)
+                        && (failure.ProbeBounds is null || failure.ProbeBounds.Intersects(element.Element.Bounds)))));
             }
         }
         return uncertain;

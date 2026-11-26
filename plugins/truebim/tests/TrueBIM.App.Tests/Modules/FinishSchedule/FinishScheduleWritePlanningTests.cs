@@ -220,6 +220,26 @@ public sealed class FinishScheduleWritePlanningTests
     }
 
     [Fact]
+    public void FailedFaceProbesPreserveOnlyElementsNearEitherFace()
+    {
+        FinishRoomCandidateSnapshot room = new(1, 10, 80, true, new AxisAlignedBox3D(0, 0, 0, 10, 8, 8));
+        FinishClassifiedElement[] walls = [Wall(100, 0), Wall(101, 5), Wall(102, 9)];
+        FinishClassifiedElement Wall(long id, double x) => new(
+            new FinishElementCandidateSnapshot(id, 50, FinishPhysicalCategory.Wall, new AxisAlignedBox3D(x, 1, 0, x + 1, 4, 6)),
+            FinishPreviewCategory.Walls);
+        FinishGeometryWarning failure = new(FinishGeometryWarningCode.ProbeCreationFailed, "Invalid face", RoomId: 1,
+            Category: FinishPreviewCategory.Walls);
+        FinishQuantityResult quantities = new(walls.Select(wall => Occurrence(1, wall.Element.ElementId)),
+            [failure with { ProbeBounds = new AxisAlignedBox3D(0, 0, 0, 1, 8, 8) },
+             failure with { ProbeBounds = new AxisAlignedBox3D(9, 0, 0, 10, 8, 8) }]);
+        var result = new FinishOwnershipValueBuilder().Build(Settings(true), walls, quantities,
+            RoomSnapshots((1, "101")), new FinishQuantityRequest([room], walls));
+
+        Assert.Equal(101L, Assert.Single(result.Targets).ElementId);
+        Assert.Equal(new long?[] { 100, 102 }, result.Issues.Select(issue => issue.ElementId));
+    }
+
+    [Fact]
     public void OwnershipValueBuilder_DisabledSettingSkipsStageCompletely()
     {
         FinishParameterTargetBuildResult result = new FinishOwnershipValueBuilder().Build(

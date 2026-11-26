@@ -324,7 +324,7 @@ public sealed class FinishScheduleUserNoticeBuilder
             FinishGeometryWarningCode.SlabGeometryUnsupported =>
                 $"Элементов {category} со слишком сложной формой для точного расчёта: {count}.",
             FinishGeometryWarningCode.ProbeCreationFailed =>
-                $"Помещений, для которых не удалось построить область проверки {category}: {count}.",
+                $"Помещений, для которых не удалось построить область проверки {category}: {group.Select(warning => warning.RoomId).Distinct().Count()}.",
             FinishGeometryWarningCode.ProjectedAreaUnavailable =>
                 $"Пересечений {category}, для которых не удалось определить площадь: {count}.",
             _ => $"Геометрических замечаний для {category}: {count}."
