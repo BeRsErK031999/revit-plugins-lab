@@ -40,6 +40,15 @@ public static class SlabLayoutRules
         return result;
     }
 
+    // Inputs and the outside dimension are in millimetres. Only numerical noise at exact boundaries is ignored.
+    public static bool IsShortSpan(double clearLength, double legLength) => clearLength + 1e-7 < legLength;
+
+    public static double StirrupLength(double available)
+    {
+        double rounded = 5 * Math.Floor((available + 1e-7) / 5);
+        return rounded >= 120 ? rounded : 0;
+    }
+
     public static double LegLength(double diameter, double rs, double rbt)
     {
         if (rs <= 0 || rbt <= 0 || diameter <= 0 || diameter > 40.001 || (diameter > 32.001 && Math.Min(Math.Abs(diameter - 36), Math.Abs(diameter - 40)) > 0.05))

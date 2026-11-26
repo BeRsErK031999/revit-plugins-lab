@@ -40,7 +40,7 @@ public sealed class SlabReinforcementCommand : IExternalCommand
             var report = new TaskDialog("Армирование плиты")
             {
                 MainInstruction = $"Плита {floor.Id} · создано областей: {result.Areas}",
-                MainContent = $"Торцевых стержней: {result.EndBars}. Каркасов на плите: {result.Frames}. Заменено элементов: {result.Deleted}."};
+                MainContent = $"Форма 200: {result.EndBars}. Хомутов Х1: {result.Stirrups}. Коротких участков без арматуры: {result.EmptySpans}. Каркасов на плите: {result.Frames}. Заменено элементов: {result.Deleted}."};
             if (result.Warnings.Count > 0)
                 report.MainContent += "\n\n" + string.Join("\n", result.Warnings);
             if (result.ReviewBars.Count > 0)

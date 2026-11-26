@@ -10,13 +10,7 @@ internal static class SlabBands
     // stations, so no straight bar acquires a splice when an opening separates two areas.
     internal static IEnumerable<(IList<Curve> Outline, double[] Rows)> Profiles(SlabGeometry g, XYZ cross, double[] stations, double cover)
     {
-        var loops = g.Loops.OrderByDescending(loop => Area(loop, g.N)).ToList();
-        var shell = Offset(loops[0], g.N, cover, true);
-        var holes = loops.Skip(1).Select(loop => Offset(loop, g.N, cover, false)).ToList();
-        Solid Extrude(CurveLoop loop) => GeometryCreationUtilities.CreateExtrusionGeometry(new[] { loop }, g.N, 1);
-        var solid = Extrude(shell);
-        foreach (var hole in holes)
-            solid = BooleanOperationsUtils.ExecuteBooleanOperation(solid, Extrude(hole), BooleanOperationsType.Difference);
+        var solid = CoveredSolid(g, cover);
         var section = g.Range(cross);
         var cuts = new List<double>
         {
@@ -57,6 +51,17 @@ internal static class SlabBands
                 yield return (loop.Select(c => c.CreateTransformed(down)).ToList(), rows);
             }
         }
+    }
+
+    internal static Solid CoveredSolid(SlabGeometry g, double cover)
+    {
+        var loops = g.Loops.OrderByDescending(loop => Area(loop, g.N)).ToList();
+        Solid Extrude(CurveLoop loop, bool outer) => GeometryCreationUtilities.CreateExtrusionGeometry(
+            new[] { Offset(loop, g.N, cover, outer) }, g.N, 1);
+        var solid = Extrude(loops[0], true);
+        foreach (var hole in loops.Skip(1))
+            solid = BooleanOperationsUtils.ExecuteBooleanOperation(solid, Extrude(hole, false), BooleanOperationsType.Difference);
+        return solid;
     }
 
     private static IEnumerable<PlanarFace> Faces(Solid solid, XYZ normal) => solid.Faces.OfType<PlanarFace>().Where(face => face.FaceNormal.DotProduct(normal) > 0.999999);

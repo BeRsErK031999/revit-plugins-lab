@@ -30,6 +30,20 @@ public sealed class SlabLayoutRulesTests
         Assert.Throws<InvalidOperationException>(() => SlabLayoutRules.Stations(width, step));
 
     [Theory]
+    [InlineData(680, 30, true, 620)]
+    [InlineData(709, 30, true, 645)]
+    [InlineData(710, 30, false, 650)]
+    [InlineData(184.99, 30, true, 120)]
+    [InlineData(180, 30, true, 120)]
+    [InlineData(179.99, 30, true, 0)]
+    public void ShortSectionsUseClearLengthAndRoundDown(double concrete, double cover, bool shortSpan, double length)
+    {
+        double clear = concrete - 2 * cover;
+        Assert.Equal(shortSpan, SlabLayoutRules.IsShortSpan(clear, 650));
+        Assert.Equal(length, SlabLayoutRules.StirrupLength(clear));
+    }
+
+    [Theory]
     [InlineData(10, 650)]
     [InlineData(12, 750)]
     [InlineData(16, 1000)]

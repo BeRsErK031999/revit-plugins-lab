@@ -15,7 +15,7 @@ internal static class SlabEnds
         XYZ axis = direction == 0 ? g.X : g.Y, cross = g.N.CrossProduct(axis);
         var topType = o.Bars[direction];
         var bottomType = o.Bars[direction + 2];
-        var endType = topType.BarNominalDiameter >= bottomType.BarNominalDiameter ? topType : bottomType;
+        var endType = o.EndType(direction);
         double leg = o.Leg(endType) * Mm, radius = endType.BarModelDiameter / 2;
         var rows = new SortedDictionary<long, (List<Span> Upper, List<Span> Lower)>();
         foreach (var area in areas)

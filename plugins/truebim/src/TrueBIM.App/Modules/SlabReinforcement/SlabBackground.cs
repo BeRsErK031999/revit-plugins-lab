@@ -7,7 +7,10 @@ namespace TrueBIM.App.Modules.SlabReinforcement;
 
 internal sealed class SlabBackground(Floor floor, SlabGeometry geometry, SlabOptions options, int direction)
 {
-    private sealed record Layout(AreaReinforcement Area, double[] Stations, double Width, IList<Curve>? Outline = null);
+    private sealed record Layout(AreaReinforcement Area, double[] Stations, double Width, IList<Curve>? Outline = null)
+    {
+        internal Dictionary<(AreaReinforcementLayerType Layer, double Row), int> Indices { get; } = new();
+    }
     private readonly Document doc = floor.Document;
     private XYZ Along => direction == 0 ? geometry.X : geometry.Y;
     private XYZ Across => geometry.N.CrossProduct(Along);
@@ -18,17 +21,17 @@ internal sealed class SlabBackground(Floor floor, SlabGeometry geometry, SlabOpt
         AreaReinforcementLayerType.TopOrFrontMajor,
         AreaReinforcementLayerType.BottomOrBackMajor
     };
+    internal SlabShortSpans ShortSpans { get; } = new(geometry, options, direction);
+
     internal IList<AreaReinforcement> Create()
     {
         var range = geometry.Range(Across);
         var stations = SlabLayoutRules.Stations((range.Max - range.Min) / Mm, options.Step).Select(s => range.Min + s * Mm).ToArray();
         var whole = NewArea(null);
-        Configure(new[] { new Layout(whole, stations, range.Max - range.Min) });
+        var wholeLayout = new Layout(whole, stations, range.Max - range.Min);
+        Configure(new[] { wholeLayout });
         if (Problem(whole) == null)
-            return new[]
-            {
-                whole
-            };
+            return ReplaceShortSpans(new[] { wholeLayout });
         doc.Delete(whole.Id);
         var bands = SlabBands.Profiles(geometry, Across, stations, Cover).Select(profile =>
         {
@@ -41,7 +44,127 @@ internal sealed class SlabBackground(Floor floor, SlabGeometry geometry, SlabOpt
         foreach (var band in bands)
             if (Problem(band.Area, band.Outline)is string reason)
                 throw new InvalidOperationException("Не удалось построить фон с указанным слоем. " + reason);
-        return bands.Select(b => b.Area).ToList();
+        return ReplaceShortSpans(bands);
+    }
+
+    private sealed record Span(double Start, double End, double Row, bool Upper);
+    private List<Span> Physical(AreaReinforcement area)
+    {
+        var result = new List<Span>();
+        foreach (var id in area.GetRebarInSystemIds())
+        {
+            var bars = (RebarInSystem)doc.GetElement(id);
+            for (int i = 0; i < bars.NumberOfBarPositions; i++)
+            {
+                if (!bars.DoesBarExistAtPosition(i)) continue;
+                var lines = bars.GetTransformedCenterlineCurves(false, true, true, i);
+                if (lines.Count != 1 || lines[0] is not Line line)
+                    throw new InvalidOperationException("Для фона требуется прямая форма 000.");
+                var p = line.GetEndPoint(0);
+                double a = geometry.Coord(p, Along), b = geometry.Coord(line.GetEndPoint(1), Along);
+                double depth = -geometry.Coord(p, geometry.N);
+                bool upper = Math.Abs(depth - options.Depths[direction] * Mm) < Math.Abs(depth - geometry.Thickness + options.Depths[direction + 2] * Mm);
+                result.Add(new(Math.Min(a, b), Math.Max(a, b), geometry.Coord(p, Across), upper));
+            }
+        }
+        return result;
+    }
+
+    private IList<AreaReinforcement> ReplaceShortSpans(IList<Layout> layouts)
+    {
+        double leg = options.Leg(options.EndType(direction));
+        bool IsShort(Span s) => SlabLayoutRules.IsShortSpan((s.End - s.Start) / Mm, leg);
+        var kept = new List<AreaReinforcement>();
+        var splitRows = new List<Span>();
+        var expected = new List<Span>();
+        foreach (var layout in layouts)
+        {
+            var actual = Physical(layout.Area);
+            expected.AddRange(actual.Where(s => !IsShort(s)));
+            var rows = actual.GroupBy(s => Math.Round(s.Row / Tolerance)).ToList();
+            var change = rows.Where(row => row.Any(IsShort)).ToList();
+            if (change.Count == 0)
+            {
+                kept.Add(layout.Area);
+                continue;
+            }
+            foreach (var row in change)
+            {
+                var top = row.Where(s => s.Upper).OrderBy(s => s.Start).ToList();
+                var bottom = row.Where(s => !s.Upper).OrderBy(s => s.Start).ToList();
+                if (top.Count != bottom.Count || top.Where((s, i) => !SameSpan(s, bottom[i]) || IsShort(s) != IsShort(bottom[i])).Any())
+                    throw new InvalidOperationException($"В ряду {row.First().Row / Mm:F1} мм короткий участок имеет разные границы сверху и снизу. Проверьте форму плиты.");
+                double target = layout.Stations.OrderBy(s => Math.Abs(s - row.First().Row)).First();
+                if (Math.Abs(target - row.First().Row) > Tolerance)
+                    throw new InvalidOperationException("Не удалось определить линию короткого участка в области.");
+                foreach (var span in top)
+                {
+                    if (IsShort(span)) ShortSpans.Plan(span.Start, span.End, target);
+                    else splitRows.Add(span);
+                }
+                if (change.Count < rows.Count)
+                    foreach (var layer in MajorLayers)
+                        layout.Area.SetLineIncluded(false, layer, layout.Indices[(layer, target)]);
+            }
+            if (change.Count == rows.Count) doc.Delete(layout.Area.Id);
+            else kept.Add(layout.Area);
+        }
+        if (ShortSpans.Stirrups.Count == 0 && ShortSpans.Empty == 0) return kept;
+        var replacements = RetainedAreas(splitRows).ToList();
+        if (replacements.Count > 0) Configure(replacements);
+        else doc.Regenerate();
+        kept.AddRange(replacements.Select(l => l.Area));
+        expectedBackground = expected;
+        return kept;
+    }
+
+    private List<Span>? expectedBackground;
+
+    internal void CheckRetained(IList<AreaReinforcement> areas)
+    {
+        if (expectedBackground == null) return;
+        // Revit can change a native row at a tangent opening. Compare both physical layers
+        // after the host has solved its constraints, including the untouched side of each opening.
+        var observed = areas.SelectMany(Physical).ToList();
+        foreach (var span in expectedBackground)
+        {
+            int index = observed.FindIndex(s => s.Upper == span.Upper && SameSpan(s, span));
+            if (index < 0)
+                throw new InvalidOperationException($"Revit изменил длинный стержень в ряду {span.Row / Mm:F1} мм. Операция отменена.");
+            observed.RemoveAt(index);
+        }
+        if (observed.Count > 0) throw new InvalidOperationException("В раскладке остались лишние фоновые стержни. Операция отменена.");
+    }
+
+    private static bool SameSpan(Span a, Span b) => Math.Abs(a.Row - b.Row) <= Tolerance &&
+        Math.Abs(a.Start - b.Start) <= Tolerance && Math.Abs(a.End - b.End) <= Tolerance;
+
+    private IEnumerable<Layout> RetainedAreas(List<Span> spans)
+    {
+        // Reuse one editable area for neighbouring rows with coincident ends when the full
+        // rectangle between them fits the concrete. A change in the opening starts a new area.
+        double half = Math.Min(Cover, 20 * Mm) / 2;
+        XYZ Point(double along, double across) => geometry.Origin + Along * along + Across * across;
+        XYZ[] Rectangle(Span span, double first, double last) => new[] {
+            Point(span.Start, first - half), Point(span.End, first - half),
+            Point(span.End, last + half), Point(span.Start, last + half) };
+        foreach (var group in spans.GroupBy(s => (Math.Round(s.Start / Mm, 3), Math.Round(s.End / Mm, 3))))
+        {
+            var sorted = group.OrderBy(s => s.Row).ToList();
+            for (int i = 0; i < sorted.Count;)
+            {
+                int next = i + 1;
+                while (next < sorted.Count && sorted[next].Row - sorted[next - 1].Row <= options.Step * Mm + Tolerance &&
+                    geometry.FootprintInside(Rectangle(sorted[i], sorted[next - 1].Row, sorted[next].Row)))
+                    next++;
+                var rows = sorted.GetRange(i, next - i).Select(s => s.Row).ToArray();
+                double last = rows[rows.Length - 1];
+                var corners = Rectangle(sorted[i], rows[0], last);
+                var outline = Enumerable.Range(0, 4).Select(j => (Curve)Line.CreateBound(corners[j], corners[(j + 1) % 4])).ToList();
+                yield return new(NewArea(outline), rows, last - rows[0] + 2 * half, outline);
+                i = next;
+            }
+        }
     }
 
     private AreaReinforcement NewArea(IList<Curve>? outline)
@@ -126,6 +249,7 @@ internal sealed class SlabBackground(Floor floor, SlabGeometry geometry, SlabOpt
             }
 
             double target = rows[pitch >= 0 ? i : rows.Length - 1 - i];
+            layout.Indices[(layer, target)] = i;
             double delta = target - (origin + (i - first.Index) * pitch);
             if (Math.Abs(delta) > Tolerance)
                 area.MoveLine(Across * delta, layer, i);

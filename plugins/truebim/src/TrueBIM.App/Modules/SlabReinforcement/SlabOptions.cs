@@ -49,6 +49,8 @@ internal sealed class SlabOptions
             throw new InvalidOperationException("Для каркасов укажите тип, марку и оба шага.");
     }
 
+    internal RebarBarType EndType(int direction) => Bars[direction].BarNominalDiameter >= Bars[direction + 2].BarNominalDiameter ? Bars[direction] : Bars[direction + 2];
+
     internal double Leg(RebarBarType type)
     {
         if (ManualLeg is double mm)

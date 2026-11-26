@@ -5,7 +5,7 @@ using Autodesk.Revit.DB.Structure;
 
 namespace TrueBIM.App.Modules.SlabReinforcement;
 
-internal sealed record SlabResult(int Areas, int EndSets, int EndBars, int Frames, int Deleted, List<string> Warnings, HashSet<ElementId> ReviewBars);
+internal sealed record SlabResult(int Areas, int EndSets, int EndBars, int Stirrups, int EmptySpans, int Frames, int Deleted, List<string> Warnings, HashSet<ElementId> ReviewBars);
 internal static class SlabReinforcementService
 {
     private static readonly Guid SchemaId = new("9C101632-7FAB-4413-A6F6-3493E017D17A");
@@ -69,6 +69,9 @@ internal static class SlabReinforcementService
         var warnings = new List<string>();
         var review = new HashSet<ElementId>();
         var checks = new List<SlabEndCheck>();
+        var stirrups = new List<(SlabStirrup Plan, Rebar Bar)>();
+        var backgrounds = new List<(SlabBackground Plan, IList<AreaReinforcement> Areas)>();
+        RebarShape? stirrupShape = null;
         using var group = new TransactionGroup(d, "Армирование выбранной плиты");
         group.Start();
         using var tx = new Transaction(d, "КР · Армирование плиты");
@@ -80,10 +83,20 @@ internal static class SlabReinforcementService
             if (remove.Count > 0)
                 d.Delete(remove.Select(e => e.Id).ToList());
             var schema = OwnerSchema();
-            int areaCount = 0, sets = 0, count = 0;
+            int areaCount = 0, sets = 0, count = 0, empty = 0;
             for (int i = 0; i < 2; i++)
             {
-                var area = new SlabBackground(floor, geometry, options, i).Create();
+                var background = new SlabBackground(floor, geometry, options, i);
+                var area = background.Create();
+                backgrounds.Add((background, area));
+                empty += background.ShortSpans.Empty;
+                foreach (var plan in background.ShortSpans.Stirrups)
+                {
+                    stirrupShape ??= SlabOptions.Shape(d, "Х1");
+                    var tie = plan.Place(floor, stirrupShape, options.EndType(i));
+                    Tag(tie, schema, floor);
+                    stirrups.Add((plan, tie));
+                }
                 foreach (var part in area)
                     Tag(part, schema, floor);
                 areaCount += area.Count;
@@ -125,8 +138,12 @@ internal static class SlabReinforcementService
                 if (wrong != null)
                     throw new InvalidOperationException($"Привязки Revit изменили геометрию торцевого стержня {wrong.Bar.Id}. Операция отменена.");
             }
+            foreach (var background in backgrounds) background.Plan.CheckRetained(background.Areas);
+            foreach (var tie in stirrups)
+                if (!tie.Plan.Matches(geometry, tie.Bar))
+                    throw new InvalidOperationException($"После привязки Revit хомут Х1 {tie.Bar.Id} отличается от заданных габаритов или положения. Операция отменена.");
             group.Assimilate();
-            return new(areaCount, sets, count, frameCount, remove.Count, warnings, review);
+            return new(areaCount, sets, count, stirrups.Count, empty, frameCount, remove.Count, warnings, review);
         }
         catch
         {
