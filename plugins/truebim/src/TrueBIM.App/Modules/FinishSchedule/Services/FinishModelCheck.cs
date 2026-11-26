@@ -20,7 +20,12 @@ public sealed record FinishModelCheck(long ElementId, bool NeedsCorrection, stri
                 {
                     var compared = string.Join(", ", conflict.CompetingContacts.Select(c => $"{Room(c.RoomId)} — {c.AreaSquareMeters:0.###} м²"));
                     reason += $" Учтён в {Room(owner)}. Контакты: {compared}.";
-                    if (conflict.SmallWallContactResolved) reason += " Малое касание стены разрешено автоматически.";
+                    if (conflict.SmallContactResolved)
+                    {
+                        reason += conflict.Category == FinishPreviewCategory.Floors
+                            ? $" Малое касание пола разрешено автоматически. Сумма проекций {conflict.CompetingContacts.Sum(c => c.AreaSquareMeters):G6} м²."
+                            : " Малое касание стены разрешено автоматически.";
+                    }
                 }
                 return new FinishModelCheck(group.Key, correction, $"ID {group.Key} · {reason.Trim()}");
             }).OrderByDescending(row => row.NeedsCorrection).ThenBy(row => row.ElementId).ToArray();

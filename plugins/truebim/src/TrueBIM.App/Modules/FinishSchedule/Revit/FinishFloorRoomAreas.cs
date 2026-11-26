@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using TrueBIM.App.Modules.FinishSchedule.Models;
+using TrueBIM.App.Modules.FinishSchedule.Services;
 using TrueBIM.App.Services;
 using System.Windows;
 using System.Windows.Media;
@@ -112,7 +113,9 @@ internal sealed class FinishFloorRoomAreas
                     ElementId: id, Category: FinishPreviewCategory.Floors));
             }
         }
-        return new FinishQuantityResult(hits, warnings);
+        var roomPhases = rooms.ToDictionary(room => room.Id, room => RevitElementIds.GetValue(room.Phase));
+        var resolved = new FinishElementOwnershipResolver().ResolveFloorShares(hits, roomPhases);
+        return new FinishQuantityResult(resolved.Occurrences, warnings.Concat(resolved.Warnings));
     }
 
     // Cross-datum recovery is local to the room. The midpoint of its vertical span

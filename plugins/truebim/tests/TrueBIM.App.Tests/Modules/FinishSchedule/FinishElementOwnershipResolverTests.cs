@@ -84,6 +84,50 @@ public sealed class FinishElementOwnershipResolverTests
         Assert.Empty(result.Warnings);
     }
 
+    [Theory]
+    [InlineData(0.08, 0.8, 1, true)]
+    [InlineData(0.08, 0.79, 1, false)]
+    [InlineData(0.1, 1.5, 1, false)]
+    [InlineData(0.02, 3, 2, false)]
+    public void FloorRuleUsesUnroundedProjectedAreasOnExactlyTwoRoomsOfOnePhase(
+        double small, double large, long otherPhase, bool merge)
+    {
+        var shares = new[] { FloorShare(10, small), FloorShare(20, large) };
+        var phases = new Dictionary<long, long> { [10] = 1, [20] = otherPhase };
+        var result = new FinishElementOwnershipResolver().ResolveFloorShares(shares, phases);
+
+        Assert.Equal(small + large, result.Occurrences.Sum(o => o.AreaSquareMeters), 12);
+        if (merge)
+        {
+            var owner = Assert.Single(result.Occurrences);
+            Assert.Equal(20, owner.RoomId);
+            Assert.Equal(FinishQuantityMethod.FloorRoomSurface, owner.Method);
+            var diagnostic = Assert.Single(result.Warnings);
+            Assert.True(diagnostic.SmallContactResolved);
+            Assert.Equal(new[] { large, small }, diagnostic.CompetingContacts.Select(c => c.AreaSquareMeters));
+        }
+        else
+        {
+            Assert.Equal(shares, result.Occurrences);
+            Assert.Empty(result.Warnings);
+        }
+    }
+
+    [Fact]
+    public void SingleTinyPatchAndThreeRoomCommonFloorKeepAllShares()
+    {
+        var shares = new[] { FloorShare(10, 0.004), FloorShare(20, 0.03), FloorShare(30, 13) };
+        var phases = shares.ToDictionary(s => s.RoomId, _ => 1L);
+        var resolver = new FinishElementOwnershipResolver();
+        Assert.Equal(shares.Take(1), resolver.ResolveFloorShares(shares.Take(1), phases).Occurrences);
+        var result = resolver.ResolveFloorShares(shares, phases);
+        Assert.Equal(shares, result.Occurrences);
+        Assert.Empty(result.Warnings);
+    }
+
+    private static FinishOccurrence FloorShare(long room, double area) =>
+        new(room, 100, FinishPreviewCategory.Floors, area, FinishQuantityMethod.FloorRoomSurface);
+
     [Fact]
     public void EqualContactsResolveDeterministicallyAndRemainVisibleInDiagnostics()
     {

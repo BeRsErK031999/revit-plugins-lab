@@ -23,7 +23,7 @@ public sealed class FinishElementOwnershipResolver
             // The threshold describes a competing pair. It never filters a single-room wall.
             bool smallWallContact = candidates.Length == 2 && candidates[0].RoomId != candidates[1].RoomId
                 && candidates.All(c => c.Category == FinishPreviewCategory.Walls && c.Method != FinishQuantityMethod.ConnectedWallContour)
-                && candidates[1].AreaSquareMeters < 0.1 && candidates[0].AreaSquareMeters >= 10 * candidates[1].AreaSquareMeters;
+                && IsDominantPair(candidates[0], candidates[1]);
             bool contourResolved = !smallWallContact && contourOwners is not null
                 && contourOwners.TryGetValue(element.Key, out long contourRoomId)
                 && candidates.Any(candidate => candidate.RoomId == contourRoomId);
@@ -53,9 +53,43 @@ public sealed class FinishElementOwnershipResolver
                         : "с наибольшей площадью контакта. ") + "Кандидаты: "
                     + string.Join(", ", candidates.Select(item => $"{item.RoomId} ({item.AreaSquareMeters:F3} м² контакта; {item.Method})")) + ".",
                     owner.RoomId, element.Key, owner.Category)
-                { CompetingContacts = candidates, SmallWallContactResolved = smallWallContact });
+                { CompetingContacts = candidates, SmallContactResolved = smallWallContact });
             }
         }
         return new FinishQuantityResult(occurrences, warnings);
     }
+
+    public FinishQuantityResult ResolveFloorShares(IEnumerable<FinishOccurrence> measuredShares,
+        IReadOnlyDictionary<long, long> roomPhases)
+    {
+        List<FinishOccurrence> occurrences = [];
+        List<FinishGeometryWarning> warnings = [];
+        foreach (var floor in measuredShares.GroupBy(share => share.ElementId))
+        {
+            var shares = floor.OrderByDescending(share => share.AreaSquareMeters).ToArray();
+            if (shares.Length != 2 || !IsDominantPair(shares[0], shares[1])
+                || roomPhases[shares[0].RoomId] != roomPhases[shares[1].RoomId])
+            {
+                occurrences.AddRange(shares);
+                continue;
+            }
+
+            var owner = shares[0];
+            var neighbour = shares[1];
+            // Sum only the two measured XY patches. The rest of the slab stays outside the schedule.
+            double assignedArea = owner.AreaSquareMeters + neighbour.AreaSquareMeters;
+            occurrences.Add(new FinishOccurrence(owner.RoomId, floor.Key, FinishPreviewCategory.Floors,
+                assignedArea, FinishQuantityMethod.FloorRoomSurface));
+            warnings.Add(new FinishGeometryWarning(FinishGeometryWarningCode.MultipleRoomContacts,
+                $"Пол {floor.Key}: малое касание разрешено автоматически. Проекции в помещениях {owner.RoomId} "
+                + $"({owner.AreaSquareMeters:G6} м²) и {neighbour.RoomId} ({neighbour.AreaSquareMeters:G6} м²) "
+                + $"учтены в помещении {owner.RoomId}, всего {assignedArea:G6} м².",
+                owner.RoomId, floor.Key, FinishPreviewCategory.Floors)
+            { CompetingContacts = shares, SmallContactResolved = true });
+        }
+        return new FinishQuantityResult(occurrences, warnings);
+    }
+
+    private static bool IsDominantPair(FinishOccurrence larger, FinishOccurrence smaller) =>
+        larger.RoomId != smaller.RoomId && smaller.AreaSquareMeters < 0.1 && larger.AreaSquareMeters >= 10 * smaller.AreaSquareMeters;
 }

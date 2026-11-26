@@ -55,6 +55,7 @@ public sealed class FinishSchedulePreviewService
         HashSet<long> selectedRoomIds = new(build.RoomScope.SelectedRooms.Select(room => room.ElementId));
         FinishParameterTargetBuildResult ownershipTargets = new(0, [], []);
         FinishQuantityResult? geometry = null;
+        HashSet<long> touchedFloorCorrections = [];
         if (settings.WriteOwnership)
         {
             // Resolve against all rooms before restricting writes to the selected report scope.
@@ -63,6 +64,13 @@ public sealed class FinishSchedulePreviewService
                 .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
             HashSet<long> selectedGeometryIds = new(geometry.Occurrences
                 .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+            // A room whose sliver moves to a neighbour can still have an assignment saved
+            // by an older version. Rewrite that shared floor even when only this room is in scope.
+            touchedFloorCorrections.UnionWith(geometry.Warnings.Where(w => w.SmallContactResolved
+                    && w.Category == FinishPreviewCategory.Floors && w.ElementId.HasValue
+                    && w.CompetingContacts.Any(c => selectedRoomIds.Contains(c.RoomId)))
+                .Select(w => w.ElementId!.Value));
+            selectedGeometryIds.UnionWith(touchedFloorCorrections);
             outsideGeometryIds.ExceptWith(selectedGeometryIds);
             FinishClassifiedElement[] assignmentElements = build.InScopeElements
                 .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)))
@@ -93,6 +101,7 @@ public sealed class FinishSchedulePreviewService
             .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
         HashSet<long> selectedOwnedIds = new(allQuantities.Occurrences
             .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+        selectedOwnedIds.UnionWith(touchedFloorCorrections);
         outsideOwnedIds.ExceptWith(selectedOwnedIds);
         build = build with
         {
@@ -106,7 +115,8 @@ public sealed class FinishSchedulePreviewService
             allQuantities.Occurrences.Where(item => selectedRoomIds.Contains(item.RoomId)),
             allQuantities.Warnings.Where(warning => settings.Scope.Kind == ReportScopeKind.EntireProject
                 || (warning.RoomId.HasValue
-                    ? selectedRoomIds.Contains(warning.RoomId.Value)
+                    ? selectedRoomIds.Contains(warning.RoomId.Value) || (warning.SmallContactResolved
+                        && warning.Category == FinishPreviewCategory.Floors && warning.CompetingContacts.Any(c => selectedRoomIds.Contains(c.RoomId)))
                     : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))),
             allQuantities.CacheMetrics,
             allQuantities.Contacts);
