@@ -32,6 +32,7 @@ public sealed class ParameterCatalogService
         CollectCategory(document, BuiltInCategory.OST_Walls, TargetCategories.Walls, buckets);
         CollectCategory(document, BuiltInCategory.OST_Floors, TargetCategories.Floors, buckets);
         CollectCategory(document, BuiltInCategory.OST_Ceilings, TargetCategories.Ceilings, buckets);
+        CollectTextBindings(document, buckets);
 
         ParameterCatalog catalog = new(buckets.Values.Select(bucket => bucket.ToCatalogItem()));
         logger.Info(
@@ -45,34 +46,56 @@ public sealed class ParameterCatalogService
         ParameterCategoryReference category,
         Dictionary<string, ParameterBucket> buckets)
     {
-        IList<Element> instances = new FilteredElementCollector(document)
-            .OfCategory(builtInCategory)
-            .WhereElementIsNotElementType()
-            .ToElements();
-        HashSet<long> collectedTypeIds = [];
-
-        foreach (Element instance in instances)
+        foreach (Element instance in new FilteredElementCollector(document)
+                     .OfCategory(builtInCategory).WhereElementIsNotElementType())
         {
             CollectElement(instance, ParameterBindingKind.Instance, category, buckets);
+        }
 
-            ElementId typeId = instance.GetTypeId();
-            if (typeId == ElementId.InvalidElementId)
+        foreach (Element type in new FilteredElementCollector(document)
+                     .OfCategory(builtInCategory).WhereElementIsElementType())
+        {
+            CollectElement(type, ParameterBindingKind.Type, category, buckets);
+        }
+    }
+
+    private static void CollectTextBindings(Document document, Dictionary<string, ParameterBucket> buckets)
+    {
+        using DefinitionBindingMapIterator iterator = document.ParameterBindings.ForwardIterator();
+        while (iterator.MoveNext())
+        {
+            if (iterator.Key is not InternalDefinition definition
+                || iterator.Current is not ElementBinding binding
+                || !IsStringDefinition(definition))
             {
                 continue;
             }
 
-            long typeIdValue = RevitElementIds.GetValue(typeId);
-            if (!collectedTypeIds.Add(typeIdValue))
+            ParameterBindingKind kind = binding is TypeBinding ? ParameterBindingKind.Type : ParameterBindingKind.Instance;
+            long id = RevitElementIds.GetValue(definition.Id);
+            ParameterReference reference = document.GetElement(definition.Id) is SharedParameterElement shared
+                ? ParameterReference.Shared(definition.Name, shared.GuidValue, id, kind, ParameterStorageKind.String)
+                : ParameterReference.Project(definition.Name, id, kind, ParameterStorageKind.String);
+            foreach (Category category in binding.Categories)
             {
-                continue;
-            }
-
-            Element? type = document.GetElement(typeId);
-            if (type is not null)
-            {
-                CollectElement(type, ParameterBindingKind.Type, category, buckets);
+                long categoryId = RevitElementIds.GetValue(category.Id);
+                if (categoryId == TargetCategories.Rooms.Id || categoryId == TargetCategories.Walls.Id
+                    || categoryId == TargetCategories.Floors.Id || categoryId == TargetCategories.Ceilings.Id)
+                {
+                    GetBucket(buckets, reference).AddBinding(categoryId);
+                }
             }
         }
+    }
+
+    private static bool IsStringDefinition(Definition definition)
+    {
+#if REVIT2022_OR_GREATER
+        ForgeTypeId type = definition.GetDataType();
+        return type == SpecTypeId.String.Text || type == SpecTypeId.String.MultilineText || type == SpecTypeId.String.Url;
+#else
+        return definition.ParameterType is ParameterType.Text or ParameterType.MultilineText or ParameterType.URL;
+#endif
     }
 
     private void CollectElement(
@@ -93,13 +116,7 @@ public sealed class ParameterCatalogService
                     continue;
                 }
 
-                if (!buckets.TryGetValue(reference.StableKey, out ParameterBucket? bucket))
-                {
-                    bucket = new ParameterBucket(reference);
-                    buckets.Add(reference.StableKey, bucket);
-                }
-
-                bucket.AddSample(category.Id, parameter.IsReadOnly);
+                GetBucket(buckets, reference).AddSample(category.Id, parameter.IsReadOnly);
             }
         }
         catch (Exception exception)
@@ -109,11 +126,22 @@ public sealed class ParameterCatalogService
         }
     }
 
+    private static ParameterBucket GetBucket(Dictionary<string, ParameterBucket> buckets, ParameterReference reference)
+    {
+        if (!buckets.TryGetValue(reference.StableKey, out ParameterBucket? bucket))
+        {
+            bucket = new ParameterBucket(reference);
+            buckets.Add(reference.StableKey, bucket);
+        }
+        return bucket;
+    }
+
     private sealed class ParameterBucket
     {
         private readonly HashSet<long> categoryIds = [];
         private int writableSampleCount;
         private int readOnlySampleCount;
+        private bool hasProjectBinding;
 
         public ParameterBucket(ParameterReference reference)
         {
@@ -121,6 +149,12 @@ public sealed class ParameterCatalogService
         }
 
         public ParameterReference Reference { get; }
+
+        public void AddBinding(long categoryId)
+        {
+            categoryIds.Add(categoryId);
+            hasProjectBinding = true;
+        }
 
         public void AddSample(long categoryId, bool isReadOnly)
         {
@@ -142,7 +176,8 @@ public sealed class ParameterCatalogService
                 categoryIds,
                 writableSampleCount + readOnlySampleCount,
                 writableSampleCount,
-                readOnlySampleCount);
+                readOnlySampleCount,
+                hasProjectBinding);
         }
     }
 }

@@ -43,12 +43,15 @@ public sealed class FinishRoomSearchBounds
     }
 
     public bool Includes(FinishRoomCandidateSnapshot room, FinishClassifiedElement element)
+        => room.Bounds is not null && element.Element.Bounds is not null
+            && Includes(room, element, Create(room, element.Category));
+
+    internal static bool Includes(FinishRoomCandidateSnapshot room, FinishClassifiedElement element, AxisAlignedBox3D searchBounds)
     {
         // A wider search must not assign the finish floor of another storey to this Room.
         if (element.Category == FinishPreviewCategory.Floors && element.Element.LevelId is > 0
             && element.Element.LevelId != room.LevelId) return false;
-        return room.Bounds is not null && element.Element.Bounds is { } bounds
-            && Create(room, element.Category).Intersects(bounds);
+        return element.Element.Bounds is { } bounds && searchBounds.Intersects(bounds);
     }
 
     private static bool OverlapsInPlan(AxisAlignedBox3D first, AxisAlignedBox3D second, double tolerance) =>

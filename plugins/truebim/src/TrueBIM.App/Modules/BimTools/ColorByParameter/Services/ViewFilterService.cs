@@ -24,9 +24,15 @@ public sealed class ViewFilterService
         IReadOnlyList<BimCategoryItem> categories,
         BimParameterItem parameter,
         IReadOnlyList<ColorRuleRow> rows,
-        bool useTemporaryViewProperties)
+        bool useTemporaryViewProperties,
+        bool colorPatterns = true,
+        bool colorLines = false)
     {
         List<ColorRuleRow> selectedRows = rows.Where(row => row.IsSelected).ToList();
+        if (!colorPatterns && !colorLines)
+        {
+            return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0, ["Выберите штриховки или линии для раскраски."]);
+        }
         if (selectedRows.Count == 0)
         {
             return new ColorApplyResult(0, 0, 0, rows.Count, 0, ["Не выбрано ни одно значение."]);
@@ -72,7 +78,15 @@ public sealed class ViewFilterService
                 ["Revit не разрешает включить временные свойства для активного вида. Снимите флажок «На временном виде» или выберите другой вид."]);
         }
 
-        FillPatternElement? solidFillPattern = FindSolidFillPattern(document);
+        var duplicate = selectedRows.GroupBy(row => filterNameBuilder.Build(parameter.Name, row.DisplayValue),
+            StringComparer.OrdinalIgnoreCase).FirstOrDefault(group => group.Count() > 1);
+        if (duplicate != null)
+        {
+            return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0,
+                [$"Несколько значений дают имя «{duplicate.Key}». Выберите одно из них. Раскраска вида сохранена."]);
+        }
+
+        FillPatternElement? solidFillPattern = colorPatterns ? FindSolidFillPattern(document) : null;
         int created = 0;
         int updated = 0;
         int applied = 0;
@@ -80,6 +94,7 @@ public sealed class ViewFilterService
         int replaced = 0;
         int deleted = 0;
         List<string> messages = [];
+        HashSet<long>? otherViewFilters = null;
         int skippedCategoryCount = selectedCategoryIds.Count - categoryIds.Count;
         if (skippedCategoryCount > 0)
         {
@@ -144,9 +159,21 @@ public sealed class ViewFilterService
                 }
                 else
                 {
-                    filter.SetCategories(categoryIds);
-                    // False means that the existing rules are already equivalent, not that Revit rejected them.
-                    filter.SetElementFilter(elementFilter);
+                    bool changeCategories = !categorySet.SetEquals(filter.GetCategories());
+                    bool sharedCategories = changeCategories && (useTemporaryViewProperties
+                        || (otherViewFilters ??= GetReferencedFilterIds(document, activeView)).Contains(RevitElementIds.GetValue(filter.Id)));
+                    if (changeCategories && !sharedCategories)
+                    {
+                        filter.SetCategories(categoryIds);
+                    }
+                    // Revit returns false for equivalent rules. A changed rule would reuse a display name for a different value.
+                    if (sharedCategories || filter.SetElementFilter(elementFilter))
+                    {
+                        subTransaction.RollBack();
+                        transaction.RollBack();
+                        return new ColorApplyResult(0, 0, 0, selectedRows.Count, 0,
+                            [$"Имя «{filterName}» уже занято фильтром с другим правилом или набором категорий. Раскраска вида сохранена."]);
+                    }
                 }
 
                 if (!activeView.GetFilters().Contains(filter.Id))
@@ -154,7 +181,8 @@ public sealed class ViewFilterService
                     activeView.AddFilter(filter.Id);
                 }
 
-                activeView.SetFilterOverrides(filter.Id, CreateOverrides(row, solidFillPattern));
+                using OverrideGraphicSettings settings = CreateOverrides(row, solidFillPattern, colorPatterns, colorLines);
+                activeView.SetFilterOverrides(filter.Id, settings);
                 activeView.SetFilterVisibility(filter.Id, true);
                 if (subTransaction.Commit() != TransactionStatus.Committed)
                 {
@@ -186,6 +214,12 @@ public sealed class ViewFilterService
             }
         }
 
+        if (applied == 0)
+        {
+            transaction.RollBack();
+            return new ColorApplyResult(0, 0, 0, skipped, 0, messages);
+        }
+
         if (!useTemporaryViewProperties)
         {
             deleted += DeleteOrphanedOwnedFilters(document);
@@ -200,7 +234,7 @@ public sealed class ViewFilterService
 
         if (deleted > 0)
         {
-            messages.Add($"Удалено неиспользуемых фильтров BIM_F_ из проекта: {deleted}.");
+            messages.Add($"Удалено неиспользуемых фильтров раскраски TrueBIM из проекта: {deleted}.");
         }
 
         logger.Info($"Color By Parameter applied {applied} filters. Created={created}, Updated={updated}, Replaced={replaced}, Deleted={deleted}, Skipped={skipped}, Temporary={useTemporaryViewProperties}.");
@@ -234,7 +268,7 @@ public sealed class ViewFilterService
             deleted = DeleteOrphanedOwnedFilters(document);
             if (deleted > 0)
             {
-                messages.Add($"Удалено неиспользуемых фильтров BIM_F_ из проекта: {deleted}.");
+                messages.Add($"Удалено неиспользуемых фильтров раскраски TrueBIM из проекта: {deleted}.");
             }
         }
 
@@ -252,11 +286,12 @@ public sealed class ViewFilterService
             .ToList();
     }
 
-    private int DeleteOrphanedOwnedFilters(Document document)
+    private static HashSet<long> GetReferencedFilterIds(Document document, View? except = null)
     {
         HashSet<long> referencedFilterIds = [];
         foreach (View view in new FilteredElementCollector(document).OfClass(typeof(View)).Cast<View>())
         {
+            if (view.Id == except?.Id) continue;
             try
             {
                 foreach (ElementId filterId in view.GetFilters())
@@ -270,6 +305,12 @@ public sealed class ViewFilterService
             }
         }
 
+        return referencedFilterIds;
+    }
+
+    private int DeleteOrphanedOwnedFilters(Document document)
+    {
+        HashSet<long> referencedFilterIds = GetReferencedFilterIds(document);
         List<ElementId> orphanedFilterIds = new FilteredElementCollector(document)
             .OfClass(typeof(ParameterFilterElement))
             .Cast<ParameterFilterElement>()
@@ -377,22 +418,30 @@ public sealed class ViewFilterService
         return new FilteredElementCollector(document)
             .OfClass(typeof(ParameterFilterElement))
             .Cast<ParameterFilterElement>()
-            .FirstOrDefault(filter => string.Equals(filter.Name, filterName, StringComparison.Ordinal));
+            .FirstOrDefault(filter => string.Equals(filter.Name, filterName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static OverrideGraphicSettings CreateOverrides(ColorRuleRow row, FillPatternElement? solidFillPattern)
+    private static OverrideGraphicSettings CreateOverrides(ColorRuleRow row, FillPatternElement? solidFillPattern,
+        bool colorPatterns, bool colorLines)
     {
         RevitColor color = new(row.Red, row.Green, row.Blue);
         OverrideGraphicSettings settings = new();
-        settings.SetSurfaceForegroundPatternColor(color);
-        settings.SetSurfaceForegroundPatternVisible(true);
-        settings.SetCutForegroundPatternColor(color);
-        settings.SetCutForegroundPatternVisible(true);
-
-        if (solidFillPattern is not null)
+        if (colorPatterns)
         {
-            settings.SetSurfaceForegroundPatternId(solidFillPattern.Id);
-            settings.SetCutForegroundPatternId(solidFillPattern.Id);
+            settings.SetSurfaceForegroundPatternColor(color);
+            settings.SetSurfaceForegroundPatternVisible(true);
+            settings.SetCutForegroundPatternColor(color);
+            settings.SetCutForegroundPatternVisible(true);
+            if (solidFillPattern is not null)
+            {
+                settings.SetSurfaceForegroundPatternId(solidFillPattern.Id);
+                settings.SetCutForegroundPatternId(solidFillPattern.Id);
+            }
+        }
+        if (colorLines)
+        {
+            settings.SetProjectionLineColor(color);
+            settings.SetCutLineColor(color);
         }
 
         return settings;

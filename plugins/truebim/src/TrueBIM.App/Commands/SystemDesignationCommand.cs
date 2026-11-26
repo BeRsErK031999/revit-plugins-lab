@@ -11,6 +11,8 @@ namespace TrueBIM.App.Commands;
 public sealed class SystemDesignationCommand : IExternalCommand
 {
     private const string Title = "Обозначение системы";
+    private const string AbbreviationLabel = "Сокращение для системы";
+    private const string NameLabel = "Имя системы";
 
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
@@ -23,11 +25,14 @@ public sealed class SystemDesignationCommand : IExternalCommand
         try
         {
             var selection = ui.Selection.GetElementIds();
+            BuiltInParameter? source = ChooseSource();
+            if (source == null) return Result.Cancelled;
+            string sourceLabel = source == BuiltInParameter.RBS_SYSTEM_NAME_PARAM ? NameLabel : AbbreviationLabel;
             using var choose = new TaskDialog(Title)
             {
                 Id = "TrueBIM_SystemDesignation_Scope",
                 MainInstruction = "Какие элементы обработать?",
-                MainContent = "Пустое сокращение очистит прежнее обозначение системы.",
+                MainContent = $"Источник — «{sourceLabel}». Пустое значение очистит прежнее обозначение системы.",
                 CommonButtons = TaskDialogCommonButtons.Cancel
             };
             choose.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, $"Выделенные элементы ({selection.Count})",
@@ -50,7 +55,7 @@ public sealed class SystemDesignationCommand : IExternalCommand
                 TaskDialog.Show(Title, "В выбранной области нет элементов вентиляции и трубопроводных систем.");
                 return Result.Cancelled;
             }
-            var plan = DesignationPlan.Prepare(ui.Document, sources);
+            var plan = DesignationPlan.Prepare(ui.Document, sources, source.Value);
             if (plan.Skipped.Count > 0)
             {
                 using var warning = new TaskDialog(Title)
@@ -73,7 +78,7 @@ public sealed class SystemDesignationCommand : IExternalCommand
             {
                 Id = "TrueBIM_SystemDesignation_Report",
                 MainInstruction = $"Обработано элементов — {sources.Count}",
-                MainContent = $"Заполнено или обновлено — {plan.Updated}\nОчищено — {plan.Cleared}\n" +
+                MainContent = $"Источник — «{sourceLabel}»\nЗаполнено или обновлено — {plan.Updated}\nОчищено — {plan.Cleared}\n" +
                     $"Совпадало — {plan.Unchanged}\nПропущено — {plan.Skipped.Count}",
                 CommonButtons = TaskDialogCommonButtons.Close
             };
@@ -89,6 +94,24 @@ public sealed class SystemDesignationCommand : IExternalCommand
             message = error.Message;
             return Result.Failed;
         }
+    }
+
+    private static BuiltInParameter? ChooseSource()
+    {
+        using var dialog = new TaskDialog(Title)
+        {
+            Id = "TrueBIM_SystemDesignation_Source",
+            MainInstruction = $"Из какого параметра заполнить «{DesignationPlan.ParameterName}»?",
+            CommonButtons = TaskDialogCommonButtons.Cancel
+        };
+        dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, AbbreviationLabel);
+        dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink2, NameLabel);
+        return dialog.Show() switch
+        {
+            TaskDialogResult.CommandLink1 => BuiltInParameter.RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM,
+            TaskDialogResult.CommandLink2 => BuiltInParameter.RBS_SYSTEM_NAME_PARAM,
+            _ => null
+        };
     }
 
     private static string SummaryOfSkips(DesignationPlan plan) => string.Join("\n", plan.Skipped

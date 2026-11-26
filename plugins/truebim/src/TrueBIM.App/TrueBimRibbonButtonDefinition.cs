@@ -519,7 +519,7 @@ public static class TrueBimRibbon
             $"{CommandNamespace}.{nameof(ColorByParameterCommand)}",
             TrueBimIcon.ColorByParameter,
             "Открывает подготовку раскраски активного вида по значениям выбранного параметра.",
-            "Инструмент BIM-проверки для будущего выбора категорий, параметра, уникальных значений и применения фильтров с префиксом BIM_F_."),
+            "Окрашивает штриховки и линии активного вида по значениям выбранного параметра."),
         new(
             ModelReviewPanelName,
             "TrueBIM_ParameterAudit",

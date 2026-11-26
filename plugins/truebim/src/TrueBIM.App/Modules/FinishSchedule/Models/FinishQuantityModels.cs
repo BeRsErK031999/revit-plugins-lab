@@ -8,7 +8,8 @@ public enum FinishQuantityMethod
     CeilingProbeIntersection,
     ProjectedRoomFootprint,
     ConnectedWallContour,
-    StoredOwnership
+    StoredOwnership,
+    FinishFaceRoomContact
 }
 
 public enum FinishGeometryWarningCode
@@ -36,6 +37,7 @@ public sealed record FinishGeometryWarning(
     FinishPreviewCategory? Category = null)
 {
     public string? StoredOwnershipIssue { get; init; }
+    public AxisAlignedBox3D? ProbeBounds { get; init; }
 }
 
 public sealed class FinishQuantityRequest
