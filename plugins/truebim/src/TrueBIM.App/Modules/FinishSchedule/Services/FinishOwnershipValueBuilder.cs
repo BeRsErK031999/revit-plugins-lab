@@ -96,7 +96,7 @@ public sealed class FinishOwnershipValueBuilder
                 .OrderBy(identifier => identifier, NaturalStringComparer.Instance)
                 .ToArray();
             string value = string.Join(", ", identifiers);
-            if (identifiers.Length == 0)
+            if (identifiers.Length == 0 && !quantities.Warnings.Any(w => w.ElementId == elementId && w.Code == FinishGeometryWarningCode.OutsideRoomProjection))
             {
                 issues.Add(new FinishWriteIssue(
                     FinishWriteIssueCode.UnassignedOwnership,
@@ -115,7 +115,11 @@ public sealed class FinishOwnershipValueBuilder
                 element.Category));
             assignments.Add(new FinishRoomAssignment(elementId, reference, value,
                 settings.RoomIdentifier.SourceKey,
-                roomIds.Length == 1 && identifiers.Length == 1 ? roomIds[0] : null));
+                roomIds.Length == 1 && identifiers.Length == 1 ? roomIds[0] : null)
+            {
+                FloorAreas = quantities.Occurrences.Where(o => o.ElementId == elementId
+                    && o.Method == FinishQuantityMethod.FloorRoomSurface).ToArray()
+            });
         }
 
         return new FinishParameterTargetBuildResult(elements.Length, targets, issues, assignments);

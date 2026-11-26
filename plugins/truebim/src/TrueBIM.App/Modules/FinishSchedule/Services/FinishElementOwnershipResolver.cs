@@ -31,7 +31,8 @@ public sealed class FinishElementOwnershipResolver
                 warnings.Add(new FinishGeometryWarning(
                     FinishGeometryWarningCode.FullElementAreaUnavailable,
                     $"У элемента {element.Key} недоступна полная площадь Revit. Площадь контакта не используется как замена.",
-                    owner.RoomId, element.Key, owner.Category));
+                    owner.RoomId, element.Key, owner.Category)
+                { CompetingContacts = candidates });
                 continue;
             }
 
@@ -46,7 +47,8 @@ public sealed class FinishElementOwnershipResolver
                         ? "по соседним участкам единого контура отделки: разница контактов не превышает площадь торца стены. "
                         : "с наибольшей площадью контакта. ") + "Кандидаты: "
                     + string.Join(", ", candidates.Select(item => $"{item.RoomId} ({item.AreaSquareMeters:F3} м² контакта; {item.Method})")) + ".",
-                    owner.RoomId, element.Key, owner.Category));
+                    owner.RoomId, element.Key, owner.Category)
+                { CompetingContacts = candidates });
             }
         }
         return new FinishQuantityResult(occurrences, warnings);

@@ -8,7 +8,8 @@ public sealed record StoredFinishElement(
     long? LevelId,
     string? Ownership,
     double AreaSquareMeters,
-    long? AssignedRoomId = null);
+    long? AssignedRoomId = null,
+    IReadOnlyList<FinishOccurrence>? FloorAreas = null);
 
 /// <summary>Считает полную площадь по записанной принадлежности, без поиска геометрических контактов.</summary>
 public sealed class StoredFinishQuantityCalculator
@@ -18,7 +19,10 @@ public sealed class StoredFinishQuantityCalculator
         IEnumerable<FinishRoomCandidateSnapshot> rooms,
         RoomIdentifierSettings identifierSettings)
     {
-        Dictionary<string, FinishRoomCandidateSnapshot[]> byIdentifier = rooms
+        var roomList = rooms.ToArray();
+        var namesById = roomList.ToDictionary(room => room.ElementId,
+            room => RoomFinishSnapshotBuilder.ResolveIdentifier(room, identifierSettings, []));
+        Dictionary<string, FinishRoomCandidateSnapshot[]> byIdentifier = roomList
             .GroupBy(room => RoomFinishSnapshotBuilder.ResolveIdentifier(room, identifierSettings, []),
                 StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -27,6 +31,19 @@ public sealed class StoredFinishQuantityCalculator
         foreach (StoredFinishElement element in elements.GroupBy(item => item.ElementId).Select(group => group.First()))
         {
             string identifier = FinishDescriptionNormalizer.CollapseWhitespace(element.Ownership);
+            if (element.FloorAreas is { } shares)
+            {
+                if (identifier.Length == 0 && shares.Count == 0) continue;
+                var names = shares.Where(s => namesById.ContainsKey(s.RoomId))
+                    .Select(s => namesById[s.RoomId]).Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, NaturalStringComparer.Instance);
+                if (shares.Count > 0 && shares.All(s => namesById.ContainsKey(s.RoomId))
+                    && string.Equals(string.Join(", ", names), identifier, StringComparison.OrdinalIgnoreCase))
+                    occurrences.AddRange(shares);
+                else
+                    warnings.Add(UnresolvedOwnership(element, "Изменились исходные данные распределения пола. Выполните автоматический пересчёт."));
+                continue;
+            }
             if (identifier.Length == 0 || !byIdentifier.TryGetValue(identifier, out FinishRoomCandidateSnapshot[]? matches))
             {
                 warnings.Add(UnresolvedOwnership(element,

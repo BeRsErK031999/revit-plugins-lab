@@ -262,7 +262,8 @@ public sealed class FinishAggregationResult
         Summary = new FinishAggregationPreviewSummary(
             Groups.Count,
             RoomOutputs.Count,
-            Warnings.Count);
+            Warnings.Count)
+        { Details = Warnings };
     }
 
     public IReadOnlyList<FinishAggregatedGroup> Groups { get; }
@@ -277,4 +278,7 @@ public sealed class FinishAggregationResult
 public sealed record FinishAggregationPreviewSummary(
     int GroupCount,
     int RoomCount,
-    int WarningCount);
+    int WarningCount)
+{
+    public IReadOnlyList<FinishAggregationWarning> Details { get; init; } = [];
+}

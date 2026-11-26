@@ -9,7 +9,8 @@ public enum FinishQuantityMethod
     ProjectedRoomFootprint,
     ConnectedWallContour,
     StoredOwnership,
-    FinishFaceRoomContact
+    FinishFaceRoomContact,
+    FloorRoomSurface
 }
 
 public enum FinishGeometryWarningCode
@@ -26,7 +27,8 @@ public enum FinishGeometryWarningCode
     FullElementAreaUnavailable,
     MultipleRoomContacts,
     UnassignedElement,
-    StoredOwnershipUnresolved
+    StoredOwnershipUnresolved,
+    OutsideRoomProjection
 }
 
 public sealed record FinishGeometryWarning(
@@ -36,6 +38,7 @@ public sealed record FinishGeometryWarning(
     long? ElementId = null,
     FinishPreviewCategory? Category = null)
 {
+    public IReadOnlyList<FinishOccurrence> CompetingContacts { get; init; } = [];
     public string? StoredOwnershipIssue { get; init; }
     public AxisAlignedBox3D? ProbeBounds { get; init; }
 }

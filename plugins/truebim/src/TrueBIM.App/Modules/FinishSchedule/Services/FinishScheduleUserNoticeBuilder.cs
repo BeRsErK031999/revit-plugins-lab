@@ -51,7 +51,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishScheduleUserNotice notice = BuildCalculation(
             preview.Calculation,
             settings,
-            preview.Issues.Select(issue => issue.Message),
+            SummarizeWriteIssues(preview.Issues),
             successTitle: "Проверка перед формированием пройдена",
             successMessage: "Расчёт готов, план записи подготовлен. Можно продолжать.");
         if (preview.CanApply)
@@ -101,7 +101,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishScheduleUserNotice notice = BuildCalculation(
             preview.Calculation,
             settings,
-            result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
+            result.Warnings.Concat(SummarizeWriteIssues(preview.Issues)),
             successTitle: "Ведомость готова",
             successMessage: HumanizeWarning(result.Message));
         if (result.Succeeded)
@@ -169,9 +169,15 @@ public sealed class FinishScheduleUserNoticeBuilder
             summary.Add($"Групп помещений: {preview.Aggregation.GroupCount}.");
         }
 
+        int sharedContacts = preview.GeometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.MultipleRoomContacts)
+            .Select(w => w.ElementId).Distinct().Count();
+        if (sharedContacts > 0) summary.Add($"Касания нескольких помещений: {sharedContacts} элементов. Владелец и площади контакта — в списке «Элементы».");
+
         HashSet<string> geometryMessages = preview.GeometryWarnings
             .Select(warning => warning.Message)
             .ToHashSet(StringComparer.Ordinal);
+        var aggregationWarnings = preview.Aggregation?.Details ?? [];
+        geometryMessages.UnionWith(aggregationWarnings.Select(w => w.Message));
         string[] generalWarnings = preview.Warnings
             .Concat(additionalWarnings ?? throw new ArgumentNullException(nameof(additionalWarnings)))
             .Where(warning => !geometryMessages.Contains(warning))
@@ -179,18 +185,28 @@ public sealed class FinishScheduleUserNoticeBuilder
             .Where(warning => !string.IsNullOrWhiteSpace(warning))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        string[] geometryWarnings = preview.GeometryWarnings
+        var actionableGeometry = preview.GeometryWarnings.Where(FinishGeometryWarningClassifier.AffectsScheduleValue).ToArray();
+        IReadOnlyList<FinishGeometryWarning> visibleGeometry = actionableGeometry.Length == 0
+            ? preview.GeometryWarnings.Where(w => w.Code != FinishGeometryWarningCode.OutsideRoomProjection).ToArray() : actionableGeometry;
+        string[] geometryWarnings = visibleGeometry
             .GroupBy(warning => $"{warning.Code}:{warning.Category}:{warning.StoredOwnershipIssue}", StringComparer.Ordinal)
             .Select(FormatGeometryWarningGroup)
             .ToArray();
         string[] missingLinks = BuildMissingLinkWarnings(preview, settings).ToArray();
         string[] warningItems = geometryWarnings
             .Concat(missingLinks)
+            .Concat(aggregationWarnings.GroupBy(w => w.Code).Select(g => g.Key switch
+            {
+                FinishAggregationWarningCode.MissingDescription => $"Заполните состав типов отделки. Экземпляров без описания: {g.Select(w => w.ElementId).Distinct().Count()}.",
+                FinishAggregationWarningCode.UnknownQuantity => $"Неполные площади в {g.Select(w => w.RoomId).Distinct().Count()} помещениях. Перечень по категориям есть в полном отчёте.",
+                _ => $"Проверьте идентификаторы помещений: {g.Select(w => w.RoomId).Distinct().Count()}."
+            }))
             .Concat(BuildOwnershipGuidance(preview, settings))
             .Concat(generalWarnings)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        int issueCount = preview.GeometryWarnings.Count + missingLinks.Length + generalWarnings.Length;
+        int issueCount = visibleGeometry.Count
+            + aggregationWarnings.Count + missingLinks.Length + generalWarnings.Length;
         bool incomplete = FinishGeometryWarningClassifier.HasIncompleteScheduleValues(preview);
         if (warningItems.Length == 0)
         {
@@ -349,11 +365,23 @@ public sealed class FinishScheduleUserNoticeBuilder
     private static string FormatIds(IEnumerable<long> ids)
     {
         long[] distinct = ids.Distinct().OrderBy(id => id).ToArray();
-        const int visibleLimit = 20;
+        int visibleLimit = distinct.Length > 20 ? 3 : 20;
         string result = string.Join(", ", distinct.Take(visibleLimit));
         return distinct.Length > visibleLimit
             ? $"{result} и ещё {distinct.Length - visibleLimit}"
             : result;
+    }
+
+    private static IEnumerable<string> SummarizeWriteIssues(IEnumerable<FinishWriteIssue> issues)
+    {
+        foreach (var group in issues.GroupBy(issue => issue.Code))
+        {
+            if (group.Key is FinishWriteIssueCode.UnknownOwnership or FinishWriteIssueCode.UnassignedOwnership)
+                yield return $"Пропущено назначений отделки: {group.Count()}. Причина — " +
+                    (group.Key == FinishWriteIssueCode.UnknownOwnership ? "неопределённая геометрия." : "не найдено помещение.");
+            else
+                foreach (var issue in group) yield return issue.Message;
+        }
     }
 
     private static string HumanizeWarning(string warning)

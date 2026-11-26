@@ -40,6 +40,32 @@ public sealed class StoredFinishQuantityCalculatorTests
     }
 
     [Fact]
+    public void AutomaticFloorSharesSurviveDuplicateRoomNumbersAndExcludeOutsideArea()
+    {
+        var parts = new[] {
+            new FinishOccurrence(1, 100, FinishPreviewCategory.Floors, 6, FinishQuantityMethod.FloorRoomSurface),
+            new FinishOccurrence(2, 100, FinishPreviewCategory.Floors, 2, FinishQuantityMethod.FloorRoomSurface)
+        };
+        var element = new StoredFinishElement(100, FinishPreviewCategory.Floors, 10, "101", 12, FloorAreas: parts);
+        var calculation = new StoredFinishQuantityCalculator();
+        var result = calculation.Calculate([element], [Room(1, "101"), Room(2, "101")], RoomIdentifierSettings.ByNumber());
+        Assert.Equal(8, result.Occurrences.Sum(o => o.AreaSquareMeters));
+        Assert.Equal(2, result.Occurrences.Count);
+        var changed = calculation.Calculate([element], [Room(1, "101"), Room(2, "102")], RoomIdentifierSettings.ByNumber());
+        Assert.Empty(changed.Occurrences);
+        Assert.Single(changed.Warnings);
+    }
+
+    [Fact]
+    public void MeasuredFloorOutsideRoomsIsQuietAndZero()
+    {
+        var element = new StoredFinishElement(100, FinishPreviewCategory.Floors, 10, "", 12, FloorAreas: []);
+        var result = new StoredFinishQuantityCalculator().Calculate([element], [Room(1, "101")], RoomIdentifierSettings.ByNumber());
+        Assert.Empty(result.Occurrences);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
     public void RepeatedNumberUsesUniqueRoomOnElementLevel()
     {
         FinishQuantityResult result = Calculate("101", [Room(1, "101", 20), Room(2, "101", 10)]);

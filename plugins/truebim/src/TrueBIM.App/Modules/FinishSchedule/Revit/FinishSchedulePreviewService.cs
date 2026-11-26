@@ -63,6 +63,7 @@ public sealed class FinishSchedulePreviewService
                 .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
             HashSet<long> selectedGeometryIds = new(geometry.Occurrences
                 .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+            outsideGeometryIds.ExceptWith(selectedGeometryIds);
             FinishClassifiedElement[] assignmentElements = build.InScopeElements
                 .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)))
                 .Where(item => !outsideGeometryIds.Contains(item.Element.ElementId))
@@ -79,14 +80,20 @@ public sealed class FinishSchedulePreviewService
         // Preview uses proposed parameter values; Apply reads them back after the assignment transaction.
         FinishQuantityResult stored = new StoredFinishQuantitySource(document, settings,
             ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value),
-            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId)).Calculate(request);
-        FinishQuantityResult allQuantities = new(stored.Occurrences,
-            stored.Warnings.Concat(geometry?.Warnings ?? []).Concat(roomGeometryWarnings).Distinct(),
+            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId),
+            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.FloorAreas)).Calculate(request);
+        var geometryWarnings = (geometry?.Warnings ?? []).Concat(roomGeometryWarnings).ToArray();
+        var unavailableFloors = geometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.ProjectedAreaUnavailable
+                && w.Category == FinishPreviewCategory.Floors && w.ElementId.HasValue)
+            .Select(w => w.ElementId!.Value).ToHashSet();
+        FinishQuantityResult allQuantities = new(stored.Occurrences.Where(o => !unavailableFloors.Contains(o.ElementId)),
+            stored.Warnings.Concat(geometryWarnings).Distinct(),
             geometry?.CacheMetrics, geometry?.Contacts);
         HashSet<long> outsideOwnedIds = new(allQuantities.Occurrences
             .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
         HashSet<long> selectedOwnedIds = new(allQuantities.Occurrences
             .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+        outsideOwnedIds.ExceptWith(selectedOwnedIds);
         build = build with
         {
             InScopeElements = build.InScopeElements.Concat(build.Classification.Elements

@@ -36,6 +36,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         HashSet<FinishGeometryWarning> warningKeys = [];
         FinishBoundingBoxIndex index = new(request.Elements);
         FinishRoomSearchBounds searchBounds = new(request.Rooms, request.Elements);
+        var obstacles = new FinishVerticalObstacles(document);
         HashSet<long> consideredElementIds = [];
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedWalls = request.Elements
             .Where(element => element.Category == FinishPreviewCategory.Walls)
@@ -76,7 +77,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 warningKeys);
             IReadOnlyList<FinishClassifiedElement> candidates = room.Bounds is null
                 ? []
-                : QueryCandidates(index, searchBounds, room);
+                : QueryCandidates(index, searchBounds, room).Where(e => CanReachFromRoom(room, e, obstacles)).ToArray();
             consideredElementIds.UnionWith(candidates.Select(candidate => candidate.Element.ElementId));
             CalculateFallbackWalls(
                 room.ElementId,
@@ -132,16 +133,22 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         {
             if (contact.Category == FinishPreviewCategory.Walls && occupiedLevels.Contains(wallLevels[contact.ElementId])
                 && roomsById[contact.RoomId].LevelId != wallLevels[contact.ElementId]) continue;
-            if (searchBounds.Includes(roomsById[contact.RoomId], elementsById[contact.ElementId]))
+            if (searchBounds.Includes(roomsById[contact.RoomId], elementsById[contact.ElementId]) && CanReachFromRoom(roomsById[contact.RoomId], elementsById[contact.ElementId], obstacles))
                 eligible.KeepLargest(contact);
         }
         IReadOnlyDictionary<long, long> contourOwners = new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
         FinishOffLevelContactSource.AddContacts(document, request, roomGeometryCache, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
-        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas, contourOwners);
-        warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements, contacts, consideredElementIds));
+        FinishQuantityResult floors = FinishFloorRoomAreas.Calculate(document, request, obstacles);
+        var otherContacts = contacts.Where(item => item.Category != FinishPreviewCategory.Floors).ToArray();
+        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(otherContacts, fullAreas, contourOwners);
+        // Slab probes rank candidates. The upper-surface partition is authoritative for floors.
+        warnings.RemoveAll(w => w.Category == FinishPreviewCategory.Floors);
+        warnings.AddRange(floors.Warnings);
+        warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements.Where(e => e.Category != FinishPreviewCategory.Floors),
+            otherContacts.Concat(floors.Occurrences), consideredElementIds));
         FinishQuantityResult result = new(
-            resolved.Occurrences,
+            resolved.Occurrences.Concat(floors.Occurrences),
             warnings.Where(warning => !IsRecoveredWarning(warning, contacts)).Concat(resolved.Warnings),
             new FinishGeometryCacheMetrics(
                 roomGeometryCache.RequestCount,
@@ -158,6 +165,21 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             + $"ElementCache={elementGeometryCache.EntryCount}/{elementGeometryCache.RequestCount}; "
             + $"ElementCacheHits={elementGeometryCache.HitCount}.");
         return result;
+    }
+
+    private static bool CanReachFromRoom(FinishRoomCandidateSnapshot room, FinishClassifiedElement element, FinishVerticalObstacles obstacles)
+    {
+        if (element.Category == FinishPreviewCategory.Floors || room.Bounds is not { } r || element.Element.Bounds is not { } e)
+            return true;
+        if (element.Category == FinishPreviewCategory.Walls && room.LevelId != element.Element.LevelId &&
+            !FinishCandidateSearchRules.HasWallHeightOverlap(e, r)) return false;
+        if (e.MinZ <= r.MinZ) return true;
+        var pad = FinishCandidateSearchRules.HorizontalToleranceInternal;
+        double left = Math.Max(r.MinX - pad, e.MinX - pad), right = Math.Min(r.MaxX + pad, e.MaxX + pad);
+        double bottom = Math.Max(r.MinY - pad, e.MinY - pad), top = Math.Min(r.MaxY + pad, e.MaxY + pad);
+        if (right <= left || top <= bottom) return false;
+        var plan = new System.Windows.Media.RectangleGeometry(new System.Windows.Rect(left, bottom, right - left, top - bottom));
+        return obstacles.Visible(plan, r.MinZ + pad, e.MinZ).GetArea() > 1e-8;
     }
 
     private static bool IsRecoveredWarning(FinishGeometryWarning warning, IEnumerable<FinishOccurrence> contacts)
@@ -1033,7 +1055,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 $"Не удалось построить geometry probe помещения {roomId}: {exception.Message}",
                 RoomId: roomId,
                 ElementId: elementId,
-                Category: category) { ProbeBounds = bounds });
+                Category: category)
+            { ProbeBounds = bounds });
     }
 
     private static void AddWarning(

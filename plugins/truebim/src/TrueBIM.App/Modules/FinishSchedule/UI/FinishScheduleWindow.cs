@@ -122,6 +122,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private long? lastScheduleId;
     private FinishScheduleUserNotice? currentUserNotice;
 
+    private IReadOnlyList<FinishModelCheck> modelChecks = [];
+    public long? RequestedElementId { get; private set; }
     public long? RequestedScheduleId { get; private set; }
 
     public FinishScheduleWindow(
@@ -463,11 +465,16 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         logger.Info(
             $"Finish Schedule user notice opened. Issues={currentUserNotice.IssueCount}; Severity={currentUserNotice.Severity}.");
-        FinishScheduleWarningsWindow warningsWindow = new(currentUserNotice)
+        FinishScheduleWarningsWindow warningsWindow = new(currentUserNotice, modelChecks)
         {
             Owner = this
         };
         warningsWindow.ShowDialog();
+        if (warningsWindow.SelectedElementId.HasValue)
+        {
+            RequestedElementId = warningsWindow.SelectedElementId;
+            Close();
+        }
     }
 
     private UIElement CreateCategorySelectionContent()
@@ -961,6 +968,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private void InvalidatePreview()
     {
         SetUserNotice(null);
+        modelChecks = [];
         SetCurrentReport(string.Empty);
         SetLastSchedule(null);
     }
@@ -991,6 +999,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         try
         {
             FinishSchedulePreviewResult result = previewFactory(settings);
+            modelChecks = FinishModelCheck.Build(result);
             SetUserNotice(userNoticeBuilder.BuildPreview(result, settings));
             SetCurrentReport(reportBuilder.BuildPreview(result, settings));
             footerStatus.Text = "Предпросмотр обновлён. Модель Revit не изменялась.";
@@ -1042,13 +1051,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             IReadOnlyList<string> missingDescriptions = missingDescriptionsFactory?.Invoke(settings) ?? [];
             if (missingDescriptions.Count > 0
                 && new FinishMissingDescriptionWindow(settings.DescriptionParameter?.Name ?? "Описание", missingDescriptions)
-                    { Owner = this }.ShowDialog() != true)
+                { Owner = this }.ShowDialog() != true)
             {
                 footerStatus.Text = "Формирование отменено. Заполните описания указанных типоразмеров.";
                 return;
             }
             FinishScheduleWritePreview writePreview = writePreviewFactory(settings);
             SetUserNotice(userNoticeBuilder.BuildWritePreview(writePreview, settings));
+            modelChecks = writePreview.Calculation == null ? [] : FinishModelCheck.Build(writePreview.Calculation);
             SetCurrentReport(reportBuilder.BuildWritePreview(writePreview));
             SetLastSchedule(null);
             if (!writePreview.CanApply)

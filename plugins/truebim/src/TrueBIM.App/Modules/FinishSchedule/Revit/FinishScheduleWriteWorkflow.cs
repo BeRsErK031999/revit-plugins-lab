@@ -215,7 +215,7 @@ public sealed class FinishScheduleWriteWorkflow
                 // Writing ownership cannot repair a failed room face. Keep its incomplete-area
                 // marker when regrouping rooms from their newly stored assignments.
                 var roomGeometryWarnings = (preview.Calculation?.GeometryWarnings ?? [])
-                    .Where(warning => warning.RoomId.HasValue && FinishGeometryWarningClassifier.AffectsScheduleValue(warning));
+                    .Where(warning => (warning.RoomId.HasValue || (preview.Settings.WriteOwnership && warning.Category == FinishPreviewCategory.Floors && warning.Code == FinishGeometryWarningCode.ProjectedAreaUnavailable)) && FinishGeometryWarningClassifier.AffectsScheduleValue(warning));
                 FinishScheduleCalculationResult assignedCalculation = calculationService.BuildDetailed(
                     document, preview.Settings with { WriteOwnership = false }, roomGeometryWarnings);
                 if (assignedCalculation.Aggregation is null)

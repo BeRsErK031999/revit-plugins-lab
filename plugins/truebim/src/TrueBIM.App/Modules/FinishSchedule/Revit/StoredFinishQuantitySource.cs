@@ -9,7 +9,8 @@ public sealed class StoredFinishQuantitySource(
     Document document,
     FinishScheduleSettings settings,
     IReadOnlyDictionary<long, string>? proposedOwnership = null,
-    IReadOnlyDictionary<long, long?>? proposedRoomIds = null) : IFinishQuantitySource
+    IReadOnlyDictionary<long, long?>? proposedRoomIds = null,
+    IReadOnlyDictionary<long, IReadOnlyList<FinishOccurrence>>? proposedAreas = null) : IFinishQuantitySource
 {
     public FinishQuantityResult Calculate(FinishQuantityRequest request)
     {
@@ -32,10 +33,13 @@ public sealed class StoredFinishQuantitySource(
             : null;
         string? value = ownership?.StorageType == StorageType.String ? ownership.AsString() : null;
         long? roomId = null;
+        IReadOnlyList<FinishOccurrence>? shares = null;
         if (proposedOwnership is not null
             && proposedOwnership.TryGetValue(classified.Element.ElementId, out string? proposed))
         {
             value = proposed;
+            if (classified.Category == FinishPreviewCategory.Floors && proposedAreas != null && proposedAreas.TryGetValue(classified.Element.ElementId, out var areas))
+                shares = areas;
             if (proposedRoomIds is not null)
             {
                 proposedRoomIds.TryGetValue(classified.Element.ElementId, out roomId);
@@ -45,11 +49,13 @@ public sealed class StoredFinishQuantitySource(
         {
             roomId = new FinishOwnershipMetadataService().ReadRoomId(
                 element, reference, settings.RoomIdentifier.SourceKey, value);
+            if (classified.Category == FinishPreviewCategory.Floors)
+                shares = FinishFloorAreaStorage.Read(element, reference, settings.RoomIdentifier.SourceKey, value);
         }
         Parameter? area = element?.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
         return new StoredFinishElement(classified.Element.ElementId, classified.Category,
             classified.Element.LevelId, value,
             area?.StorageType == StorageType.Double ? RevitAreaUnits.ToSquareMeters(area.AsDouble()) : 0,
-            roomId);
+            roomId, shares);
     }
 }
