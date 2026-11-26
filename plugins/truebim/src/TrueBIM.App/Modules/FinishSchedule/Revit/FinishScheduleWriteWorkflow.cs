@@ -212,8 +212,12 @@ public sealed class FinishScheduleWriteWorkflow
             FinishWritePlan roomPlan = preview.RoomPlan;
             if (preview.Settings is not null)
             {
+                // Writing ownership cannot repair a failed room face. Keep its incomplete-area
+                // marker when regrouping rooms from their newly stored assignments.
+                var roomGeometryWarnings = (preview.Calculation?.GeometryWarnings ?? [])
+                    .Where(warning => warning.RoomId.HasValue && FinishGeometryWarningClassifier.AffectsScheduleValue(warning));
                 FinishScheduleCalculationResult assignedCalculation = calculationService.BuildDetailed(
-                    document, preview.Settings with { WriteOwnership = false });
+                    document, preview.Settings with { WriteOwnership = false }, roomGeometryWarnings);
                 if (assignedCalculation.Aggregation is null)
                 {
                     throw new InvalidOperationException("Не удалось рассчитать ведомость по записанной принадлежности.");
