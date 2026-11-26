@@ -15,8 +15,11 @@ internal static class SystemDesignationValues
                 yield return connector;
     }
 
-    public static string Read(Element source)
+    public static string Read(Element source, BuiltInParameter sourceParameter)
     {
+        if (sourceParameter == BuiltInParameter.RBS_SYSTEM_NAME_PARAM)
+            return source.get_Parameter(sourceParameter)?.AsString() ?? "";
+
         // Equipment can have several systems (and electrical ports) on the same instance.
         if (source is FamilyInstance family)
         {
@@ -45,7 +48,7 @@ internal static class SystemDesignationValues
             }
             if (abbreviations.Count > 0) return SystemAbbreviations.Format(abbreviations);
         }
-        string raw = source.get_Parameter(BuiltInParameter.RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM)?.AsString() ?? "";
+        string raw = source.get_Parameter(sourceParameter)?.AsString() ?? "";
         return SystemAbbreviations.Format(raw.Split(','));
     }
 }
