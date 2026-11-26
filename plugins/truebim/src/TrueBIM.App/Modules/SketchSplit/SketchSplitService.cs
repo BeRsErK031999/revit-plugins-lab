@@ -9,7 +9,7 @@ namespace TrueBIM.App.Modules.SketchSplit;
 
 public sealed class SketchSplitService
 {
-    private sealed class Failures : IFailuresPreprocessor
+    private sealed class Failures(bool editingSketch = false) : IFailuresPreprocessor
     {
         internal string? Reason { get; private set; }
 
@@ -19,11 +19,11 @@ public sealed class SketchSplitService
             {
                 var id = message.GetFailureDefinitionId();
                 if (message.GetSeverity() == FailureSeverity.Warning &&
-                    (id == BuiltInFailures.OverlapFailures.FloorsOverlap || id == BuiltInFailures.OverlapFailures.DuplicateInstances || id == BuiltInFailures.PerformanceFailures.DuplicateInstances))
+                    ((editingSketch && id == BuiltInFailures.StairRampFailures.RailPlacedOutsideOfHost) || id == BuiltInFailures.OverlapFailures.FloorsOverlap || id == BuiltInFailures.OverlapFailures.DuplicateInstances || id == BuiltInFailures.PerformanceFailures.DuplicateInstances))
                     accessor.DeleteWarning(message);
             }
-            var remaining = accessor.GetFailureMessages();
-            if (remaining.Count == 0) return FailureProcessingResult.Continue;
+            var remaining = accessor.GetFailureMessages().Where(m => m.GetSeverity() >= FailureSeverity.Error).ToArray();
+            if (remaining.Length == 0) return FailureProcessingResult.Continue;
             Reason = string.Join(" ", remaining.Select(m => m.GetDescriptionText()).Distinct());
             return FailureProcessingResult.ProceedWithRollBack;
         }
@@ -57,8 +57,9 @@ public sealed class SketchSplitService
         var samples = SampleFaces((HostObject)source);
         var hosted = new FilteredElementCollector(doc).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
             .Where(instance => instance.Host?.Id == id).Select(instance => (instance.Id, Point: instance.Location is LocationPoint lp ? lp.Point : null)).ToArray();
-        var railings = new FilteredElementCollector(doc).OfClass(typeof(Railing)).Cast<Railing>()
-            .Where(r => r.HostId == id).Select(r => (r.Id, Path: r.GetPath().Select(c => c.Clone()).ToList())).ToArray();
+        var existingRailings = new FilteredElementCollector(doc).OfClass(typeof(Railing)).Cast<Railing>().ToArray();
+        var existingRailingIds = existingRailings.Select(r => r.Id).ToHashSet();
+        var railings = existingRailings.Where(r => r.HostId == id).Select(r => (r.Id, Path: r.GetPath().Select(c => c.Clone()).ToList())).ToArray();
         var created = new List<ElementId> { id };
         using var batch = new TransactionGroup(doc, "TrueBIM: разделить контуры");
         if (batch.Start() != TransactionStatus.Started) throw new InvalidOperationException("Не удалось начать операцию.");
@@ -83,7 +84,7 @@ public sealed class SketchSplitService
                 {
                     created.Add(spots.CopyHost(doc, source, i));
                 }
-            });
+            }, editingSketch: true);
             var map = new RebarSplitElementMap { [id] = created };
             for (int i = 0; i < parts.Count; i++)
             {
@@ -99,8 +100,8 @@ public sealed class SketchSplitService
                 using var edit = new SketchEditScope(doc, "Оставить область эскиза");
                 edit.Start(targetSketch.Id);
                 var remove = targetParts.Where(p => p != keep).SelectMany(p => p.Curves).ToArray();
-                Change(doc, "Удалить контуры других участков", () => doc.Delete(remove));
-                var sketchFailures = new Failures();
+                Change(doc, "Удалить контуры других участков", () => doc.Delete(remove), editingSketch: true);
+                var sketchFailures = new Failures(editingSketch: true);
                 edit.Commit(sketchFailures);
                 if (sketchFailures.Reason != null) throw new InvalidOperationException(sketchFailures.Reason);
                 var after = SketchIslands.Read(SketchIslands.GetSketch(target)!);
@@ -115,6 +116,12 @@ public sealed class SketchSplitService
             };
             Change(doc, "Восстановить оформление и закрепление", () =>
             {
+                var originalRailings = railings.Select(r => r.Id).ToHashSet();
+                var copiedRailings = new FilteredElementCollector(doc).OfClass(typeof(Railing)).Cast<Railing>()
+                    .Where(r => created.Contains(r.HostId) && !originalRailings.Contains(r.Id)).Select(r => r.Id).ToArray();
+                if (copiedRailings.Any(existingRailingIds.Contains))
+                    throw new InvalidOperationException("Revit изменил основу стороннего ограждения.");
+                if (copiedRailings.Length != 0) doc.Delete(copiedRailings);
                 foreach (var railing in railings)
                 {
                     if (doc.GetElement(railing.Id) is not Railing retained)
@@ -149,6 +156,10 @@ public sealed class SketchSplitService
                     || !parts[created.IndexOf(inst.Host!.Id)].Shape.FillContains(new Point(point.X, point.Y)))
                     throw new InvalidOperationException($"Не подтверждена основа или положение зависимого элемента {original}.");
             }
+            var originalFamilies = hosted.Select(h => h.Id).ToHashSet();
+            if (new FilteredElementCollector(doc).OfClass(typeof(FamilyInstance)).Cast<FamilyInstance>()
+                .Any(i => i.Host != null && created.Contains(i.Host.Id) && !originalFamilies.Contains(i.Id)))
+                throw new InvalidOperationException("Появился дополнительный зависимый экземпляр семейства.");
             CompareSurfaces(samples, results);
             if (batch.Assimilate() != TransactionStatus.Committed) throw new InvalidOperationException("Revit отменил операцию.");
             return created;
@@ -160,12 +171,12 @@ public sealed class SketchSplitService
         }
     }
 
-    private static void Change(Document doc, string name, Action action)
+    private static void Change(Document doc, string name, Action action, bool editingSketch = false)
     {
         using var tx = new Transaction(doc, name);
         tx.Start();
         var options = tx.GetFailureHandlingOptions();
-        var failures = new Failures();
+        var failures = new Failures(editingSketch);
         tx.SetFailureHandlingOptions(options.SetFailuresPreprocessor(failures).SetClearAfterRollback(true));
         action();
         if (tx.Commit() != TransactionStatus.Committed) throw new InvalidOperationException(failures.Reason ?? $"Revit отклонил действие «{name}».");
