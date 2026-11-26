@@ -106,7 +106,11 @@ public sealed class FinishScheduleUserNoticeBuilder
             successMessage: HumanizeWarning(result.Message));
         if (result.Succeeded)
         {
-            return notice;
+            return settings.WriteOwnership
+                ? new FinishScheduleUserNotice(notice.Title, notice.Message,
+                    notice.SummaryItems.Append($"Запись принадлежности: изменено {result.AppliedOwnershipValues}, пропущено {result.SkippedOwnershipValues}."),
+                    notice.WarningItems, notice.IssueCount, notice.Severity)
+                : notice;
         }
 
         return new FinishScheduleUserNotice(

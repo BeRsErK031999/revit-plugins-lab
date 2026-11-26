@@ -148,6 +148,20 @@ public sealed class FinishScheduleReportBuilderTests
     }
 
     [Fact]
+    public void CopySummaryKeepsTotalsAndLimitsExamples()
+    {
+        var notice = new FinishScheduleUserNotice("Часть отделки нужно проверить", "Проверьте контуры.",
+            ["Стены: 120 м².", "Запись принадлежности: изменено 30, пропущено 2."],
+            Enumerable.Range(1, 1000).Select(id => $"Замечание об элементе {id}."), 1000, FinishScheduleUserNoticeSeverity.Warning);
+        string text = new FinishScheduleReportBuilder().BuildSummary(notice);
+        Assert.Contains("Стены: 120 м².", text);
+        Assert.Contains("изменено 30, пропущено 2", text);
+        Assert.Contains("Замечание об элементе 8.", text);
+        Assert.DoesNotContain("Замечание об элементе 9.", text);
+        Assert.Contains("992", text);
+    }
+
+    [Fact]
     public void StageTiming_RejectsNegativeDuration()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>

@@ -171,7 +171,7 @@ public sealed class FinishScheduleReportBuilder
             : "состояние из плана";
         string geometry = quantities is null
             ? string.Empty
-            : $"; связей {quantities.OccurrenceCount}; площадь "
+            : $"; отнесено к помещениям {quantities.OccurrenceCount}; площадь "
                 + $"{quantities.AreaSquareMeters.ToString("N2", RussianCulture)} м²";
         report.AppendLine(
             $"{name} ({state}): собрано {counts.SourceCollected}; классифицировано {counts.Classified}; "
