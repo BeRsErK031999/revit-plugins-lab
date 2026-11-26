@@ -20,7 +20,11 @@ public sealed class FinishElementOwnershipResolver
                 .ThenBy(item => item.Category)
                 .ToArray();
             FinishOccurrence owner = candidates[0];
-            bool contourResolved = contourOwners is not null
+            // The threshold describes a competing pair. It never filters a single-room wall.
+            bool smallWallContact = candidates.Length == 2 && candidates[0].RoomId != candidates[1].RoomId
+                && candidates.All(c => c.Category == FinishPreviewCategory.Walls && c.Method != FinishQuantityMethod.ConnectedWallContour)
+                && candidates[1].AreaSquareMeters < 0.1 && candidates[0].AreaSquareMeters >= 10 * candidates[1].AreaSquareMeters;
+            bool contourResolved = !smallWallContact && contourOwners is not null
                 && contourOwners.TryGetValue(element.Key, out long contourRoomId)
                 && candidates.Any(candidate => candidate.RoomId == contourRoomId);
             if (contourResolved)
@@ -45,10 +49,11 @@ public sealed class FinishElementOwnershipResolver
                     $"Элемент {element.Key} касается нескольких помещений. Полная площадь учтена один раз в помещении "
                     + $"{owner.RoomId} " + (contourResolved
                         ? "по соседним участкам единого контура отделки: разница контактов не превышает площадь торца стены. "
+                        : smallWallContact ? "по правилу малого касания стены: второе пятно меньше 0,1 м², основное не менее чем в 10 раз больше. "
                         : "с наибольшей площадью контакта. ") + "Кандидаты: "
                     + string.Join(", ", candidates.Select(item => $"{item.RoomId} ({item.AreaSquareMeters:F3} м² контакта; {item.Method})")) + ".",
                     owner.RoomId, element.Key, owner.Category)
-                { CompetingContacts = candidates });
+                { CompetingContacts = candidates, SmallWallContactResolved = smallWallContact });
             }
         }
         return new FinishQuantityResult(occurrences, warnings);

@@ -171,7 +171,7 @@ public sealed class FinishScheduleUserNoticeBuilder
 
         int sharedContacts = preview.GeometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.MultipleRoomContacts)
             .Select(w => w.ElementId).Distinct().Count();
-        if (sharedContacts > 0) summary.Add($"Касания нескольких помещений: {sharedContacts} элементов. Владелец и площади контакта — в списке «Элементы».");
+        if (sharedContacts > 0) summary.Add($"Элементов с касаниями нескольких помещений: {sharedContacts}. Владелец и площади контакта — в списке «Элементы».");
 
         HashSet<string> geometryMessages = preview.GeometryWarnings
             .Select(warning => warning.Message)

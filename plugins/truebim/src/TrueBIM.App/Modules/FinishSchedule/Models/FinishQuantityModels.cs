@@ -38,6 +38,7 @@ public sealed record FinishGeometryWarning(
     long? ElementId = null,
     FinishPreviewCategory? Category = null)
 {
+    public bool SmallWallContactResolved { get; init; }
     public IReadOnlyList<FinishOccurrence> CompetingContacts { get; init; } = [];
     public string? StoredOwnershipIssue { get; init; }
     public AxisAlignedBox3D? ProbeBounds { get; init; }

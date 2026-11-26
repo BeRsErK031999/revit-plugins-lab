@@ -58,6 +58,32 @@ public sealed class FinishElementOwnershipResolverTests
         Assert.Equal(FinishGeometryWarningCode.MultipleRoomContacts, Assert.Single(result.Warnings).Code);
     }
 
+    [Theory]
+    [InlineData(0.08, 0.80, true)]
+    [InlineData(0.08, 0.79, false)]
+    [InlineData(0.10, 1.50, false)]
+    public void SmallCompetingWallContactTakesPrecedenceOnlyInsideBothLimits(double small, double large, bool automatic)
+    {
+        var contacts = new[] {
+            new FinishOccurrence(10, 100, FinishPreviewCategory.Walls, small, FinishQuantityMethod.WallProbeIntersection),
+            new FinishOccurrence(20, 100, FinishPreviewCategory.Walls, large, FinishQuantityMethod.WallProbeIntersection)
+        };
+        var result = new FinishElementOwnershipResolver().Resolve(contacts,
+            new Dictionary<long, double> { [100] = 2 }, new Dictionary<long, long> { [100] = 10 });
+        Assert.Equal(automatic ? 20 : 10, Assert.Single(result.Occurrences).RoomId);
+        Assert.Equal(2, Assert.Single(result.Occurrences).AreaSquareMeters);
+        Assert.Equal(automatic, Assert.Single(result.Warnings).SmallWallContactResolved);
+    }
+
+    [Fact]
+    public void SingleSmallWallRetainsItsFullSystemArea()
+    {
+        var contact = new FinishOccurrence(10, 100, FinishPreviewCategory.Walls, 0.05, FinishQuantityMethod.WallProbeIntersection);
+        var result = new FinishElementOwnershipResolver().Resolve([contact], new Dictionary<long, double> { [100] = 0.066 });
+        Assert.Equal(0.066, Assert.Single(result.Occurrences).AreaSquareMeters);
+        Assert.Empty(result.Warnings);
+    }
+
     [Fact]
     public void EqualContactsResolveDeterministicallyAndRemainVisibleInDiagnostics()
     {
