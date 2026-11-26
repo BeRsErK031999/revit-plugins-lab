@@ -136,6 +136,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 eligible.KeepLargest(contact);
         }
         IReadOnlyDictionary<long, long> contourOwners = new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
+        FinishOffLevelContactSource.AddContacts(document, request, roomGeometryCache, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
         FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas, contourOwners);
         warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements, contacts, consideredElementIds));
@@ -166,7 +167,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 or FinishGeometryWarningCode.SlabGeometryUnsupported
                 or FinishGeometryWarningCode.ProjectedAreaUnavailable)
             && contacts.Any(contact => contact.RoomId == warning.RoomId && contact.ElementId == warning.ElementId
-                && contact.Category == warning.Category && contact.Method == FinishQuantityMethod.ProjectedRoomFootprint);
+                && contact.Category == warning.Category && contact.Method is
+                    (FinishQuantityMethod.ProjectedRoomFootprint or FinishQuantityMethod.FinishFaceRoomContact));
     }
 
     private static IReadOnlyList<FinishClassifiedElement> QueryCandidates(

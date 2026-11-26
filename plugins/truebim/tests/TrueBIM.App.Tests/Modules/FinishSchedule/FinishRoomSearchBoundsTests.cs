@@ -7,6 +7,19 @@ namespace TrueBIM.App.Tests.Modules.FinishSchedule;
 public sealed class FinishRoomSearchBoundsTests
 {
     [Theory]
+    [InlineData(-2.72, -0.72, -1.70, -0.50, true)]
+    [InlineData(-0.10, 2.80, -3, 0, false)]
+    [InlineData(0, 5.46, 1.07, 3.51, true)]
+    [InlineData(0, 2, 2, 4, false)]
+    public void OffLevelWallNeedsSubstantialOverlapWithTheRoomHeight(
+        double wallBase, double wallTop, double roomBase, double roomTop, bool expected)
+    {
+        var wall = new AxisAlignedBox3D(0, 0, wallBase, 1, 1, wallTop);
+        var room = new AxisAlignedBox3D(0, 0, roomBase, 1, 1, roomTop);
+        Assert.Equal(expected, FinishCandidateSearchRules.HasWallHeightOverlap(wall, room));
+    }
+
+    [Theory]
     [InlineData(FinishPreviewCategory.Walls)]
     [InlineData(FinishPreviewCategory.Ceilings)]
     public void SearchReachesHighFinishRegardlessOfRoomHeightAndStopsAtNextStorey(FinishPreviewCategory category)

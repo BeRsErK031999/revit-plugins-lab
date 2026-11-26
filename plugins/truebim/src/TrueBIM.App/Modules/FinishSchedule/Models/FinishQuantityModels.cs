@@ -8,7 +8,8 @@ public enum FinishQuantityMethod
     CeilingProbeIntersection,
     ProjectedRoomFootprint,
     ConnectedWallContour,
-    StoredOwnership
+    StoredOwnership,
+    FinishFaceRoomContact
 }
 
 public enum FinishGeometryWarningCode
