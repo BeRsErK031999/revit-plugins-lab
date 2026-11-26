@@ -134,14 +134,32 @@ internal static class SlabReinforcementService
                     .SetFailuresPreprocessor(failure).SetClearAfterRollback(true));
                 if (correction.Commit() != TransactionStatus.Committed)
                     throw new InvalidOperationException("Revit не принял размеры торцевых деталей. " + failure.Message);
+            }
+
+            var shiftedTies = stirrups.Where(t => t.Plan.Mismatch(geometry, t.Bar) != null).ToList();
+            if (shiftedTies.Count > 0)
+            {
+                using var correction = new Transaction(d, "Размеры и положение хомутов Х1");
+                correction.Start();
+                foreach (var t in shiftedTies) t.Plan.RestoreDimensions(geometry, t.Bar);
+                d.Regenerate();
+                foreach (var t in shiftedTies) t.Plan.RestorePosition(geometry, t.Bar);
+                correction.SetFailureHandlingOptions(correction.GetFailureHandlingOptions()
+                    .SetFailuresPreprocessor(failure).SetClearAfterRollback(true));
+                if (correction.Commit() != TransactionStatus.Committed)
+                    throw new InvalidOperationException("Revit не принял размеры хомутов Х1. " + failure.Message);
+            }
+
+            if (snapped.Count > 0 || shiftedTies.Count > 0)
+            {
                 var wrong = checks.FirstOrDefault(check => !check.Matches());
                 if (wrong != null)
                     throw new InvalidOperationException($"Привязки Revit изменили геометрию торцевого стержня {wrong.Bar.Id}. Операция отменена.");
             }
             foreach (var background in backgrounds) background.Plan.CheckRetained(background.Areas);
             foreach (var tie in stirrups)
-                if (!tie.Plan.Matches(geometry, tie.Bar))
-                    throw new InvalidOperationException($"После привязки Revit хомут Х1 {tie.Bar.Id} отличается от заданных габаритов или положения. Операция отменена.");
+                if (tie.Plan.Mismatch(geometry, tie.Bar) is string mismatch)
+                    throw new InvalidOperationException($"Хомут Х1 {tie.Bar.Id}. {mismatch} Операция отменена.");
             group.Assimilate();
             return new(areaCount, sets, count, stirrups.Count, empty, frameCount, remove.Count, warnings, review);
         }
