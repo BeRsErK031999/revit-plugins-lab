@@ -197,7 +197,8 @@ public sealed class FinishScheduleUserNoticeBuilder
         var actionableGeometry = preview.GeometryWarnings.Where(FinishGeometryWarningClassifier.AffectsScheduleValue).ToArray();
         IReadOnlyList<FinishGeometryWarning> visibleGeometry = actionableGeometry.Length == 0
             ? preview.GeometryWarnings.Where(w => w.Code is not (FinishGeometryWarningCode.OutsideRoomProjection
-                or FinishGeometryWarningCode.WallFaceRecovered or FinishGeometryWarningCode.WallOwnerConfirmed)).ToArray() : actionableGeometry;
+                or FinishGeometryWarningCode.WallFaceRecovered or FinishGeometryWarningCode.WallOwnerConfirmed
+                or FinishGeometryWarningCode.ProjectedContactCheckFailed)).ToArray() : actionableGeometry;
         string[] geometryWarnings = visibleGeometry.Where(w => !groups.Replaces(w.Message))
             .GroupBy(warning => $"{warning.Code}:{warning.Category}:{warning.StoredOwnershipIssue}", StringComparer.Ordinal)
             .Select(FormatGeometryWarningGroup)
@@ -385,7 +386,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         foreach (var group in issues.GroupBy(issue => issue.Code))
         {
             if (group.Key is FinishWriteIssueCode.UnknownOwnership or FinishWriteIssueCode.UnassignedOwnership)
-                yield return $"Пропущено назначений отделки: {group.Count()}. Причина — " +
+                yield return $"Элементов с принадлежностью «{FinishRoomAssignment.Undefined}»: {group.Count()}. Причина — " +
                     (group.Key == FinishWriteIssueCode.UnknownOwnership ? "неопределённая геометрия." : "не найдено помещение.");
             else
                 foreach (var issue in group) yield return issue.Message;

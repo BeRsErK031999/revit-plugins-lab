@@ -72,8 +72,12 @@ public sealed class FinishSchedulePreviewService
                 .Select(w => w.ElementId!.Value));
             selectedGeometryIds.UnionWith(touchedFloorCorrections);
             outsideGeometryIds.ExceptWith(selectedGeometryIds);
+            // Outside the room bounds a project or level scope can still own an unassigned element.
+            // An element assigned by geometry exclusively to another scope must keep its owner.
             FinishClassifiedElement[] assignmentElements = build.InScopeElements
-                .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)))
+                .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)
+                    || settings.Scope.Kind == ReportScopeKind.EntireProject
+                    || (settings.Scope.Kind == ReportScopeKind.Level && item.Element.LevelId == settings.Scope.LevelId)))
                 .Where(item => !outsideGeometryIds.Contains(item.Element.ElementId))
                 .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray();
             RoomFinishSnapshotBuildResult identifiers = new RoomFinishSnapshotBuilder(
@@ -122,8 +126,7 @@ public sealed class FinishSchedulePreviewService
                 .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray()
         };
         HashSet<long> scopeElementIds = new(build.InScopeElements.Select(item => item.Element.ElementId));
-        // Informational only: these classified elements are tied to the level but fall
-        // outside all selected room search bounds. Do not add them to assignmentElements.
+        // Report spatial exclusion independently of which ownership parameters need updating.
         var outsideLevelSearch = settings.Scope.Kind == ReportScopeKind.Level && selectedRoomIds.Count > 0
             ? build.Classification.Elements.Where(e => e.Element.LevelId == settings.Scope.LevelId && e.Element.Bounds is not null
                 && !roomSearchIds.Contains(e.Element.ElementId) && !selectedOwnedIds.Contains(e.Element.ElementId))

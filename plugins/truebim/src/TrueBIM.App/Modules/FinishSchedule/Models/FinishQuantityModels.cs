@@ -31,7 +31,9 @@ public enum FinishGeometryWarningCode
     OutsideRoomProjection,
     WallFaceRecovered,
     WallOwnerConfirmed,
-    OutsideLevelRoomSearch
+    OutsideLevelRoomSearch,
+    MarkedUnassigned,
+    ProjectedContactCheckFailed
 }
 
 public enum FinishOwnershipFinding
@@ -40,7 +42,8 @@ public enum FinishOwnershipFinding
     OutsideSearch,
     OutsideLevelRoomSearch,
     OutsideFloorProjection,
-    EmptyParameter
+    EmptyParameter,
+    MarkedUnassigned
 }
 
 public sealed record FinishGeometryWarning(

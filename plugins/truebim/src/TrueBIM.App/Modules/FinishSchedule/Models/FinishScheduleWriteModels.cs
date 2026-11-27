@@ -81,6 +81,7 @@ public sealed record FinishRoomAssignment(
     string IdentifierSourceKey,
     long? RoomId)
 {
+    public const string Undefined = "[Не определено]";
     public IReadOnlyList<FinishOccurrence> FloorAreas { get; init; } = [];
 }
 

@@ -31,6 +31,14 @@ public sealed class StoredFinishQuantityCalculator
         foreach (StoredFinishElement element in elements.GroupBy(item => item.ElementId).Select(group => group.First()))
         {
             string identifier = FinishDescriptionNormalizer.CollapseWhitespace(element.Ownership);
+            if (string.Equals(identifier, FinishRoomAssignment.Undefined, StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add(new FinishGeometryWarning(FinishGeometryWarningCode.MarkedUnassigned,
+                    $"Элемент {element.ElementId} отмечен «{FinishRoomAssignment.Undefined}». Площадь не учтена.",
+                    ElementId: element.ElementId, Category: element.Category)
+                    { OwnershipFinding = FinishOwnershipFinding.MarkedUnassigned });
+                continue;
+            }
             if (element.FloorAreas is { } shares)
             {
                 if (identifier.Length == 0 && shares.Count == 0) continue;

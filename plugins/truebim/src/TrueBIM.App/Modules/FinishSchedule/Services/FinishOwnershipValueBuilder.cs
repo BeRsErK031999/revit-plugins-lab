@@ -69,19 +69,19 @@ public sealed class FinishOwnershipValueBuilder
                 continue;
             }
 
-            if (uncertainCandidates.Contains(element)
-                || blockingWarnings[elementId].Any(warning => warning.Category is null || warning.Category == element.Category))
+            bool uncertain = uncertainCandidates.Contains(element)
+                || blockingWarnings[elementId].Any(warning => warning.Category is null || warning.Category == element.Category);
+            if (uncertain)
             {
                 issues.Add(new FinishWriteIssue(
                     FinishWriteIssueCode.UnknownOwnership,
                     FinishWriteIssueSeverity.Warning,
-                    $"Элемент {elementId}: принадлежность не записана из-за неопределённой геометрии.",
+                    $"Элемент {elementId}: принадлежность по геометрии не определена. Значение для записи — «{FinishRoomAssignment.Undefined}».",
                     elementId,
                     role));
-                continue;
             }
 
-            long[] roomIds = quantities.Occurrences
+            long[] roomIds = uncertain ? [] : quantities.Occurrences
                 .Where(occurrence => occurrence.ElementId == elementId
                     && occurrence.Category == element.Category)
                 .Select(occurrence => occurrence.RoomId)
@@ -95,13 +95,13 @@ public sealed class FinishOwnershipValueBuilder
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(identifier => identifier, NaturalStringComparer.Instance)
                 .ToArray();
-            string value = string.Join(", ", identifiers);
-            if (identifiers.Length == 0 && !quantities.Warnings.Any(w => w.ElementId == elementId && w.Code == FinishGeometryWarningCode.OutsideRoomProjection))
+            string value = identifiers.Length == 0 ? FinishRoomAssignment.Undefined : string.Join(", ", identifiers);
+            if (identifiers.Length == 0 && !uncertain && !quantities.Warnings.Any(w => w.ElementId == elementId && w.Code == FinishGeometryWarningCode.OutsideRoomProjection))
             {
                 issues.Add(new FinishWriteIssue(
                     FinishWriteIssueCode.UnassignedOwnership,
                     FinishWriteIssueSeverity.Warning,
-                    $"Элемент {elementId} не связан ни с одним помещением текущей области; ownership будет очищен.",
+                    $"Элемент {elementId} не отнесён к помещению. Значение для записи — «{FinishRoomAssignment.Undefined}».",
                     elementId,
                     role));
             }
@@ -117,7 +117,7 @@ public sealed class FinishOwnershipValueBuilder
                 settings.RoomIdentifier.SourceKey,
                 roomIds.Length == 1 && identifiers.Length == 1 ? roomIds[0] : null)
             {
-                FloorAreas = quantities.Occurrences.Where(o => o.ElementId == elementId
+                FloorAreas = identifiers.Length == 0 ? [] : quantities.Occurrences.Where(o => o.ElementId == elementId
                     && o.Method == FinishQuantityMethod.FloorRoomSurface).ToArray()
             });
         }
@@ -167,7 +167,7 @@ public sealed class FinishOwnershipValueBuilder
                 }
 
                 var bounds = search!.Create(room, category.Key);
-                // An element without bounds cannot be ruled out. Preserve any existing assignment.
+                // Without bounds a candidate cannot be ruled out as a possible contact of this room.
                 uncertain.UnionWith(category.Where(element => element.Element.Bounds is null
                     || (FinishRoomSearchBounds.Includes(room, element, bounds)
                         && (failure.ProbeBounds is null || failure.ProbeBounds.Intersects(element.Element.Bounds)))));

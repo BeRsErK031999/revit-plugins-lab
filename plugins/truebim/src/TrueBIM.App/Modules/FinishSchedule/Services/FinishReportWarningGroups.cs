@@ -22,11 +22,11 @@ internal sealed class FinishReportWarningGroups
                      .GroupBy(w => w.ElementId!.Value))
         {
             // An empty ownership parameter is a consequence when geometry already explains the omission.
-            var finding = element.FirstOrDefault(w => w.OwnershipFinding != FinishOwnershipFinding.EmptyParameter)
-                ?.OwnershipFinding ?? FinishOwnershipFinding.EmptyParameter;
+            var finding = element.FirstOrDefault(w => w.OwnershipFinding is not (FinishOwnershipFinding.EmptyParameter or FinishOwnershipFinding.MarkedUnassigned))
+                ?.OwnershipFinding ?? element.First().OwnershipFinding!.Value;
             if (!idsByFinding.TryGetValue(finding, out var ids)) idsByFinding.Add(finding, ids = []);
             ids.Add(element.Key);
-            if (finding is FinishOwnershipFinding.NoContact or FinishOwnershipFinding.OutsideSearch)
+            if (finding is FinishOwnershipFinding.NoContact or FinishOwnershipFinding.OutsideSearch or FinishOwnershipFinding.OutsideLevelRoomSearch)
                 skippedAssignmentIds.Add(element.Key);
             foreach (var warning in element) replaced.Add(warning.Message);
         }
@@ -39,9 +39,10 @@ internal sealed class FinishReportWarningGroups
                 FinishOwnershipFinding.OutsideLevelRoomSearch => "Элементы привязаны к выбранному уровню и находятся вне области поиска его помещений. В площадь выбранных помещений они не вошли.",
                 FinishOwnershipFinding.OutsideFloorProjection => "Полы вне проекции подходящих помещений. В ведомости учтено 0 м².",
                 FinishOwnershipFinding.EmptyParameter => "Принадлежность помещению не заполнена. Площадь не учтена.",
+                FinishOwnershipFinding.MarkedUnassigned => $"Принадлежность к помещению — «{FinishRoomAssignment.Undefined}». Эти элементы не входят в площади помещений.",
                 _ => throw new ArgumentOutOfRangeException()
             };
-            var destination = group.Key is FinishOwnershipFinding.OutsideLevelRoomSearch or FinishOwnershipFinding.OutsideFloorProjection
+            var destination = group.Key is FinishOwnershipFinding.OutsideLevelRoomSearch or FinishOwnershipFinding.OutsideFloorProjection or FinishOwnershipFinding.MarkedUnassigned
                 ? information : lines;
             destination.Add($"{explanation} {FormatIds("ID элементов", group.Value, compact)}");
         }

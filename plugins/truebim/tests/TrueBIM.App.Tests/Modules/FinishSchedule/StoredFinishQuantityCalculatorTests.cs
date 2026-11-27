@@ -10,6 +10,25 @@ public sealed class StoredFinishQuantityCalculatorTests
     [InlineData(FinishPreviewCategory.Walls)]
     [InlineData(FinishPreviewCategory.Floors)]
     [InlineData(FinishPreviewCategory.Ceilings)]
+    public void UndefinedMarkerExcludesEvenStaleRoomOrFloorAssignments(FinishPreviewCategory category)
+    {
+        var rooms = new[] { Room(1, "210") };
+        var oldShare = new FinishOccurrence(1, 100, category, 2.5, FinishQuantityMethod.FloorRoomSurface);
+        var stored = new StoredFinishElement(100, category, 10, "[Не определено]", 12.75, 1,
+            category == FinishPreviewCategory.Floors ? [oldShare] : null);
+        var calculator = new StoredFinishQuantityCalculator();
+        var marked = calculator.Calculate([stored], rooms, RoomIdentifierSettings.ByNumber());
+        Assert.Empty(marked.Occurrences);
+        Assert.Equal(FinishOwnershipFinding.MarkedUnassigned, Assert.Single(marked.Warnings).OwnershipFinding);
+        var assigned = calculator.Calculate([stored with { Ownership = "210", AssignedRoomId = null, FloorAreas = null }],
+            rooms, RoomIdentifierSettings.ByNumber());
+        Assert.Equal(12.75, Assert.Single(assigned.Occurrences).AreaSquareMeters);
+    }
+
+    [Theory]
+    [InlineData(FinishPreviewCategory.Walls)]
+    [InlineData(FinishPreviewCategory.Floors)]
+    [InlineData(FinishPreviewCategory.Ceilings)]
     public void ManualReassignmentMovesWholeAreaToChosenRoom(FinishPreviewCategory category)
     {
         FinishRoomCandidateSnapshot[] rooms = [Room(1, "210"), Room(2, "213")];

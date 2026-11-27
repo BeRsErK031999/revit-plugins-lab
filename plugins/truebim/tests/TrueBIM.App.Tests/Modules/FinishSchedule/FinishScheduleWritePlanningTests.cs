@@ -158,7 +158,7 @@ public sealed class FinishScheduleWritePlanningTests
     }
 
     [Fact]
-    public void OwnershipValueBuilder_UnassignedCandidateIsClearedWithWarning()
+    public void OwnershipValueBuilder_UnassignedCandidateGetsMarkerWithWarning()
     {
         FinishParameterTargetBuildResult result = new FinishOwnershipValueBuilder().Build(
             Settings(writeOwnership: true),
@@ -166,12 +166,13 @@ public sealed class FinishScheduleWritePlanningTests
             new FinishQuantityResult([], []),
             RoomSnapshots((1, "101")));
 
-        Assert.Equal(string.Empty, Assert.Single(result.Targets).Value);
+        Assert.Equal("[Не определено]", Assert.Single(result.Targets).Value);
+        Assert.Null(Assert.Single(result.RoomAssignments).RoomId);
         Assert.Equal(FinishWriteIssueCode.UnassignedOwnership, Assert.Single(result.Issues).Code);
     }
 
     [Fact]
-    public void OwnershipValueBuilder_UnknownGeometryNeverClearsExistingOwnership()
+    public void OwnershipValueBuilder_UnknownGeometryWritesMarkerWithoutRoomOrFloorShares()
     {
         FinishParameterTargetBuildResult result = new FinishOwnershipValueBuilder().Build(
             Settings(writeOwnership: true),
@@ -188,7 +189,10 @@ public sealed class FinishScheduleWritePlanningTests
                 ]),
             RoomSnapshots((1, "101")));
 
-        Assert.Empty(result.Targets);
+        Assert.Equal("[Не определено]", Assert.Single(result.Targets).Value);
+        var assignment = Assert.Single(result.RoomAssignments);
+        Assert.Null(assignment.RoomId);
+        Assert.Empty(assignment.FloorAreas);
         Assert.Equal(FinishWriteIssueCode.UnknownOwnership, Assert.Single(result.Issues).Code);
     }
 
@@ -214,7 +218,8 @@ public sealed class FinishScheduleWritePlanningTests
         var result = new FinishOwnershipValueBuilder().Build(Settings(true), walls, quantities,
             RoomSnapshots((1, "101"), (2, "102"), (3, "201")), scope);
 
-        Assert.Equal(new[] { (101L, "102"), (102L, "201") }, result.Targets.Select(target => (target.ElementId, target.Value)));
+        Assert.Equal(new[] { (100L, "[Не определено]"), (101L, "102"), (102L, "201"), (103L, "[Не определено]") },
+            result.Targets.Select(target => (target.ElementId, target.Value)));
         Assert.Equal(new long?[] { 100, 103 }, result.Issues.Select(issue => issue.ElementId));
         Assert.All(result.Issues, issue => Assert.Equal(FinishWriteIssueCode.UnknownOwnership, issue.Code));
     }
@@ -235,7 +240,8 @@ public sealed class FinishScheduleWritePlanningTests
         var result = new FinishOwnershipValueBuilder().Build(Settings(true), walls, quantities,
             RoomSnapshots((1, "101")), new FinishQuantityRequest([room], walls));
 
-        Assert.Equal(101L, Assert.Single(result.Targets).ElementId);
+        Assert.Equal(new[] { (100L, "[Не определено]"), (101L, "101"), (102L, "[Не определено]") },
+            result.Targets.Select(target => (target.ElementId, target.Value)));
         Assert.Equal(new long?[] { 100, 102 }, result.Issues.Select(issue => issue.ElementId));
     }
 

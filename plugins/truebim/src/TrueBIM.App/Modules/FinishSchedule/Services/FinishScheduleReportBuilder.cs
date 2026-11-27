@@ -291,8 +291,10 @@ public sealed class FinishScheduleReportBuilder
         report.AppendLine();
         var intersections = diagnostics.Where(w => w.Code == FinishGeometryWarningCode.BooleanIntersectionFailed && w.ElementId.HasValue).ToArray();
         if (intersections.Length == 1) intersections = [];
-        var details = diagnostics.Except(intersections).ToArray();
-        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({details.Length + (intersections.Length > 0 ? 1 : 0)})");
+        var contourChecks = diagnostics.Where(w => w.Code == FinishGeometryWarningCode.ProjectedContactCheckFailed).ToArray();
+        var details = diagnostics.Except(intersections).Except(contourChecks).ToArray();
+        int diagnosticCount = details.Length + (intersections.Length > 0 ? 1 : 0) + (contourChecks.Length > 0 ? 1 : 0);
+        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({diagnosticCount})");
         if (!geometryWarnings.Any(FinishGeometryWarningClassifier.AffectsScheduleValue))
             report.AppendLine("Геометрический расчёт завершён без признаков неполных значений.");
         report.AppendLine("Ниже перечислены диагностические события. Подробности доступны в truebim.log.");
@@ -311,6 +313,11 @@ public sealed class FinishScheduleReportBuilder
         {
             var ids = intersections.Select(w => w.ElementId!.Value).Distinct().OrderBy(id => id);
             report.AppendLine($"{details.Length + 1}. Проверочное пересечение геометрии не выполнено в {intersections.Length} случаях. ID элементов: {string.Join(", ", ids)}. Связанные помещения и детали каждого пересечения указаны в truebim.log.");
+        }
+        if (contourChecks.Length > 0)
+        {
+            var rooms = contourChecks.Where(w => w.RoomId.HasValue).Select(w => w.RoomId!.Value).Distinct().OrderBy(id => id);
+            report.AppendLine($"{diagnosticCount}. Дополнительная проверка по контуру помещения на высоте отделки не завершилась для {contourChecks.Length} пар. ID помещений: {string.Join(", ", rooms)}. Для назначения использованы подтверждённые контакты. Пары и причины указаны в truebim.log.");
         }
     }
 
