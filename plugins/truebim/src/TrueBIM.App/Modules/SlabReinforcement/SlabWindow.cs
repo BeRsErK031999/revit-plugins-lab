@@ -26,6 +26,7 @@ internal sealed class SlabWindow : TrueBimWindow
     internal SlabOptions? Settings { get; private set; }
 
     private readonly StackPanel body = new();
+    private readonly ComboBox stirrup = new();
     private readonly ComboBox[] bars = new ComboBox[4];
     private readonly TextBox[] depths = new TextBox[4];
     private readonly TextBox step = Number("200"), cover = Number("30"), manual = Number("650"), rbt = Number(""), rs = Number("435"), stepX = Number("1200"), stepY = Number("1200"), mark = Number("");
@@ -133,7 +134,15 @@ internal sealed class SlabWindow : TrueBimWindow
             Cell(grid, depths[i], i + 1, 2);
         }
 
+        grid.RowDefinitions.Add(new RowDefinition());
+        stirrup.ItemsSource = types;
+        stirrup.SelectedItem = types.FirstOrDefault(b => OpeningBarTypes.IsBend(b.Type.Name) &&
+            Math.Abs(b.Type.BarNominalDiameter / SlabGeometry.Mm - 10) < 0.1) ?? bars[0].SelectedItem;
+        stirrup.Margin = new Thickness(0, 2, 8, 2);
+        Cell(grid, new TextBlock { Text = "Хомуты Х1", VerticalAlignment = VerticalAlignment.Center }, 5, 0);
+        Cell(grid, stirrup, 5, 1);
         body.Children.Add(grid);
+        Note("После нажатия «Армировать» выделите грань плиты вдоль буквенных осей.");
         Row(body, "Шаг для всех четырёх слоёв, мм", step);
         Row(body, "Защитный слой у торцов и отверстий, мм", cover);
         Note("Боковой отступ до оси крайнего ряда — 50 мм.");
@@ -194,7 +203,7 @@ internal sealed class SlabWindow : TrueBimWindow
         check.Unchecked += (_, _) => Update();
     }
 
-    private static TextBox Number(string value) => new()
+    internal static TextBox Number(string value) => new()
     {
         Text = value,
         MinWidth = 80,
@@ -202,14 +211,14 @@ internal sealed class SlabWindow : TrueBimWindow
     };
     private void Heading(string s) => body.Children.Add(new TextBlock { Text = s, FontWeight = FontWeights.SemiBold, FontSize = 15, Margin = new Thickness(0, 9, 0, 4) });
     private void Note(string s) => body.Children.Add(new TextBlock { Text = s, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 6) });
-    private static void Cell(Grid grid, UIElement item, int row, int col)
+    internal static void Cell(Grid grid, UIElement item, int row, int col)
     {
         Grid.SetRow(item, row);
         Grid.SetColumn(item, col);
         grid.Children.Add(item);
     }
 
-    private static void Row(StackPanel panel, string title, Control field)
+    internal static void Row(StackPanel panel, string title, Control field)
     {
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -219,7 +228,7 @@ internal sealed class SlabWindow : TrueBimWindow
         panel.Children.Add(g);
     }
 
-    private static double Read(TextBox field)
+    internal static double Read(TextBox field)
     {
         if (!double.TryParse(field.Text.Trim().Replace(',', '.'), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var v) || v <= 0 || double.IsInfinity(v))
             throw new InvalidOperationException("Введите положительное числовое значение.");
@@ -233,6 +242,7 @@ internal sealed class SlabWindow : TrueBimWindow
             bool calc = auto.IsChecked == true, addFrames = frames.IsChecked == true;
             var options = new SlabOptions(bars.Select(b => (b.SelectedItem as BarChoice)?.Type ?? throw new InvalidOperationException("Выберите четыре типа арматуры.")).ToArray(), depths.Select(Read).ToArray(), Read(step), Read(cover), calc ? null : Read(manual), calc ? Read(rbt) : 0, calc ? Read(rs) : 0)
             {
+                StirrupBar = (stirrup.SelectedItem as BarChoice)?.Type ?? throw new InvalidOperationException("Выберите типоразмер хомутов Х1."),
                 ReplaceManual = removeManual.IsChecked == true,
                 ReplaceFrames = replaceFrames.IsChecked == true,
                 PlaceFrames = addFrames,

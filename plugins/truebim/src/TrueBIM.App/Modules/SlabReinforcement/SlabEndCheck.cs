@@ -17,7 +17,7 @@ internal sealed record SlabEndCheck(Rebar Bar, List<XYZ[]> Positions)
         for (int i = 0; i < Positions.Count; i++)
         {
             var lines = Lines(i);
-            if (lines.Count != 3) return false;
+            if (lines.Count != Positions[i].Length - 1) return false;
             var vertices = lines.SelectMany(c => new[] { c.GetEndPoint(0), c.GetEndPoint(1) }).ToList();
             if (Positions[i].Any(p => !vertices.Any(v => p.DistanceTo(v) <= Tolerance))) return false;
         }
@@ -30,7 +30,8 @@ internal sealed record SlabEndCheck(Rebar Bar, List<XYZ[]> Positions)
         var expected = Positions[0];
         var definition = (RebarShapeDefinitionBySegments)shape.GetRebarShapeDefinition();
         var changed = new HashSet<ElementId>();
-        for (int i = 0; i < 3; i++)
+        if (actual.Count != expected.Length - 1) return;
+        for (int i = 0; i < actual.Count; i++)
         {
             double difference = expected[i].DistanceTo(expected[i + 1]) - actual[i].Length;
             if (Math.Abs(difference) <= Tolerance) continue;
@@ -44,7 +45,10 @@ internal sealed record SlabEndCheck(Rebar Bar, List<XYZ[]> Positions)
 
     internal void RestorePosition()
     {
-        XYZ delta = (Positions[0][1] + Positions[0][2]) / 2 - Lines(0)[1].Evaluate(0.5, true);
+        var lines = Lines(0);
+        if (lines.Count != Positions[0].Length - 1) return;
+        int middle = lines.Count / 2;
+        XYZ delta = (Positions[0][middle] + Positions[0][middle + 1]) / 2 - lines[middle].Evaluate(0.5, true);
         if (delta.GetLength() > Tolerance) ElementTransformUtils.MoveElement(Bar.Document, Bar.Id, delta);
     }
 }

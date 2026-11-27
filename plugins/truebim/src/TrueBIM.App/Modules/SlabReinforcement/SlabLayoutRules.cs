@@ -49,13 +49,16 @@ public static class SlabLayoutRules
         return rounded >= 120 ? rounded : 0;
     }
 
-    public static double LegLength(double diameter, double rs, double rbt)
+    public static double LegLength(double diameter, double rs, double rbt) => DevelopmentLength(diameter, rs, rbt, 2);
+    public static double OpeningAnchor(double diameter, double rs, double rbt) => DevelopmentLength(diameter, rs, rbt, 1);
+
+    private static double DevelopmentLength(double diameter, double rs, double rbt, double factor)
     {
         if (rs <= 0 || rbt <= 0 || diameter <= 0 || diameter > 40.001 || (diameter > 32.001 && Math.Min(Math.Abs(diameter - 36), Math.Abs(diameter - 40)) > 0.05))
             throw new InvalidOperationException("Уточните расчётные сопротивления и диаметр или задайте длину вручную.");
         double bond = 2.5 * (diameter <= 32.001 ? 1 : 0.9) * rbt;
         double basicLength = rs * diameter / (4 * bond);
-        double lap = Math.Max(2 * basicLength, Math.Max(20 * diameter, 250));
+        double lap = Math.Max(factor * basicLength, Math.Max(20 * diameter, 250));
         return Math.Ceiling(lap / 50 - 1e-10) * 50;
     }
 }

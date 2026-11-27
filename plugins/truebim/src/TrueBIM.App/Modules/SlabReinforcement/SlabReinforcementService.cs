@@ -10,36 +10,40 @@ internal static class SlabReinforcementService
 {
     private static readonly Guid SchemaId = new("9C101632-7FAB-4413-A6F6-3493E017D17A");
     private const string HostField = "SlabUniqueId";
-    private static Schema OwnerSchema()
+    internal static readonly Guid OpeningSchemaId = new("49771B6E-4964-466F-B119-D45CE4195C07");
+    internal static Schema OwnerSchema(Guid id)
     {
-        var existing = Schema.Lookup(SchemaId);
+        var existing = Schema.Lookup(id);
         if (existing != null)
             return existing;
-        var builder = new SchemaBuilder(SchemaId);
-        builder.SetSchemaName("TrueBIMSlabReinforcement");
+        var builder = new SchemaBuilder(id);
+        builder.SetSchemaName(id == OpeningSchemaId ? "TrueBIMSlabOpeningRebar" : "TrueBIMSlabReinforcement");
         builder.AddSimpleField(HostField, typeof(string));
         return builder.Finish();
     }
 
-    private static void Tag(Element element, Schema schema, Floor host)
+    internal static void Tag(Element element, Schema schema, Floor host)
     {
         var entity = new Entity(schema);
         entity.Set(schema.GetField(HostField), host.UniqueId);
         element.SetEntity(entity);
     }
 
-    internal static List<Element> Owned(Floor floor)
+    internal static List<Element> Owned(Floor floor) => Tagged(floor, SchemaId);
+
+    internal static List<Element> Tagged(Floor floor, Guid id)
     {
-        var schema = Schema.Lookup(SchemaId);
+        var schema = Schema.Lookup(id);
         if (schema == null)
             return new();
-        return new FilteredElementCollector(floor.Document).WherePasses(new ExtensibleStorageFilter(SchemaId)).Where(e => e.GetEntity(schema).Get<string>(schema.GetField(HostField)) == floor.UniqueId).ToList();
+        return new FilteredElementCollector(floor.Document).WherePasses(new ExtensibleStorageFilter(id)).Where(e => e.GetEntity(schema).Get<string>(schema.GetField(HostField)) == floor.UniqueId).ToList();
     }
 
     internal static List<Element> Manual(Floor floor, HashSet<ElementId> owned)
     {
         var d = floor.Document;
         var host = RebarHostData.GetRebarHostData(floor);
+        owned = new HashSet<ElementId>(owned.Concat(Tagged(floor, OpeningSchemaId).Select(e => e.Id)));
         var list = host.GetRebarsInHost().Where(r => !owned.Contains(r.Id) && SlabOptions.IsBackground(d.GetElement(r.GetTypeId()))).Cast<Element>().ToList();
         foreach (var area in host.GetAreaReinforcementsInHost().Where(a => !owned.Contains(a.Id)))
         {
@@ -82,7 +86,7 @@ internal static class SlabReinforcementService
         {
             if (remove.Count > 0)
                 d.Delete(remove.Select(e => e.Id).ToList());
-            var schema = OwnerSchema();
+            var schema = OwnerSchema(SchemaId);
             int areaCount = 0, sets = 0, count = 0, empty = 0;
             for (int i = 0; i < 2; i++)
             {
@@ -93,7 +97,7 @@ internal static class SlabReinforcementService
                 foreach (var plan in background.ShortSpans.Stirrups)
                 {
                     stirrupShape ??= SlabOptions.Shape(d, "Х1");
-                    var tie = plan.Place(floor, stirrupShape, options.EndType(i));
+                    var tie = plan.Place(floor, stirrupShape, options.StirrupBar ?? options.EndType(i));
                     Tag(tie, schema, floor);
                     stirrups.Add((plan, tie));
                 }
@@ -172,7 +176,7 @@ internal static class SlabReinforcementService
         }
     }
 
-    private sealed class SlabFailures : IFailuresPreprocessor
+    internal sealed class SlabFailures : IFailuresPreprocessor
     {
         internal string Message { get; private set; } = "";
 

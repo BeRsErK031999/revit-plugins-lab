@@ -18,7 +18,8 @@ internal sealed class SlabShortSpans(SlabGeometry g, SlabOptions options, int di
             return;
         }
         XYZ axis = direction == 0 ? g.X : g.Y, cross = g.N.CrossProduct(axis);
-        double diameter = options.EndType(direction).BarModelDiameter, radius = diameter / 2;
+        double endDiameter = options.EndType(direction).BarModelDiameter;
+        double diameter = options.StirrupBar?.BarModelDiameter ?? endDiameter, radius = diameter / 2;
         var station = g.Origin + cross * row;
         // At an oblique or curved edge, the web needs cover measured perpendicular to the concrete.
         centers ??= SlabBands.CoveredSolid(g, options.EndCover * Mm + radius);
@@ -39,8 +40,8 @@ internal sealed class SlabShortSpans(SlabGeometry g, SlabOptions options, int di
             return;
         }
         var bottom = station + axis * ((left + right - length) / 2)
-            - g.N * (g.Thickness - options.Depths[direction + 2] * Mm + radius);
-        double height = g.Thickness - (options.Depths[direction] + options.Depths[direction + 2]) * Mm + diameter;
+            - g.N * (g.Thickness - options.Depths[direction + 2] * Mm + endDiameter / 2);
+        double height = g.Thickness - (options.Depths[direction] + options.Depths[direction + 2]) * Mm + endDiameter;
         Stirrups.Add(new(bottom, axis, g.N, length, height, diameter));
     }
 }

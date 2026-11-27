@@ -8,6 +8,7 @@ internal sealed class SlabOptions
 {
     internal RebarBarType[] Bars { get; }
     internal double[] Depths { get; }
+    internal RebarBarType? StirrupBar { get; set; }
     internal double Step { get; }
     internal double EndCover { get; }
     internal double? ManualLeg { get; }

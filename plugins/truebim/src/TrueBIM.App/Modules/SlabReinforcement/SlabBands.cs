@@ -66,7 +66,7 @@ internal static class SlabBands
 
     private static IEnumerable<PlanarFace> Faces(Solid solid, XYZ normal) => solid.Faces.OfType<PlanarFace>().Where(face => face.FaceNormal.DotProduct(normal) > 0.999999);
     private static double Area(CurveLoop loop, XYZ normal) => GeometryCreationUtilities.CreateExtrusionGeometry(new[] { loop }, normal, 1).Volume;
-    private static CurveLoop Offset(CurveLoop loop, XYZ normal, double cover, bool outer)
+    internal static CurveLoop Offset(CurveLoop loop, XYZ normal, double cover, bool outer)
     {
         double sign = loop.IsCounterclockwise(normal) == outer ? -1 : 1;
         try

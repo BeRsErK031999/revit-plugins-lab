@@ -19,12 +19,7 @@ public sealed class SlabReinforcementCommand : IExternalCommand
             return Result.Cancelled;
         try
         {
-            var doc = ui.Document;
-            var sel = ui.Selection.GetElementIds();
-            var floor = sel.Count == 1 ? doc.GetElement(sel.Single()) as Floor : null;
-            floor ??= (Floor)doc.GetElement(ui.Selection.PickObject(ObjectType.Element, new FloorFilter(), "Выберите одно железобетонное перекрытие"));
-            if (RebarHostData.GetRebarHostData(floor) == null)
-                throw new InvalidOperationException("Выбранная плита не поддерживает армирование.");
+            var floor = PickFloor(ui);
             var owned = SlabReinforcementService.Owned(floor);
             var manual = SlabReinforcementService.Manual(floor, new HashSet<ElementId>(owned.Select(e => e.Id)));
             int oldFrames = owned.OfType<FamilyInstance>().Count();
@@ -66,7 +61,17 @@ public sealed class SlabReinforcementCommand : IExternalCommand
         }
     }
 
-    private static Line PickEdge(UIDocument ui, Floor floor, string prompt)
+    internal static Floor PickFloor(UIDocument ui)
+    {
+        var selected = ui.Selection.GetElementIds();
+        var floor = selected.Count == 1 ? ui.Document.GetElement(selected.Single()) as Floor : null;
+        floor ??= (Floor)ui.Document.GetElement(ui.Selection.PickObject(ObjectType.Element, new FloorFilter(), "Выберите одно железобетонное перекрытие"));
+        if (RebarHostData.GetRebarHostData(floor) == null)
+            throw new InvalidOperationException("Выбранная плита не поддерживает армирование.");
+        return floor;
+    }
+
+    internal static Line PickEdge(UIDocument ui, Floor floor, string prompt)
     {
         var faces = HostObjectUtils.GetTopFaces(floor);
         if (faces.Count != 1 || floor.GetGeometryObjectFromReference(faces[0]) is not PlanarFace face)

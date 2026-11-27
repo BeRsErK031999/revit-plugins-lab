@@ -443,6 +443,15 @@ public static class TrueBimRibbon
             "Создаёт редактируемое армирование выбранной плиты.",
             "Фон в двух направлениях, торцевые стержни формы 200 и поддерживающие каркасы.",
             $"{CommandNamespace}.{nameof(RebarDetailingCommandAvailability)}"),
+        new(
+            KrPanelName,
+            "TrueBIM_SlabOpenings",
+            "Обрамление отверстий",
+            $"{CommandNamespace}.{nameof(SlabOpeningsCommand)}",
+            TrueBimIcon.RebarSplit,
+            "Размещает обрамляющие стержни у отверстий выбранной плиты.",
+            "Задайте отступ и шаг пары стержней. Команда учитывает группы отверстий, анкеровку и защитный слой.",
+            $"{CommandNamespace}.{nameof(RebarDetailingCommandAvailability)}"),
 #endif
         new(
             KrPanelName,
@@ -666,6 +675,7 @@ public static class TrueBimRibbon
                 MenuItem("TrueBIM_RebarDetailing", prefix: "КР"),
 #if REVIT2024_OR_GREATER && NET48
                 MenuItem("TrueBIM_SlabReinforcement", prefix: "КР"),
+                MenuItem("TrueBIM_SlabOpenings", prefix: "КР"),
 #endif
                 MenuItem("TrueBIM_CollapseScheduleColumns", prefix: "КР"),
                 MenuItem("TrueBIM_SystemDesignation", beginsGroup: true, prefix: IosPanelName),
