@@ -173,6 +173,22 @@ public sealed class FinishScheduleUserNoticeBuilderTests
         Assert.DoesNotContain("outside-55", report);
     }
 
+    [Fact]
+    public void LongIdList_IsCompactInNoticeAndCompleteInFullReport()
+    {
+        var warnings = Enumerable.Range(100, 10).Select(id =>
+            new FinishGeometryWarning(FinishGeometryWarningCode.OutsideLevelRoomSearch, $"outside-{id}", ElementId: id)
+                { OwnershipFinding = FinishOwnershipFinding.OutsideLevelRoomSearch }).ToArray();
+        var preview = CreatePreview(warnings.Select(w => w.Message).ToArray(), warnings);
+        var settings = FinishScheduleSettings.CreateDefault();
+        var notice = builder.BuildPreview(preview, settings);
+        var summary = Assert.Single(notice.SummaryItems, item => item.Contains("ID элементов (10)"));
+        Assert.Contains("107… Полный список ID", summary);
+        Assert.DoesNotContain("109", summary);
+        var report = new FinishScheduleReportBuilder().BuildPreview(preview, settings);
+        Assert.Single(report.Split('\n'), line => line.Contains("ID элементов (10): 100, 101, 102, 103, 104, 105, 106, 107, 108, 109."));
+    }
+
     private static FinishSchedulePreviewResult CreatePreview(
         IReadOnlyList<string> warnings,
         IReadOnlyList<FinishGeometryWarning> geometryWarnings,

@@ -179,7 +179,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         if (recoveredRooms > 0)
             summary.Add($"В {recoveredRooms} помещениях Revit не смог проверить границу стены целиком. Плагин проверил её по частям. Подробности по ID помещений есть в полном отчёте.");
 
-        var groups = new FinishReportWarningGroups(preview, issues);
+        var groups = new FinishReportWarningGroups(preview, issues, compact: true);
         summary.AddRange(groups.Information);
         HashSet<string> geometryMessages = preview.GeometryWarnings
             .Select(warning => warning.Message)

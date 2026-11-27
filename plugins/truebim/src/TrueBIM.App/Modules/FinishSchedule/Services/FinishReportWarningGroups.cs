@@ -14,7 +14,7 @@ internal sealed class FinishReportWarningGroups
     public IReadOnlyList<string> Information => information;
     public bool Replaces(string message) => replaced.Contains(message);
 
-    public FinishReportWarningGroups(FinishSchedulePreviewResult? preview, IEnumerable<FinishWriteIssue>? issues = null)
+    public FinishReportWarningGroups(FinishSchedulePreviewResult? preview, IEnumerable<FinishWriteIssue>? issues = null, bool compact = false)
     {
         if (preview is null) return;
         Dictionary<FinishOwnershipFinding, List<long>> idsByFinding = [];
@@ -43,15 +43,15 @@ internal sealed class FinishReportWarningGroups
             };
             var destination = group.Key is FinishOwnershipFinding.OutsideLevelRoomSearch or FinishOwnershipFinding.OutsideFloorProjection
                 ? information : lines;
-            destination.Add($"{explanation} ID элементов ({group.Value.Count}): {string.Join(", ", group.Value.OrderBy(id => id))}.");
+            destination.Add($"{explanation} {FormatIds("ID элементов", group.Value, compact)}");
         }
 
         var missingDescriptions = (preview.Aggregation?.Details ?? [])
             .Where(w => w.Code == FinishAggregationWarningCode.MissingDescription && w.TypeId is > 0).ToArray();
         if (missingDescriptions.Length > 0)
         {
-            var types = missingDescriptions.Select(w => w.TypeId!.Value).Distinct().OrderBy(id => id).ToArray();
-            lines.Add($"Заполните описание отделки в свойствах типов. ID типоразмеров ({types.Length}): {string.Join(", ", types)}. До заполнения в ведомости выводится «{FinishDescriptionNormalizer.MissingDescriptionDisplay}».");
+            var types = missingDescriptions.Select(w => w.TypeId!.Value).Distinct();
+            lines.Add($"Заполните описание отделки в свойствах типов. {FormatIds("ID типоразмеров", types, compact)} До заполнения в ведомости выводится «{FinishDescriptionNormalizer.MissingDescriptionDisplay}».");
             foreach (var warning in missingDescriptions) replaced.Add(warning.Message);
         }
         foreach (var issue in issues ?? [])
@@ -60,4 +60,13 @@ internal sealed class FinishReportWarningGroups
 
     public bool Replaces(FinishWriteIssue issue) => issue.ElementId is long id && skippedAssignmentIds.Contains(id)
         && issue.Code is FinishWriteIssueCode.UnknownOwnership or FinishWriteIssueCode.UnassignedOwnership;
+
+    private static string FormatIds(string label, IEnumerable<long> ids, bool compact)
+    {
+        const int visibleLimit = 8;
+        var ordered = ids.OrderBy(id => id).ToArray();
+        if (compact && ordered.Length > visibleLimit)
+            return $"{label} ({ordered.Length}): {string.Join(", ", ordered.Take(visibleLimit))}… Полный список ID приведён в отчёте.";
+        return $"{label} ({ordered.Length}): {string.Join(", ", ordered)}.";
+    }
 }
