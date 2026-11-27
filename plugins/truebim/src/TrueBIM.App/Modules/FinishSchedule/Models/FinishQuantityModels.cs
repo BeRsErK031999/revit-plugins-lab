@@ -30,7 +30,17 @@ public enum FinishGeometryWarningCode
     StoredOwnershipUnresolved,
     OutsideRoomProjection,
     WallFaceRecovered,
-    WallOwnerConfirmed
+    WallOwnerConfirmed,
+    OutsideLevelRoomSearch
+}
+
+public enum FinishOwnershipFinding
+{
+    NoContact,
+    OutsideSearch,
+    OutsideLevelRoomSearch,
+    OutsideFloorProjection,
+    EmptyParameter
 }
 
 public sealed record FinishGeometryWarning(
@@ -48,6 +58,7 @@ public sealed record FinishGeometryWarning(
     }
     public IReadOnlyList<FinishOccurrence> CompetingContacts { get; init; } = [];
     public string? StoredOwnershipIssue { get; init; }
+    public FinishOwnershipFinding? OwnershipFinding { get; init; }
     public string? TechnicalDetail { get; init; }
     public double? UnmeasuredWallContactLimit { get; init; }
     public AxisAlignedBox3D? ProbeBounds { get; init; }

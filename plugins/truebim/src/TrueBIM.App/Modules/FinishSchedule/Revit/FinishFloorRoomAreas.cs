@@ -103,7 +103,8 @@ internal sealed class FinishFloorRoomAreas
                 }
                 if (triangles.Count == 0) throw new InvalidOperationException("Недоступна проекция верхней поверхности.");
                 if (patches.Count == 0)
-                    warnings.Add(new(FinishGeometryWarningCode.OutsideRoomProjection, $"Пол {id} вне проекции подходящих помещений. В ведомости учтено 0 м².", ElementId: id, Category: FinishPreviewCategory.Floors));
+                    warnings.Add(new FinishGeometryWarning(FinishGeometryWarningCode.OutsideRoomProjection, $"Пол {id} вне проекции подходящих помещений. В ведомости учтено 0 м².", ElementId: id, Category: FinishPreviewCategory.Floors)
+                        { OwnershipFinding = FinishOwnershipFinding.OutsideFloorProjection });
                 foreach (var patch in patches)
                     hits.Add(new FinishOccurrence(patch.Key, id, FinishPreviewCategory.Floors, RevitAreaUnits.ToSquareMeters(Area(patch.Value)), FinishQuantityMethod.FloorRoomSurface));
             }

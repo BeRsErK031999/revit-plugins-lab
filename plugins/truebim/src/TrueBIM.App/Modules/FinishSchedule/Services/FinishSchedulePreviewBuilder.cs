@@ -144,18 +144,14 @@ public sealed class FinishSchedulePreviewBuilder
                 .Where(element => element.LevelId == scope.LevelId).Select(element => element.ElementId).ToHashSet()
             : null;
         foreach (var group in classification.SkippedElements
-                     .Where(skip => skip.Reason != FinishClassificationSkipReason.ValueDoesNotMatch)
+                     .Where(skip => skip.Reason is FinishClassificationSkipReason.MissingType
+                         or FinishClassificationSkipReason.AmbiguousFloorClassification)
                      .GroupBy(skip => skip.Reason))
         {
-            string parameter = FinishScheduleSettings.ClassificationParameterName;
             string reason = group.Key switch
             {
                 FinishClassificationSkipReason.MissingType =>
                     "Revit не вернул тип. Проверьте тип элемента в модели.",
-                FinishClassificationSkipReason.MissingClassificationParameter =>
-                    $"В типе нет параметра «{parameter}». Проверьте тип, если элемент должен входить в отделку.",
-                FinishClassificationSkipReason.EmptyClassificationValue =>
-                    $"В типе пуст параметр «{parameter}». Для отделки укажите значение из настроек ведомости. Для остальных элементов поле можно оставить пустым.",
                 FinishClassificationSkipReason.AmbiguousFloorClassification =>
                     "Одно значение типа в настройках обозначает и пол, и потолок. Укажите разные значения и повторите расчёт.",
                 _ => throw new ArgumentOutOfRangeException(nameof(group.Key))

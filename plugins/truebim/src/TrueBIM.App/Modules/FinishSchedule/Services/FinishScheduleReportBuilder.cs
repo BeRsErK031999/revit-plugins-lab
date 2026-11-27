@@ -39,7 +39,7 @@ public sealed class FinishScheduleReportBuilder
         StringBuilder report = Header("ПРЕДПРОСМОТР");
         AppendCalculation(report, preview, settings);
         AppendGuidance(report, FinishScheduleDiagnosticGuidanceBuilder.Build(preview));
-        AppendWarnings(report, ExcludeDiagnosticMessages(preview.Warnings, preview.GeometryWarnings));
+        AppendWarnings(report, preview.Warnings, preview);
         AppendGeometryDiagnostics(report, preview.GeometryWarnings);
         return report.ToString().TrimEnd();
     }
@@ -63,9 +63,8 @@ public sealed class FinishScheduleReportBuilder
         AppendWritePlan(report, preview);
         AppendWarnings(
             report,
-            ExcludeDiagnosticMessages(
-                preview.CalculationWarnings.Concat(preview.Issues.Select(issue => issue.Message)),
-                preview.Calculation?.GeometryWarnings ?? []));
+            preview.CalculationWarnings.Concat(preview.Issues.Select(issue => issue.Message)),
+            preview.Calculation, preview.Issues);
         AppendGeometryDiagnostics(report, preview.Calculation?.GeometryWarnings ?? []);
         return report.ToString().TrimEnd();
     }
@@ -112,9 +111,8 @@ public sealed class FinishScheduleReportBuilder
         AppendPerformance(report, result.Performance, "ПРИМЕНЕНИЕ");
         AppendWarnings(
             report,
-            ExcludeDiagnosticMessages(
-                result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
-                preview.Calculation?.GeometryWarnings ?? []));
+            result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
+            preview.Calculation, preview.Issues);
         AppendGeometryDiagnostics(report, preview.Calculation?.GeometryWarnings ?? []);
         return report.ToString().TrimEnd();
     }
@@ -228,9 +226,17 @@ public sealed class FinishScheduleReportBuilder
         }
     }
 
-    private static void AppendWarnings(StringBuilder report, IEnumerable<string> warnings)
+    private static void AppendWarnings(StringBuilder report, IEnumerable<string> warnings,
+        FinishSchedulePreviewResult? preview, IEnumerable<FinishWriteIssue>? issues = null)
     {
-        string[] unique = (warnings ?? throw new ArgumentNullException(nameof(warnings)))
+        var groups = new FinishReportWarningGroups(preview, issues);
+        if (groups.Information.Count > 0)
+        {
+            report.AppendLine().AppendLine("СВЕДЕНИЯ ОБ ОБЛАСТИ РАСЧЁТА");
+            foreach (string item in groups.Information) report.AppendLine("• " + item);
+        }
+        string[] unique = groups.Lines.Concat(ExcludeDiagnosticMessages(warnings, preview?.GeometryWarnings ?? [])
+                .Where(message => !groups.Replaces(message)))
             .Where(warning => !string.IsNullOrWhiteSpace(warning))
             .Select(warning => warning.Trim())
             .Distinct(StringComparer.Ordinal)
@@ -267,6 +273,7 @@ public sealed class FinishScheduleReportBuilder
     {
         FinishGeometryWarning[] diagnostics = geometryWarnings
             .Where(warning => !FinishGeometryWarningClassifier.AffectsScheduleValue(warning))
+            .Where(warning => !warning.OwnershipFinding.HasValue)
             .GroupBy(warning => new
             {
                 warning.Code,
@@ -282,13 +289,16 @@ public sealed class FinishScheduleReportBuilder
         }
 
         report.AppendLine();
-        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({diagnostics.Length})");
+        var intersections = diagnostics.Where(w => w.Code == FinishGeometryWarningCode.BooleanIntersectionFailed && w.ElementId.HasValue).ToArray();
+        if (intersections.Length == 1) intersections = [];
+        var details = diagnostics.Except(intersections).ToArray();
+        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({details.Length + (intersections.Length > 0 ? 1 : 0)})");
         if (!geometryWarnings.Any(FinishGeometryWarningClassifier.AffectsScheduleValue))
             report.AppendLine("Геометрический расчёт завершён без признаков неполных значений.");
         report.AppendLine("Ниже перечислены диагностические события. Подробности доступны в truebim.log.");
-        for (int index = 0; index < diagnostics.Length; index++)
+        for (int index = 0; index < details.Length; index++)
         {
-            FinishGeometryWarning warning = diagnostics[index];
+            FinishGeometryWarning warning = details[index];
             report.AppendLine(
                 $"{index + 1}. {FormatCategory(warning.Category)}: "
                     + $"помещение {FormatElementId(warning.RoomId)}; "
@@ -296,6 +306,11 @@ public sealed class FinishScheduleReportBuilder
                     + $"{FormatDiagnosticCode(warning.Code)}."
                     + (warning.Code is FinishGeometryWarningCode.MultipleRoomContacts or FinishGeometryWarningCode.WallFaceRecovered
                         or FinishGeometryWarningCode.WallOwnerConfirmed ? " " + warning.Message : ""));
+        }
+        if (intersections.Length > 0)
+        {
+            var ids = intersections.Select(w => w.ElementId!.Value).Distinct().OrderBy(id => id);
+            report.AppendLine($"{details.Length + 1}. Проверочное пересечение геометрии не выполнено в {intersections.Length} случаях. ID элементов: {string.Join(", ", ids)}. Связанные помещения и детали каждого пересечения указаны в truebim.log.");
         }
     }
 

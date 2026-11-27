@@ -113,6 +113,7 @@ public sealed class FinishSchedulePreviewService
             .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
         selectedOwnedIds.UnionWith(touchedFloorCorrections);
         outsideOwnedIds.ExceptWith(selectedOwnedIds);
+        var roomSearchIds = build.InScopeElements.Select(e => e.Element.ElementId).ToHashSet();
         build = build with
         {
             InScopeElements = build.InScopeElements.Concat(build.Classification.Elements
@@ -121,13 +122,23 @@ public sealed class FinishSchedulePreviewService
                 .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray()
         };
         HashSet<long> scopeElementIds = new(build.InScopeElements.Select(item => item.Element.ElementId));
+        // Informational only: these classified elements are tied to the level but fall
+        // outside all selected room search bounds. Do not add them to assignmentElements.
+        var outsideLevelSearch = settings.Scope.Kind == ReportScopeKind.Level && selectedRoomIds.Count > 0
+            ? build.Classification.Elements.Where(e => e.Element.LevelId == settings.Scope.LevelId && e.Element.Bounds is not null
+                && !roomSearchIds.Contains(e.Element.ElementId) && !selectedOwnedIds.Contains(e.Element.ElementId))
+                .Select(e => new FinishGeometryWarning(FinishGeometryWarningCode.OutsideLevelRoomSearch,
+                    $"Элемент {e.Element.ElementId} привязан к выбранному уровню и находится вне области поиска его помещений.",
+                    ElementId: e.Element.ElementId, Category: e.Category)
+                    { OwnershipFinding = FinishOwnershipFinding.OutsideLevelRoomSearch }).ToArray()
+            : [];
         FinishQuantityResult quantities = new(
             allQuantities.Occurrences.Where(item => selectedRoomIds.Contains(item.RoomId)),
             allQuantities.Warnings.Where(warning => settings.Scope.Kind == ReportScopeKind.EntireProject
                 || (warning.RoomId.HasValue
                     ? selectedRoomIds.Contains(warning.RoomId.Value) || (warning.SmallContactResolved
                         && warning.Category == FinishPreviewCategory.Floors && warning.CompetingContacts.Any(c => selectedRoomIds.Contains(c.RoomId)))
-                    : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))),
+                    : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))).Concat(outsideLevelSearch),
             allQuantities.CacheMetrics,
             allQuantities.Contacts);
         timings.Add(Timing(FinishScheduleStageNames.StoredQuantities, stageTimer));

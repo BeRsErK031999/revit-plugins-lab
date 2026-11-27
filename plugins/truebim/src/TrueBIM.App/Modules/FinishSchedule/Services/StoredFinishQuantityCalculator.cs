@@ -49,7 +49,8 @@ public sealed class StoredFinishQuantityCalculator
                 warnings.Add(UnresolvedOwnership(element,
                     identifier.Length == 0
                         ? "Принадлежность помещению не заполнена."
-                        : $"Помещение с идентификатором «{identifier}» не найдено. Укажите идентификатор существующего помещения."));
+                        : $"Помещение с идентификатором «{identifier}» не найдено. Укажите идентификатор существующего помещения.",
+                    identifier.Length == 0 ? FinishOwnershipFinding.EmptyParameter : null));
                 continue;
             }
 
@@ -82,11 +83,12 @@ public sealed class StoredFinishQuantityCalculator
         return new FinishQuantityResult(occurrences, warnings);
     }
 
-    private static FinishGeometryWarning UnresolvedOwnership(StoredFinishElement element, string issue) =>
+    private static FinishGeometryWarning UnresolvedOwnership(StoredFinishElement element, string issue, FinishOwnershipFinding? finding = null) =>
         new(FinishGeometryWarningCode.StoredOwnershipUnresolved,
             $"Элемент {element.ElementId}: {issue} Площадь не учтена.",
             ElementId: element.ElementId, Category: element.Category)
         {
-            StoredOwnershipIssue = issue
+            StoredOwnershipIssue = issue,
+            OwnershipFinding = finding
         };
 }

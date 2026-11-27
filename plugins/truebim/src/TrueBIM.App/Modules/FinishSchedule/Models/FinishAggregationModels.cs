@@ -19,7 +19,10 @@ public sealed record FinishAggregationWarning(
     string Message,
     long RoomId,
     long? ElementId = null,
-    FinishPreviewCategory? Category = null);
+    FinishPreviewCategory? Category = null)
+{
+    public long? TypeId { get; init; }
+}
 
 public sealed record NormalizedFinishDescription
 {

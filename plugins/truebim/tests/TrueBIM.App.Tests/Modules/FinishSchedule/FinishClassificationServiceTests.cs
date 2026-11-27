@@ -85,7 +85,7 @@ public sealed class FinishClassificationServiceTests
     }
 
     [Fact]
-    public void LevelPreview_ExplainsSkippedTypesAndSeparatesProjectCountFromLevelCount()
+    public void LevelPreview_IgnoresEmptyMissingAndNonmatchingClassification()
     {
         var settings = FinishScheduleSettings.CreateDefault() with { Scope = new(ReportScopeKind.Level, 1, null, "") };
         var collection = Collection(
@@ -95,9 +95,7 @@ public sealed class FinishClassificationServiceTests
             [new FinishTypeSnapshot(100, "", true), new FinishTypeSnapshot(101, null, false),
              new FinishTypeSnapshot(102, "Перегородки", true)]);
         var preview = new FinishSchedulePreviewBuilder(new RoomScopeService(), new FinishClassificationService()).Build(collection, settings);
-        Assert.Contains(preview.Warnings, text => text.Contains("ID 10") && text.Contains("уровню привязано: 0") && text.Contains("пуст параметр «Модель»"));
-        Assert.Contains(preview.Warnings, text => text.Contains("ID 11") && text.Contains("уровню привязано: 1") && text.Contains("нет параметра"));
-        Assert.DoesNotContain(preview.Warnings, text => text.Contains("ID 12"));
+        Assert.Empty(preview.Warnings);
     }
 
     private static FinishElementCollection Collection(
