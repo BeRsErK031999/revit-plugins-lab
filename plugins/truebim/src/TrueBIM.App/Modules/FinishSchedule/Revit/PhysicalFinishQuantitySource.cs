@@ -14,6 +14,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     private const double MinimumCeilingVerticalNormalComponent = 0.01;
     private const double MinimumIntersectionVolume = 1e-10;
     private const double MinimumAreaSquareMeters = 1e-8;
+    private const double ParallelWallNormalTolerance = 0.98;
 
     private readonly Document document;
     private readonly ITrueBimLogger logger;
@@ -33,9 +34,10 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
         FinishOccurrenceAccumulator accumulator = new();
         List<FinishGeometryWarning> warnings = [];
-        HashSet<string> warningKeys = new(StringComparer.Ordinal);
+        HashSet<FinishGeometryWarning> warningKeys = [];
         FinishBoundingBoxIndex index = new(request.Elements);
         FinishRoomSearchBounds searchBounds = new(request.Rooms, request.Elements);
+        var obstacles = new FinishVerticalObstacles(document);
         HashSet<long> consideredElementIds = [];
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedWalls = request.Elements
             .Where(element => element.Category == FinishPreviewCategory.Walls)
@@ -76,7 +78,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 warningKeys);
             IReadOnlyList<FinishClassifiedElement> candidates = room.Bounds is null
                 ? []
-                : QueryCandidates(index, searchBounds, room);
+                : QueryCandidates(index, searchBounds, room).Where(e => CanReachFromRoom(room, e, obstacles)).ToArray();
             consideredElementIds.UnionWith(candidates.Select(candidate => candidate.Element.ElementId));
             CalculateFallbackWalls(
                 room.ElementId,
@@ -132,15 +134,23 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         {
             if (contact.Category == FinishPreviewCategory.Walls && occupiedLevels.Contains(wallLevels[contact.ElementId])
                 && roomsById[contact.RoomId].LevelId != wallLevels[contact.ElementId]) continue;
-            if (searchBounds.Includes(roomsById[contact.RoomId], elementsById[contact.ElementId]))
+            if (searchBounds.Includes(roomsById[contact.RoomId], elementsById[contact.ElementId]) && CanReachFromRoom(roomsById[contact.RoomId], elementsById[contact.ElementId], obstacles))
                 eligible.KeepLargest(contact);
         }
         IReadOnlyDictionary<long, long> contourOwners = new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
+        FinishOffLevelContactSource.AddContacts(document, request, roomGeometryCache, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
-        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas, contourOwners);
-        warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements, contacts, consideredElementIds));
+        ConfirmBoundedWallContacts(warnings, contacts, elementsById, roomsById);
+        FinishQuantityResult floors = FinishFloorRoomAreas.Calculate(document, request, obstacles);
+        var otherContacts = contacts.Where(item => item.Category != FinishPreviewCategory.Floors).ToArray();
+        FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(otherContacts, fullAreas, contourOwners);
+        // Slab probes rank candidates. The upper-surface partition is authoritative for floors.
+        warnings.RemoveAll(w => w.Category == FinishPreviewCategory.Floors);
+        warnings.AddRange(floors.Warnings);
+        warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements.Where(e => e.Category != FinishPreviewCategory.Floors),
+            otherContacts.Concat(floors.Occurrences), consideredElementIds));
         FinishQuantityResult result = new(
-            resolved.Occurrences,
+            resolved.Occurrences.Concat(floors.Occurrences),
             warnings.Where(warning => !IsRecoveredWarning(warning, contacts)).Concat(resolved.Warnings),
             new FinishGeometryCacheMetrics(
                 roomGeometryCache.RequestCount,
@@ -159,6 +169,46 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         return result;
     }
 
+    private void ConfirmBoundedWallContacts(List<FinishGeometryWarning> warnings, FinishOccurrence[] contacts,
+        IReadOnlyDictionary<long, FinishClassifiedElement> elements, IReadOnlyDictionary<long, FinishRoomCandidateSnapshot> rooms)
+    {
+        var partial = warnings.Where(w => w.UnmeasuredWallContactLimit.HasValue).ToLookup(w => w.ElementId);
+        foreach (var group in partial)
+        {
+            if (group.Key is not long id || elements[id].Element.Bounds is not { } bounds
+                || document.GetElement(RevitElementIds.Create(id)) is not Wall wall) continue;
+            var measured = contacts.Where(c => c.ElementId == id).ToArray();
+            double limit = group.Sum(w => w.UnmeasuredWallContactLimit!.Value);
+            // Even all uncertain pieces together cannot change the owner or make this a mitred-joint tie.
+            if (!FinishElementOwnershipResolver.DirectWallContactDecides(measured, limit, FinishConnectedWallContactSource.JointArea(wall, bounds))) continue;
+            var confirmed = measured[0];
+            foreach (var warning in group)
+            {
+                int index = warnings.IndexOf(warning);
+                warnings[index] = warning with
+                {
+                    Code = FinishGeometryWarningCode.WallOwnerConfirmed,
+                    Message = $"Стена {id}. Revit подтвердил контакт с помещением {rooms[confirmed.RoomId].Number} (ID {confirmed.RoomId}) на площади {confirmed.AreaSquareMeters:0.###} м². Непроверенные участки могут добавить к другим контактам не более {Math.Ceiling(limit * 1000) / 1000:0.###} м². Стена отнесена к подтверждённому помещению."
+                };
+            }
+        }
+    }
+
+    private static bool CanReachFromRoom(FinishRoomCandidateSnapshot room, FinishClassifiedElement element, FinishVerticalObstacles obstacles)
+    {
+        if (element.Category == FinishPreviewCategory.Floors || room.Bounds is not { } r || element.Element.Bounds is not { } e)
+            return true;
+        if (element.Category == FinishPreviewCategory.Walls && room.LevelId != element.Element.LevelId &&
+            !FinishCandidateSearchRules.HasWallHeightOverlap(e, r)) return false;
+        if (e.MinZ <= r.MinZ) return true;
+        var pad = FinishCandidateSearchRules.HorizontalToleranceInternal;
+        double left = Math.Max(r.MinX - pad, e.MinX - pad), right = Math.Min(r.MaxX + pad, e.MaxX + pad);
+        double bottom = Math.Max(r.MinY - pad, e.MinY - pad), top = Math.Min(r.MaxY + pad, e.MaxY + pad);
+        if (right <= left || top <= bottom) return false;
+        var plan = new System.Windows.Media.RectangleGeometry(new System.Windows.Rect(left, bottom, right - left, top - bottom));
+        return obstacles.Visible(plan, r.MinZ + pad, e.MinZ).GetArea() > 1e-8;
+    }
+
     private static bool IsRecoveredWarning(FinishGeometryWarning warning, IEnumerable<FinishOccurrence> contacts)
     {
         return warning.ElementId.HasValue
@@ -166,7 +216,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 or FinishGeometryWarningCode.SlabGeometryUnsupported
                 or FinishGeometryWarningCode.ProjectedAreaUnavailable)
             && contacts.Any(contact => contact.RoomId == warning.RoomId && contact.ElementId == warning.ElementId
-                && contact.Category == warning.Category && contact.Method == FinishQuantityMethod.ProjectedRoomFootprint);
+                && contact.Category == warning.Category && contact.Method is
+                    (FinishQuantityMethod.ProjectedRoomFootprint or FinishQuantityMethod.FinishFaceRoomContact));
     }
 
     private static IReadOnlyList<FinishClassifiedElement> QueryCandidates(
@@ -199,7 +250,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedCeilings,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         FinishBoundaryElementIds directElementIds = new();
         foreach (Face roomFace in roomGeometry.Solid.Faces)
@@ -294,7 +345,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         IReadOnlyList<WallFaceProbe> probes = CreateWallProbes(
             roomId,
@@ -330,12 +381,15 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
 
             double areaInternal = 0;
+            double missingInternal = 0;
             bool hadIntersection = false;
             foreach (Solid elementSolid in geometry.Solids)
             {
                 double bestSolidArea = 0;
                 foreach (WallFaceProbe probe in probes)
                 {
+                    if (probe.Bounds is not null && candidate.Element.Bounds is { } elementBounds
+                        && !probe.Bounds.Intersects(elementBounds)) continue;
                     bestSolidArea = Math.Max(
                         bestSolidArea,
                         CalculateWallProbeArea(
@@ -345,7 +399,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                             probe,
                             warnings,
                             warningKeys,
-                            out bool probeIntersected));
+                            out bool probeIntersected, out double unmeasured));
+                    missingInternal += unmeasured;
                     hadIntersection |= probeIntersected;
                 }
 
@@ -353,6 +408,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
 
             double areaSquareMeters = RevitAreaUnits.ToSquareMeters(areaInternal);
+            if (missingInternal > 0)
+                AddWarning(warnings, warningKeys, new FinishGeometryWarning(FinishGeometryWarningCode.ProbeCreationFailed,
+                    $"Помещение {roomId}, стена {elementId}. Revit не смог измерить часть контакта даже после разбиения границы. Автоматическое назначение для этой стены пропущено. Сверьте её принадлежность в модели.",
+                    roomId, elementId, FinishPreviewCategory.Walls)
+                    { UnmeasuredWallContactLimit = RevitAreaUnits.ToSquareMeters(missingInternal) });
             if (areaSquareMeters > MinimumAreaSquareMeters)
             {
                 accumulator.Add(
@@ -383,39 +443,37 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         Solid elementSolid,
         WallFaceProbe probe,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys,
-        out bool hadIntersection)
+        HashSet<FinishGeometryWarning> warningKeys,
+        out bool hadIntersection, out double unmeasured)
     {
-        hadIntersection = false;
-        double bestArea = 0;
-        foreach (Solid probeSolid in probe.Solids)
+        double missing = 0;
+        double outward = MeasureSide(probe.Outward, out bool outwardHit);
+        double inward = MeasureSide(probe.Inward, out bool inwardHit);
+        unmeasured = missing;
+        hadIntersection = outwardHit || inwardHit;
+        return Math.Max(outward, inward);
+
+        double MeasureSide(IReadOnlyList<Solid> fragments, out bool intersects)
         {
-            Solid? intersection = TryIntersect(
-                roomId,
-                elementId,
-                FinishPreviewCategory.Walls,
-                probeSolid,
-                elementSolid,
-                warnings,
-                warningKeys);
-            if (intersection is null || intersection.Volume <= MinimumIntersectionVolume)
+            intersects = false;
+            double total = 0;
+            foreach (Solid fragment in fragments)
             {
-                continue;
-            }
+                using Solid? intersection = TryIntersect(roomId, elementId, FinishPreviewCategory.Walls,
+                    fragment, elementSolid, warnings, warningKeys);
+                if (intersection is null && probe.IsMesh)
+                {
+                    // A parallel contact patch inside this prism projects into its triangular base.
+                    missing += fragment.Volume / (ProbeThickness * ParallelWallNormalTolerance);
+                }
+                if (intersection is null || intersection.Volume <= MinimumIntersectionVolume) continue;
 
-            hadIntersection = true;
-            double? area = FinishGeometryAreaRules.SelectParallelFaceArea(
-                GetFaceMeasures(intersection),
-                probe.Normal.X,
-                probe.Normal.Y,
-                probe.Normal.Z);
-            if (area.HasValue)
-            {
-                bestArea = Math.Max(bestArea, area.Value);
+                intersects = true;
+                total += FinishGeometryAreaRules.SelectParallelFaceArea(GetFaceMeasures(intersection),
+                    probe.Normal.X, probe.Normal.Y, probe.Normal.Z, ParallelWallNormalTolerance) ?? 0;
             }
+            return total;
         }
-
-        return bestArea;
     }
 
     private static void CalculateSlabs(
@@ -427,7 +485,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         if (category == FinishPreviewCategory.Ceilings)
         {
@@ -568,7 +626,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         foreach (FinishClassifiedElement candidate in candidates
                      .Where(element => element.Category == FinishPreviewCategory.Ceilings))
@@ -601,6 +659,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
             IReadOnlyList<FinishSolidProbe> roomColumns = CreateVerticalRoomColumns(
                 roomId,
+                elementId,
                 roomGeometry.Solid,
                 elementBounds.MaxZ + ProbeThickness,
                 warnings,
@@ -680,13 +739,14 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         long roomId,
         Solid roomSolid,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         List<WallFaceProbe> probes = [];
         foreach (PlanarFace face in roomSolid.Faces
                      .OfType<PlanarFace>()
                      .Where(face => Math.Abs(face.FaceNormal.Z) <= VerticalNormalTolerance))
         {
+            AxisAlignedBox3D? bounds = GetFaceProbeBounds(face);
             try
             {
                 XYZ normal = face.FaceNormal.Normalize();
@@ -699,20 +759,52 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     loops,
                     normal.Negate(),
                     ProbeThickness);
-                probes.Add(new WallFaceProbe(normal, [outward, inward]));
+                probes.Add(new WallFaceProbe(normal, [outward], [inward], bounds));
             }
             catch (Exception exception)
             {
+                // A trimmed face can be valid even when its consecutive edge endpoints disagree.
+                // Revit's face mesh preserves the opening boundaries without joining those endpoints.
+                WallFaceProbe? recovered = TryCreateWallMeshProbe(face, bounds);
+                if (recovered is not null)
+                {
+                    probes.Add(recovered);
+                    AddWarning(warnings, warningKeys, new FinishGeometryWarning(
+                        FinishGeometryWarningCode.WallFaceRecovered,
+                        $"Помещение {roomId}. Revit не смог проверить одну из границ стен целиком. Плагин проверил эту поверхность по частям. Исправлять контур из-за этого сообщения не требуется.",
+                        RoomId: roomId, Category: FinishPreviewCategory.Walls));
+                    continue;
+                }
                 AddProbeWarning(
                     roomId,
                     FinishPreviewCategory.Walls,
                     exception,
                     warnings,
-                    warningKeys);
+                    warningKeys,
+                    bounds: bounds);
             }
         }
 
         return probes;
+    }
+
+    private static WallFaceProbe? TryCreateWallMeshProbe(PlanarFace face, AxisAlignedBox3D? bounds)
+    {
+        try
+        {
+            XYZ normal = face.FaceNormal.Normalize();
+            var outward = CreateTriangularExtrusions(face, normal, ProbeThickness, requireComplete: true);
+            var inward = CreateTriangularExtrusions(face, -normal, ProbeThickness, requireComplete: true);
+            double area = face.Area;
+            // Reject an incomplete mesh or one whose projected area differs by more than 0.1%.
+            bool CoversFace(IReadOnlyList<Solid> fragments) => fragments.Count > 0 && area > 0
+                && Math.Abs(fragments.Sum(fragment => fragment.Volume) / ProbeThickness - area) <= area * 0.001;
+            return CoversFace(outward) && CoversFace(inward) ? new WallFaceProbe(normal, outward, inward, bounds, IsMesh: true) : null;
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return null;
+        }
     }
 
     private static IReadOnlyList<FinishSolidProbe> CreateHorizontalProbes(
@@ -720,7 +812,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         Solid roomSolid,
         FinishPreviewCategory category,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         bool floor = category == FinishPreviewCategory.Floors;
         List<FinishSolidProbe> probes = [];
@@ -744,7 +836,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
             catch (Exception exception)
             {
-                AddProbeWarning(roomId, category, exception, warnings, warningKeys);
+                AddProbeWarning(roomId, category, exception, warnings, warningKeys, bounds: GetFaceProbeBounds(face));
             }
         }
 
@@ -753,10 +845,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
     private static IReadOnlyList<FinishSolidProbe> CreateVerticalRoomColumns(
         long roomId,
+        long elementId,
         Solid roomSolid,
         double topZ,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         List<FinishSolidProbe> columns = [];
         IEnumerable<PlanarFace> bottomFaces = roomSolid.Faces
@@ -787,7 +880,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     FinishPreviewCategory.Ceilings,
                     exception,
                     warnings,
-                    warningKeys);
+                    warningKeys,
+                    elementId: elementId);
             }
         }
 
@@ -797,7 +891,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     private static IReadOnlyList<Solid> CreateTriangularExtrusions(
         Face face,
         XYZ direction,
-        double distance)
+        double distance,
+        bool requireComplete = false)
     {
         List<Solid> fragments = [];
         Mesh mesh;
@@ -834,6 +929,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
             catch
             {
+                if (requireComplete) return [];
                 // The primary probe remains valid when an optional recovery fragment cannot be built.
             }
         }
@@ -877,7 +973,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         Solid first,
         Solid second,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         if (TryExecuteIntersection(first, second, out Solid? intersection, out Exception? failure))
         {
@@ -937,17 +1033,17 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishPreviewCategory category,
         Exception exception,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         AddWarning(
             warnings,
             warningKeys,
             new FinishGeometryWarning(
                 FinishGeometryWarningCode.BooleanIntersectionFailed,
-                $"Не удалось пересечь геометрию помещения {roomId} и элемента {elementId}: {exception.Message}",
+                $"Помещение {roomId}, элемент {elementId}. Revit не смог точно измерить одно из пересечений. Плагин продолжил расчёт по остальным граням и доступным контактам.",
                 RoomId: roomId,
                 ElementId: elementId,
-                Category: category));
+                Category: category) { TechnicalDetail = exception.Message });
     }
 
     private static IReadOnlyList<FinishFaceMeasure> GetFaceMeasures(Solid solid)
@@ -992,7 +1088,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishPreviewCategory category,
         FinishElementGeometryLookup lookup,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         AddWarning(
             warnings,
@@ -1012,31 +1108,62 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishPreviewCategory category,
         Exception exception,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys,
+        AxisAlignedBox3D? bounds = null,
+        long? elementId = null)
     {
         AddWarning(
             warnings,
             warningKeys,
             new FinishGeometryWarning(
                 FinishGeometryWarningCode.ProbeCreationFailed,
-                $"Не удалось построить geometry probe помещения {roomId}: {exception.Message}",
+                $"Помещение {roomId}. Revit не смог построить проверочный объём вдоль границы для {FinishCategoryName(category)}. Принадлежность отделки возле этого участка осталась неподтверждённой. Проверьте её в модели перед формированием ведомости.",
                 RoomId: roomId,
-                Category: category));
+                ElementId: elementId,
+                Category: category)
+            { ProbeBounds = bounds, TechnicalDetail = exception.Message });
     }
 
     private static void AddWarning(
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys,
+        HashSet<FinishGeometryWarning> warningKeys,
         FinishGeometryWarning warning)
     {
-        string key = $"{warning.Code}|{warning.RoomId}|{warning.ElementId}|{warning.Category}|{warning.Message}";
-        if (warningKeys.Add(key))
+        if (warningKeys.Add(warning))
         {
             warnings.Add(warning);
         }
     }
 
-    private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Solids);
+    private static AxisAlignedBox3D? GetFaceProbeBounds(PlanarFace face)
+    {
+        // A planar UV rectangle encloses the trimmed face, including curved edges.
+        // Pad all axes to cover both directions of extrusion and numerical roundoff.
+        try
+        {
+            using BoundingBoxUV uv = face.GetBoundingBox();
+            XYZ[] corners = [face.Evaluate(uv.Min), face.Evaluate(new UV(uv.Min.U, uv.Max.V)),
+                face.Evaluate(uv.Max), face.Evaluate(new UV(uv.Max.U, uv.Min.V))];
+            const double padding = ProbeThickness + 1e-6;
+            return new AxisAlignedBox3D(corners.Min(p => p.X) - padding, corners.Min(p => p.Y) - padding,
+                corners.Min(p => p.Z) - padding, corners.Max(p => p.X) + padding,
+                corners.Max(p => p.Y) + padding, corners.Max(p => p.Z) + padding);
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return null;
+        }
+    }
+
+    private static string FinishCategoryName(FinishPreviewCategory category) => category switch
+    {
+        FinishPreviewCategory.Walls => "стен",
+        FinishPreviewCategory.Floors => "полов",
+        _ => "потолков"
+    };
+
+    private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Outward, IReadOnlyList<Solid> Inward,
+        AxisAlignedBox3D? Bounds, bool IsMesh = false);
 
     private sealed class FinishSolidProbe
     {

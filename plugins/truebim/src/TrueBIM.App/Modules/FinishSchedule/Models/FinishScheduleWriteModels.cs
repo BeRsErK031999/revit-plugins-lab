@@ -79,7 +79,11 @@ public sealed record FinishRoomAssignment(
     ParameterReference Reference,
     string Identifier,
     string IdentifierSourceKey,
-    long? RoomId);
+    long? RoomId)
+{
+    public const string Undefined = "[Не определено]";
+    public IReadOnlyList<FinishOccurrence> FloorAreas { get; init; } = [];
+}
 
 public sealed class FinishParameterTargetBuildResult
 {

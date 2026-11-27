@@ -51,9 +51,9 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishScheduleUserNotice notice = BuildCalculation(
             preview.Calculation,
             settings,
-            preview.Issues.Select(issue => issue.Message),
+            [],
             successTitle: "Проверка перед формированием пройдена",
-            successMessage: "Расчёт готов, план записи подготовлен. Можно продолжать.");
+            successMessage: "Расчёт готов, план записи подготовлен. Можно продолжать.", issues: preview.Issues);
         if (preview.CanApply)
         {
             return notice;
@@ -64,7 +64,7 @@ public sealed class FinishScheduleUserNoticeBuilder
             "Запись не началась. Исправьте пункты ниже и повторите формирование.",
             notice.SummaryItems,
             notice.WarningItems,
-            Math.Max(notice.IssueCount, preview.Issues.Count),
+            Math.Max(1, notice.IssueCount),
             FinishScheduleUserNoticeSeverity.Danger);
     }
 
@@ -101,12 +101,16 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishScheduleUserNotice notice = BuildCalculation(
             preview.Calculation,
             settings,
-            result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
+            result.Warnings,
             successTitle: "Ведомость готова",
-            successMessage: HumanizeWarning(result.Message));
+            successMessage: HumanizeWarning(result.Message), issues: preview.Issues);
         if (result.Succeeded)
         {
-            return notice;
+            return settings.WriteOwnership
+                ? new FinishScheduleUserNotice(notice.Title, notice.Message,
+                    notice.SummaryItems.Append($"Запись принадлежности: изменено {result.AppliedOwnershipValues}, пропущено {result.SkippedOwnershipValues}."),
+                    notice.WarningItems, notice.IssueCount, notice.Severity)
+                : notice;
         }
 
         return new FinishScheduleUserNotice(
@@ -151,7 +155,8 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishScheduleSettings settings,
         IEnumerable<string> additionalWarnings,
         string successTitle,
-        string successMessage)
+        string successMessage,
+        IReadOnlyList<FinishWriteIssue>? issues = null)
     {
         List<string> summary =
         [
@@ -165,28 +170,52 @@ public sealed class FinishScheduleUserNoticeBuilder
             summary.Add($"Групп помещений: {preview.Aggregation.GroupCount}.");
         }
 
+        int sharedContacts = preview.GeometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.MultipleRoomContacts)
+            .Select(w => w.ElementId).Distinct().Count();
+        if (sharedContacts > 0) summary.Add($"Элементов с касаниями нескольких помещений: {sharedContacts}. Владелец и площади контакта — в списке «Элементы».");
+
+        int recoveredRooms = preview.GeometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.WallFaceRecovered)
+            .Select(w => w.RoomId).Distinct().Count();
+        if (recoveredRooms > 0)
+            summary.Add($"В {recoveredRooms} помещениях Revit не смог проверить границу стены целиком. Плагин проверил её по частям. Подробности по ID помещений есть в полном отчёте.");
+
+        var groups = new FinishReportWarningGroups(preview, issues, compact: true);
+        summary.AddRange(groups.Information);
         HashSet<string> geometryMessages = preview.GeometryWarnings
             .Select(warning => warning.Message)
             .ToHashSet(StringComparer.Ordinal);
+        var aggregationWarnings = preview.Aggregation?.Details ?? [];
+        geometryMessages.UnionWith(aggregationWarnings.Select(w => w.Message));
         string[] generalWarnings = preview.Warnings
             .Concat(additionalWarnings ?? throw new ArgumentNullException(nameof(additionalWarnings)))
-            .Where(warning => !geometryMessages.Contains(warning))
+            .Concat(SummarizeWriteIssues((issues ?? []).Where(issue => !groups.Replaces(issue))))
+            .Where(warning => !geometryMessages.Contains(warning) && !groups.Replaces(warning))
             .Select(HumanizeWarning)
             .Where(warning => !string.IsNullOrWhiteSpace(warning))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        string[] geometryWarnings = preview.GeometryWarnings
+        var actionableGeometry = preview.GeometryWarnings.Where(FinishGeometryWarningClassifier.AffectsScheduleValue).ToArray();
+        IReadOnlyList<FinishGeometryWarning> visibleGeometry = actionableGeometry.Length == 0
+            ? preview.GeometryWarnings.Where(w => w.Code is not (FinishGeometryWarningCode.OutsideRoomProjection
+                or FinishGeometryWarningCode.WallFaceRecovered or FinishGeometryWarningCode.WallOwnerConfirmed
+                or FinishGeometryWarningCode.ProjectedContactCheckFailed)).ToArray() : actionableGeometry;
+        string[] geometryWarnings = visibleGeometry.Where(w => !groups.Replaces(w.Message))
             .GroupBy(warning => $"{warning.Code}:{warning.Category}:{warning.StoredOwnershipIssue}", StringComparer.Ordinal)
             .Select(FormatGeometryWarningGroup)
             .ToArray();
         string[] missingLinks = BuildMissingLinkWarnings(preview, settings).ToArray();
-        string[] warningItems = geometryWarnings
+        string[] causes = groups.Lines.Concat(geometryWarnings)
             .Concat(missingLinks)
-            .Concat(BuildOwnershipGuidance(preview, settings))
+            .Concat(aggregationWarnings.Where(w => !groups.Replaces(w.Message)).GroupBy(w => w.Code).Select(g => g.Key switch
+            {
+                FinishAggregationWarningCode.MissingDescription => $"Заполните состав типов отделки. Экземпляров без описания: {g.Select(w => w.ElementId).Distinct().Count()}.",
+                FinishAggregationWarningCode.UnknownQuantity => $"Неполные площади в {g.Select(w => w.RoomId).Distinct().Count()} помещениях. Перечень по категориям есть в полном отчёте.",
+                _ => $"Проверьте идентификаторы помещений: {g.Select(w => w.RoomId).Distinct().Count()}."
+            }))
             .Concat(generalWarnings)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        int issueCount = preview.GeometryWarnings.Count + missingLinks.Length + generalWarnings.Length;
+        string[] warningItems = causes.Concat(BuildOwnershipGuidance(preview, settings)).Distinct(StringComparer.Ordinal).ToArray();
         bool incomplete = FinishGeometryWarningClassifier.HasIncompleteScheduleValues(preview);
         if (warningItems.Length == 0)
         {
@@ -209,16 +238,16 @@ public sealed class FinishScheduleUserNoticeBuilder
                     : "Расчёт завершён. Перед формированием проверьте замечания ниже.",
             summary,
             warningItems,
-            Math.Max(issueCount, warningItems.Length),
+            causes.Length,
             FinishScheduleUserNoticeSeverity.Warning);
     }
 
     private static string FormatRooms(FinishSchedulePreviewResult preview)
     {
-        string result = $"Помещения: рассчитано {preview.RoomScope.SelectedRooms.Count} из {preview.CollectedRooms}.";
+        string result = $"Размещённые помещения: рассчитано {preview.RoomScope.SelectedRooms.Count} из {preview.CollectedRooms}.";
         if (preview.RoomScope.InvalidRooms.Count > 0)
         {
-            result += $" Без корректной геометрии: {preview.RoomScope.InvalidRooms.Count}.";
+            result += $" Без расчётной площади или габаритов: {preview.RoomScope.InvalidRooms.Count}.";
         }
 
         return result;
@@ -276,7 +305,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishSchedulePreviewResult preview,
         FinishScheduleSettings settings)
     {
-        if (!preview.GeometryWarnings.Any(warning => warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved))
+        if (!FinishGeometryWarningClassifier.NeedsStoredOwnershipGuidance(preview))
         {
             yield break;
         }
@@ -324,7 +353,7 @@ public sealed class FinishScheduleUserNoticeBuilder
             FinishGeometryWarningCode.SlabGeometryUnsupported =>
                 $"Элементов {category} со слишком сложной формой для точного расчёта: {count}.",
             FinishGeometryWarningCode.ProbeCreationFailed =>
-                $"Помещений, для которых не удалось построить область проверки {category}: {count}.",
+                $"Revit не смог проверить часть границы для {category}. Проверьте принадлежность ближайших элементов отделки в модели.",
             FinishGeometryWarningCode.ProjectedAreaUnavailable =>
                 $"Пересечений {category}, для которых не удалось определить площадь: {count}.",
             _ => $"Геометрических замечаний для {category}: {count}."
@@ -345,11 +374,23 @@ public sealed class FinishScheduleUserNoticeBuilder
     private static string FormatIds(IEnumerable<long> ids)
     {
         long[] distinct = ids.Distinct().OrderBy(id => id).ToArray();
-        const int visibleLimit = 20;
+        int visibleLimit = distinct.Length > 20 ? 3 : 20;
         string result = string.Join(", ", distinct.Take(visibleLimit));
         return distinct.Length > visibleLimit
             ? $"{result} и ещё {distinct.Length - visibleLimit}"
             : result;
+    }
+
+    private static IEnumerable<string> SummarizeWriteIssues(IEnumerable<FinishWriteIssue> issues)
+    {
+        foreach (var group in issues.GroupBy(issue => issue.Code))
+        {
+            if (group.Key is FinishWriteIssueCode.UnknownOwnership or FinishWriteIssueCode.UnassignedOwnership)
+                yield return $"Элементов с принадлежностью «{FinishRoomAssignment.Undefined}»: {group.Count()}. Причина — " +
+                    (group.Key == FinishWriteIssueCode.UnknownOwnership ? "неопределённая геометрия." : "не найдено помещение.");
+            else
+                foreach (var issue in group) yield return issue.Message;
+        }
     }
 
     private static string HumanizeWarning(string warning)

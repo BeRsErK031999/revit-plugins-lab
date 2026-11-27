@@ -74,6 +74,11 @@ public sealed class FinishElementCollector
         {
             try
             {
+                if (room.Location is null)
+                {
+                    continue;
+                }
+
                 IReadOnlyDictionary<string, FinishParameterValueSnapshot> values = ReadParameterValues(
                     room,
                     requestedParameters.OfType<ParameterReference>(),
@@ -82,7 +87,7 @@ public sealed class FinishElementCollector
                     RevitElementIds.GetValue(room.Id),
                     RevitElementIds.GetValue(room.LevelId),
                     room.Area,
-                    room.Location is not null,
+                    hasLocation: true,
                     ReadBounds(room),
                     values,
                     room.Number,
@@ -179,23 +184,12 @@ public sealed class FinishElementCollector
         IEnumerable<ParameterReference> requestedReferences,
         ParameterBindingKind bindingKind)
     {
-        Dictionary<string, ParameterReference> requested = (requestedReferences
-                ?? throw new ArgumentNullException(nameof(requestedReferences)))
-            .GroupBy(reference => reference.StableKey, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         Dictionary<string, FinishParameterValueSnapshot> result = new(StringComparer.Ordinal);
-        foreach (Parameter parameter in element.Parameters)
+        foreach (ParameterReference reference in requestedReferences)
         {
-            ParameterReference? reference = RevitParameterReferenceFactory.Create(
-                parameter,
-                bindingKind);
-            if (reference is not null && requested.ContainsKey(reference.StableKey))
+            if (RevitFinishParameterAccess.FindParameter(element, reference, bindingKind) is { } parameter)
             {
                 result[reference.StableKey] = ReadParameterValue(parameter);
-                if (result.Count == requested.Count)
-                {
-                    break;
-                }
             }
         }
 
@@ -207,13 +201,8 @@ public sealed class FinishElementCollector
         ParameterReference requestedReference,
         ParameterBindingKind bindingKind)
     {
-        IReadOnlyDictionary<string, FinishParameterValueSnapshot> values = ReadParameterValues(
-            element,
-            [requestedReference],
-            bindingKind);
-        return values.TryGetValue(requestedReference.StableKey, out FinishParameterValueSnapshot? value)
-            ? value
-            : null;
+        Parameter? parameter = RevitFinishParameterAccess.FindParameter(element, requestedReference, bindingKind);
+        return parameter is null ? null : ReadParameterValue(parameter);
     }
 
     private static FinishParameterValueSnapshot ReadParameterValue(Parameter parameter)

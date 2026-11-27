@@ -8,6 +8,20 @@ public sealed class FinishScheduleReportBuilder
 {
     private static readonly CultureInfo RussianCulture = CultureInfo.GetCultureInfo("ru-RU");
 
+    public string BuildSummary(FinishScheduleUserNotice notice)
+    {
+        const int warningLimit = 8;
+        StringBuilder summary = new();
+        summary.AppendLine(notice.Title).AppendLine(notice.Message);
+        foreach (string item in notice.SummaryItems)
+            summary.AppendLine(item);
+        foreach (string item in notice.WarningItems.Take(warningLimit))
+            summary.AppendLine("• " + item);
+        if (notice.WarningItems.Count > warningLimit)
+            summary.AppendLine($"Ещё замечаний в полном отчёте: {notice.WarningItems.Count - warningLimit}.");
+        return summary.ToString().TrimEnd();
+    }
+
     public string BuildPreview(
         FinishSchedulePreviewResult preview,
         FinishScheduleSettings settings)
@@ -25,7 +39,7 @@ public sealed class FinishScheduleReportBuilder
         StringBuilder report = Header("ПРЕДПРОСМОТР");
         AppendCalculation(report, preview, settings);
         AppendGuidance(report, FinishScheduleDiagnosticGuidanceBuilder.Build(preview));
-        AppendWarnings(report, ExcludeDiagnosticMessages(preview.Warnings, preview.GeometryWarnings));
+        AppendWarnings(report, preview.Warnings, preview);
         AppendGeometryDiagnostics(report, preview.GeometryWarnings);
         return report.ToString().TrimEnd();
     }
@@ -49,9 +63,8 @@ public sealed class FinishScheduleReportBuilder
         AppendWritePlan(report, preview);
         AppendWarnings(
             report,
-            ExcludeDiagnosticMessages(
-                preview.CalculationWarnings.Concat(preview.Issues.Select(issue => issue.Message)),
-                preview.Calculation?.GeometryWarnings ?? []));
+            preview.CalculationWarnings.Concat(preview.Issues.Select(issue => issue.Message)),
+            preview.Calculation, preview.Issues);
         AppendGeometryDiagnostics(report, preview.Calculation?.GeometryWarnings ?? []);
         return report.ToString().TrimEnd();
     }
@@ -98,9 +111,8 @@ public sealed class FinishScheduleReportBuilder
         AppendPerformance(report, result.Performance, "ПРИМЕНЕНИЕ");
         AppendWarnings(
             report,
-            ExcludeDiagnosticMessages(
-                result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
-                preview.Calculation?.GeometryWarnings ?? []));
+            result.Warnings.Concat(preview.Issues.Select(issue => issue.Message)),
+            preview.Calculation, preview.Issues);
         AppendGeometryDiagnostics(report, preview.Calculation?.GeometryWarnings ?? []);
         return report.ToString().TrimEnd();
     }
@@ -127,8 +139,8 @@ public sealed class FinishScheduleReportBuilder
                 : "Принадлежность: текущие параметры отделки; геометрический поиск отключён.");
         }
         report.AppendLine(
-            $"Помещения: найдено {preview.CollectedRooms}; обработано {preview.RoomScope.SelectedRooms.Count}; "
-                + $"невалидных {preview.RoomScope.InvalidRooms.Count}; вне scope {preview.RoomScope.OutsideScopeCount}.");
+            $"Размещённые помещения: найдено {preview.CollectedRooms}; обработано {preview.RoomScope.SelectedRooms.Count}; "
+                + $"без расчётной площади или габаритов {preview.RoomScope.InvalidRooms.Count}; вне области расчёта {preview.RoomScope.OutsideScopeCount}.");
         AppendCategory(report, "Стены", settings?.Walls.IsEnabled, preview.Walls, preview.Quantities?.Walls);
         AppendCategory(report, "Полы", settings?.Floors.IsEnabled, preview.Floors, preview.Quantities?.Floors);
         AppendCategory(report, "Потолки", settings?.Ceilings.IsEnabled, preview.Ceilings, preview.Quantities?.Ceilings);
@@ -157,7 +169,7 @@ public sealed class FinishScheduleReportBuilder
             : "состояние из плана";
         string geometry = quantities is null
             ? string.Empty
-            : $"; связей {quantities.OccurrenceCount}; площадь "
+            : $"; отнесено к помещениям {quantities.OccurrenceCount}; площадь "
                 + $"{quantities.AreaSquareMeters.ToString("N2", RussianCulture)} м²";
         report.AppendLine(
             $"{name} ({state}): собрано {counts.SourceCollected}; классифицировано {counts.Classified}; "
@@ -214,9 +226,17 @@ public sealed class FinishScheduleReportBuilder
         }
     }
 
-    private static void AppendWarnings(StringBuilder report, IEnumerable<string> warnings)
+    private static void AppendWarnings(StringBuilder report, IEnumerable<string> warnings,
+        FinishSchedulePreviewResult? preview, IEnumerable<FinishWriteIssue>? issues = null)
     {
-        string[] unique = (warnings ?? throw new ArgumentNullException(nameof(warnings)))
+        var groups = new FinishReportWarningGroups(preview, issues);
+        if (groups.Information.Count > 0)
+        {
+            report.AppendLine().AppendLine("СВЕДЕНИЯ ОБ ОБЛАСТИ РАСЧЁТА");
+            foreach (string item in groups.Information) report.AppendLine("• " + item);
+        }
+        string[] unique = groups.Lines.Concat(ExcludeDiagnosticMessages(warnings, preview?.GeometryWarnings ?? [])
+                .Where(message => !groups.Replaces(message)))
             .Where(warning => !string.IsNullOrWhiteSpace(warning))
             .Select(warning => warning.Trim())
             .Distinct(StringComparer.Ordinal)
@@ -253,6 +273,7 @@ public sealed class FinishScheduleReportBuilder
     {
         FinishGeometryWarning[] diagnostics = geometryWarnings
             .Where(warning => !FinishGeometryWarningClassifier.AffectsScheduleValue(warning))
+            .Where(warning => !warning.OwnershipFinding.HasValue)
             .GroupBy(warning => new
             {
                 warning.Code,
@@ -268,19 +289,35 @@ public sealed class FinishScheduleReportBuilder
         }
 
         report.AppendLine();
-        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({diagnostics.Length})");
-        report.AppendLine(
-            "Расчёт завершён без признаков неполных значений. События ниже оставлены для "
-                + "технической диагностики; полный текст Revit сохранён в truebim.log.");
-        for (int index = 0; index < diagnostics.Length; index++)
+        var intersections = diagnostics.Where(w => w.Code == FinishGeometryWarningCode.BooleanIntersectionFailed && w.ElementId.HasValue).ToArray();
+        if (intersections.Length == 1) intersections = [];
+        var contourChecks = diagnostics.Where(w => w.Code == FinishGeometryWarningCode.ProjectedContactCheckFailed).ToArray();
+        var details = diagnostics.Except(intersections).Except(contourChecks).ToArray();
+        int diagnosticCount = details.Length + (intersections.Length > 0 ? 1 : 0) + (contourChecks.Length > 0 ? 1 : 0);
+        report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({diagnosticCount})");
+        if (!geometryWarnings.Any(FinishGeometryWarningClassifier.AffectsScheduleValue))
+            report.AppendLine("Геометрический расчёт завершён без признаков неполных значений.");
+        report.AppendLine("Ниже перечислены диагностические события. Подробности доступны в truebim.log.");
+        for (int index = 0; index < details.Length; index++)
         {
-            FinishGeometryWarning warning = diagnostics[index];
+            FinishGeometryWarning warning = details[index];
             report.AppendLine(
                 $"{index + 1}. {FormatCategory(warning.Category)}: "
                     + $"помещение {FormatElementId(warning.RoomId)}; "
                     + $"элемент {FormatElementId(warning.ElementId)}; "
                     + $"{FormatDiagnosticCode(warning.Code)}."
-                    + (warning.Code == FinishGeometryWarningCode.MultipleRoomContacts ? " " + warning.Message : ""));
+                    + (warning.Code is FinishGeometryWarningCode.MultipleRoomContacts or FinishGeometryWarningCode.WallFaceRecovered
+                        or FinishGeometryWarningCode.WallOwnerConfirmed ? " " + warning.Message : ""));
+        }
+        if (intersections.Length > 0)
+        {
+            var ids = intersections.Select(w => w.ElementId!.Value).Distinct().OrderBy(id => id);
+            report.AppendLine($"{details.Length + 1}. Проверочное пересечение геометрии не выполнено в {intersections.Length} случаях. ID элементов: {string.Join(", ", ids)}. Связанные помещения и детали каждого пересечения указаны в truebim.log.");
+        }
+        if (contourChecks.Length > 0)
+        {
+            var rooms = contourChecks.Where(w => w.RoomId.HasValue).Select(w => w.RoomId!.Value).Distinct().OrderBy(id => id);
+            report.AppendLine($"{diagnosticCount}. Дополнительная проверка по контуру помещения на высоте отделки не завершилась для {contourChecks.Length} пар. ID помещений: {string.Join(", ", rooms)}. Для назначения использованы подтверждённые контакты. Пары и причины указаны в truebim.log.");
         }
     }
 
@@ -359,6 +396,8 @@ public sealed class FinishScheduleReportBuilder
         {
             FinishGeometryWarningCode.BooleanIntersectionFailed =>
                 "проверочное пересечение геометрии не выполнено",
+            FinishGeometryWarningCode.WallFaceRecovered => "граница стены проверена по частям",
+            FinishGeometryWarningCode.WallOwnerConfirmed => "принадлежность стены подтверждена",
             FinishGeometryWarningCode.ElementNotFound => "элемент не найден при проверке",
             FinishGeometryWarningCode.ElementGeometryUnavailable =>
                 "геометрия элемента недоступна для проверки",

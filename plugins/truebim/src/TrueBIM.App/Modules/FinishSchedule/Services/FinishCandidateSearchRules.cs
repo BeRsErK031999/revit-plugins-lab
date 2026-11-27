@@ -7,6 +7,13 @@ public static class FinishCandidateSearchRules
     public const double HorizontalToleranceInternal = 0.05;
     public const double VerticalSearchDistanceInternal = 6.56167979002625;
 
+    public static bool HasWallHeightOverlap(AxisAlignedBox3D wall, AxisAlignedBox3D room)
+    {
+        double overlap = Math.Min(wall.MaxZ, room.MaxZ) - Math.Max(wall.MinZ, room.MinZ);
+        double shorterHeight = Math.Min(wall.MaxZ - wall.MinZ, room.MaxZ - room.MinZ);
+        return shorterHeight > 0 && overlap >= shorterHeight / 2;
+    }
+
     public static AxisAlignedBox3D CreateSearchBounds(
         AxisAlignedBox3D roomBounds,
         FinishPreviewCategory category)

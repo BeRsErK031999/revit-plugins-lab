@@ -84,6 +84,20 @@ public sealed class FinishClassificationServiceTests
             Assert.Single(result.SkippedElements).Reason);
     }
 
+    [Fact]
+    public void LevelPreview_IgnoresEmptyMissingAndNonmatchingClassification()
+    {
+        var settings = FinishScheduleSettings.CreateDefault() with { Scope = new(ReportScopeKind.Level, 1, null, "") };
+        var collection = Collection(
+            [Element(10, 100, FinishPhysicalCategory.Floor) with { LevelId = 2 },
+             Element(11, 101, FinishPhysicalCategory.Wall) with { LevelId = 1 },
+             Element(12, 102, FinishPhysicalCategory.Wall) with { LevelId = 1 }],
+            [new FinishTypeSnapshot(100, "", true), new FinishTypeSnapshot(101, null, false),
+             new FinishTypeSnapshot(102, "Перегородки", true)]);
+        var preview = new FinishSchedulePreviewBuilder(new RoomScopeService(), new FinishClassificationService()).Build(collection, settings);
+        Assert.Empty(preview.Warnings);
+    }
+
     private static FinishElementCollection Collection(
         IEnumerable<FinishElementCandidateSnapshot> elements,
         IEnumerable<FinishTypeSnapshot> types)

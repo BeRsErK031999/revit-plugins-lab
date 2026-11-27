@@ -6,6 +6,19 @@ namespace TrueBIM.App.Tests.Modules.FinishSchedule;
 
 public sealed class FinishElementOwnershipResolverTests
 {
+    [Theory]
+    [InlineData(6.67, 0.75, 0.06, FinishQuantityMethod.RoomBoundarySubface, true)]
+    [InlineData(0.81, 0.75, 0.06, FinishQuantityMethod.RoomBoundarySubface, false)]
+    [InlineData(0.40, 0.75, 0.06, FinishQuantityMethod.RoomBoundarySubface, false)]
+    [InlineData(6.67, 0.75, 0.06, FinishQuantityMethod.ConnectedWallContour, false)]
+    public void UnmeasuredWallPatchRequiresDecisiveDirectBoundary(double area, double limit, double joint,
+        FinishQuantityMethod method, bool expected)
+    {
+        FinishOccurrence contact = new(1, 10, FinishPreviewCategory.Walls, area, method);
+        Assert.Equal(expected, FinishElementOwnershipResolver.DirectWallContactDecides([contact], limit, joint));
+        Assert.False(FinishElementOwnershipResolver.DirectWallContactDecides([contact, new(2, 10, FinishPreviewCategory.Walls, area, method)], limit, joint));
+    }
+
     [Fact]
     public void VerifiedContourOwnerWinsSmallContactDifferenceAndKeepsNativeArea()
     {
@@ -57,6 +70,76 @@ public sealed class FinishElementOwnershipResolverTests
         Assert.Equal(34.96, occurrence.AreaSquareMeters);
         Assert.Equal(FinishGeometryWarningCode.MultipleRoomContacts, Assert.Single(result.Warnings).Code);
     }
+
+    [Theory]
+    [InlineData(0.08, 0.80, true)]
+    [InlineData(0.08, 0.79, false)]
+    [InlineData(0.10, 1.50, false)]
+    public void SmallCompetingWallContactTakesPrecedenceOnlyInsideBothLimits(double small, double large, bool automatic)
+    {
+        var contacts = new[] {
+            new FinishOccurrence(10, 100, FinishPreviewCategory.Walls, small, FinishQuantityMethod.WallProbeIntersection),
+            new FinishOccurrence(20, 100, FinishPreviewCategory.Walls, large, FinishQuantityMethod.WallProbeIntersection)
+        };
+        var result = new FinishElementOwnershipResolver().Resolve(contacts,
+            new Dictionary<long, double> { [100] = 2 }, new Dictionary<long, long> { [100] = 10 });
+        Assert.Equal(automatic ? 20 : 10, Assert.Single(result.Occurrences).RoomId);
+        Assert.Equal(2, Assert.Single(result.Occurrences).AreaSquareMeters);
+        Assert.Equal(automatic, Assert.Single(result.Warnings).SmallWallContactResolved);
+    }
+
+    [Fact]
+    public void SingleSmallWallRetainsItsFullSystemArea()
+    {
+        var contact = new FinishOccurrence(10, 100, FinishPreviewCategory.Walls, 0.05, FinishQuantityMethod.WallProbeIntersection);
+        var result = new FinishElementOwnershipResolver().Resolve([contact], new Dictionary<long, double> { [100] = 0.066 });
+        Assert.Equal(0.066, Assert.Single(result.Occurrences).AreaSquareMeters);
+        Assert.Empty(result.Warnings);
+    }
+
+    [Theory]
+    [InlineData(0.08, 0.8, 1, true)]
+    [InlineData(0.08, 0.79, 1, false)]
+    [InlineData(0.1, 1.5, 1, false)]
+    [InlineData(0.02, 3, 2, false)]
+    public void FloorRuleUsesUnroundedProjectedAreasOnExactlyTwoRoomsOfOnePhase(
+        double small, double large, long otherPhase, bool merge)
+    {
+        var shares = new[] { FloorShare(10, small), FloorShare(20, large) };
+        var phases = new Dictionary<long, long> { [10] = 1, [20] = otherPhase };
+        var result = new FinishElementOwnershipResolver().ResolveFloorShares(shares, phases);
+
+        Assert.Equal(small + large, result.Occurrences.Sum(o => o.AreaSquareMeters), 12);
+        if (merge)
+        {
+            var owner = Assert.Single(result.Occurrences);
+            Assert.Equal(20, owner.RoomId);
+            Assert.Equal(FinishQuantityMethod.FloorRoomSurface, owner.Method);
+            var diagnostic = Assert.Single(result.Warnings);
+            Assert.True(diagnostic.SmallContactResolved);
+            Assert.Equal(new[] { large, small }, diagnostic.CompetingContacts.Select(c => c.AreaSquareMeters));
+        }
+        else
+        {
+            Assert.Equal(shares, result.Occurrences);
+            Assert.Empty(result.Warnings);
+        }
+    }
+
+    [Fact]
+    public void SingleTinyPatchAndThreeRoomCommonFloorKeepAllShares()
+    {
+        var shares = new[] { FloorShare(10, 0.004), FloorShare(20, 0.03), FloorShare(30, 13) };
+        var phases = shares.ToDictionary(s => s.RoomId, _ => 1L);
+        var resolver = new FinishElementOwnershipResolver();
+        Assert.Equal(shares.Take(1), resolver.ResolveFloorShares(shares.Take(1), phases).Occurrences);
+        var result = resolver.ResolveFloorShares(shares, phases);
+        Assert.Equal(shares, result.Occurrences);
+        Assert.Empty(result.Warnings);
+    }
+
+    private static FinishOccurrence FloorShare(long room, double area) =>
+        new(room, 100, FinishPreviewCategory.Floors, area, FinishQuantityMethod.FloorRoomSurface);
 
     [Fact]
     public void EqualContactsResolveDeterministicallyAndRemainVisibleInDiagnostics()

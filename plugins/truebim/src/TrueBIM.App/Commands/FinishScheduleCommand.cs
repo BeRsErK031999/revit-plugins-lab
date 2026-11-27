@@ -84,6 +84,15 @@ public sealed class FinishScheduleCommand : IExternalCommand
             RevitModalWindowService.ShowDialog(
                 window,
                 commandData.Application.MainWindowHandle);
+            if (uiDocument != null && window.RequestedElementId is long elementId)
+            {
+                var id = RevitElementIds.Create(elementId);
+                if (uiDocument.Document.GetElement(id) != null)
+                {
+                    uiDocument.Selection.SetElementIds(new[] { id });
+                    uiDocument.ShowElements(id);
+                }
+            }
             OpenRequestedSchedule(uiDocument, window.RequestedScheduleId, logger);
             return Result.Succeeded;
         }

@@ -1,0 +1,73 @@
+using TrueBIM.App.Modules.FinishSchedule.Models;
+
+namespace TrueBIM.App.Modules.FinishSchedule.Services;
+
+/// <summary>Объединяет сообщения для чтения, сохраняя исходные замечания для выбора элементов и записи.</summary>
+internal sealed class FinishReportWarningGroups
+{
+    private readonly HashSet<string> replaced = new(StringComparer.Ordinal);
+    private readonly HashSet<long> skippedAssignmentIds = [];
+    private readonly List<string> lines = [];
+    private readonly List<string> information = [];
+
+    public IReadOnlyList<string> Lines => lines;
+    public IReadOnlyList<string> Information => information;
+    public bool Replaces(string message) => replaced.Contains(message);
+
+    public FinishReportWarningGroups(FinishSchedulePreviewResult? preview, IEnumerable<FinishWriteIssue>? issues = null, bool compact = false)
+    {
+        if (preview is null) return;
+        Dictionary<FinishOwnershipFinding, List<long>> idsByFinding = [];
+        foreach (var element in preview.GeometryWarnings.Where(w => w.OwnershipFinding.HasValue && w.ElementId.HasValue)
+                     .GroupBy(w => w.ElementId!.Value))
+        {
+            // An empty ownership parameter is a consequence when geometry already explains the omission.
+            var finding = element.FirstOrDefault(w => w.OwnershipFinding is not (FinishOwnershipFinding.EmptyParameter or FinishOwnershipFinding.MarkedUnassigned))
+                ?.OwnershipFinding ?? element.First().OwnershipFinding!.Value;
+            if (!idsByFinding.TryGetValue(finding, out var ids)) idsByFinding.Add(finding, ids = []);
+            ids.Add(element.Key);
+            if (finding is FinishOwnershipFinding.NoContact or FinishOwnershipFinding.OutsideSearch or FinishOwnershipFinding.OutsideLevelRoomSearch)
+                skippedAssignmentIds.Add(element.Key);
+            foreach (var warning in element) replaced.Add(warning.Message);
+        }
+        foreach (var group in idsByFinding.OrderBy(pair => pair.Key))
+        {
+            string explanation = group.Key switch
+            {
+                FinishOwnershipFinding.NoContact => "Элементы проверены, но контакт с помещением не найден. Проверьте контур, уровень элемента и наличие помещений.",
+                FinishOwnershipFinding.OutsideSearch => "Элементы вне области поиска помещений. Проверьте их расположение и привязку к уровню, если ожидаете отделку в этих помещениях.",
+                FinishOwnershipFinding.OutsideLevelRoomSearch => "Элементы привязаны к выбранному уровню и находятся вне области поиска его помещений. В площадь выбранных помещений они не вошли.",
+                FinishOwnershipFinding.OutsideFloorProjection => "Полы вне проекции подходящих помещений. В ведомости учтено 0 м².",
+                FinishOwnershipFinding.EmptyParameter => "Принадлежность помещению не заполнена. Площадь не учтена.",
+                FinishOwnershipFinding.MarkedUnassigned => $"Принадлежность к помещению — «{FinishRoomAssignment.Undefined}». Эти элементы не входят в площади помещений.",
+                _ => throw new ArgumentOutOfRangeException()
+            };
+            var destination = group.Key is FinishOwnershipFinding.OutsideLevelRoomSearch or FinishOwnershipFinding.OutsideFloorProjection or FinishOwnershipFinding.MarkedUnassigned
+                ? information : lines;
+            destination.Add($"{explanation} {FormatIds("ID элементов", group.Value, compact)}");
+        }
+
+        var missingDescriptions = (preview.Aggregation?.Details ?? [])
+            .Where(w => w.Code == FinishAggregationWarningCode.MissingDescription && w.TypeId is > 0).ToArray();
+        if (missingDescriptions.Length > 0)
+        {
+            var types = missingDescriptions.Select(w => w.TypeId!.Value).Distinct();
+            lines.Add($"Заполните описание отделки в свойствах типов. {FormatIds("ID типоразмеров", types, compact)} До заполнения в ведомости выводится «{FinishDescriptionNormalizer.MissingDescriptionDisplay}».");
+            foreach (var warning in missingDescriptions) replaced.Add(warning.Message);
+        }
+        foreach (var issue in issues ?? [])
+            if (Replaces(issue)) replaced.Add(issue.Message);
+    }
+
+    public bool Replaces(FinishWriteIssue issue) => issue.ElementId is long id && skippedAssignmentIds.Contains(id)
+        && issue.Code is FinishWriteIssueCode.UnknownOwnership or FinishWriteIssueCode.UnassignedOwnership;
+
+    private static string FormatIds(string label, IEnumerable<long> ids, bool compact)
+    {
+        const int visibleLimit = 8;
+        var ordered = ids.OrderBy(id => id).ToArray();
+        if (compact && ordered.Length > visibleLimit)
+            return $"{label} ({ordered.Length}): {string.Join(", ", ordered.Take(visibleLimit))}… Полный список ID приведён в отчёте.";
+        return $"{label} ({ordered.Length}): {string.Join(", ", ordered)}.";
+    }
+}

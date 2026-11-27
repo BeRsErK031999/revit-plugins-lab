@@ -344,7 +344,8 @@ public sealed class FinishAggregationServiceTests
         Assert.Equal(
             FinishDescriptionNormalizer.MissingDescriptionDisplay,
             Assert.Single(group.Walls.Items).Description.DisplayValue);
-        Assert.Contains(result.Warnings, warning => warning.Code == FinishAggregationWarningCode.MissingDescription);
+        var warning = Assert.Single(result.Warnings, warning => warning.Code == FinishAggregationWarningCode.MissingDescription);
+        Assert.Equal(1011L, warning.TypeId);
     }
 
     [Fact]

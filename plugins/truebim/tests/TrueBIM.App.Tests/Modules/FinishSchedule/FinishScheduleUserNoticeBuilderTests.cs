@@ -41,8 +41,9 @@ public sealed class FinishScheduleUserNoticeBuilderTests
         FinishScheduleUserNotice notice = builder.BuildPreview(
             CreatePreview([], quantities.Warnings), FinishScheduleSettings.CreateDefault() with { WriteOwnership = false });
 
-        Assert.Contains(notice.WarningItems, item => item.Contains("не заполнена") && item.Contains("Элементы: 1."));
-        Assert.DoesNotContain(notice.WarningItems, item => item.Contains("неоднозначна") || item.Contains("Элементы: 2."));
+        Assert.Contains(notice.WarningItems, item => item.Contains("не заполнена") && item.Contains("ID элементов (1): 1."));
+        Assert.DoesNotContain(notice.WarningItems, item => item.Contains("неоднозначна") || item.Contains("ID элементов (1): 2."));
+        Assert.Equal(1, notice.IssueCount);
         Assert.Equal(2, Assert.Single(quantities.Occurrences).ElementId);
     }
 
@@ -92,7 +93,7 @@ public sealed class FinishScheduleUserNoticeBuilderTests
 
         Assert.Equal(FinishScheduleUserNoticeSeverity.Success, notice.Severity);
         Assert.Empty(notice.WarningItems);
-        Assert.Contains(notice.SummaryItems, item => item == "Помещения: рассчитано 2 из 2.");
+        Assert.Contains(notice.SummaryItems, item => item == "Размещённые помещения: рассчитано 2 из 2.");
         Assert.Contains(notice.SummaryItems, item => item.Contains("Полы: найдено элементов — 1", StringComparison.Ordinal));
         Assert.DoesNotContain(notice.SummaryItems, item => item.Contains("Spatial", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(notice.SummaryItems, item => item.Contains("cache", StringComparison.OrdinalIgnoreCase));
@@ -108,6 +109,84 @@ public sealed class FinishScheduleUserNoticeBuilderTests
 
         Assert.DoesNotContain(notice.WarningItems, item => item.Contains("раздел", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(notice.SummaryItems, item => item.Contains("участков в помещениях — 2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AllReportStages_GroupTypeIdsAndContactFailuresWithoutHidingOtherIssues()
+    {
+        var settings = FinishScheduleSettings.CreateDefault();
+        FinishGeometryWarning[] warnings =
+        [
+            new(FinishGeometryWarningCode.UnassignedElement, "contact-42", ElementId: 42) { OwnershipFinding = FinishOwnershipFinding.NoContact },
+            new(FinishGeometryWarningCode.UnassignedElement, "contact-41", ElementId: 41) { OwnershipFinding = FinishOwnershipFinding.NoContact },
+            new(FinishGeometryWarningCode.StoredOwnershipUnresolved, "empty-41", ElementId: 41) { OwnershipFinding = FinishOwnershipFinding.EmptyParameter },
+            new(FinishGeometryWarningCode.StoredOwnershipUnresolved, "Неверный идентификатор «802».", ElementId: 43)
+        ];
+        var preview = CreatePreview(warnings.Select(w => w.Message).ToArray(), warnings).WithAggregation(
+            new FinishAggregationResult([], new[] { (50, 700), (51, 600), (52, 700) }.Select(e =>
+                new FinishAggregationWarning(FinishAggregationWarningCode.MissingDescription, $"description-{e.Item1}", 10, e.Item1)
+                    { TypeId = e.Item2 })));
+        var write = new FinishScheduleWritePreview(1, 2, FinishWritePlan.Empty(), FinishWritePlan.Empty(
+            [new FinishWriteIssue(FinishWriteIssueCode.UnknownOwnership, FinishWriteIssueSeverity.Warning, "write-41", 41)]),
+            preview.Warnings, calculation: preview, settings: settings);
+        var result = new FinishScheduleWriteResult(FinishScheduleWriteStatus.Applied, 1, 0, 1, preview.Warnings.Append("write-41").ToArray(), "Готово.");
+        var reports = new FinishScheduleReportBuilder();
+        foreach (string report in new[] { reports.BuildPreview(preview, settings), reports.BuildWritePreview(write),
+                     reports.BuildResult(write, result), reports.BuildSummary(builder.BuildPreview(preview, settings)),
+                     reports.BuildSummary(builder.BuildWritePreview(write, settings)), reports.BuildSummary(builder.BuildResult(write, result, settings)) })
+        {
+            Assert.Single(report.Split('\n'), line => line.Contains("ID элементов (2): 41, 42."));
+            Assert.Single(report.Split('\n'), line => line.Contains("ID типоразмеров (2): 600, 700."));
+            Assert.Contains("«802»", report);
+            foreach (string raw in new[] { "contact-", "empty-41", "description-", "write-41" }) Assert.DoesNotContain(raw, report);
+        }
+    }
+
+    [Fact]
+    public void ContactFailureExplainsEmptyOwnershipWithoutAskingToEnableAutomaticAssignment()
+    {
+        FinishGeometryWarning[] warnings =
+        [
+            new(FinishGeometryWarningCode.UnassignedElement, "contact", ElementId: 41) { OwnershipFinding = FinishOwnershipFinding.NoContact },
+            new(FinishGeometryWarningCode.StoredOwnershipUnresolved, "empty", ElementId: 41) { OwnershipFinding = FinishOwnershipFinding.EmptyParameter }
+        ];
+        var preview = CreatePreview(warnings.Select(w => w.Message).ToArray(), warnings);
+        var settings = FinishScheduleSettings.CreateDefault();
+        var notice = builder.BuildPreview(preview, settings);
+        Assert.Contains("контакт с помещением не найден", Assert.Single(notice.WarningItems));
+        Assert.DoesNotContain("включите запись принадлежности", new FinishScheduleReportBuilder().BuildPreview(preview, settings));
+    }
+
+    [Fact]
+    public void OutsideLevelRoomSearch_IsInformationalAndDoesNotMakeCalculationIncomplete()
+    {
+        var warning = new FinishGeometryWarning(FinishGeometryWarningCode.OutsideLevelRoomSearch, "outside-55", ElementId: 55)
+            { OwnershipFinding = FinishOwnershipFinding.OutsideLevelRoomSearch };
+        var preview = CreatePreview([warning.Message], [warning]);
+        var settings = FinishScheduleSettings.CreateDefault();
+        var notice = builder.BuildPreview(preview, settings);
+        Assert.Equal(FinishScheduleUserNoticeSeverity.Success, notice.Severity);
+        Assert.Equal(0, notice.IssueCount);
+        Assert.Contains(notice.SummaryItems, item => item.Contains("ID элементов (1): 55."));
+        var report = new FinishScheduleReportBuilder().BuildPreview(preview, settings);
+        Assert.Contains("ПРЕДУПРЕЖДЕНИЯ (0)", report);
+        Assert.DoesNotContain("outside-55", report);
+    }
+
+    [Fact]
+    public void LongIdList_IsCompactInNoticeAndCompleteInFullReport()
+    {
+        var warnings = Enumerable.Range(100, 10).Select(id =>
+            new FinishGeometryWarning(FinishGeometryWarningCode.OutsideLevelRoomSearch, $"outside-{id}", ElementId: id)
+                { OwnershipFinding = FinishOwnershipFinding.OutsideLevelRoomSearch }).ToArray();
+        var preview = CreatePreview(warnings.Select(w => w.Message).ToArray(), warnings);
+        var settings = FinishScheduleSettings.CreateDefault();
+        var notice = builder.BuildPreview(preview, settings);
+        var summary = Assert.Single(notice.SummaryItems, item => item.Contains("ID элементов (10)"));
+        Assert.Contains("107… Полный список ID", summary);
+        Assert.DoesNotContain("109", summary);
+        var report = new FinishScheduleReportBuilder().BuildPreview(preview, settings);
+        Assert.Single(report.Split('\n'), line => line.Contains("ID элементов (10): 100, 101, 102, 103, 104, 105, 106, 107, 108, 109."));
     }
 
     private static FinishSchedulePreviewResult CreatePreview(

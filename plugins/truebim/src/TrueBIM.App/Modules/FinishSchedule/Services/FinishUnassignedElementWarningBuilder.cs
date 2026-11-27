@@ -18,7 +18,9 @@ public sealed class FinishUnassignedElementWarningBuilder
                     ? "Элемент проверен, но контакт с помещением не найден."
                     : "Элемент не попал в область поиска ни одного помещения.")
                 + " Проверьте контур, уровень элемента и наличие помещений.",
-                ElementId: element.Element.ElementId, Category: element.Category))
+                ElementId: element.Element.ElementId, Category: element.Category)
+                { OwnershipFinding = consideredElementIds.Contains(element.Element.ElementId)
+                    ? FinishOwnershipFinding.NoContact : FinishOwnershipFinding.OutsideSearch })
             .ToArray();
     }
 }

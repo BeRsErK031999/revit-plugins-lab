@@ -45,6 +45,7 @@ internal sealed class FinishOwnershipMetadataService
 
     public void Write(Element element, FinishRoomAssignment assignment)
     {
+        if (element is Floor) FinishFloorAreaStorage.Write(element, assignment);
         Schema? schema = Schema.Lookup(SchemaGuid);
         if (!assignment.RoomId.HasValue)
         {

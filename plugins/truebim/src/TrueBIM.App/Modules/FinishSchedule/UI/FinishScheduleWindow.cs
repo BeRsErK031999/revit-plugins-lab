@@ -40,21 +40,21 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly CategoryControls walls = new(
         "Стены",
         "Внутренняя отделка",
-        "Значение «Группа модели» для типов отделочных стен.",
+        "Значение «Модель» для типов отделочных стен.",
         FinishSchedulePreferredParameterNames.WallsOwnership,
         FinishSchedulePreferredParameterNames.WallsDescription,
         FinishSchedulePreferredParameterNames.WallsArea);
     private readonly CategoryControls floors = new(
         "Полы",
         "Пол",
-        "Значение «Группа модели» для типов отделочных перекрытий пола.",
+        "Значение «Модель» для типов отделочных перекрытий пола.",
         FinishSchedulePreferredParameterNames.FloorsOwnership,
         FinishSchedulePreferredParameterNames.FloorsDescription,
         FinishSchedulePreferredParameterNames.FloorsArea);
     private readonly CategoryControls ceilings = new(
         "Потолки",
         "Потолки",
-        "Значение «Группа модели» для типов потолков.",
+        "Значение «Модель» для типов потолков.",
         FinishSchedulePreferredParameterNames.CeilingsOwnership,
         FinishSchedulePreferredParameterNames.CeilingsDescription,
         FinishSchedulePreferredParameterNames.CeilingsArea);
@@ -122,6 +122,8 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private long? lastScheduleId;
     private FinishScheduleUserNotice? currentUserNotice;
 
+    private IReadOnlyList<FinishModelCheck> modelChecks = [];
+    public long? RequestedElementId { get; private set; }
     public long? RequestedScheduleId { get; private set; }
 
     public FinishScheduleWindow(
@@ -200,12 +202,23 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         ToolTipService.SetShowOnDisabled(generateButton, true);
 
         copyReportButton = TrueBimUi.CreateSecondaryButton(
-            "Копировать отчёт",
+            "Копировать отчёт ▾",
             TrueBimIcon.CopyParameters,
-            (_, _) => CopyCurrentReport(),
+            (sender, _) =>
+            {
+                Button button = (Button)sender;
+                button.ContextMenu.PlacementTarget = button;
+                button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                button.ContextMenu.IsOpen = true;
+            },
             isEnabled: false,
             minWidth: 145);
-        copyReportButton.ToolTip = "Скопировать полный отчёт со всеми предупреждениями и таймингами стадий.";
+        MenuItem summaryItem = new() { Header = "Краткая сводка" };
+        summaryItem.Click += (_, _) => CopyCurrentReport(full: false);
+        MenuItem fullItem = new() { Header = "Полный отчёт со всеми ID" };
+        fullItem.Click += (_, _) => CopyCurrentReport(full: true);
+        copyReportButton.ContextMenu = new ContextMenu { Items = { summaryItem, fullItem } };
+        copyReportButton.ToolTip = "Скопировать сводку по площадям или подробный отчёт для диагностики.";
         ToolTipService.SetShowOnDisabled(copyReportButton, true);
 
         openScheduleButton = TrueBimUi.CreateSecondaryButton(
@@ -452,11 +465,16 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         logger.Info(
             $"Finish Schedule user notice opened. Issues={currentUserNotice.IssueCount}; Severity={currentUserNotice.Severity}.");
-        FinishScheduleWarningsWindow warningsWindow = new(currentUserNotice)
+        FinishScheduleWarningsWindow warningsWindow = new(currentUserNotice, modelChecks)
         {
             Owner = this
         };
         warningsWindow.ShowDialog();
+        if (warningsWindow.SelectedElementId.HasValue)
+        {
+            RequestedElementId = warningsWindow.SelectedElementId;
+            Close();
+        }
     }
 
     private UIElement CreateCategorySelectionContent()
@@ -950,6 +968,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private void InvalidatePreview()
     {
         SetUserNotice(null);
+        modelChecks = [];
         SetCurrentReport(string.Empty);
         SetLastSchedule(null);
     }
@@ -980,6 +999,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         try
         {
             FinishSchedulePreviewResult result = previewFactory(settings);
+            modelChecks = FinishModelCheck.Build(result);
             SetUserNotice(userNoticeBuilder.BuildPreview(result, settings));
             SetCurrentReport(reportBuilder.BuildPreview(result, settings));
             footerStatus.Text = "Предпросмотр обновлён. Модель Revit не изменялась.";
@@ -1031,13 +1051,14 @@ public sealed class FinishScheduleWindow : TrueBimWindow
             IReadOnlyList<string> missingDescriptions = missingDescriptionsFactory?.Invoke(settings) ?? [];
             if (missingDescriptions.Count > 0
                 && new FinishMissingDescriptionWindow(settings.DescriptionParameter?.Name ?? "Описание", missingDescriptions)
-                    { Owner = this }.ShowDialog() != true)
+                { Owner = this }.ShowDialog() != true)
             {
                 footerStatus.Text = "Формирование отменено. Заполните описания указанных типоразмеров.";
                 return;
             }
             FinishScheduleWritePreview writePreview = writePreviewFactory(settings);
             SetUserNotice(userNoticeBuilder.BuildWritePreview(writePreview, settings));
+            modelChecks = writePreview.Calculation == null ? [] : FinishModelCheck.Build(writePreview.Calculation);
             SetCurrentReport(reportBuilder.BuildWritePreview(writePreview));
             SetLastSchedule(null);
             if (!writePreview.CanApply)
@@ -1121,7 +1142,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         };
     }
 
-    private void CopyCurrentReport()
+    private void CopyCurrentReport(bool full)
     {
         if (string.IsNullOrWhiteSpace(currentReportText))
         {
@@ -1132,8 +1153,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         try
         {
-            Clipboard.SetText(currentReportText);
-            footerStatus.Text = "Полный отчёт скопирован в буфер обмена.";
+            if (!full && currentUserNotice is null) return;
+            Clipboard.SetText(full ? currentReportText : reportBuilder.BuildSummary(currentUserNotice!));
+            footerStatus.Text = full ? "Полный отчёт скопирован в буфер обмена." : "Краткая сводка скопирована в буфер обмена.";
             footerStatus.Foreground = TrueBimBrushes.Success;
         }
         catch (ExternalException exception)

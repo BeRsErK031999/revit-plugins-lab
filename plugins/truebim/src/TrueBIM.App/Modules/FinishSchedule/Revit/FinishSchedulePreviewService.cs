@@ -31,7 +31,12 @@ public sealed class FinishSchedulePreviewService
 
     public FinishScheduleCalculationResult BuildDetailed(
         Document document,
-        FinishScheduleSettings settings)
+        FinishScheduleSettings settings) => BuildDetailed(document, settings, []);
+
+    internal FinishScheduleCalculationResult BuildDetailed(
+        Document document,
+        FinishScheduleSettings settings,
+        IEnumerable<FinishGeometryWarning> roomGeometryWarnings)
     {
         Stopwatch totalTimer = Stopwatch.StartNew();
         Stopwatch stageTimer = Stopwatch.StartNew();
@@ -50,6 +55,7 @@ public sealed class FinishSchedulePreviewService
         HashSet<long> selectedRoomIds = new(build.RoomScope.SelectedRooms.Select(room => room.ElementId));
         FinishParameterTargetBuildResult ownershipTargets = new(0, [], []);
         FinishQuantityResult? geometry = null;
+        HashSet<long> touchedFloorCorrections = [];
         if (settings.WriteOwnership)
         {
             // Resolve against all rooms before restricting writes to the selected report scope.
@@ -58,15 +64,27 @@ public sealed class FinishSchedulePreviewService
                 .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
             HashSet<long> selectedGeometryIds = new(geometry.Occurrences
                 .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+            // A room whose sliver moves to a neighbour can still have an assignment saved
+            // by an older version. Rewrite that shared floor even when only this room is in scope.
+            touchedFloorCorrections.UnionWith(geometry.Warnings.Where(w => w.SmallContactResolved
+                    && w.Category == FinishPreviewCategory.Floors && w.ElementId.HasValue
+                    && w.CompetingContacts.Any(c => selectedRoomIds.Contains(c.RoomId)))
+                .Select(w => w.ElementId!.Value));
+            selectedGeometryIds.UnionWith(touchedFloorCorrections);
+            outsideGeometryIds.ExceptWith(selectedGeometryIds);
+            // Outside the room bounds a project or level scope can still own an unassigned element.
+            // An element assigned by geometry exclusively to another scope must keep its owner.
             FinishClassifiedElement[] assignmentElements = build.InScopeElements
-                .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)))
+                .Concat(build.Classification.Elements.Where(item => selectedGeometryIds.Contains(item.Element.ElementId)
+                    || settings.Scope.Kind == ReportScopeKind.EntireProject
+                    || (settings.Scope.Kind == ReportScopeKind.Level && item.Element.LevelId == settings.Scope.LevelId)))
                 .Where(item => !outsideGeometryIds.Contains(item.Element.ElementId))
                 .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray();
             RoomFinishSnapshotBuildResult identifiers = new RoomFinishSnapshotBuilder(
                 new FinishDescriptionNormalizer()).Build(new RoomFinishSnapshotRequest(
                     settings, request.Rooms, build.Classification.Elements, collection.Types, geometry));
             ownershipTargets = new FinishOwnershipValueBuilder().Build(
-                settings, assignmentElements, geometry, identifiers);
+                settings, assignmentElements, geometry, identifiers, request);
             timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
             stageTimer.Restart();
         }
@@ -74,14 +92,32 @@ public sealed class FinishSchedulePreviewService
         // Preview uses proposed parameter values; Apply reads them back after the assignment transaction.
         FinishQuantityResult stored = new StoredFinishQuantitySource(document, settings,
             ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value),
-            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId)).Calculate(request);
-        FinishQuantityResult allQuantities = new(stored.Occurrences,
-            stored.Warnings.Concat(geometry?.Warnings ?? []),
+            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId),
+            ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.FloorAreas)).Calculate(request);
+        var wallAreas = stored.Occurrences.Where(o => o.Category == FinishPreviewCategory.Walls).ToLookup(o => o.RoomId);
+        var geometryWarnings = (geometry?.Warnings ?? []).Concat(roomGeometryWarnings).Select(warning =>
+        {
+            if (warning.Code != FinishGeometryWarningCode.WallFaceRecovered || warning.RoomId is not long roomId)
+                return warning;
+            var walls = wallAreas[roomId];
+            string outcome = walls.Any()
+                ? $"Ведомость учитывает стены этого помещения: {walls.Count()} шт., {walls.Sum(o => o.AreaSquareMeters):0.00} м²."
+                : $"Отделочные стены в ведомость этого помещения не попали. Если ожидаете отделку, проверьте стены в активной модели и значение «{settings.Walls.ClassificationValue}» в параметре типа «{FinishScheduleSettings.ClassificationParameterName}».";
+            return warning with { Message = warning.Message + " " + outcome };
+        }).ToArray();
+        var unavailableFloors = geometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.ProjectedAreaUnavailable
+                && w.Category == FinishPreviewCategory.Floors && w.ElementId.HasValue)
+            .Select(w => w.ElementId!.Value).ToHashSet();
+        FinishQuantityResult allQuantities = new(stored.Occurrences.Where(o => !unavailableFloors.Contains(o.ElementId)),
+            stored.Warnings.Concat(geometryWarnings).Distinct(),
             geometry?.CacheMetrics, geometry?.Contacts);
         HashSet<long> outsideOwnedIds = new(allQuantities.Occurrences
             .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
         HashSet<long> selectedOwnedIds = new(allQuantities.Occurrences
             .Where(item => selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));
+        selectedOwnedIds.UnionWith(touchedFloorCorrections);
+        outsideOwnedIds.ExceptWith(selectedOwnedIds);
+        var roomSearchIds = build.InScopeElements.Select(e => e.Element.ElementId).ToHashSet();
         build = build with
         {
             InScopeElements = build.InScopeElements.Concat(build.Classification.Elements
@@ -90,12 +126,22 @@ public sealed class FinishSchedulePreviewService
                 .GroupBy(item => item.Element.ElementId).Select(group => group.First()).ToArray()
         };
         HashSet<long> scopeElementIds = new(build.InScopeElements.Select(item => item.Element.ElementId));
+        // Report spatial exclusion independently of which ownership parameters need updating.
+        var outsideLevelSearch = settings.Scope.Kind == ReportScopeKind.Level && selectedRoomIds.Count > 0
+            ? build.Classification.Elements.Where(e => e.Element.LevelId == settings.Scope.LevelId && e.Element.Bounds is not null
+                && !roomSearchIds.Contains(e.Element.ElementId) && !selectedOwnedIds.Contains(e.Element.ElementId))
+                .Select(e => new FinishGeometryWarning(FinishGeometryWarningCode.OutsideLevelRoomSearch,
+                    $"Элемент {e.Element.ElementId} привязан к выбранному уровню и находится вне области поиска его помещений.",
+                    ElementId: e.Element.ElementId, Category: e.Category)
+                    { OwnershipFinding = FinishOwnershipFinding.OutsideLevelRoomSearch }).ToArray()
+            : [];
         FinishQuantityResult quantities = new(
             allQuantities.Occurrences.Where(item => selectedRoomIds.Contains(item.RoomId)),
             allQuantities.Warnings.Where(warning => settings.Scope.Kind == ReportScopeKind.EntireProject
                 || (warning.RoomId.HasValue
-                    ? selectedRoomIds.Contains(warning.RoomId.Value)
-                    : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))),
+                    ? selectedRoomIds.Contains(warning.RoomId.Value) || (warning.SmallContactResolved
+                        && warning.Category == FinishPreviewCategory.Floors && warning.CompetingContacts.Any(c => selectedRoomIds.Contains(c.RoomId)))
+                    : !warning.ElementId.HasValue || scopeElementIds.Contains(warning.ElementId.Value))).Concat(outsideLevelSearch),
             allQuantities.CacheMetrics,
             allQuantities.Contacts);
         timings.Add(Timing(FinishScheduleStageNames.StoredQuantities, stageTimer));
@@ -149,7 +195,7 @@ public sealed class FinishSchedulePreviewService
             logger.Warning(
                 $"Finish Schedule geometry warning [{impact}] {warning.Code}; "
                     + $"Room={warning.RoomId?.ToString() ?? "-"}; Element={warning.ElementId?.ToString() ?? "-"}; "
-                    + $"Category={warning.Category?.ToString() ?? "-"}; {warning.Message}");
+                    + $"Category={warning.Category?.ToString() ?? "-"}; {warning.Message} {warning.TechnicalDetail}".TrimEnd());
         }
 
         return new FinishScheduleCalculationResult(

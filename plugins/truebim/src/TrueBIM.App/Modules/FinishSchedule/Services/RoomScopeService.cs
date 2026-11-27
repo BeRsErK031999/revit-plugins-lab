@@ -25,7 +25,7 @@ public sealed class RoomScopeService
         int outsideScopeCount = 0;
         int missingScopeValueCount = 0;
 
-        foreach (FinishRoomCandidateSnapshot room in rooms.OrderBy(room => room.ElementId))
+        foreach (FinishRoomCandidateSnapshot room in rooms.Where(room => room.HasLocation).OrderBy(room => room.ElementId))
         {
             FinishRoomSkipReason? invalidReason = GetInvalidReason(room);
             if (invalidReason.HasValue)
@@ -58,11 +58,6 @@ public sealed class RoomScopeService
 
     private static FinishRoomSkipReason? GetInvalidReason(FinishRoomCandidateSnapshot room)
     {
-        if (!room.HasLocation)
-        {
-            return FinishRoomSkipReason.Unplaced;
-        }
-
         if (room.Area <= MinimumRoomArea || double.IsNaN(room.Area) || double.IsInfinity(room.Area))
         {
             return FinishRoomSkipReason.NotEnclosed;

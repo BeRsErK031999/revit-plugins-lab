@@ -8,6 +8,7 @@ public sealed class FinishGeometryWarningClassifierTests
 {
     [Theory]
     [InlineData(FinishGeometryWarningCode.BooleanIntersectionFailed)]
+    [InlineData(FinishGeometryWarningCode.WallFaceRecovered)]
     [InlineData(FinishGeometryWarningCode.ElementGeometryUnavailable)]
     [InlineData(FinishGeometryWarningCode.ElementNotFound)]
     public void SpeculativeCandidateWarnings_AreDiagnostic(FinishGeometryWarningCode code)
@@ -17,6 +18,7 @@ public sealed class FinishGeometryWarningClassifierTests
 
     [Theory]
     [InlineData(FinishGeometryWarningCode.RoomGeometryUnavailable)]
+    [InlineData(FinishGeometryWarningCode.ProbeCreationFailed)]
     [InlineData(FinishGeometryWarningCode.WallFallbackUnresolved)]
     [InlineData(FinishGeometryWarningCode.SlabGeometryUnsupported)]
     [InlineData(FinishGeometryWarningCode.ProjectedAreaUnavailable)]

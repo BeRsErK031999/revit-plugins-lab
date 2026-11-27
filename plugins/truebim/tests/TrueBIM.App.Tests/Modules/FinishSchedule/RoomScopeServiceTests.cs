@@ -22,8 +22,9 @@ public sealed class RoomScopeServiceTests
             ReportScopeSettings.EntireProject());
 
         Assert.Equal([1L, 4L], result.SelectedRooms.Select(room => room.ElementId));
-        Assert.Equal(3, result.InvalidRooms.Count);
-        Assert.Contains(result.InvalidRooms, room => room.Reason == FinishRoomSkipReason.Unplaced);
+        Assert.Equal(2, result.InvalidRooms.Count);
+        Assert.DoesNotContain(result.InvalidRooms, room => room.ElementId == 3);
+        Assert.Equal(0, result.OutsideScopeCount);
         Assert.Contains(result.InvalidRooms, room => room.Reason == FinishRoomSkipReason.NotEnclosed);
         Assert.Contains(result.InvalidRooms, room => room.Reason == FinishRoomSkipReason.MissingBounds);
     }

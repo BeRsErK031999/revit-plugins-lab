@@ -8,7 +8,9 @@ public enum FinishQuantityMethod
     CeilingProbeIntersection,
     ProjectedRoomFootprint,
     ConnectedWallContour,
-    StoredOwnership
+    StoredOwnership,
+    FinishFaceRoomContact,
+    FloorRoomSurface
 }
 
 public enum FinishGeometryWarningCode
@@ -25,7 +27,23 @@ public enum FinishGeometryWarningCode
     FullElementAreaUnavailable,
     MultipleRoomContacts,
     UnassignedElement,
-    StoredOwnershipUnresolved
+    StoredOwnershipUnresolved,
+    OutsideRoomProjection,
+    WallFaceRecovered,
+    WallOwnerConfirmed,
+    OutsideLevelRoomSearch,
+    MarkedUnassigned,
+    ProjectedContactCheckFailed
+}
+
+public enum FinishOwnershipFinding
+{
+    NoContact,
+    OutsideSearch,
+    OutsideLevelRoomSearch,
+    OutsideFloorProjection,
+    EmptyParameter,
+    MarkedUnassigned
 }
 
 public sealed record FinishGeometryWarning(
@@ -35,7 +53,18 @@ public sealed record FinishGeometryWarning(
     long? ElementId = null,
     FinishPreviewCategory? Category = null)
 {
+    public bool SmallContactResolved { get; init; }
+    public bool SmallWallContactResolved
+    {
+        get => Category == FinishPreviewCategory.Walls && SmallContactResolved;
+        init => SmallContactResolved = value;
+    }
+    public IReadOnlyList<FinishOccurrence> CompetingContacts { get; init; } = [];
     public string? StoredOwnershipIssue { get; init; }
+    public FinishOwnershipFinding? OwnershipFinding { get; init; }
+    public string? TechnicalDetail { get; init; }
+    public double? UnmeasuredWallContactLimit { get; init; }
+    public AxisAlignedBox3D? ProbeBounds { get; init; }
 }
 
 public sealed class FinishQuantityRequest

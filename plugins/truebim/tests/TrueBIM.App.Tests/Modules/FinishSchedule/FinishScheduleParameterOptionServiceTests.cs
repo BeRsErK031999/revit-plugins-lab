@@ -67,6 +67,27 @@ public sealed class FinishScheduleParameterOptionServiceTests
     }
 
     [Fact]
+    public void GetOwnershipOptions_UsesDeclaredBindingWithoutSamplesAndRespectsObservedReadOnly()
+    {
+        ParameterReference reference = ParameterReference.Project(
+            "Принадлежность", 152, ParameterBindingKind.Instance, ParameterStorageKind.String);
+        FinishScheduleParameterOptionService service = CreateService();
+
+        ParameterCatalog bound = new([new ParameterCatalogItem(
+            reference, [Categories.Ceilings.Id], 0, 0, 0, hasProjectBinding: true)]);
+        Assert.Equal(reference, Assert.Single(service.GetOwnershipOptions(bound, Categories.Ceilings)).Reference);
+        Assert.Empty(service.GetOwnershipOptions(bound, Categories.Walls));
+
+        ParameterCatalog readOnly = new([new ParameterCatalogItem(
+            reference, [Categories.Ceilings.Id], 1, 0, 1, hasProjectBinding: true)]);
+        Assert.Empty(service.GetOwnershipOptions(readOnly, Categories.Ceilings));
+        Assert.Single(service.GetOwnershipOptions(readOnly, Categories.Ceilings, requireWritable: false));
+
+        ParameterCatalog unknown = new([new ParameterCatalogItem(reference, [Categories.Ceilings.Id], 0, 0, 0)]);
+        Assert.Empty(service.GetOwnershipOptions(unknown, Categories.Ceilings));
+    }
+
+    [Fact]
     public void GetRoomOutputOptions_ExcludesReadOnlyAndNonTextParameters()
     {
         ParameterCatalogItem writableText = CreateItem(

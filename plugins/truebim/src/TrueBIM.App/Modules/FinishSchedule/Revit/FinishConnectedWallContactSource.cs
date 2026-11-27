@@ -27,7 +27,7 @@ internal sealed class FinishConnectedWallContactSource
             if (!contacts.TryGetValue(item.Element.ElementId, out FinishOccurrence[]? candidates)) continue;
             // Mitred joins shorten one face by up to one wall thickness. Such a difference
             // is not evidence that the opposite room owns the finish: consult its connected contour.
-            double jointArea = RevitAreaUnits.ToSquareMeters(wall.Width * (item.Element.Bounds.MaxZ - item.Element.Bounds.MinZ));
+            double jointArea = JointArea(wall, item.Element.Bounds);
             HashSet<long> nearOwners = new(candidates
                 .Where(contact => candidates[0].AreaSquareMeters - contact.AreaSquareMeters <= jointArea + 1e-6)
                 .Select(contact => contact.RoomId));
@@ -71,6 +71,9 @@ internal sealed class FinishConnectedWallContactSource
         return Enumerable.Range(0, 2).Any(index => first.Plan.Distance(second.Plan.GetEndPoint(index)) <= tolerance
             || second.Plan.Distance(first.Plan.GetEndPoint(index)) <= tolerance);
     }
+
+    internal static double JointArea(Wall wall, AxisAlignedBox3D bounds) =>
+        RevitAreaUnits.ToSquareMeters(wall.Width * (bounds.MaxZ - bounds.MinZ));
 
     private sealed record WallPart(long Id, ElementId LevelId, ElementId TypeId, double Width, AxisAlignedBox3D Bounds, Curve Plan);
 }

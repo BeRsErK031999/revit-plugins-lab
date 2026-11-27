@@ -112,13 +112,29 @@ internal static class RevitFinishParameterAccess
         }
     }
 
-    internal static Parameter? FindParameter(Element element, ParameterReference reference)
+    internal static Parameter? FindParameter(Element element, ParameterReference reference,
+        ParameterBindingKind bindingKind = ParameterBindingKind.Instance)
     {
+        Parameter? direct = reference.IdentityKind switch
+        {
+            ParameterIdentityKind.Shared => element.get_Parameter(reference.SharedParameterGuid!.Value),
+            ParameterIdentityKind.BuiltIn => element.get_Parameter((BuiltInParameter)reference.BuiltInParameterId!.Value),
+            ParameterIdentityKind.Project when element.Document.GetElement(RevitElementIds.Create(
+                reference.DefinitionElementId!.Value)) is ParameterElement definition =>
+                element.get_Parameter(definition.GetDefinition()),
+            _ => null
+        };
+        if (direct is not null && direct.Element.Id == element.Id
+            && RevitParameterReferenceFactory.Create(direct, bindingKind)?.StableKey == reference.StableKey)
+        {
+            return direct;
+        }
+
         foreach (Parameter parameter in element.Parameters)
         {
             ParameterReference? candidate = RevitParameterReferenceFactory.Create(
                 parameter,
-                ParameterBindingKind.Instance);
+                bindingKind);
             if (candidate?.StableKey == reference.StableKey)
             {
                 return parameter;

@@ -61,12 +61,15 @@ public sealed class RoomFinishSnapshotBuilder
             NormalizedFinishDescription normalized = normalizer.Normalize(sourceDescription);
             if (isMissing)
             {
+                request.Elements.TryGetValue(occurrence.ElementId, out var classified);
+                long? typeId = classified?.Element.TypeId;
                 warnings.Add(new FinishAggregationWarning(
                     FinishAggregationWarningCode.MissingDescription,
-                    $"У элемента {occurrence.ElementId} не задано описание отделки; использован маркер «{FinishDescriptionNormalizer.MissingDescriptionDisplay}».",
+                    typeId is > 0 ? $"У типоразмера {typeId} не задано описание отделки."
+                        : $"Не удалось определить типоразмер и описание отделки элемента {occurrence.ElementId}.",
                     roomId,
                     occurrence.ElementId,
-                    category));
+                    category) { TypeId = typeId });
             }
 
             if (!described.TryGetValue(normalized.ComparisonKey, out List<DescribedOccurrence>? values))
