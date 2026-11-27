@@ -304,7 +304,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         FinishSchedulePreviewResult preview,
         FinishScheduleSettings settings)
     {
-        if (!preview.GeometryWarnings.Any(warning => warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved))
+        if (!FinishGeometryWarningClassifier.NeedsStoredOwnershipGuidance(preview))
         {
             yield break;
         }

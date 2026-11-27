@@ -12,7 +12,7 @@ public static class FinishScheduleDiagnosticGuidanceBuilder
         }
 
         List<string> guidance = [];
-        if (preview.GeometryWarnings.Any(warning => warning.Code == FinishGeometryWarningCode.StoredOwnershipUnresolved))
+        if (FinishGeometryWarningClassifier.NeedsStoredOwnershipGuidance(preview))
         {
             guidance.Add("Проверьте параметры принадлежности перечисленных элементов: укажите один существующий "
                 + "идентификатор помещения. Помещения с одинаковым идентификатором объединяются; "

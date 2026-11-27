@@ -143,6 +143,21 @@ public sealed class FinishScheduleUserNoticeBuilderTests
     }
 
     [Fact]
+    public void ContactFailureExplainsEmptyOwnershipWithoutAskingToEnableAutomaticAssignment()
+    {
+        FinishGeometryWarning[] warnings =
+        [
+            new(FinishGeometryWarningCode.UnassignedElement, "contact", ElementId: 41) { OwnershipFinding = FinishOwnershipFinding.NoContact },
+            new(FinishGeometryWarningCode.StoredOwnershipUnresolved, "empty", ElementId: 41) { OwnershipFinding = FinishOwnershipFinding.EmptyParameter }
+        ];
+        var preview = CreatePreview(warnings.Select(w => w.Message).ToArray(), warnings);
+        var settings = FinishScheduleSettings.CreateDefault();
+        var notice = builder.BuildPreview(preview, settings);
+        Assert.Contains("контакт с помещением не найден", Assert.Single(notice.WarningItems));
+        Assert.DoesNotContain("включите запись принадлежности", new FinishScheduleReportBuilder().BuildPreview(preview, settings));
+    }
+
+    [Fact]
     public void OutsideLevelRoomSearch_IsInformationalAndDoesNotMakeCalculationIncomplete()
     {
         var warning = new FinishGeometryWarning(FinishGeometryWarningCode.OutsideLevelRoomSearch, "outside-55", ElementId: 55)
