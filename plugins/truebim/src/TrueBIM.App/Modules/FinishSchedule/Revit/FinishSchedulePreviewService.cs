@@ -31,7 +31,12 @@ public sealed class FinishSchedulePreviewService
 
     public FinishScheduleCalculationResult BuildDetailed(
         Document document,
-        FinishScheduleSettings settings)
+        FinishScheduleSettings settings) => BuildDetailed(document, settings, []);
+
+    internal FinishScheduleCalculationResult BuildDetailed(
+        Document document,
+        FinishScheduleSettings settings,
+        IEnumerable<FinishGeometryWarning> roomGeometryWarnings)
     {
         Stopwatch totalTimer = Stopwatch.StartNew();
         Stopwatch stageTimer = Stopwatch.StartNew();
@@ -66,7 +71,7 @@ public sealed class FinishSchedulePreviewService
                 new FinishDescriptionNormalizer()).Build(new RoomFinishSnapshotRequest(
                     settings, request.Rooms, build.Classification.Elements, collection.Types, geometry));
             ownershipTargets = new FinishOwnershipValueBuilder().Build(
-                settings, assignmentElements, geometry, identifiers);
+                settings, assignmentElements, geometry, identifiers, request);
             timings.Add(Timing(FinishScheduleStageNames.PhysicalQuantities, stageTimer));
             stageTimer.Restart();
         }
@@ -76,7 +81,7 @@ public sealed class FinishSchedulePreviewService
             ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value),
             ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId)).Calculate(request);
         FinishQuantityResult allQuantities = new(stored.Occurrences,
-            stored.Warnings.Concat(geometry?.Warnings ?? []),
+            stored.Warnings.Concat(geometry?.Warnings ?? []).Concat(roomGeometryWarnings).Distinct(),
             geometry?.CacheMetrics, geometry?.Contacts);
         HashSet<long> outsideOwnedIds = new(allQuantities.Occurrences
             .Where(item => !selectedRoomIds.Contains(item.RoomId)).Select(item => item.ElementId));

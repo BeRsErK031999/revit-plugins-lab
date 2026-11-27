@@ -8,6 +8,20 @@ public sealed class FinishScheduleReportBuilder
 {
     private static readonly CultureInfo RussianCulture = CultureInfo.GetCultureInfo("ru-RU");
 
+    public string BuildSummary(FinishScheduleUserNotice notice)
+    {
+        const int warningLimit = 8;
+        StringBuilder summary = new();
+        summary.AppendLine(notice.Title).AppendLine(notice.Message);
+        foreach (string item in notice.SummaryItems)
+            summary.AppendLine(item);
+        foreach (string item in notice.WarningItems.Take(warningLimit))
+            summary.AppendLine("• " + item);
+        if (notice.WarningItems.Count > warningLimit)
+            summary.AppendLine($"Ещё замечаний в полном отчёте: {notice.WarningItems.Count - warningLimit}.");
+        return summary.ToString().TrimEnd();
+    }
+
     public string BuildPreview(
         FinishSchedulePreviewResult preview,
         FinishScheduleSettings settings)
@@ -157,7 +171,7 @@ public sealed class FinishScheduleReportBuilder
             : "состояние из плана";
         string geometry = quantities is null
             ? string.Empty
-            : $"; связей {quantities.OccurrenceCount}; площадь "
+            : $"; отнесено к помещениям {quantities.OccurrenceCount}; площадь "
                 + $"{quantities.AreaSquareMeters.ToString("N2", RussianCulture)} м²";
         report.AppendLine(
             $"{name} ({state}): собрано {counts.SourceCollected}; классифицировано {counts.Classified}; "
@@ -269,9 +283,9 @@ public sealed class FinishScheduleReportBuilder
 
         report.AppendLine();
         report.AppendLine($"ДИАГНОСТИКА ГЕОМЕТРИИ ({diagnostics.Length})");
-        report.AppendLine(
-            "Расчёт завершён без признаков неполных значений. События ниже оставлены для "
-                + "технической диагностики; полный текст Revit сохранён в truebim.log.");
+        if (!geometryWarnings.Any(FinishGeometryWarningClassifier.AffectsScheduleValue))
+            report.AppendLine("Геометрический расчёт завершён без признаков неполных значений.");
+        report.AppendLine("Ниже перечислены диагностические события. Подробности доступны в truebim.log.");
         for (int index = 0; index < diagnostics.Length; index++)
         {
             FinishGeometryWarning warning = diagnostics[index];

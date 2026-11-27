@@ -33,7 +33,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
         FinishOccurrenceAccumulator accumulator = new();
         List<FinishGeometryWarning> warnings = [];
-        HashSet<string> warningKeys = new(StringComparer.Ordinal);
+        HashSet<FinishGeometryWarning> warningKeys = [];
         FinishBoundingBoxIndex index = new(request.Elements);
         FinishRoomSearchBounds searchBounds = new(request.Rooms, request.Elements);
         HashSet<long> consideredElementIds = [];
@@ -136,6 +136,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 eligible.KeepLargest(contact);
         }
         IReadOnlyDictionary<long, long> contourOwners = new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
+        FinishOffLevelContactSource.AddContacts(document, request, roomGeometryCache, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
         FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(contacts, fullAreas, contourOwners);
         warnings.AddRange(new FinishUnassignedElementWarningBuilder().Build(request.Elements, contacts, consideredElementIds));
@@ -166,7 +167,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 or FinishGeometryWarningCode.SlabGeometryUnsupported
                 or FinishGeometryWarningCode.ProjectedAreaUnavailable)
             && contacts.Any(contact => contact.RoomId == warning.RoomId && contact.ElementId == warning.ElementId
-                && contact.Category == warning.Category && contact.Method == FinishQuantityMethod.ProjectedRoomFootprint);
+                && contact.Category == warning.Category && contact.Method is
+                    (FinishQuantityMethod.ProjectedRoomFootprint or FinishQuantityMethod.FinishFaceRoomContact));
     }
 
     private static IReadOnlyList<FinishClassifiedElement> QueryCandidates(
@@ -199,7 +201,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         IReadOnlyDictionary<long, FinishClassifiedElement> classifiedCeilings,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         FinishBoundaryElementIds directElementIds = new();
         foreach (Face roomFace in roomGeometry.Solid.Faces)
@@ -294,7 +296,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         IReadOnlyList<WallFaceProbe> probes = CreateWallProbes(
             roomId,
@@ -336,6 +338,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 double bestSolidArea = 0;
                 foreach (WallFaceProbe probe in probes)
                 {
+                    if (probe.Bounds is not null && candidate.Element.Bounds is { } elementBounds
+                        && !probe.Bounds.Intersects(elementBounds)) continue;
                     bestSolidArea = Math.Max(
                         bestSolidArea,
                         CalculateWallProbeArea(
@@ -383,7 +387,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         Solid elementSolid,
         WallFaceProbe probe,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys,
+        HashSet<FinishGeometryWarning> warningKeys,
         out bool hadIntersection)
     {
         hadIntersection = false;
@@ -427,7 +431,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         if (category == FinishPreviewCategory.Ceilings)
         {
@@ -568,7 +572,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishElementGeometryCache geometryCache,
         FinishOccurrenceAccumulator accumulator,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         foreach (FinishClassifiedElement candidate in candidates
                      .Where(element => element.Category == FinishPreviewCategory.Ceilings))
@@ -601,6 +605,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
             IReadOnlyList<FinishSolidProbe> roomColumns = CreateVerticalRoomColumns(
                 roomId,
+                elementId,
                 roomGeometry.Solid,
                 elementBounds.MaxZ + ProbeThickness,
                 warnings,
@@ -680,13 +685,14 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         long roomId,
         Solid roomSolid,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         List<WallFaceProbe> probes = [];
         foreach (PlanarFace face in roomSolid.Faces
                      .OfType<PlanarFace>()
                      .Where(face => Math.Abs(face.FaceNormal.Z) <= VerticalNormalTolerance))
         {
+            AxisAlignedBox3D? bounds = GetFaceProbeBounds(face);
             try
             {
                 XYZ normal = face.FaceNormal.Normalize();
@@ -699,7 +705,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     loops,
                     normal.Negate(),
                     ProbeThickness);
-                probes.Add(new WallFaceProbe(normal, [outward, inward]));
+                probes.Add(new WallFaceProbe(normal, [outward, inward], bounds));
             }
             catch (Exception exception)
             {
@@ -708,7 +714,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     FinishPreviewCategory.Walls,
                     exception,
                     warnings,
-                    warningKeys);
+                    warningKeys,
+                    bounds: bounds);
             }
         }
 
@@ -720,7 +727,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         Solid roomSolid,
         FinishPreviewCategory category,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         bool floor = category == FinishPreviewCategory.Floors;
         List<FinishSolidProbe> probes = [];
@@ -744,7 +751,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
             catch (Exception exception)
             {
-                AddProbeWarning(roomId, category, exception, warnings, warningKeys);
+                AddProbeWarning(roomId, category, exception, warnings, warningKeys, bounds: GetFaceProbeBounds(face));
             }
         }
 
@@ -753,10 +760,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
 
     private static IReadOnlyList<FinishSolidProbe> CreateVerticalRoomColumns(
         long roomId,
+        long elementId,
         Solid roomSolid,
         double topZ,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         List<FinishSolidProbe> columns = [];
         IEnumerable<PlanarFace> bottomFaces = roomSolid.Faces
@@ -787,7 +795,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     FinishPreviewCategory.Ceilings,
                     exception,
                     warnings,
-                    warningKeys);
+                    warningKeys,
+                    elementId: elementId);
             }
         }
 
@@ -877,7 +886,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         Solid first,
         Solid second,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         if (TryExecuteIntersection(first, second, out Solid? intersection, out Exception? failure))
         {
@@ -937,7 +946,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishPreviewCategory category,
         Exception exception,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         AddWarning(
             warnings,
@@ -992,7 +1001,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishPreviewCategory category,
         FinishElementGeometryLookup lookup,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys)
     {
         AddWarning(
             warnings,
@@ -1012,7 +1021,9 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         FinishPreviewCategory category,
         Exception exception,
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys)
+        HashSet<FinishGeometryWarning> warningKeys,
+        AxisAlignedBox3D? bounds = null,
+        long? elementId = null)
     {
         AddWarning(
             warnings,
@@ -1021,22 +1032,42 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                 FinishGeometryWarningCode.ProbeCreationFailed,
                 $"Не удалось построить geometry probe помещения {roomId}: {exception.Message}",
                 RoomId: roomId,
-                Category: category));
+                ElementId: elementId,
+                Category: category) { ProbeBounds = bounds });
     }
 
     private static void AddWarning(
         List<FinishGeometryWarning> warnings,
-        HashSet<string> warningKeys,
+        HashSet<FinishGeometryWarning> warningKeys,
         FinishGeometryWarning warning)
     {
-        string key = $"{warning.Code}|{warning.RoomId}|{warning.ElementId}|{warning.Category}|{warning.Message}";
-        if (warningKeys.Add(key))
+        if (warningKeys.Add(warning))
         {
             warnings.Add(warning);
         }
     }
 
-    private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Solids);
+    private static AxisAlignedBox3D? GetFaceProbeBounds(PlanarFace face)
+    {
+        // A planar UV rectangle encloses the trimmed face, including curved edges.
+        // Pad all axes to cover both directions of extrusion and numerical roundoff.
+        try
+        {
+            using BoundingBoxUV uv = face.GetBoundingBox();
+            XYZ[] corners = [face.Evaluate(uv.Min), face.Evaluate(new UV(uv.Min.U, uv.Max.V)),
+                face.Evaluate(uv.Max), face.Evaluate(new UV(uv.Max.U, uv.Min.V))];
+            const double padding = ProbeThickness + 1e-6;
+            return new AxisAlignedBox3D(corners.Min(p => p.X) - padding, corners.Min(p => p.Y) - padding,
+                corners.Min(p => p.Z) - padding, corners.Max(p => p.X) + padding,
+                corners.Max(p => p.Y) + padding, corners.Max(p => p.Z) + padding);
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Solids, AxisAlignedBox3D? Bounds);
 
     private sealed class FinishSolidProbe
     {

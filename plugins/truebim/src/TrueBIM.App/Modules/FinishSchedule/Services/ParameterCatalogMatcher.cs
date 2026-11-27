@@ -47,13 +47,13 @@ public sealed class ParameterCatalogMatcher
                 $"{requirement.RoleName}: параметр отсутствует у категорий {string.Join(", ", missingCategories.Select(category => category.Name))}."));
         }
 
-        if (item.SampleCount == 0)
+        if (item.SampleCount == 0 && !item.HasProjectBinding)
         {
             issues.Add(new ParameterCompatibilityIssue(
                 "samples",
                 $"{requirement.RoleName}: в документе нет элементов для проверки параметра."));
         }
-        else if (requirement.RequireWritable && !item.IsWritableForAllSamples)
+        else if (requirement.RequireWritable && item.ReadOnlySampleCount > 0)
         {
             issues.Add(new ParameterCompatibilityIssue(
                 "read_only",

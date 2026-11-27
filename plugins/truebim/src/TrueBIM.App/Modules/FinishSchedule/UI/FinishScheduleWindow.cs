@@ -200,12 +200,23 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         ToolTipService.SetShowOnDisabled(generateButton, true);
 
         copyReportButton = TrueBimUi.CreateSecondaryButton(
-            "Копировать отчёт",
+            "Копировать отчёт ▾",
             TrueBimIcon.CopyParameters,
-            (_, _) => CopyCurrentReport(),
+            (sender, _) =>
+            {
+                Button button = (Button)sender;
+                button.ContextMenu.PlacementTarget = button;
+                button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                button.ContextMenu.IsOpen = true;
+            },
             isEnabled: false,
             minWidth: 145);
-        copyReportButton.ToolTip = "Скопировать полный отчёт со всеми предупреждениями и таймингами стадий.";
+        MenuItem summaryItem = new() { Header = "Краткая сводка" };
+        summaryItem.Click += (_, _) => CopyCurrentReport(full: false);
+        MenuItem fullItem = new() { Header = "Полный отчёт со всеми ID" };
+        fullItem.Click += (_, _) => CopyCurrentReport(full: true);
+        copyReportButton.ContextMenu = new ContextMenu { Items = { summaryItem, fullItem } };
+        copyReportButton.ToolTip = "Скопировать сводку по площадям или подробный отчёт для диагностики.";
         ToolTipService.SetShowOnDisabled(copyReportButton, true);
 
         openScheduleButton = TrueBimUi.CreateSecondaryButton(
@@ -1121,7 +1132,7 @@ public sealed class FinishScheduleWindow : TrueBimWindow
         };
     }
 
-    private void CopyCurrentReport()
+    private void CopyCurrentReport(bool full)
     {
         if (string.IsNullOrWhiteSpace(currentReportText))
         {
@@ -1132,8 +1143,9 @@ public sealed class FinishScheduleWindow : TrueBimWindow
 
         try
         {
-            Clipboard.SetText(currentReportText);
-            footerStatus.Text = "Полный отчёт скопирован в буфер обмена.";
+            if (!full && currentUserNotice is null) return;
+            Clipboard.SetText(full ? currentReportText : reportBuilder.BuildSummary(currentUserNotice!));
+            footerStatus.Text = full ? "Полный отчёт скопирован в буфер обмена." : "Краткая сводка скопирована в буфер обмена.";
             footerStatus.Foreground = TrueBimBrushes.Success;
         }
         catch (ExternalException exception)
