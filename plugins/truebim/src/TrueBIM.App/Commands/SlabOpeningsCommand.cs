@@ -3,6 +3,7 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using TrueBIM.App.Modules.SlabReinforcement;
+using TrueBIM.App.Services.Logging;
 using TrueBIM.App.UI;
 
 namespace TrueBIM.App.Commands;
@@ -14,9 +15,11 @@ public sealed class SlabOpeningsCommand : IExternalCommand
     {
         var ui = data.Application.ActiveUIDocument;
         if (ui == null || ui.Document.IsFamilyDocument) return Result.Cancelled;
+        ElementId? floorId = null;
         try
         {
             var floor = SlabReinforcementCommand.PickFloor(ui);
+            floorId = floor.Id;
             var edge = SlabReinforcementCommand.PickEdge(ui, floor, "Выделите грань плиты вдоль буквенных осей для обрамления отверстий");
             var geometry = new SlabGeometry(floor, edge.Direction);
             var window = new SlabOpeningWindow(floor, SlabOpeningService.ReadLayers(floor, geometry));
@@ -40,6 +43,15 @@ public sealed class SlabOpeningsCommand : IExternalCommand
         catch (Exception ex)
         {
             message = ex.Message;
+            try
+            {
+                var logger = new FileTrueBimLogger(new TrueBimLogPaths());
+                logger.Error($"Ошибка обрамления отверстий. ID плиты: {floorId?.ToString() ?? "не выбрана"}.", ex);
+            }
+            catch (Exception logError) when (logError is System.IO.IOException or UnauthorizedAccessException)
+            {
+                message += "\nНе удалось записать подробности в журнал TrueBIM.";
+            }
             return Result.Failed;
         }
     }

@@ -66,7 +66,9 @@ internal static class SlabOpeningService
                 if (first is Line && second is Line) continue; // Disjoint planar line segments reach their minimum at an endpoint.
                 try
                 {
-                    first.ComputeClosestPoints(second, true, true, false, out var closest);
+                    // Revit 2024 requires an allocated result list even though its API declares this parameter as out.
+                    IList<ClosestPointsPairBetweenTwoCurves> closest = new List<ClosestPointsPairBetweenTwoCurves>();
+                    first.ComputeClosestPoints(second, true, true, false, out closest);
                     foreach (var point in closest) best = Math.Min(best, point.Distance);
                 }
                 catch (Autodesk.Revit.Exceptions.InvalidOperationException)
