@@ -173,6 +173,11 @@ public sealed class FinishScheduleUserNoticeBuilder
             .Select(w => w.ElementId).Distinct().Count();
         if (sharedContacts > 0) summary.Add($"Элементов с касаниями нескольких помещений: {sharedContacts}. Владелец и площади контакта — в списке «Элементы».");
 
+        int recoveredRooms = preview.GeometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.WallFaceRecovered)
+            .Select(w => w.RoomId).Distinct().Count();
+        if (recoveredRooms > 0)
+            summary.Add($"В {recoveredRooms} помещениях Revit не смог проверить границу стены целиком. Плагин проверил её по частям. Подробности по ID помещений есть в полном отчёте.");
+
         HashSet<string> geometryMessages = preview.GeometryWarnings
             .Select(warning => warning.Message)
             .ToHashSet(StringComparer.Ordinal);
@@ -187,7 +192,8 @@ public sealed class FinishScheduleUserNoticeBuilder
             .ToArray();
         var actionableGeometry = preview.GeometryWarnings.Where(FinishGeometryWarningClassifier.AffectsScheduleValue).ToArray();
         IReadOnlyList<FinishGeometryWarning> visibleGeometry = actionableGeometry.Length == 0
-            ? preview.GeometryWarnings.Where(w => w.Code != FinishGeometryWarningCode.OutsideRoomProjection).ToArray() : actionableGeometry;
+            ? preview.GeometryWarnings.Where(w => w.Code is not (FinishGeometryWarningCode.OutsideRoomProjection
+                or FinishGeometryWarningCode.WallFaceRecovered)).ToArray() : actionableGeometry;
         string[] geometryWarnings = visibleGeometry
             .GroupBy(warning => $"{warning.Code}:{warning.Category}:{warning.StoredOwnershipIssue}", StringComparer.Ordinal)
             .Select(FormatGeometryWarningGroup)
@@ -344,7 +350,7 @@ public sealed class FinishScheduleUserNoticeBuilder
             FinishGeometryWarningCode.SlabGeometryUnsupported =>
                 $"Элементов {category} со слишком сложной формой для точного расчёта: {count}.",
             FinishGeometryWarningCode.ProbeCreationFailed =>
-                $"Помещений, для которых не удалось построить область проверки {category}: {group.Select(warning => warning.RoomId).Distinct().Count()}.",
+                $"Revit не смог проверить часть границы для {category}. Проверьте принадлежность ближайших элементов отделки в модели.",
             FinishGeometryWarningCode.ProjectedAreaUnavailable =>
                 $"Пересечений {category}, для которых не удалось определить площадь: {count}.",
             _ => $"Геометрических замечаний для {category}: {count}."

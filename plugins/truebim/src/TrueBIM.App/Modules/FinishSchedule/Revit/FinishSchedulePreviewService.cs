@@ -90,7 +90,17 @@ public sealed class FinishSchedulePreviewService
             ownershipTargets.Targets.ToDictionary(target => target.ElementId, target => target.Value),
             ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.RoomId),
             ownershipTargets.RoomAssignments.ToDictionary(item => item.ElementId, item => item.FloorAreas)).Calculate(request);
-        var geometryWarnings = (geometry?.Warnings ?? []).Concat(roomGeometryWarnings).ToArray();
+        var wallAreas = stored.Occurrences.Where(o => o.Category == FinishPreviewCategory.Walls).ToLookup(o => o.RoomId);
+        var geometryWarnings = (geometry?.Warnings ?? []).Concat(roomGeometryWarnings).Select(warning =>
+        {
+            if (warning.Code != FinishGeometryWarningCode.WallFaceRecovered || warning.RoomId is not long roomId)
+                return warning;
+            var walls = wallAreas[roomId];
+            string outcome = walls.Any()
+                ? $"Ведомость учитывает стены этого помещения: {walls.Count()} шт., {walls.Sum(o => o.AreaSquareMeters):0.00} м²."
+                : $"Отделочные стены в ведомость этого помещения не попали. Если ожидаете отделку, проверьте стены в активной модели и значение «{settings.Walls.ClassificationValue}» в параметре типа «{FinishScheduleSettings.ClassificationParameterName}».";
+            return warning with { Message = warning.Message + " " + outcome };
+        }).ToArray();
         var unavailableFloors = geometryWarnings.Where(w => w.Code == FinishGeometryWarningCode.ProjectedAreaUnavailable
                 && w.Category == FinishPreviewCategory.Floors && w.ElementId.HasValue)
             .Select(w => w.ElementId!.Value).ToHashSet();
@@ -171,7 +181,7 @@ public sealed class FinishSchedulePreviewService
             logger.Warning(
                 $"Finish Schedule geometry warning [{impact}] {warning.Code}; "
                     + $"Room={warning.RoomId?.ToString() ?? "-"}; Element={warning.ElementId?.ToString() ?? "-"}; "
-                    + $"Category={warning.Category?.ToString() ?? "-"}; {warning.Message}");
+                    + $"Category={warning.Category?.ToString() ?? "-"}; {warning.Message} {warning.TechnicalDetail}".TrimEnd());
         }
 
         return new FinishScheduleCalculationResult(

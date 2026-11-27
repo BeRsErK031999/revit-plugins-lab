@@ -412,36 +412,34 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         HashSet<FinishGeometryWarning> warningKeys,
         out bool hadIntersection)
     {
-        hadIntersection = false;
-        double bestArea = 0;
-        foreach (Solid probeSolid in probe.Solids)
+        double outward = MeasureSide(probe.Outward, out bool outwardHit);
+        double inward = MeasureSide(probe.Inward, out bool inwardHit);
+        hadIntersection = outwardHit || inwardHit;
+        return Math.Max(outward, inward);
+
+        double MeasureSide(IReadOnlyList<Solid> fragments, out bool intersects)
         {
-            Solid? intersection = TryIntersect(
-                roomId,
-                elementId,
-                FinishPreviewCategory.Walls,
-                probeSolid,
-                elementSolid,
-                warnings,
-                warningKeys);
-            if (intersection is null || intersection.Volume <= MinimumIntersectionVolume)
+            intersects = false;
+            double total = 0;
+            foreach (Solid fragment in fragments)
             {
-                continue;
-            }
+                using Solid? intersection = TryIntersect(roomId, elementId, FinishPreviewCategory.Walls,
+                    fragment, elementSolid, warnings, warningKeys);
+                if (intersection is null && probe.IsMesh)
+                {
+                    AddWarning(warnings, warningKeys, new FinishGeometryWarning(
+                        FinishGeometryWarningCode.ProbeCreationFailed,
+                        $"Помещение {roomId}, стена {elementId}. Revit не смог проверить один из участков стены даже по частям. Автоматическое назначение для этой стены пропущено. Сверьте её принадлежность в модели.",
+                        roomId, elementId, FinishPreviewCategory.Walls));
+                }
+                if (intersection is null || intersection.Volume <= MinimumIntersectionVolume) continue;
 
-            hadIntersection = true;
-            double? area = FinishGeometryAreaRules.SelectParallelFaceArea(
-                GetFaceMeasures(intersection),
-                probe.Normal.X,
-                probe.Normal.Y,
-                probe.Normal.Z);
-            if (area.HasValue)
-            {
-                bestArea = Math.Max(bestArea, area.Value);
+                intersects = true;
+                total += FinishGeometryAreaRules.SelectParallelFaceArea(GetFaceMeasures(intersection),
+                    probe.Normal.X, probe.Normal.Y, probe.Normal.Z) ?? 0;
             }
+            return total;
         }
-
-        return bestArea;
     }
 
     private static void CalculateSlabs(
@@ -727,10 +725,22 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     loops,
                     normal.Negate(),
                     ProbeThickness);
-                probes.Add(new WallFaceProbe(normal, [outward, inward], bounds));
+                probes.Add(new WallFaceProbe(normal, [outward], [inward], bounds));
             }
             catch (Exception exception)
             {
+                // A trimmed face can be valid even when its consecutive edge endpoints disagree.
+                // Revit's face mesh preserves the opening boundaries without joining those endpoints.
+                WallFaceProbe? recovered = TryCreateWallMeshProbe(face, bounds);
+                if (recovered is not null)
+                {
+                    probes.Add(recovered);
+                    AddWarning(warnings, warningKeys, new FinishGeometryWarning(
+                        FinishGeometryWarningCode.WallFaceRecovered,
+                        $"Помещение {roomId}. Revit не смог проверить одну из границ стен целиком. Плагин проверил эту поверхность по частям. Исправлять контур из-за этого сообщения не требуется.",
+                        RoomId: roomId, Category: FinishPreviewCategory.Walls));
+                    continue;
+                }
                 AddProbeWarning(
                     roomId,
                     FinishPreviewCategory.Walls,
@@ -742,6 +752,25 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         }
 
         return probes;
+    }
+
+    private static WallFaceProbe? TryCreateWallMeshProbe(PlanarFace face, AxisAlignedBox3D? bounds)
+    {
+        try
+        {
+            XYZ normal = face.FaceNormal.Normalize();
+            var outward = CreateTriangularExtrusions(face, normal, ProbeThickness, requireComplete: true);
+            var inward = CreateTriangularExtrusions(face, -normal, ProbeThickness, requireComplete: true);
+            double area = face.Area;
+            // Reject an incomplete mesh or one whose projected area differs by more than 0.1%.
+            bool CoversFace(IReadOnlyList<Solid> fragments) => fragments.Count > 0 && area > 0
+                && Math.Abs(fragments.Sum(fragment => fragment.Volume) / ProbeThickness - area) <= area * 0.001;
+            return CoversFace(outward) && CoversFace(inward) ? new WallFaceProbe(normal, outward, inward, bounds, IsMesh: true) : null;
+        }
+        catch (Autodesk.Revit.Exceptions.ApplicationException)
+        {
+            return null;
+        }
     }
 
     private static IReadOnlyList<FinishSolidProbe> CreateHorizontalProbes(
@@ -828,7 +857,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     private static IReadOnlyList<Solid> CreateTriangularExtrusions(
         Face face,
         XYZ direction,
-        double distance)
+        double distance,
+        bool requireComplete = false)
     {
         List<Solid> fragments = [];
         Mesh mesh;
@@ -865,6 +895,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
             catch
             {
+                if (requireComplete) return [];
                 // The primary probe remains valid when an optional recovery fragment cannot be built.
             }
         }
@@ -975,10 +1006,10 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             warningKeys,
             new FinishGeometryWarning(
                 FinishGeometryWarningCode.BooleanIntersectionFailed,
-                $"Не удалось пересечь геометрию помещения {roomId} и элемента {elementId}: {exception.Message}",
+                $"Помещение {roomId}, элемент {elementId}. Revit не смог точно измерить одно из пересечений. Плагин продолжил расчёт по остальным граням и доступным контактам.",
                 RoomId: roomId,
                 ElementId: elementId,
-                Category: category));
+                Category: category) { TechnicalDetail = exception.Message });
     }
 
     private static IReadOnlyList<FinishFaceMeasure> GetFaceMeasures(Solid solid)
@@ -1052,11 +1083,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             warningKeys,
             new FinishGeometryWarning(
                 FinishGeometryWarningCode.ProbeCreationFailed,
-                $"Не удалось построить geometry probe помещения {roomId}: {exception.Message}",
+                $"Помещение {roomId}. Revit не смог построить проверочный объём вдоль границы для {FinishCategoryName(category)}. Принадлежность отделки возле этого участка осталась неподтверждённой. Проверьте её в модели перед формированием ведомости.",
                 RoomId: roomId,
                 ElementId: elementId,
                 Category: category)
-            { ProbeBounds = bounds });
+            { ProbeBounds = bounds, TechnicalDetail = exception.Message });
     }
 
     private static void AddWarning(
@@ -1090,7 +1121,15 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         }
     }
 
-    private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Solids, AxisAlignedBox3D? Bounds);
+    private static string FinishCategoryName(FinishPreviewCategory category) => category switch
+    {
+        FinishPreviewCategory.Walls => "стен",
+        FinishPreviewCategory.Floors => "полов",
+        _ => "потолков"
+    };
+
+    private sealed record WallFaceProbe(XYZ Normal, IReadOnlyList<Solid> Outward, IReadOnlyList<Solid> Inward,
+        AxisAlignedBox3D? Bounds, bool IsMesh = false);
 
     private sealed class FinishSolidProbe
     {

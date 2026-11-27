@@ -85,7 +85,7 @@ public sealed class FinishSchedulePreviewBuilder
             classification,
             inScopeIds);
 
-        List<string> warnings = BuildWarnings(roomScope, classification, index);
+        List<string> warnings = BuildWarnings(roomScope, classification, index, collection, settings.Scope);
         FinishClassifiedElement[] inScopeElements = classification.Elements
             .Where(element => inScopeIds[element.Category].Contains(element.Element.ElementId))
             .OrderBy(element => element.Element.ElementId)
@@ -124,7 +124,9 @@ public sealed class FinishSchedulePreviewBuilder
     private static List<string> BuildWarnings(
         FinishRoomScopeResult roomScope,
         FinishClassificationResult classification,
-        FinishBoundingBoxIndex index)
+        FinishBoundingBoxIndex index,
+        FinishElementCollection collection,
+        ReportScopeSettings scope)
     {
         List<string> warnings = [];
         if (roomScope.InvalidRooms.Count > 0)
@@ -137,11 +139,30 @@ public sealed class FinishSchedulePreviewBuilder
             warnings.Add($"Без значения параметра scope: {roomScope.MissingScopeValueCount}.");
         }
 
-        int configurationSkips = classification.SkippedElements.Count(skip =>
-            skip.Reason != FinishClassificationSkipReason.ValueDoesNotMatch);
-        if (configurationSkips > 0)
+        var levelElements = scope.Kind == ReportScopeKind.Level
+            ? collection.Walls.Concat(collection.Floors).Concat(collection.Ceilings)
+                .Where(element => element.LevelId == scope.LevelId).Select(element => element.ElementId).ToHashSet()
+            : null;
+        foreach (var group in classification.SkippedElements
+                     .Where(skip => skip.Reason != FinishClassificationSkipReason.ValueDoesNotMatch)
+                     .GroupBy(skip => skip.Reason))
         {
-            warnings.Add($"Элементов с отсутствующей или неоднозначной классификацией: {configurationSkips}.");
+            string parameter = FinishScheduleSettings.ClassificationParameterName;
+            string reason = group.Key switch
+            {
+                FinishClassificationSkipReason.MissingType =>
+                    "Revit не вернул тип. Проверьте тип элемента в модели.",
+                FinishClassificationSkipReason.MissingClassificationParameter =>
+                    $"В типе нет параметра «{parameter}». Проверьте тип, если элемент должен входить в отделку.",
+                FinishClassificationSkipReason.EmptyClassificationValue =>
+                    $"В типе пуст параметр «{parameter}». Для отделки укажите значение из настроек ведомости. Для остальных элементов поле можно оставить пустым.",
+                FinishClassificationSkipReason.AmbiguousFloorClassification =>
+                    "Одно значение типа в настройках обозначает и пол, и потолок. Укажите разные значения и повторите расчёт.",
+                _ => throw new ArgumentOutOfRangeException(nameof(group.Key))
+            };
+            long[] ids = group.Select(skip => skip.ElementId).OrderBy(id => id).ToArray();
+            string level = levelElements is null ? "" : $" К выбранному уровню привязано: {ids.Count(levelElements.Contains)}.";
+            warnings.Add($"Проверка типов по всему проекту. Пропущено элементов: {ids.Length} (ID {string.Join(", ", ids)}).{level} {reason}");
         }
 
         if (index.ElementsWithoutBounds > 0)

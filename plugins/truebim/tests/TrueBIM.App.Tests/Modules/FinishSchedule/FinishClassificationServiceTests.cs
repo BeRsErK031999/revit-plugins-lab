@@ -84,6 +84,22 @@ public sealed class FinishClassificationServiceTests
             Assert.Single(result.SkippedElements).Reason);
     }
 
+    [Fact]
+    public void LevelPreview_ExplainsSkippedTypesAndSeparatesProjectCountFromLevelCount()
+    {
+        var settings = FinishScheduleSettings.CreateDefault() with { Scope = new(ReportScopeKind.Level, 1, null, "") };
+        var collection = Collection(
+            [Element(10, 100, FinishPhysicalCategory.Floor) with { LevelId = 2 },
+             Element(11, 101, FinishPhysicalCategory.Wall) with { LevelId = 1 },
+             Element(12, 102, FinishPhysicalCategory.Wall) with { LevelId = 1 }],
+            [new FinishTypeSnapshot(100, "", true), new FinishTypeSnapshot(101, null, false),
+             new FinishTypeSnapshot(102, "Перегородки", true)]);
+        var preview = new FinishSchedulePreviewBuilder(new RoomScopeService(), new FinishClassificationService()).Build(collection, settings);
+        Assert.Contains(preview.Warnings, text => text.Contains("ID 10") && text.Contains("уровню привязано: 0") && text.Contains("пуст параметр «Модель»"));
+        Assert.Contains(preview.Warnings, text => text.Contains("ID 11") && text.Contains("уровню привязано: 1") && text.Contains("нет параметра"));
+        Assert.DoesNotContain(preview.Warnings, text => text.Contains("ID 12"));
+    }
+
     private static FinishElementCollection Collection(
         IEnumerable<FinishElementCandidateSnapshot> elements,
         IEnumerable<FinishTypeSnapshot> types)

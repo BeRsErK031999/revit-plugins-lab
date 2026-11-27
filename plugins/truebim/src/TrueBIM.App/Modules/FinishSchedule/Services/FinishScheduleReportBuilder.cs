@@ -294,7 +294,7 @@ public sealed class FinishScheduleReportBuilder
                     + $"помещение {FormatElementId(warning.RoomId)}; "
                     + $"элемент {FormatElementId(warning.ElementId)}; "
                     + $"{FormatDiagnosticCode(warning.Code)}."
-                    + (warning.Code == FinishGeometryWarningCode.MultipleRoomContacts ? " " + warning.Message : ""));
+                    + (warning.Code is FinishGeometryWarningCode.MultipleRoomContacts or FinishGeometryWarningCode.WallFaceRecovered ? " " + warning.Message : ""));
         }
     }
 
@@ -373,6 +373,7 @@ public sealed class FinishScheduleReportBuilder
         {
             FinishGeometryWarningCode.BooleanIntersectionFailed =>
                 "проверочное пересечение геометрии не выполнено",
+            FinishGeometryWarningCode.WallFaceRecovered => "граница стены проверена по частям",
             FinishGeometryWarningCode.ElementNotFound => "элемент не найден при проверке",
             FinishGeometryWarningCode.ElementGeometryUnavailable =>
                 "геометрия элемента недоступна для проверки",

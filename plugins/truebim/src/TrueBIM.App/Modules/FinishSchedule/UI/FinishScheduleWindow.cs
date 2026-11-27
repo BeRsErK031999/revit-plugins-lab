@@ -40,21 +40,21 @@ public sealed class FinishScheduleWindow : TrueBimWindow
     private readonly CategoryControls walls = new(
         "Стены",
         "Внутренняя отделка",
-        "Значение «Группа модели» для типов отделочных стен.",
+        "Значение «Модель» для типов отделочных стен.",
         FinishSchedulePreferredParameterNames.WallsOwnership,
         FinishSchedulePreferredParameterNames.WallsDescription,
         FinishSchedulePreferredParameterNames.WallsArea);
     private readonly CategoryControls floors = new(
         "Полы",
         "Пол",
-        "Значение «Группа модели» для типов отделочных перекрытий пола.",
+        "Значение «Модель» для типов отделочных перекрытий пола.",
         FinishSchedulePreferredParameterNames.FloorsOwnership,
         FinishSchedulePreferredParameterNames.FloorsDescription,
         FinishSchedulePreferredParameterNames.FloorsArea);
     private readonly CategoryControls ceilings = new(
         "Потолки",
         "Потолки",
-        "Значение «Группа модели» для типов потолков.",
+        "Значение «Модель» для типов потолков.",
         FinishSchedulePreferredParameterNames.CeilingsOwnership,
         FinishSchedulePreferredParameterNames.CeilingsDescription,
         FinishSchedulePreferredParameterNames.CeilingsArea);

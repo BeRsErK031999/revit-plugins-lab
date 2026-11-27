@@ -71,8 +71,8 @@ internal sealed class FinishProjectedContactSource
             catch (Exception exception)
             {
                 warnings.Add(new FinishGeometryWarning(FinishGeometryWarningCode.BooleanIntersectionFailed,
-                    $"Дополнительная проверка контура: {exception.Message}", room.ElementId,
-                    candidate.Element.ElementId, candidate.Category));
+                    $"Помещение {room.ElementId}, элемент {candidate.Element.ElementId}. Проверить контакт по контуру на высоте отделки не удалось. Плагин использует контакты, подтверждённые другими проверками.",
+                    room.ElementId, candidate.Element.ElementId, candidate.Category) { TechnicalDetail = exception.Message });
             }
         }
     }

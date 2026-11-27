@@ -76,7 +76,7 @@ public sealed record FinishScheduleSettings(
     string ScheduleName,
     FinishScheduleColumnWidths? ColumnWidths = null)
 {
-    public const string ClassificationParameterName = "Группа модели";
+    public const string ClassificationParameterName = "Модель";
     public const string DefaultScheduleName = "Помещения • Ведомость отделки помещений";
 
     public FinishScheduleColumnWidths EffectiveColumnWidths =>
