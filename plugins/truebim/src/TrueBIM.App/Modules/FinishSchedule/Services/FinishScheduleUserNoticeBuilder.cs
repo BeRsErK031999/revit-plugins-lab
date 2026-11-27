@@ -193,7 +193,7 @@ public sealed class FinishScheduleUserNoticeBuilder
         var actionableGeometry = preview.GeometryWarnings.Where(FinishGeometryWarningClassifier.AffectsScheduleValue).ToArray();
         IReadOnlyList<FinishGeometryWarning> visibleGeometry = actionableGeometry.Length == 0
             ? preview.GeometryWarnings.Where(w => w.Code is not (FinishGeometryWarningCode.OutsideRoomProjection
-                or FinishGeometryWarningCode.WallFaceRecovered)).ToArray() : actionableGeometry;
+                or FinishGeometryWarningCode.WallFaceRecovered or FinishGeometryWarningCode.WallOwnerConfirmed)).ToArray() : actionableGeometry;
         string[] geometryWarnings = visibleGeometry
             .GroupBy(warning => $"{warning.Code}:{warning.Category}:{warning.StoredOwnershipIssue}", StringComparer.Ordinal)
             .Select(FormatGeometryWarningGroup)

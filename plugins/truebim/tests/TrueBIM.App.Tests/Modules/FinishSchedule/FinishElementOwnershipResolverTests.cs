@@ -6,6 +6,19 @@ namespace TrueBIM.App.Tests.Modules.FinishSchedule;
 
 public sealed class FinishElementOwnershipResolverTests
 {
+    [Theory]
+    [InlineData(6.67, 0.75, 0.06, FinishQuantityMethod.RoomBoundarySubface, true)]
+    [InlineData(0.81, 0.75, 0.06, FinishQuantityMethod.RoomBoundarySubface, false)]
+    [InlineData(0.40, 0.75, 0.06, FinishQuantityMethod.RoomBoundarySubface, false)]
+    [InlineData(6.67, 0.75, 0.06, FinishQuantityMethod.ConnectedWallContour, false)]
+    public void UnmeasuredWallPatchRequiresDecisiveDirectBoundary(double area, double limit, double joint,
+        FinishQuantityMethod method, bool expected)
+    {
+        FinishOccurrence contact = new(1, 10, FinishPreviewCategory.Walls, area, method);
+        Assert.Equal(expected, FinishElementOwnershipResolver.DirectWallContactDecides([contact], limit, joint));
+        Assert.False(FinishElementOwnershipResolver.DirectWallContactDecides([contact, new(2, 10, FinishPreviewCategory.Walls, area, method)], limit, joint));
+    }
+
     [Fact]
     public void VerifiedContourOwnerWinsSmallContactDifferenceAndKeepsNativeArea()
     {

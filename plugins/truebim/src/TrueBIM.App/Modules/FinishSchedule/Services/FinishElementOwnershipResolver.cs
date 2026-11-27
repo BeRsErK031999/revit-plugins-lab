@@ -5,6 +5,12 @@ namespace TrueBIM.App.Modules.FinishSchedule.Services;
 /// <summary>Контакт определяет помещение; в ведомость попадает полная площадь элемента один раз.</summary>
 public sealed class FinishElementOwnershipResolver
 {
+    public static bool DirectWallContactDecides(IReadOnlyList<FinishOccurrence> contacts,
+        double unmeasuredAreaLimit, double jointArea) =>
+        contacts.Count == 1 && contacts[0].Category == FinishPreviewCategory.Walls
+        && contacts[0].Method == FinishQuantityMethod.RoomBoundarySubface
+        && contacts[0].AreaSquareMeters > unmeasuredAreaLimit + jointArea + 1e-6;
+
     public FinishQuantityResult Resolve(
         IEnumerable<FinishOccurrence> contacts,
         IReadOnlyDictionary<long, double> fullAreas,

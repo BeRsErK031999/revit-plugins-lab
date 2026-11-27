@@ -29,7 +29,8 @@ public enum FinishGeometryWarningCode
     UnassignedElement,
     StoredOwnershipUnresolved,
     OutsideRoomProjection,
-    WallFaceRecovered
+    WallFaceRecovered,
+    WallOwnerConfirmed
 }
 
 public sealed record FinishGeometryWarning(
@@ -48,6 +49,7 @@ public sealed record FinishGeometryWarning(
     public IReadOnlyList<FinishOccurrence> CompetingContacts { get; init; } = [];
     public string? StoredOwnershipIssue { get; init; }
     public string? TechnicalDetail { get; init; }
+    public double? UnmeasuredWallContactLimit { get; init; }
     public AxisAlignedBox3D? ProbeBounds { get; init; }
 }
 

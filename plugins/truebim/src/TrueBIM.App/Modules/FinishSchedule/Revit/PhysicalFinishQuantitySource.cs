@@ -14,6 +14,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
     private const double MinimumCeilingVerticalNormalComponent = 0.01;
     private const double MinimumIntersectionVolume = 1e-10;
     private const double MinimumAreaSquareMeters = 1e-8;
+    private const double ParallelWallNormalTolerance = 0.98;
 
     private readonly Document document;
     private readonly ITrueBimLogger logger;
@@ -139,6 +140,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         IReadOnlyDictionary<long, long> contourOwners = new FinishConnectedWallContactSource().AddContacts(document, request, eligible);
         FinishOffLevelContactSource.AddContacts(document, request, roomGeometryCache, eligible);
         FinishOccurrence[] contacts = eligible.Build().ToArray();
+        ConfirmBoundedWallContacts(warnings, contacts, elementsById, roomsById);
         FinishQuantityResult floors = FinishFloorRoomAreas.Calculate(document, request, obstacles);
         var otherContacts = contacts.Where(item => item.Category != FinishPreviewCategory.Floors).ToArray();
         FinishQuantityResult resolved = new FinishElementOwnershipResolver().Resolve(otherContacts, fullAreas, contourOwners);
@@ -165,6 +167,31 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             + $"ElementCache={elementGeometryCache.EntryCount}/{elementGeometryCache.RequestCount}; "
             + $"ElementCacheHits={elementGeometryCache.HitCount}.");
         return result;
+    }
+
+    private void ConfirmBoundedWallContacts(List<FinishGeometryWarning> warnings, FinishOccurrence[] contacts,
+        IReadOnlyDictionary<long, FinishClassifiedElement> elements, IReadOnlyDictionary<long, FinishRoomCandidateSnapshot> rooms)
+    {
+        var partial = warnings.Where(w => w.UnmeasuredWallContactLimit.HasValue).ToLookup(w => w.ElementId);
+        foreach (var group in partial)
+        {
+            if (group.Key is not long id || elements[id].Element.Bounds is not { } bounds
+                || document.GetElement(RevitElementIds.Create(id)) is not Wall wall) continue;
+            var measured = contacts.Where(c => c.ElementId == id).ToArray();
+            double limit = group.Sum(w => w.UnmeasuredWallContactLimit!.Value);
+            // Even all uncertain pieces together cannot change the owner or make this a mitred-joint tie.
+            if (!FinishElementOwnershipResolver.DirectWallContactDecides(measured, limit, FinishConnectedWallContactSource.JointArea(wall, bounds))) continue;
+            var confirmed = measured[0];
+            foreach (var warning in group)
+            {
+                int index = warnings.IndexOf(warning);
+                warnings[index] = warning with
+                {
+                    Code = FinishGeometryWarningCode.WallOwnerConfirmed,
+                    Message = $"Стена {id}. Revit подтвердил контакт с помещением {rooms[confirmed.RoomId].Number} (ID {confirmed.RoomId}) на площади {confirmed.AreaSquareMeters:0.###} м². Непроверенные участки могут добавить к другим контактам не более {Math.Ceiling(limit * 1000) / 1000:0.###} м². Стена отнесена к подтверждённому помещению."
+                };
+            }
+        }
     }
 
     private static bool CanReachFromRoom(FinishRoomCandidateSnapshot room, FinishClassifiedElement element, FinishVerticalObstacles obstacles)
@@ -354,6 +381,7 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
 
             double areaInternal = 0;
+            double missingInternal = 0;
             bool hadIntersection = false;
             foreach (Solid elementSolid in geometry.Solids)
             {
@@ -371,7 +399,8 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                             probe,
                             warnings,
                             warningKeys,
-                            out bool probeIntersected));
+                            out bool probeIntersected, out double unmeasured));
+                    missingInternal += unmeasured;
                     hadIntersection |= probeIntersected;
                 }
 
@@ -379,6 +408,11 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
             }
 
             double areaSquareMeters = RevitAreaUnits.ToSquareMeters(areaInternal);
+            if (missingInternal > 0)
+                AddWarning(warnings, warningKeys, new FinishGeometryWarning(FinishGeometryWarningCode.ProbeCreationFailed,
+                    $"Помещение {roomId}, стена {elementId}. Revit не смог измерить часть контакта даже после разбиения границы. Автоматическое назначение для этой стены пропущено. Сверьте её принадлежность в модели.",
+                    roomId, elementId, FinishPreviewCategory.Walls)
+                    { UnmeasuredWallContactLimit = RevitAreaUnits.ToSquareMeters(missingInternal) });
             if (areaSquareMeters > MinimumAreaSquareMeters)
             {
                 accumulator.Add(
@@ -410,10 +444,12 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
         WallFaceProbe probe,
         List<FinishGeometryWarning> warnings,
         HashSet<FinishGeometryWarning> warningKeys,
-        out bool hadIntersection)
+        out bool hadIntersection, out double unmeasured)
     {
+        double missing = 0;
         double outward = MeasureSide(probe.Outward, out bool outwardHit);
         double inward = MeasureSide(probe.Inward, out bool inwardHit);
+        unmeasured = missing;
         hadIntersection = outwardHit || inwardHit;
         return Math.Max(outward, inward);
 
@@ -427,16 +463,14 @@ public sealed class PhysicalFinishQuantitySource : IFinishQuantitySource
                     fragment, elementSolid, warnings, warningKeys);
                 if (intersection is null && probe.IsMesh)
                 {
-                    AddWarning(warnings, warningKeys, new FinishGeometryWarning(
-                        FinishGeometryWarningCode.ProbeCreationFailed,
-                        $"Помещение {roomId}, стена {elementId}. Revit не смог проверить один из участков стены даже по частям. Автоматическое назначение для этой стены пропущено. Сверьте её принадлежность в модели.",
-                        roomId, elementId, FinishPreviewCategory.Walls));
+                    // A parallel contact patch inside this prism projects into its triangular base.
+                    missing += fragment.Volume / (ProbeThickness * ParallelWallNormalTolerance);
                 }
                 if (intersection is null || intersection.Volume <= MinimumIntersectionVolume) continue;
 
                 intersects = true;
                 total += FinishGeometryAreaRules.SelectParallelFaceArea(GetFaceMeasures(intersection),
-                    probe.Normal.X, probe.Normal.Y, probe.Normal.Z) ?? 0;
+                    probe.Normal.X, probe.Normal.Y, probe.Normal.Z, ParallelWallNormalTolerance) ?? 0;
             }
             return total;
         }
